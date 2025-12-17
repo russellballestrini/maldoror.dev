@@ -25,6 +25,7 @@ const __dirname = dirname(__filename);
 export type ReloadState = 'running' | 'reloading';
 export type ReloadCallback = (state: ReloadState) => void;
 export type SpriteReloadCallback = (userId: string) => void;
+export type BuildingPlacementCallback = (buildingId: string, anchorX: number, anchorY: number) => void;
 
 interface WorkerManagerConfig {
   worldSeed: bigint;
@@ -52,6 +53,7 @@ export class WorkerManager {
   private reloadState: ReloadState = 'running';
   private reloadCallbacks: Set<ReloadCallback> = new Set();
   private spriteReloadCallbacks: Map<string, SpriteReloadCallback> = new Map();
+  private buildingPlacementCallbacks: Map<string, BuildingPlacementCallback> = new Map();
   private pendingRequests: Map<string, PendingRequest> = new Map();
   private requestIdCounter: number = 0;
   // Track connected sessions so we can re-register after hot reload
@@ -151,6 +153,20 @@ export class WorkerManager {
   }
 
   /**
+   * Subscribe to building placement broadcasts
+   */
+  onBuildingPlacement(userId: string, callback: BuildingPlacementCallback): void {
+    this.buildingPlacementCallbacks.set(userId, callback);
+  }
+
+  /**
+   * Unsubscribe from building placement broadcasts
+   */
+  offBuildingPlacement(userId: string): void {
+    this.buildingPlacementCallbacks.delete(userId);
+  }
+
+  /**
    * Check if worker is ready
    */
   isReady(): boolean {
@@ -190,6 +206,7 @@ export class WorkerManager {
       userId,
     });
     this.spriteReloadCallbacks.delete(userId);
+    this.buildingPlacementCallbacks.delete(userId);
   }
 
   queueInput(input: PlayerInput): void {
@@ -295,6 +312,13 @@ export class WorkerManager {
         type: 'broadcast_sprite_reload',
         userId,
       });
+    }
+  }
+
+  async broadcastBuildingPlacement(buildingId: string, anchorX: number, anchorY: number): Promise<void> {
+    // Broadcast locally to all sessions
+    for (const [_userId, callback] of this.buildingPlacementCallbacks) {
+      callback(buildingId, anchorX, anchorY);
     }
   }
 

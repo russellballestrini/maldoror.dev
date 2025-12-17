@@ -32,6 +32,7 @@ export {
   TileProvider,
   createPlaceholderSprite,
   type TileProviderConfig,
+  type BuildingData,
 } from './tiles/tile-provider.js';
 
 // Procedural tile generation

@@ -4,3 +4,4 @@ export * from './schema.js';
 export * from './prompts.js';
 export * from './generator.js';
 export * from './image-generator.js';
+export * from './building-generator.js';

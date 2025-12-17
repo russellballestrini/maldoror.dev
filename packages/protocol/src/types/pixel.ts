@@ -22,6 +22,7 @@ export type PixelGrid = Pixel[][];
  * Base tile/sprite size in pixels (highest resolution at 100% zoom)
  */
 export const BASE_SIZE = 256;
+export const PROC_GEN_SIZE = 16; // Procedural generation at pixel art size, then upscales
 
 /**
  * Render tile size at 0% zoom (baseline)
@@ -116,11 +117,20 @@ export interface PlayerVisualState {
 }
 
 /**
+ * Building tile for overlay rendering (imported type to avoid circular dep)
+ */
+export interface BuildingTileData {
+  pixels: PixelGrid;
+  resolutions: Record<string, PixelGrid>;
+}
+
+/**
  * World data provider interface
  * Used by renderers to get tile and player data
  */
 export interface WorldDataProvider {
   getTile(tileX: number, tileY: number): Tile | null;
+  getBuildingTileAt?(tileX: number, tileY: number): BuildingTileData | null;
   getPlayers(): PlayerVisualState[];
   getPlayerSprite(userId: string): Sprite | null;
   getLocalPlayerId(): string;

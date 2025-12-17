@@ -1,13 +1,17 @@
 import type { Duplex } from 'stream';
 import { PixelGameRenderer, InputHandler } from '@maldoror/render';
 import { TileProvider, createPlaceholderSprite } from '@maldoror/world';
-import type { Direction, AnimationFrame, PlayerVisualState, Sprite } from '@maldoror/protocol';
+import type { Direction, AnimationFrame, PlayerVisualState, Sprite, BuildingSprite } from '@maldoror/protocol';
+import { getBuildingTilePositions } from '@maldoror/protocol';
 import { WorkerManager, ReloadState } from './worker-manager.js';
 import { OnboardingFlow } from './onboarding.js';
 import { AvatarScreen } from './avatar-screen.js';
+import { BuildingScreen } from './building-screen.js';
 import { db, schema } from '@maldoror/db';
-import { eq } from 'drizzle-orm';
+import { eq, and, between } from 'drizzle-orm';
 import type { ProviderConfig } from '@maldoror/ai';
+import { saveSpriteToDisk, loadSpriteFromDisk } from '../utils/sprite-storage.js';
+import { saveBuildingToDisk, loadBuildingFromDisk } from '../utils/building-storage.js';
 
 interface GameSessionConfig {
   stream: Duplex;
@@ -36,6 +40,7 @@ export class GameSession {
   private tileProvider: TileProvider | null = null;
   private sessionId: string;
   private destroyed: boolean = false;
+  private inputPaused: boolean = false;
   private tickInterval: NodeJS.Timeout | null = null;
   private playerX: number = 0;
   private playerY: number = 0;
@@ -127,12 +132,17 @@ export class GameSession {
     });
     this.tileProvider.setLocalPlayerId(this.userId);
 
-    // Load avatar from database or use placeholder
+    // Load avatar - try file first, then database fallback
+    let sprite = await loadSpriteFromDisk(this.userId);
     const avatar = await db.query.avatars.findFirst({
       where: eq(schema.avatars.userId, this.userId),
     });
 
-    if (avatar?.spriteJson) {
+    if (sprite) {
+      this.tileProvider.setPlayerSprite(this.userId, sprite);
+      this.currentPrompt = avatar?.prompt || '';
+    } else if (avatar?.spriteJson) {
+      // Fallback to database (for existing sprites before file storage)
       this.tileProvider.setPlayerSprite(this.userId, avatar.spriteJson as Sprite);
       this.currentPrompt = avatar.prompt || '';
     } else {
@@ -140,6 +150,9 @@ export class GameSession {
       const placeholderSprite = createPlaceholderSprite({ r: 100, g: 150, b: 255 });
       this.tileProvider.setPlayerSprite(this.userId, placeholderSprite);
     }
+
+    // Load nearby buildings
+    await this.loadNearbyBuildings();
 
     // Update local player state
     this.updateLocalPlayerState();
@@ -161,7 +174,7 @@ export class GameSession {
 
     // Set up stream handlers
     this.stream.on('data', (data: Buffer) => {
-      if (this.inputHandler && !this.destroyed) {
+      if (this.inputHandler && !this.destroyed && !this.inputPaused) {
         this.inputHandler.process(data);
       }
     });
@@ -176,6 +189,11 @@ export class GameSession {
     // Register for sprite reload events
     this.workerManager.onSpriteReload(this.userId!, (changedUserId) => {
       this.handleSpriteReload(changedUserId);
+    });
+
+    // Register for building placement events
+    this.workerManager.onBuildingPlacement(this.userId!, (buildingId, anchorX, anchorY) => {
+      this.handleBuildingPlacement(buildingId, anchorX, anchorY);
     });
 
     // Subscribe to reload state changes for hot reload overlay
@@ -448,6 +466,9 @@ export class GameSession {
       case 'regenerate_avatar':
         this.openAvatarScreen();
         break;
+      case 'place_building':
+        this.openBuildingScreen();
+        break;
       case 'toggle_players':
         this.togglePlayerList();
         break;
@@ -534,6 +555,9 @@ export class GameSession {
    * Open the avatar regeneration screen
    */
   private async openAvatarScreen(): Promise<void> {
+    // Pause input handling to prevent game from processing avatar screen input
+    this.inputPaused = true;
+
     // Pause render loop
     if (this.tickInterval) {
       clearInterval(this.tickInterval);
@@ -543,33 +567,47 @@ export class GameSession {
     // Clean up current renderer state
     this.renderer?.cleanup();
 
-    // Run avatar screen
-    const screen = new AvatarScreen({
-      stream: this.stream,
-      currentPrompt: this.currentPrompt,
-      providerConfig: this.providerConfig,
-      username: this.username,
-    });
+    try {
+      // Run avatar screen
+      const screen = new AvatarScreen({
+        stream: this.stream,
+        currentPrompt: this.currentPrompt,
+        providerConfig: this.providerConfig,
+        username: this.username,
+      });
 
-    const result = await screen.run();
+      const result = await screen.run();
 
-    if (result.action === 'confirm' && result.sprite && result.prompt) {
-      // Update local prompt
-      this.currentPrompt = result.prompt;
+      if (result.action === 'confirm' && result.sprite && result.prompt) {
+        // Update local prompt
+        this.currentPrompt = result.prompt;
 
-      // Save to database
-      await this.saveAvatar(result.prompt, result.sprite);
+        // Save to database
+        try {
+          await this.saveAvatar(result.prompt, result.sprite);
+        } catch (err) {
+          console.error('Failed to save avatar:', err);
+        }
 
-      // Update local sprite
-      if (this.tileProvider && this.userId) {
-        this.tileProvider.setPlayerSprite(this.userId, result.sprite);
+        // Update local sprite
+        if (this.tileProvider && this.userId) {
+          this.tileProvider.setPlayerSprite(this.userId, result.sprite);
+        }
+
+        // Broadcast to all players
+        if (this.userId) {
+          try {
+            await this.workerManager.broadcastSpriteReload(this.userId);
+          } catch (err) {
+            console.error('Failed to broadcast sprite reload:', err);
+          }
+        }
       }
-
-      // Broadcast to all players
-      await this.workerManager.broadcastSpriteReload(this.userId!);
+    } catch (err) {
+      console.error('Avatar screen error:', err);
     }
 
-    // Reinitialize renderer
+    // Always reinitialize renderer and resume input
     this.renderer = new PixelGameRenderer({
       stream: this.stream,
       cols: this.cols,
@@ -578,27 +616,186 @@ export class GameSession {
     });
     this.renderer.initialize();
 
-    // Resume render loop
+    // Resume input handling and render loop
+    this.inputPaused = false;
     this.renderer.invalidate();
     this.tickInterval = setInterval(() => this.tick(), 67); // Match server's 15Hz tick rate
   }
 
   /**
-   * Save avatar to database
+   * Save avatar - sprite to file, metadata to database
    */
   private async saveAvatar(prompt: string, sprite: Sprite): Promise<void> {
     if (!this.userId) return;
 
+    // Save sprite to file (avoids 78MB JSONB in PostgreSQL)
+    await saveSpriteToDisk(this.userId, sprite);
+
+    // Save metadata to database (no spriteJson)
     await db
       .update(schema.avatars)
       .set({
         prompt,
-        spriteJson: sprite as any, // Sprite is compatible with storage format
         generationStatus: 'completed',
         modelUsed: this.providerConfig.model || 'default',
         updatedAt: new Date(),
       })
       .where(eq(schema.avatars.userId, this.userId));
+  }
+
+  /**
+   * Open the building placement screen
+   */
+  private async openBuildingScreen(): Promise<void> {
+    // Pause input handling
+    this.inputPaused = true;
+
+    // Pause render loop
+    if (this.tickInterval) {
+      clearInterval(this.tickInterval);
+      this.tickInterval = null;
+    }
+
+    // Clean up current renderer state
+    this.renderer?.cleanup();
+
+    try {
+      // Run building screen
+      const screen = new BuildingScreen({
+        stream: this.stream,
+        providerConfig: this.providerConfig,
+        username: this.username,
+        playerX: this.playerX,
+        playerY: this.playerY,
+      });
+
+      const result = await screen.run();
+
+      if (result.action === 'confirm' && result.sprite && result.prompt) {
+        // Save building
+        try {
+          await this.saveBuilding(result.prompt, result.sprite);
+        } catch (err) {
+          console.error('Failed to save building:', err);
+        }
+      }
+    } catch (err) {
+      console.error('Building screen error:', err);
+    }
+
+    // Reinitialize renderer and resume
+    this.renderer = new PixelGameRenderer({
+      stream: this.stream,
+      cols: this.cols,
+      rows: this.rows,
+      username: this.username,
+    });
+    this.renderer.initialize();
+
+    // Resume input handling and render loop
+    this.inputPaused = false;
+    this.renderer.invalidate();
+    this.tickInterval = setInterval(() => this.tick(), 67);
+  }
+
+  /**
+   * Save building - sprite to file, metadata to database
+   */
+  private async saveBuilding(prompt: string, sprite: BuildingSprite): Promise<void> {
+    if (!this.userId) return;
+
+    // Calculate anchor position (bottom-center of building, one tile above player)
+    const anchorX = this.playerX;
+    const anchorY = this.playerY - 1;
+
+    // Check if any building tiles would overlap with existing buildings
+    const positions = getBuildingTilePositions(anchorX, anchorY);
+    for (const [x, y] of positions) {
+      if (this.tileProvider?.isBuildingAt(x, y)) {
+        console.log(`[Building] Cannot place - tile (${x}, ${y}) already occupied`);
+        return;
+      }
+    }
+
+    // Create building record in database
+    const [building] = await db
+      .insert(schema.buildings)
+      .values({
+        ownerId: this.userId,
+        anchorX,
+        anchorY,
+        prompt,
+        modelUsed: this.providerConfig.model || 'gpt-image-1',
+      })
+      .returning({ id: schema.buildings.id });
+
+    if (!building) {
+      console.error('[Building] Failed to create building record');
+      return;
+    }
+
+    // Save sprite to file
+    await saveBuildingToDisk(building.id, sprite);
+
+    // Add building to tile provider
+    this.tileProvider?.setBuilding(building.id, anchorX, anchorY, sprite);
+
+    // Broadcast building placement to other players
+    try {
+      await this.workerManager.broadcastBuildingPlacement(building.id, anchorX, anchorY);
+    } catch (err) {
+      console.error('Failed to broadcast building placement:', err);
+    }
+
+    console.log(`[Building] Placed building ${building.id} at (${anchorX}, ${anchorY})`);
+  }
+
+  /**
+   * Load nearby buildings into the tile provider
+   */
+  private async loadNearbyBuildings(): Promise<void> {
+    if (!this.tileProvider) return;
+
+    // Load buildings within a reasonable range (e.g., 50 tiles in each direction)
+    const range = 50;
+    const buildings = await db.query.buildings.findMany({
+      where: and(
+        between(schema.buildings.anchorX, this.playerX - range, this.playerX + range),
+        between(schema.buildings.anchorY, this.playerY - range, this.playerY + range)
+      ),
+    });
+
+    for (const building of buildings) {
+      // Skip if already loaded
+      if (this.tileProvider.getBuildingAt(building.anchorX, building.anchorY)) {
+        continue;
+      }
+
+      // Load sprite from disk
+      const sprite = await loadBuildingFromDisk(building.id);
+      if (sprite) {
+        this.tileProvider.setBuilding(building.id, building.anchorX, building.anchorY, sprite);
+      }
+    }
+  }
+
+  /**
+   * Handle building placement broadcast from another player
+   */
+  private async handleBuildingPlacement(buildingId: string, anchorX: number, anchorY: number): Promise<void> {
+    if (!this.tileProvider) return;
+
+    // Skip if already loaded
+    if (this.tileProvider.getBuildingAt(anchorX, anchorY)) {
+      return;
+    }
+
+    // Load building sprite from disk
+    const sprite = await loadBuildingFromDisk(buildingId);
+    if (sprite) {
+      this.tileProvider.setBuilding(buildingId, anchorX, anchorY, sprite);
+      console.log(`[Building] Received building ${buildingId} at (${anchorX}, ${anchorY})`);
+    }
   }
 
   /**
@@ -610,8 +807,15 @@ export class GameSession {
     // Clear cached sprite for this user
     this.tileProvider.setPlayerSprite(changedUserId, createPlaceholderSprite(this.getPlayerColor(changedUserId)));
 
-    // Load from database
+    // Load from file first, then database fallback
     try {
+      const sprite = await loadSpriteFromDisk(changedUserId);
+      if (sprite) {
+        this.tileProvider.setPlayerSprite(changedUserId, sprite);
+        return;
+      }
+
+      // Fallback to database (for existing sprites before file storage)
       const avatar = await db.query.avatars.findFirst({
         where: eq(schema.avatars.userId, changedUserId),
       });
@@ -625,12 +829,20 @@ export class GameSession {
   }
 
   /**
-   * Load sprite for another player from database
+   * Load sprite for another player
    */
   private async loadPlayerSprite(playerId: string): Promise<void> {
     if (!this.tileProvider) return;
 
     try {
+      // Try file first
+      const sprite = await loadSpriteFromDisk(playerId);
+      if (sprite) {
+        this.tileProvider.setPlayerSprite(playerId, sprite);
+        return;
+      }
+
+      // Fallback to database (for existing sprites before file storage)
       const avatar = await db.query.avatars.findFirst({
         where: eq(schema.avatars.userId, playerId),
       });
@@ -654,6 +866,11 @@ export class GameSession {
 
     if (targetTile && !targetTile.walkable) {
       return;  // Can't move to non-walkable tile
+    }
+
+    // Check building collision
+    if (this.tileProvider?.isBuildingAt(targetX, targetY)) {
+      return;  // Can't move into building tile
     }
 
     this.playerX = targetX;

@@ -1,14 +1,7 @@
-import type { Tile, Sprite, PlayerVisualState, PixelGrid, RGB, WorldDataProvider, Pixel, DirectionFrames } from '@maldoror/protocol';
-import { CHUNK_SIZE_TILES, BASE_SIZE, RESOLUTIONS } from '@maldoror/protocol';
+import type { Tile, Sprite, PlayerVisualState, PixelGrid, RGB, WorldDataProvider, Pixel, DirectionFrames, BuildingSprite, BuildingTile } from '@maldoror/protocol';
+import { CHUNK_SIZE_TILES, BASE_SIZE, RESOLUTIONS, isPositionInBuilding, getBuildingTileIndex } from '@maldoror/protocol';
 import { BASE_TILES, getTileById } from './base-tiles.js';
 import { SeededRandom, ValueNoise } from '../noise/noise.js';
-import {
-  generateProceduralTile,
-  generateAllResolutions,
-  generateWaterAnimationFrames,
-  type TerrainType,
-  type NeighborInfo,
-} from './procedural-tiles.js';
 
 /**
  * Rotate a pixel grid by 90 degrees clockwise
@@ -74,6 +67,16 @@ interface ProceduralTileCache {
 }
 
 /**
+ * Cached building data
+ */
+export interface BuildingData {
+  id: string;
+  sprite: BuildingSprite;
+  anchorX: number;
+  anchorY: number;
+}
+
+/**
  * TileProvider - Provides tile and player data to the renderer
  *
  * Handles:
@@ -91,8 +94,9 @@ export class TileProvider implements WorldDataProvider {
   private maxTiles: number;
   private players: Map<string, PlayerVisualState> = new Map();
   private sprites: Map<string, Sprite> = new Map();
+  private buildings: Map<string, BuildingData> = new Map(); // Building ID -> BuildingData
   private localPlayerId: string = '';
-  private useProceduralTiles: boolean = false; // Disabled by default - expensive to generate
+  private useEdgeBlending: boolean = false; // Disabled - just use base tiles
 
   constructor(config: TileProviderConfig) {
     this.worldSeed = config.worldSeed;
@@ -102,10 +106,10 @@ export class TileProvider implements WorldDataProvider {
   }
 
   /**
-   * Enable or disable procedural tile generation
+   * Enable or disable edge blending
    */
-  setProceduralTiles(enabled: boolean): void {
-    this.useProceduralTiles = enabled;
+  setEdgeBlending(enabled: boolean): void {
+    this.useEdgeBlending = enabled;
     if (!enabled) {
       this.tileCache.clear();
     }
@@ -125,6 +129,7 @@ export class TileProvider implements WorldDataProvider {
     return this.localPlayerId;
   }
 
+
   /**
    * Get tile ID at world coordinates (for neighbor lookups)
    */
@@ -142,38 +147,24 @@ export class TileProvider implements WorldDataProvider {
   }
 
   /**
-   * Get neighbor terrain types for a tile
-   */
-  private getNeighborInfo(tileX: number, tileY: number): NeighborInfo {
-    return {
-      north: this.getTileId(tileX, tileY - 1) as TerrainType | undefined,
-      south: this.getTileId(tileX, tileY + 1) as TerrainType | undefined,
-      east: this.getTileId(tileX + 1, tileY) as TerrainType | undefined,
-      west: this.getTileId(tileX - 1, tileY) as TerrainType | undefined,
-      northEast: this.getTileId(tileX + 1, tileY - 1) as TerrainType | undefined,
-      northWest: this.getTileId(tileX - 1, tileY - 1) as TerrainType | undefined,
-      southEast: this.getTileId(tileX + 1, tileY + 1) as TerrainType | undefined,
-      southWest: this.getTileId(tileX - 1, tileY + 1) as TerrainType | undefined,
-    };
-  }
-
-  /**
-   * Get tile at world coordinates
+   * Get tile at world coordinates (terrain only, use getBuildingTileAt for buildings)
    */
   getTile(tileX: number, tileY: number): Tile | null {
     const tileId = this.getTileId(tileX, tileY);
     if (!tileId) return null;
 
-    // Use procedural generation if enabled
-    if (this.useProceduralTiles) {
-      return this.getProceduralTile(tileX, tileY, tileId as TerrainType);
-    }
-
-    // Fall back to base tiles
     const baseTile = getTileById(tileId);
     if (!baseTile) return BASE_TILES.void ?? null;
 
-    // Determine rotation based on world position
+    // Check if we need edge blending (has different neighbor)
+    if (this.useEdgeBlending && !baseTile.animated) {
+      const needsBlend = this.hasDifferentNeighbor(tileX, tileY, tileId);
+      if (needsBlend) {
+        return this.getBlendedTile(tileX, tileY, tileId, baseTile);
+      }
+    }
+
+    // Determine rotation based on world position for variety
     const rotation = Math.abs(positionHash(tileX, tileY)) % 4;
 
     if (rotation === 0 || baseTile.animated) {
@@ -187,10 +178,23 @@ export class TileProvider implements WorldDataProvider {
   }
 
   /**
-   * Get or generate a procedural tile with neighbor blending
+   * Check if tile has any different neighbor (for edge detection)
    */
-  private getProceduralTile(tileX: number, tileY: number, terrainType: TerrainType): Tile {
-    const cacheKey = `${tileX},${tileY}`;
+  private hasDifferentNeighbor(tileX: number, tileY: number, tileId: string): boolean {
+    const neighbors = [
+      this.getTileId(tileX, tileY - 1),     // north
+      this.getTileId(tileX, tileY + 1),     // south
+      this.getTileId(tileX + 1, tileY),     // east
+      this.getTileId(tileX - 1, tileY),     // west
+    ];
+    return neighbors.some(n => n && n !== tileId);
+  }
+
+  /**
+   * Get a blended tile with simple edge gradients
+   */
+  private getBlendedTile(tileX: number, tileY: number, tileId: string, baseTile: Tile): Tile {
+    const cacheKey = `blend:${tileX},${tileY}`;
 
     // Check cache
     const cached = this.tileCache.get(cacheKey);
@@ -199,51 +203,34 @@ export class TileProvider implements WorldDataProvider {
       return cached.tile;
     }
 
-    // Get neighbor info for blending
-    const neighbors = this.getNeighborInfo(tileX, tileY);
+    // Get neighbor colors for blending
+    const northId = this.getTileId(tileX, tileY - 1);
+    const southId = this.getTileId(tileX, tileY + 1);
+    const eastId = this.getTileId(tileX + 1, tileY);
+    const westId = this.getTileId(tileX - 1, tileY);
 
-    // Use world seed + position for deterministic generation
-    const tileSeed = Number(this.worldSeed & 0xffffffffn) + tileX * 374761393 + tileY * 668265263;
+    const northTile = northId && northId !== tileId ? (getTileById(northId) ?? null) : null;
+    const southTile = southId && southId !== tileId ? (getTileById(southId) ?? null) : null;
+    const eastTile = eastId && eastId !== tileId ? (getTileById(eastId) ?? null) : null;
+    const westTile = westId && westId !== tileId ? (getTileById(westId) ?? null) : null;
 
-    // Generate the tile
-    const isWater = terrainType === 'water';
-    const pixels = generateProceduralTile(terrainType, tileX, tileY, tileSeed, neighbors, 0);
-    const resolutions = generateAllResolutions(pixels);
+    // Blend edges - super simple: just fade edge pixels toward neighbor color
+    const blendDepth = Math.floor(BASE_SIZE * 0.15); // 15% edge blend
+    const pixels = blendEdges(baseTile.pixels, blendDepth, northTile, southTile, eastTile, westTile);
 
-    let tile: Tile;
-
-    if (isWater) {
-      // Generate animation frames for water
-      const animationFrames = generateWaterAnimationFrames(tileX, tileY, tileSeed, neighbors, 4);
-      const animationResolutions: Record<string, PixelGrid[]> = {};
-
-      for (const size of RESOLUTIONS) {
-        animationResolutions[String(size)] = animationFrames.map(frame =>
-          downscaleGrid(frame, size)
-        );
-      }
-
-      tile = {
-        id: terrainType,
-        name: terrainType.charAt(0).toUpperCase() + terrainType.slice(1),
-        pixels,
-        walkable: false,
-        animated: true,
-        animationFrames,
-        resolutions,
-        animationResolutions,
-      };
-    } else {
-      tile = {
-        id: terrainType,
-        name: terrainType.charAt(0).toUpperCase() + terrainType.slice(1),
-        pixels,
-        walkable: terrainType !== 'void',
-        resolutions,
-      };
+    // Generate resolutions for blended tile
+    const resolutions: Record<string, PixelGrid> = {};
+    for (const size of RESOLUTIONS) {
+      resolutions[String(size)] = resizeNearest(pixels, size);
     }
 
-    // Cache the tile
+    const tile: Tile = {
+      ...baseTile,
+      pixels,
+      resolutions,
+    };
+
+    // Cache
     this.tileCache.set(cacheKey, { tile, accessedAt: Date.now() });
     this.evictOldTiles();
 
@@ -298,6 +285,73 @@ export class TileProvider implements WorldDataProvider {
    */
   getPlayerSprite(userId: string): Sprite | null {
     return this.sprites.get(userId) ?? null;
+  }
+
+  // ==================== Building Management ====================
+
+  /**
+   * Add a building to the tile provider
+   */
+  setBuilding(buildingId: string, anchorX: number, anchorY: number, sprite: BuildingSprite): void {
+    this.buildings.set(buildingId, {
+      id: buildingId,
+      sprite,
+      anchorX,
+      anchorY,
+    });
+  }
+
+  /**
+   * Remove a building by ID
+   */
+  removeBuilding(buildingId: string): void {
+    this.buildings.delete(buildingId);
+  }
+
+  /**
+   * Get all buildings
+   */
+  getBuildings(): BuildingData[] {
+    return Array.from(this.buildings.values());
+  }
+
+  /**
+   * Check if a world position is blocked by a building
+   */
+  isBuildingAt(worldX: number, worldY: number): boolean {
+    for (const building of this.buildings.values()) {
+      if (isPositionInBuilding(worldX, worldY, building.anchorX, building.anchorY)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Get building tile at world coordinates, if any
+   * Returns the BuildingTile for rendering, or null if no building at that position
+   */
+  getBuildingTileAt(worldX: number, worldY: number): BuildingTile | null {
+    for (const building of this.buildings.values()) {
+      const tileIndex = getBuildingTileIndex(worldX, worldY, building.anchorX, building.anchorY);
+      if (tileIndex) {
+        const [tileX, tileY] = tileIndex;
+        return building.sprite.tiles[tileY]?.[tileX] ?? null;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Get building at world coordinates, if any
+   */
+  getBuildingAt(worldX: number, worldY: number): BuildingData | null {
+    for (const building of this.buildings.values()) {
+      if (isPositionInBuilding(worldX, worldY, building.anchorX, building.anchorY)) {
+        return building;
+      }
+    }
+    return null;
   }
 
   /**
@@ -405,22 +459,113 @@ export class TileProvider implements WorldDataProvider {
 }
 
 /**
- * Downscale a pixel grid using nearest-neighbor sampling
+ * Resize a pixel grid using nearest-neighbor sampling (works for up or downscale)
  */
-function downscaleGrid(grid: PixelGrid, targetSize: number): PixelGrid {
+function upscaleNearest(grid: PixelGrid, targetSize: number): PixelGrid {
   const srcSize = grid.length;
   if (srcSize === targetSize) return grid;
 
+  const scale = targetSize / srcSize;
   const result: PixelGrid = [];
   for (let y = 0; y < targetSize; y++) {
     const row: Pixel[] = [];
-    const srcY = Math.floor(y * srcSize / targetSize);
+    const srcY = Math.floor(y / scale);
     for (let x = 0; x < targetSize; x++) {
-      const srcX = Math.floor(x * srcSize / targetSize);
+      const srcX = Math.floor(x / scale);
       row.push(grid[srcY]?.[srcX] ?? null);
     }
     result.push(row);
   }
+  return result;
+}
+
+// Aliases
+const downscaleGrid = upscaleNearest;
+const resizeNearest = upscaleNearest;
+
+/**
+ * Get average color from a tile (sample center pixels)
+ */
+function getTileAvgColor(tile: Tile): RGB {
+  const pixels = tile.pixels;
+  const size = pixels.length;
+  const center = Math.floor(size / 2);
+  const sample = pixels[center]?.[center];
+  if (sample && 'r' in sample) {
+    return sample as RGB;
+  }
+  return { r: 128, g: 128, b: 128 };
+}
+
+/**
+ * Blend two colors
+ */
+function lerpColor(a: RGB, b: RGB, t: number): RGB {
+  return {
+    r: Math.round(a.r + (b.r - a.r) * t),
+    g: Math.round(a.g + (b.g - a.g) * t),
+    b: Math.round(a.b + (b.b - a.b) * t),
+  };
+}
+
+/**
+ * Simple edge blending - fade edge pixels toward neighbor color
+ */
+function blendEdges(
+  pixels: PixelGrid,
+  depth: number,
+  north: Tile | null,
+  south: Tile | null,
+  east: Tile | null,
+  west: Tile | null
+): PixelGrid {
+  const size = pixels.length;
+  const result: PixelGrid = pixels.map(row => [...row]);
+
+  const northColor = north ? getTileAvgColor(north) : null;
+  const southColor = south ? getTileAvgColor(south) : null;
+  const eastColor = east ? getTileAvgColor(east) : null;
+  const westColor = west ? getTileAvgColor(west) : null;
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const pixel = result[y]![x];
+      if (!pixel || !('r' in pixel)) continue;
+
+      let blended = pixel as RGB;
+      let blendCount = 0;
+
+      // North edge
+      if (northColor && y < depth) {
+        const t = 1 - y / depth;
+        blended = lerpColor(blended, northColor, t * 0.5);
+        blendCount++;
+      }
+      // South edge
+      if (southColor && y >= size - depth) {
+        const t = (y - (size - depth)) / depth;
+        blended = lerpColor(blended, southColor, t * 0.5);
+        blendCount++;
+      }
+      // West edge
+      if (westColor && x < depth) {
+        const t = 1 - x / depth;
+        blended = lerpColor(blended, westColor, t * 0.5);
+        blendCount++;
+      }
+      // East edge
+      if (eastColor && x >= size - depth) {
+        const t = (x - (size - depth)) / depth;
+        blended = lerpColor(blended, eastColor, t * 0.5);
+        blendCount++;
+      }
+
+      if (blendCount > 0) {
+        result[y]![x] = blended;
+      }
+    }
+  }
+
   return result;
 }
 

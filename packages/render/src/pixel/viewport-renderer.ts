@@ -221,10 +221,13 @@ export class ViewportRenderer {
     // Get viewport origin in world pixels
     const origin = this.getViewportOrigin();
 
-    // 1. Render tiles with sub-pixel offset
+    // 1. Render terrain tiles with sub-pixel offset
     this.renderTiles(buffer, world, tick, origin);
 
-    // 2. Render players (sorted by Y for proper overlap)
+    // 2. Render building tiles on top of terrain (with transparency)
+    this.renderBuildings(buffer, world, origin);
+
+    // 3. Render players (sorted by Y for proper overlap)
     this.renderPlayers(buffer, world, tick, origin);
 
     return {
@@ -289,6 +292,59 @@ export class ViewportRenderer {
               if (pixel) {
                 buffer[bufferY]![bufferX] = pixel;
               }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Render building tiles on top of terrain (with transparency support)
+   */
+  private renderBuildings(buffer: PixelGrid, world: WorldDataProvider, origin: { x: number; y: number }): void {
+    // Skip if world doesn't support buildings
+    if (!world.getBuildingTileAt) return;
+
+    const resKey = String(this.dataResolution);
+
+    // Calculate which tiles are visible
+    const startTileX = Math.floor(origin.x / this.tileRenderSize);
+    const startTileY = Math.floor(origin.y / this.tileRenderSize);
+    const endTileX = Math.ceil((origin.x + buffer[0]!.length) / this.tileRenderSize);
+    const endTileY = Math.ceil((origin.y + buffer.length) / this.tileRenderSize);
+
+    for (let worldTileY = startTileY; worldTileY <= endTileY; worldTileY++) {
+      for (let worldTileX = startTileX; worldTileX <= endTileX; worldTileX++) {
+        const buildingTile = world.getBuildingTileAt(worldTileX, worldTileY);
+        if (!buildingTile) continue;
+
+        // Get the appropriate resolution
+        const tilePixels = buildingTile.resolutions?.[resKey] ?? buildingTile.pixels;
+
+        // Scale to exact tile render size if needed
+        const scaledPixels = this.scaleFrame(tilePixels, this.tileRenderSize, this.tileRenderSize);
+
+        // Calculate screen position
+        const screenX = Math.round(worldTileX * this.tileRenderSize - origin.x);
+        const screenY = Math.round(worldTileY * this.tileRenderSize - origin.y);
+
+        // Copy building pixels to buffer (only non-transparent pixels)
+        for (let py = 0; py < scaledPixels.length; py++) {
+          const tileRow = scaledPixels[py];
+          if (!tileRow) continue;
+
+          const bufferY = screenY + py;
+          if (bufferY < 0 || bufferY >= buffer.length) continue;
+
+          for (let px = 0; px < tileRow.length; px++) {
+            const bufferX = screenX + px;
+            if (bufferX < 0 || bufferX >= buffer[bufferY]!.length) continue;
+
+            const pixel = tileRow[px];
+            if (pixel) {
+              // Only overwrite if pixel is not transparent
+              buffer[bufferY]![bufferX] = pixel;
             }
           }
         }
