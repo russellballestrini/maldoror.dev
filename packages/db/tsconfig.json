@@ -1,6 +1,8 @@
 {
   "extends": "@maldoror/tsconfig/base.json",
   "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "outDir": "dist",
     "rootDir": "src"
   },
