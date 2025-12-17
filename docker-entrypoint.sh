@@ -10,9 +10,10 @@ if [ ! -f "$SSH_HOST_KEY_PATH" ]; then
   echo "SSH host key generated at $SSH_HOST_KEY_PATH"
 fi
 
-# Run database migrations/push
+# Run database migrations/push (--force skips interactive confirmation)
 echo "Initializing database schema..."
-pnpm db:push
+cd /app/packages/db && npx drizzle-kit push --force
+cd /app
 
 # Start the SSH server
 echo "Starting SSH server..."
