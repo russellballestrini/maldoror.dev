@@ -30,46 +30,42 @@ The sprite format is JSON with this structure:
 - Each cell has: char (single character), fg (optional hex color), bg (optional hex color)`;
 
 /**
- * System prompt for pixel sprite generation (16x24 RGB mode)
+ * System prompt for pixel sprite generation (16x24 RGB mode) - COMPACT FORMAT
  */
 export const PIXEL_SPRITE_SYSTEM_PROMPT = `You are a pixel art sprite generator. Create character sprites for a dark, surreal terminal-based MMO.
 
-EXACT JSON STRUCTURE REQUIRED:
+JSON STRUCTURE:
 {
   "width": 16,
   "height": 24,
   "frames": {
-    "up": [STANDING_FRAME, WALKING_FRAME],
-    "down": [STANDING_FRAME, WALKING_FRAME],
-    "left": [STANDING_FRAME, WALKING_FRAME],
-    "right": [STANDING_FRAME, WALKING_FRAME]
+    "up": [[row0], [row1], ... 24 rows],
+    "down": [[row0], [row1], ... 24 rows],
+    "left": [[row0], [row1], ... 24 rows],
+    "right": [[row0], [row1], ... 24 rows]
   }
 }
 
-Where each FRAME is an array of 24 rows, and each row is an array of 16 pixels.
-Each pixel is: {"r": 0-255, "g": 0-255, "b": 0-255, "t": true/false}
-- t=true means transparent (use r=0, g=0, b=0)
-- t=false means visible with the RGB color
+PIXEL FORMAT (compact strings):
+- "0" = transparent pixel
+- "RRRGGGBBBf" = visible pixel (9 digits for RGB 000-255, then 'f')
 
-TOTAL: 4 directions × 2 frames = 8 frames total.
-Each frame: 24 rows × 16 pixels = 384 pixels per frame.
+Example row: ["0","0","0","090090106f","090090106f","0","0","0","0","0","0","0","090090106f","090090106f","0","0"]
 
-ANIMATION FRAMES per direction:
-- Frame 0: Standing pose (legs together)
-- Frame 1: Walking pose (one leg forward)
+COLOR PALETTE (use these muted, dark colors):
+- Purple: "074044106f"
+- Blue: "046074106f"
+- Gray: "090090106f"
+- Deep red: "106042042f"
+- Skin: "210180140f"
+- Dark: "040040050f"
 
-COLOR PALETTE - use muted, dark colors:
-- Purples: r=74, g=44, b=106
-- Blues: r=46, g=74, b=106
-- Grays: r=90, g=90, b=106
-- Deep reds: r=106, g=42, b=42
-
-CHARACTER LAYOUT:
-- Rows 0-6: Head (centered, transparent on sides)
+LAYOUT (16 wide x 24 tall):
+- Rows 0-6: Head area (transparent sides)
 - Rows 7-15: Torso/arms
 - Rows 16-23: Legs/feet
 
-Keep walking animation subtle - just shift leg positions slightly.`;
+Each direction shows the character from that view (down=front, up=back, left/right=side).`;
 
 /**
  * Build user prompt from description (legacy ASCII mode)
@@ -98,12 +94,11 @@ export function buildPixelSpritePrompt(description: string, vibe?: string): stri
 
   prompt += `
 
-Generate exactly:
+Generate:
 - 4 directions (up, down, left, right)
-- 2 animation frames per direction (standing and walking)
-- 24 rows per frame
+- 24 rows per direction
 - 16 pixels per row
-- Each pixel as {r, g, b, t}`;
+- Use "0" for transparent, "RRRGGGBBBf" for visible pixels`;
 
   return prompt;
 }

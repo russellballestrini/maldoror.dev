@@ -1,6 +1,6 @@
 import { generateObject } from 'ai';
 import { createModel, type ProviderConfig } from './providers.js';
-import { SpriteGridSchema, PixelSpriteSchema, type SpriteGrid, type PixelSprite } from './schema.js';
+import { SpriteGridSchema, CompactPixelSpriteSchema, parseCompactFrame, type SpriteGrid, type CompactPixelSprite } from './schema.js';
 import { AVATAR_SYSTEM_PROMPT, PIXEL_SPRITE_SYSTEM_PROMPT, buildUserPrompt, buildPixelSpritePrompt, type Vibe } from './prompts.js';
 import type { Sprite, PixelGrid, Pixel } from '@maldoror/protocol';
 
@@ -15,29 +15,29 @@ function convertPixel(aiPixel: { r: number; g: number; b: number; t: boolean }):
 }
 
 /**
- * Convert AI sprite format to protocol Sprite format
+ * Convert compact AI sprite format to protocol Sprite format
+ * Handles incomplete data by padding with debug pixels (bright green)
  */
-function convertToProtocolSprite(aiSprite: PixelSprite): Sprite {
-  const convertFrame = (frame: PixelSprite['frames']['down'][0]): PixelGrid => {
-    return frame.map(row => row.map(convertPixel));
+function convertCompactToProtocolSprite(aiSprite: CompactPixelSprite): Sprite {
+  const convertFrame = (compactRows: string[][]): PixelGrid => {
+    const parsed = parseCompactFrame(compactRows, 16, 24);
+    return parsed.map(row => row.map(convertPixel));
   };
 
-  // AI generates 2 frames (standing, walking), we expand to 4 for protocol
-  const convertFrames = (frames: PixelSprite['frames']['down']): [PixelGrid, PixelGrid, PixelGrid, PixelGrid] => {
-    const standing = convertFrame(frames[0]!);
-    const walking = convertFrame(frames[1]!);
-    // Expand to 4-frame cycle: standing, walking, standing, walking
-    return [standing, walking, standing, walking];
+  // Duplicate frame 4 times for animation slots
+  const makeFrames = (compactRows: string[][]): [PixelGrid, PixelGrid, PixelGrid, PixelGrid] => {
+    const frame = convertFrame(compactRows);
+    return [frame, frame, frame, frame];
   };
 
   return {
-    width: aiSprite.width,
-    height: aiSprite.height,
+    width: 16,
+    height: 24,
     frames: {
-      up: convertFrames(aiSprite.frames.up),
-      down: convertFrames(aiSprite.frames.down),
-      left: convertFrames(aiSprite.frames.left),
-      right: convertFrames(aiSprite.frames.right),
+      up: makeFrames(aiSprite.frames.up),
+      down: makeFrames(aiSprite.frames.down),
+      left: makeFrames(aiSprite.frames.left),
+      right: makeFrames(aiSprite.frames.right),
     },
   };
 }
@@ -136,6 +136,7 @@ export interface PixelSpriteGenerationResult {
 
 /**
  * Generate a pixel sprite from a description
+ * Uses compact format for efficiency, pads missing data with debug pixels
  */
 export async function generatePixelSprite(
   options: PixelSpriteGenerationOptions
@@ -154,21 +155,16 @@ export async function generatePixelSprite(
     try {
       const result = await generateObject({
         model,
-        schema: PixelSpriteSchema,
+        schema: CompactPixelSpriteSchema,
         system: PIXEL_SPRITE_SYSTEM_PROMPT,
         prompt: userPrompt,
-        temperature: 0.7,
+        temperature: 0.5,
+        maxOutputTokens: 30000,
       });
 
-      // Validate the result
-      const validated = PixelSpriteSchema.safeParse(result.object);
-      if (!validated.success) {
-        lastError = new Error(`Validation failed: ${validated.error.message}`);
-        continue;
-      }
-
-      // Convert from AI format (with t flag) to protocol format (null for transparent)
-      const protocolSprite = convertToProtocolSprite(validated.data);
+      // Convert from compact format to protocol format
+      // parseCompactFrame handles missing/malformed data by padding with debug pixels
+      const protocolSprite = convertCompactToProtocolSprite(result.object as CompactPixelSprite);
 
       return {
         success: true,
