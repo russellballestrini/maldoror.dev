@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: maldoror
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-maldoror_prod}
+      POSTGRES_DB: maldoror
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U maldoror -d maldoror"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  ssh-world:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "2222:2222"
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgresql://maldoror:${POSTGRES_PASSWORD:-maldoror_prod}@postgres:5432/maldoror
+      SSH_PORT: "2222"
+      SSH_HOST_KEY_PATH: /app/apps/ssh-world/keys/host.key
+      NODE_ENV: production
+    volumes:
+      - ssh_keys:/app/apps/ssh-world/keys
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  ssh_keys:

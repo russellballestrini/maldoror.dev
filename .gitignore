@@ -51,3 +51,4 @@ drizzle/meta/
 # Misc
 *.tgz
 .cache/
+deploy/.env.prod
