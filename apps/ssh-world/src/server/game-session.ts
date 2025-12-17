@@ -1,11 +1,13 @@
 import type { Duplex } from 'stream';
 import { PixelGameRenderer, InputHandler } from '@maldoror/render';
 import { TileProvider, createPlaceholderSprite } from '@maldoror/world';
-import type { Direction, AnimationFrame, PlayerVisualState } from '@maldoror/protocol';
+import type { Direction, AnimationFrame, PlayerVisualState, Sprite } from '@maldoror/protocol';
 import { GameServer } from '../game/game-server.js';
 import { OnboardingFlow } from './onboarding.js';
+import { AvatarScreen } from './avatar-screen.js';
 import { db, schema } from '@maldoror/db';
 import { eq } from 'drizzle-orm';
+import type { ProviderConfig } from '@maldoror/ai';
 
 interface GameSessionConfig {
   stream: Duplex;
@@ -16,6 +18,7 @@ interface GameSessionConfig {
   rows: number;
   gameServer: GameServer;
   worldSeed: bigint;
+  providerConfig: ProviderConfig;
 }
 
 export class GameSession {
@@ -27,6 +30,7 @@ export class GameSession {
   private rows: number;
   private gameServer: GameServer;
   private worldSeed: bigint;
+  private providerConfig: ProviderConfig;
   private renderer: PixelGameRenderer | null = null;
   private inputHandler: InputHandler | null = null;
   private tileProvider: TileProvider | null = null;
@@ -40,6 +44,7 @@ export class GameSession {
   private isMoving: boolean = false;
   private inputSequence: number = 0;
   private moveTimer: NodeJS.Timeout | null = null;
+  private currentPrompt: string = '';
 
   constructor(config: GameSessionConfig) {
     this.stream = config.stream;
@@ -50,6 +55,7 @@ export class GameSession {
     this.rows = config.rows;
     this.gameServer = config.gameServer;
     this.worldSeed = config.worldSeed;
+    this.providerConfig = config.providerConfig;
     this.sessionId = crypto.randomUUID();
   }
 
@@ -96,9 +102,19 @@ export class GameSession {
     });
     this.tileProvider.setLocalPlayerId(this.userId);
 
-    // Set up placeholder sprite for local player
-    const placeholderSprite = createPlaceholderSprite({ r: 100, g: 150, b: 255 });
-    this.tileProvider.setPlayerSprite(this.userId, placeholderSprite);
+    // Load avatar from database or use placeholder
+    const avatar = await db.query.avatars.findFirst({
+      where: eq(schema.avatars.userId, this.userId),
+    });
+
+    if (avatar?.spriteJson) {
+      this.tileProvider.setPlayerSprite(this.userId, avatar.spriteJson as Sprite);
+      this.currentPrompt = avatar.prompt || '';
+    } else {
+      // Use placeholder sprite
+      const placeholderSprite = createPlaceholderSprite({ r: 100, g: 150, b: 255 });
+      this.tileProvider.setPlayerSprite(this.userId, placeholderSprite);
+    }
 
     // Update local player state
     this.updateLocalPlayerState();
@@ -131,6 +147,11 @@ export class GameSession {
 
     // Register with game server
     await this.gameServer.playerConnect(this.userId!, this.sessionId);
+
+    // Register for sprite reload events
+    this.gameServer.onSpriteReload(this.userId!, (changedUserId) => {
+      this.handleSpriteReload(changedUserId);
+    });
 
     // Start render loop (60ms = ~16fps for smooth animation)
     this.tickInterval = setInterval(() => this.tick(), 60);
@@ -236,6 +257,9 @@ export class GameSession {
       case 'cycle_render_mode':
         this.renderer?.cycleRenderMode();
         break;
+      case 'regenerate_avatar':
+        this.openAvatarScreen();
+        break;
       case 'quit':
         this.quit();
         break;
@@ -248,6 +272,99 @@ export class GameSession {
   private async quit(): Promise<void> {
     await this.destroy();
     this.stream.end();
+  }
+
+  /**
+   * Open the avatar regeneration screen
+   */
+  private async openAvatarScreen(): Promise<void> {
+    // Pause render loop
+    if (this.tickInterval) {
+      clearInterval(this.tickInterval);
+      this.tickInterval = null;
+    }
+
+    // Clean up current renderer state
+    this.renderer?.cleanup();
+
+    // Run avatar screen
+    const screen = new AvatarScreen({
+      stream: this.stream,
+      currentPrompt: this.currentPrompt,
+      providerConfig: this.providerConfig,
+    });
+
+    const result = await screen.run();
+
+    if (result.action === 'confirm' && result.sprite && result.prompt) {
+      // Update local prompt
+      this.currentPrompt = result.prompt;
+
+      // Save to database
+      await this.saveAvatar(result.prompt, result.sprite);
+
+      // Update local sprite
+      if (this.tileProvider && this.userId) {
+        this.tileProvider.setPlayerSprite(this.userId, result.sprite);
+      }
+
+      // Broadcast to all players
+      await this.gameServer.broadcastSpriteReload(this.userId!);
+    }
+
+    // Reinitialize renderer
+    this.renderer = new PixelGameRenderer({
+      stream: this.stream,
+      cols: this.cols,
+      rows: this.rows,
+      username: this.username,
+    });
+    this.renderer.initialize();
+
+    // Resume render loop
+    this.renderer.invalidate();
+    this.tickInterval = setInterval(() => this.tick(), 60);
+  }
+
+  /**
+   * Save avatar to database
+   */
+  private async saveAvatar(prompt: string, sprite: Sprite): Promise<void> {
+    if (!this.userId) return;
+
+    await db
+      .update(schema.avatars)
+      .set({
+        prompt,
+        spriteJson: sprite as any, // Sprite is compatible with storage format
+        generationStatus: 'completed',
+        modelUsed: this.providerConfig.model || 'default',
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.avatars.userId, this.userId));
+  }
+
+  /**
+   * Handle sprite reload event from another player
+   */
+  private async handleSpriteReload(changedUserId: string): Promise<void> {
+    if (!this.tileProvider) return;
+
+    // Clear cached sprite for this user
+    this.tileProvider.setPlayerSprite(changedUserId, createPlaceholderSprite(this.getPlayerColor(changedUserId)));
+
+    // Load from database
+    try {
+      const avatar = await db.query.avatars.findFirst({
+        where: eq(schema.avatars.userId, changedUserId),
+      });
+
+      if (avatar?.spriteJson) {
+        this.tileProvider.setPlayerSprite(changedUserId, avatar.spriteJson as Sprite);
+      }
+    } catch (error) {
+      console.error(`Failed to reload sprite for ${changedUserId}:`, error);
+    }
   }
 
   private move(dx: number, dy: number, direction: Direction): void {

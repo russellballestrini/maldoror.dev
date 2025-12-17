@@ -8,6 +8,7 @@ import { GameSession } from './game-session.js';
 import { GameServer } from '../game/game-server.js';
 import { db, schema } from '@maldoror/db';
 import { eq } from 'drizzle-orm';
+import type { ProviderConfig } from '@maldoror/ai';
 
 interface SSHServerConfig {
   port: number;
@@ -15,6 +16,7 @@ interface SSHServerConfig {
   banner?: string;
   gameServer: GameServer;
   worldSeed: bigint;
+  providerConfig: ProviderConfig;
 }
 
 interface ClientContext {
@@ -160,6 +162,7 @@ export class SSHServer {
         rows: ptyInfo.rows,
         gameServer: this.config.gameServer,
         worldSeed: this.config.worldSeed,
+        providerConfig: this.config.providerConfig,
       });
 
       this.sessions.set(context.fingerprint, gameSession);

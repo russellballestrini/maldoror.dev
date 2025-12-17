@@ -1,5 +1,5 @@
 /**
- * System prompt for avatar generation
+ * System prompt for avatar generation (legacy ASCII mode)
  */
 export const AVATAR_SYSTEM_PROMPT = `You are an ASCII sprite artist creating character sprites for a dark, surreal terminal-based MMO called Maldoror.
 
@@ -30,7 +30,49 @@ The sprite format is JSON with this structure:
 - Each cell has: char (single character), fg (optional hex color), bg (optional hex color)`;
 
 /**
- * Build user prompt from description
+ * System prompt for pixel sprite generation (16x24 RGB mode)
+ */
+export const PIXEL_SPRITE_SYSTEM_PROMPT = `You are a pixel art sprite generator. Create character sprites for a dark, surreal terminal-based MMO.
+
+EXACT JSON STRUCTURE REQUIRED:
+{
+  "width": 16,
+  "height": 24,
+  "frames": {
+    "up": [STANDING_FRAME, WALKING_FRAME],
+    "down": [STANDING_FRAME, WALKING_FRAME],
+    "left": [STANDING_FRAME, WALKING_FRAME],
+    "right": [STANDING_FRAME, WALKING_FRAME]
+  }
+}
+
+Where each FRAME is an array of 24 rows, and each row is an array of 16 pixels.
+Each pixel is: {"r": 0-255, "g": 0-255, "b": 0-255, "t": true/false}
+- t=true means transparent (use r=0, g=0, b=0)
+- t=false means visible with the RGB color
+
+TOTAL: 4 directions × 2 frames = 8 frames total.
+Each frame: 24 rows × 16 pixels = 384 pixels per frame.
+
+ANIMATION FRAMES per direction:
+- Frame 0: Standing pose (legs together)
+- Frame 1: Walking pose (one leg forward)
+
+COLOR PALETTE - use muted, dark colors:
+- Purples: r=74, g=44, b=106
+- Blues: r=46, g=74, b=106
+- Grays: r=90, g=90, b=106
+- Deep reds: r=106, g=42, b=42
+
+CHARACTER LAYOUT:
+- Rows 0-6: Head (centered, transparent on sides)
+- Rows 7-15: Torso/arms
+- Rows 16-23: Legs/feet
+
+Keep walking animation subtle - just shift leg positions slightly.`;
+
+/**
+ * Build user prompt from description (legacy ASCII mode)
  */
 export function buildUserPrompt(description: string, vibe?: string): string {
   let prompt = `Create an ASCII sprite for the following character description:\n\n"${description}"`;
@@ -40,6 +82,28 @@ export function buildUserPrompt(description: string, vibe?: string): string {
   }
 
   prompt += `\n\nGenerate the complete sprite data as JSON following the schema provided.`;
+
+  return prompt;
+}
+
+/**
+ * Build user prompt for pixel sprite generation
+ */
+export function buildPixelSpritePrompt(description: string, vibe?: string): string {
+  let prompt = `Create a 16x24 pixel sprite for: "${description}"`;
+
+  if (vibe) {
+    prompt += ` with a ${vibe} aesthetic`;
+  }
+
+  prompt += `
+
+Generate exactly:
+- 4 directions (up, down, left, right)
+- 2 animation frames per direction (standing and walking)
+- 24 rows per frame
+- 16 pixels per row
+- Each pixel as {r, g, b, t}`;
 
   return prompt;
 }

@@ -12,6 +12,7 @@
     "generate-keys": "ssh-keygen -t ed25519 -f keys/host.key -N ''"
   },
   "dependencies": {
+    "@maldoror/ai": "workspace:*",
     "@maldoror/db": "workspace:*",
     "@maldoror/protocol": "workspace:*",
     "@maldoror/render": "workspace:*",

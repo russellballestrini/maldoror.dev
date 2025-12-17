@@ -26,6 +26,7 @@ interface ChatMessage {
 }
 
 type ChatCallback = (message: ChatMessage) => void;
+type SpriteReloadCallback = (userId: string) => void;
 
 /**
  * Main game server coordinating all systems
@@ -39,6 +40,7 @@ export class GameServer {
   private players: Map<string, PlayerState> = new Map();
   private inputQueue: PlayerInput[] = [];
   private chatCallbacks: Map<string, ChatCallback> = new Map();
+  private spriteReloadCallbacks: Map<string, SpriteReloadCallback> = new Map();
   private recentChat: ChatMessage[] = [];
 
   constructor(config: GameServerConfig) {
@@ -140,6 +142,7 @@ export class GameServer {
       player.isOnline = false;
       this.spatialIndex.removePlayer(userId);
       this.chatCallbacks.delete(userId);
+      this.spriteReloadCallbacks.delete(userId);
     }
     console.log(`Player disconnected: ${userId}`);
   }
@@ -269,6 +272,25 @@ export class GameServer {
         callback(message);
       }
     }
+  }
+
+  /**
+   * Register sprite reload callback for a user
+   */
+  onSpriteReload(userId: string, callback: SpriteReloadCallback): void {
+    this.spriteReloadCallbacks.set(userId, callback);
+  }
+
+  /**
+   * Broadcast sprite reload to all online players
+   * Called when a player regenerates their avatar
+   */
+  async broadcastSpriteReload(changedUserId: string): Promise<void> {
+    // Notify all online players to reload this user's sprite
+    for (const [_userId, callback] of this.spriteReloadCallbacks) {
+      callback(changedUserId);
+    }
+    console.log(`Sprite reload broadcast for user: ${changedUserId}`);
   }
 
   /**

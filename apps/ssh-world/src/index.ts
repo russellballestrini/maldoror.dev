@@ -2,8 +2,15 @@ import 'dotenv/config';
 import { SSHServer } from './server/ssh-server.js';
 import { GameServer } from './game/game-server.js';
 import { db, schema } from '@maldoror/db';
+import type { ProviderConfig } from '@maldoror/ai';
 
 async function main() {
+  // Configure AI provider from environment
+  const providerConfig: ProviderConfig = {
+    provider: (process.env.AI_PROVIDER as 'openai' | 'anthropic') || 'openai',
+    model: process.env.AI_MODEL || 'gpt-4o',
+    apiKey: process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY,
+  };
   console.log('Starting Maldoror SSH World Server...');
 
   // Get or create world seed
@@ -43,6 +50,7 @@ async function main() {
 `,
     gameServer,
     worldSeed,
+    providerConfig,
   });
 
   // Start servers
