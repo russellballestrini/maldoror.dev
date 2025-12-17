@@ -92,7 +92,7 @@ export class TileProvider implements WorldDataProvider {
   private players: Map<string, PlayerVisualState> = new Map();
   private sprites: Map<string, Sprite> = new Map();
   private localPlayerId: string = '';
-  private useProceduralTiles: boolean = true;
+  private useProceduralTiles: boolean = false; // Disabled by default - expensive to generate
 
   constructor(config: TileProviderConfig) {
     this.worldSeed = config.worldSeed;
