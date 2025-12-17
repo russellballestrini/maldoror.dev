@@ -19,20 +19,27 @@ export type Pixel = RGB | null;
 export type PixelGrid = Pixel[][];
 
 /**
- * Standard tile size in pixels
- * Tiles are square: 16x16 pixels
- * Each pixel = 2 terminal chars wide, 1 char tall
- * So a tile is 32 chars wide x 16 chars tall in terminal
+ * Base tile/sprite size in pixels (highest resolution at 100% zoom)
  */
-export const TILE_SIZE = 16;
+export const BASE_SIZE = 256;
 
 /**
- * Sprite dimensions in pixels
- * Sprites are 16x24 (width x height) to fit nicely on tiles
- * but be taller for humanoid shapes
+ * Render tile size at 0% zoom (baseline)
  */
-export const PIXEL_SPRITE_WIDTH = 16;
-export const PIXEL_SPRITE_HEIGHT = 24;
+export const TILE_SIZE = 26;  // ~10% of 256
+
+/**
+ * Available resolutions at 10% zoom increments
+ * 0% = 26px, 10% = 51px, ... 100% = 256px
+ */
+export const RESOLUTIONS = [26, 51, 77, 102, 128, 154, 179, 205, 230, 256];
+
+/**
+ * Sprite dimensions - same as tiles, use RESOLUTIONS array for different zoom levels
+ * AI generates 1024x1024 high-quality images, saved to disk, then pixelated to all resolutions
+ */
+export const PIXEL_SPRITE_WIDTH = BASE_SIZE;
+export const PIXEL_SPRITE_HEIGHT = BASE_SIZE;
 
 /**
  * Chunk size in tiles (for tilemaps)
@@ -40,31 +47,47 @@ export const PIXEL_SPRITE_HEIGHT = 24;
 export const CHUNK_SIZE_TILES = 16;
 
 /**
+ * Sprite frames for a single direction
+ */
+export type DirectionFrames = [PixelGrid, PixelGrid, PixelGrid, PixelGrid];
+
+/**
  * A complete pixel-based sprite with all directions and animation frames
- * Re-uses Direction and AnimationFrame from position.ts and player.ts
+ * Supports multiple resolutions for different zoom levels
  */
 export interface Sprite {
-  width: number;   // pixels (should be PIXEL_SPRITE_WIDTH)
-  height: number;  // pixels (should be PIXEL_SPRITE_HEIGHT)
+  width: number;   // Base width (highest resolution)
+  height: number;  // Base height (highest resolution)
   frames: {
-    up: [PixelGrid, PixelGrid, PixelGrid, PixelGrid];
-    down: [PixelGrid, PixelGrid, PixelGrid, PixelGrid];
-    left: [PixelGrid, PixelGrid, PixelGrid, PixelGrid];
-    right: [PixelGrid, PixelGrid, PixelGrid, PixelGrid];
+    up: DirectionFrames;
+    down: DirectionFrames;
+    left: DirectionFrames;
+    right: DirectionFrames;
   };
+  // Pre-computed resolutions for different zoom levels (optional)
+  // Keys are sizes like "256", "128", "64", "32", "16"
+  resolutions?: Record<string, {
+    up: DirectionFrames;
+    down: DirectionFrames;
+    left: DirectionFrames;
+    right: DirectionFrames;
+  }>;
 }
 
 /**
  * A pixel-based tile (grass, dirt, water, etc.)
- * Named "Tile" to be the primary tile type for the pixel rendering system
+ * Supports multiple resolutions for different zoom levels
  */
 export interface Tile {
   id: string;
   name: string;
-  pixels: PixelGrid;  // TILE_SIZE x TILE_SIZE
+  pixels: PixelGrid;  // Base resolution (256x256)
   walkable: boolean;
   animated?: boolean;
-  animationFrames?: PixelGrid[];  // For animated tiles like water
+  animationFrames?: PixelGrid[];  // For animated tiles at base resolution
+  // Pre-computed resolutions (keys are sizes: "26", "51", etc.)
+  resolutions?: Record<string, PixelGrid>;
+  animationResolutions?: Record<string, PixelGrid[]>;
 }
 
 /**

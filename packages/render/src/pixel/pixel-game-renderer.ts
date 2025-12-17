@@ -1,8 +1,7 @@
 import type { Duplex } from 'stream';
 import type { WorldDataProvider } from '@maldoror/protocol';
-import { TILE_SIZE } from '@maldoror/protocol';
 import { ViewportRenderer, type ViewportConfig, type TextOverlay } from './viewport-renderer.js';
-import { downsampleGrid, renderPixelRow, renderHalfBlockGrid, renderBrailleGrid } from './pixel-renderer.js';
+import { renderPixelRow, renderHalfBlockGrid, renderBrailleGrid } from './pixel-renderer.js';
 
 const ESC = '\x1b';
 
@@ -25,7 +24,7 @@ export interface PixelGameRendererConfig {
   cols: number;
   rows: number;
   username?: string;
-  scale?: number;  // Downscale factor: 1 = normal, 1.5 = 50% more world visible
+  zoomLevel?: number;  // Zoom percentage: 100 = full resolution, 50 = half resolution (sees more world)
   renderMode?: RenderMode;  // Rendering mode (default: 'braille' for max resolution)
 }
 
@@ -51,10 +50,12 @@ export class PixelGameRenderer {
   private forceRedraw: boolean = true;
   private previousOutput: string[] = [];
   private initialized: boolean = false;
+  // Performance: Track previous overlay count to only force redraw when overlays change
+  private previousOverlayCount: number = 0;
   private username: string;
   private playerX: number = 0;
   private playerY: number = 0;
-  private scale: number;
+  private zoomLevel: number;  // 100 = full resolution, 50 = half (zoomed out), etc.
   private renderMode: RenderMode;
 
   constructor(config: PixelGameRendererConfig) {
@@ -63,52 +64,68 @@ export class PixelGameRenderer {
     this.rows = config.rows;
     this.username = config.username ?? 'Unknown';
     this.renderMode = config.renderMode ?? 'halfblock';  // Default to halfblock for good balance
-    this.scale = config.scale ?? 1.2;  // Default to 1.2x zoom out (press +/- to adjust)
+    this.zoomLevel = config.zoomLevel ?? 0;  // Default to 0% zoom (base view, sprite = 1 tile)
 
     // Calculate viewport size in tiles based on terminal size
-    // With scale > 1, we render MORE tiles then downsample to fit
     const availableRows = config.rows - STATS_BAR_HEIGHT;
+    const currentTileSize = this.getCurrentTileSize();
 
     const { widthTiles, heightTiles } = this.calculateViewportTiles(config.cols, availableRows);
 
     const viewportConfig: ViewportConfig = {
       widthTiles: Math.max(3, widthTiles),
       heightTiles: Math.max(3, heightTiles),
+      tileRenderSize: currentTileSize,
     };
 
     this.viewportRenderer = new ViewportRenderer(viewportConfig);
   }
 
   /**
-   * Calculate viewport size in tiles based on render mode
+   * Get the current tile SCREEN render size based on zoom level
+   * This determines how big tiles appear on screen (in pixels)
+   * At 0% zoom: small tiles (see lots of world) = 4px per tile
+   * At 100% zoom: large tiles (see detail) = 64px per tile
+   */
+  private getCurrentTileSize(): number {
+    const MIN_TILE_SIZE = 4;   // At 0% zoom, tiles are 4 pixels on screen
+    const MAX_TILE_SIZE = 64;  // At 100% zoom, tiles are 64 pixels on screen
+
+    // Linear interpolation between min and max based on zoom level
+    return Math.round(MIN_TILE_SIZE + (this.zoomLevel / 100) * (MAX_TILE_SIZE - MIN_TILE_SIZE));
+  }
+
+  /**
+   * Calculate viewport size in tiles based on render mode and current tile size
+   * At higher zoom levels, tiles are bigger so fewer fit on screen
    */
   private calculateViewportTiles(cols: number, availableRows: number): { widthTiles: number; heightTiles: number } {
+    const tileSize = this.getCurrentTileSize();
     let pixelWidth: number;
     let pixelHeight: number;
 
     switch (this.renderMode) {
       case 'braille':
         // Braille: 1 char = 2 pixels wide, 1 row = 4 pixels tall
-        // This is the highest resolution mode
-        pixelWidth = cols * 2 * this.scale;
-        pixelHeight = availableRows * 4 * this.scale;
+        pixelWidth = cols * 2;
+        pixelHeight = availableRows * 4;
         break;
       case 'halfblock':
         // Half-block: 1 char = 1 pixel wide, 1 row = 2 pixels tall
-        pixelWidth = cols * this.scale;
-        pixelHeight = availableRows * 2 * this.scale;
+        pixelWidth = cols;
+        pixelHeight = availableRows * 2;
         break;
       case 'normal':
       default:
         // Normal: 2 chars = 1 pixel wide, 1 row = 1 pixel tall
-        pixelWidth = (cols / 2) * this.scale;
-        pixelHeight = availableRows * this.scale;
+        pixelWidth = cols / 2;
+        pixelHeight = availableRows;
         break;
     }
 
     return {
-      widthTiles: Math.floor(pixelWidth / TILE_SIZE),
-      heightTiles: Math.floor(pixelHeight / TILE_SIZE),
+      widthTiles: Math.floor(pixelWidth / tileSize),
+      heightTiles: Math.floor(pixelHeight / tileSize),
     };
   }
 
@@ -167,6 +184,9 @@ export class PixelGameRenderer {
       Math.max(3, heightTiles)
     );
 
+    // Re-center camera after resize
+    this.viewportRenderer.setCamera(this.playerX, this.playerY);
+
     this.forceRedraw = true;
     this.previousOutput = [];
   }
@@ -196,34 +216,24 @@ export class PixelGameRenderer {
     // Generate stats bar
     const statsBar = this.renderStatsBar();
 
-    // Render viewport to raw pixel buffer with overlays
-    const { buffer: fullBuffer, overlays } = this.viewportRenderer.renderToBuffer(world, this.tickCount);
-
-    // Downsample if scale > 1
-    const scaledBuffer = this.scale > 1 ? downsampleGrid(fullBuffer, this.scale) : fullBuffer;
-
-    // Scale overlay positions to match downsampled buffer
-    const scaledOverlays = overlays.map(o => ({
-      ...o,
-      pixelX: Math.floor(o.pixelX / this.scale),
-      pixelY: Math.floor(o.pixelY / this.scale),
-    }));
+    // Render viewport to raw pixel buffer with overlays (already at correct resolution)
+    const { buffer, overlays } = this.viewportRenderer.renderToBuffer(world, this.tickCount);
 
     // Convert to ANSI lines based on render mode
     let viewportLines: string[];
     switch (this.renderMode) {
       case 'braille':
         // Braille mode: 8 subpixels per character (2×4 dots) - HIGHEST RES
-        viewportLines = renderBrailleGrid(scaledBuffer);
+        viewportLines = renderBrailleGrid(buffer);
         break;
       case 'halfblock':
         // Half-block mode: 2 pixels per row, 1 char per pixel
-        viewportLines = renderHalfBlockGrid(scaledBuffer);
+        viewportLines = renderHalfBlockGrid(buffer);
         break;
       case 'normal':
       default:
         // Normal mode: 1 pixel per row, 2 chars per pixel
-        viewportLines = scaledBuffer.map(row => renderPixelRow(row));
+        viewportLines = buffer.map(row => renderPixelRow(row));
         break;
     }
 
@@ -240,7 +250,7 @@ export class PixelGameRenderer {
     const lines = [statsBar, ...paddedLines];
 
     // Output to stream with overlays
-    this.outputFrame(lines, scaledOverlays);
+    this.outputFrame(lines, overlays);
   }
 
   /**
@@ -278,33 +288,28 @@ export class PixelGameRenderer {
   private padLine(line: string): string {
     // The line already has ANSI codes. We need to add padding spaces
     // to reach the full column width
-    // Calculate the visible width of the viewport in terminal chars
+    const tileSize = this.getCurrentTileSize();
+    const availableRows = this.rows - STATS_BAR_HEIGHT;
+    const { widthTiles } = this.calculateViewportTiles(this.cols, availableRows);
+
+    // Calculate viewport pixel width and convert to terminal chars
+    const viewportPixelWidth = widthTiles * tileSize;
     let viewportCharWidth: number;
 
     switch (this.renderMode) {
-      case 'braille': {
-        // Braille: 1 char = 2 pixels, so output width = pixels / 2
-        const pixelWidth = this.cols * 2 * this.scale;
-        const widthTiles = Math.floor(pixelWidth / TILE_SIZE);
-        const outputPixelWidth = Math.floor(widthTiles * TILE_SIZE / this.scale);
-        viewportCharWidth = Math.floor(outputPixelWidth / 2);
+      case 'braille':
+        // Braille: 1 char = 2 pixels
+        viewportCharWidth = Math.floor(viewportPixelWidth / 2);
         break;
-      }
-      case 'halfblock': {
+      case 'halfblock':
         // Half-block: 1 char = 1 pixel
-        const pixelWidth = this.cols * this.scale;
-        const widthTiles = Math.floor(pixelWidth / TILE_SIZE);
-        viewportCharWidth = Math.floor(widthTiles * TILE_SIZE / this.scale);
+        viewportCharWidth = viewportPixelWidth;
         break;
-      }
       case 'normal':
-      default: {
+      default:
         // Normal: 2 chars = 1 pixel
-        const pixelWidth = (this.cols / 2) * this.scale;
-        const widthTiles = Math.floor(pixelWidth / TILE_SIZE);
-        viewportCharWidth = Math.floor(widthTiles * TILE_SIZE / this.scale) * 2;
+        viewportCharWidth = viewportPixelWidth * 2;
         break;
-      }
     }
 
     const paddingNeeded = this.cols - viewportCharWidth;
@@ -323,15 +328,20 @@ export class PixelGameRenderer {
   }
 
   /**
-   * Render the stats bar showing username, coordinates, zoom, and render mode
+   * Render the stats bar showing username, coordinates, zoom, render mode, and debug info
    */
   private renderStatsBar(): string {
+    const tileSize = this.getCurrentTileSize();
+    const availableRows = this.rows - STATS_BAR_HEIGHT;
+    const { widthTiles, heightTiles } = this.calculateViewportTiles(this.cols, availableRows);
+
     const coordStr = `(${this.playerX}, ${this.playerY})`;
-    const zoomStr = `${Math.round(100 / this.scale)}%`;
+    const zoomStr = `${this.zoomLevel}%`;
     const modeStr = this.renderMode.charAt(0).toUpperCase();  // B, H, or N
+    const debugStr = `${tileSize}px ${widthTiles}x${heightTiles}tiles term:${this.cols}x${this.rows}`;
 
     const leftText = ` ${this.username}`;
-    const centerText = `${modeStr}:${zoomStr}`;
+    const centerText = `${modeStr}:${zoomStr} [${debugStr}]`;
     const rightText = `${coordStr} `;
 
     // Calculate padding for center alignment
@@ -357,10 +367,11 @@ export class PixelGameRenderer {
     let output = '';
     const bgColor = `${ESC}[48;2;20;20;25m`;
 
-    // Force full redraw when overlays are present (they need clean backgrounds)
-    const hasOverlays = overlays.length > 0;
+    // Performance: Only force full redraw when overlay count changes, not every frame with overlays
+    const overlayCountChanged = overlays.length !== this.previousOverlayCount;
+    this.previousOverlayCount = overlays.length;
 
-    if (this.forceRedraw || this.previousOutput.length !== lines.length || hasOverlays) {
+    if (this.forceRedraw || this.previousOutput.length !== lines.length || overlayCountChanged) {
       // Full redraw - write every line from the top
       output += `${ESC}[H`;  // Move to home
       for (let y = 0; y < lines.length; y++) {
@@ -434,25 +445,28 @@ export class PixelGameRenderer {
    * Get viewport dimensions in tiles
    */
   getViewportTiles(): { widthTiles: number; heightTiles: number } {
-    const dims = this.viewportRenderer.getTerminalDimensions();
-    return {
-      widthTiles: Math.floor(dims.width / (TILE_SIZE * 2)),
-      heightTiles: dims.height / TILE_SIZE,
-    };
+    const availableRows = this.rows - STATS_BAR_HEIGHT;
+    return this.calculateViewportTiles(this.cols, availableRows);
   }
 
   /**
-   * Get current scale factor
+   * Get current zoom level (percentage)
    */
-  getScale(): number {
-    return this.scale;
+  getZoomLevel(): number {
+    return this.zoomLevel;
   }
 
   /**
-   * Set scale factor and recalculate viewport
+   * Set zoom level and recalculate viewport
+   * @param level Zoom percentage (0-100). 0 = base view (sprite = 1 tile), 100 = max zoom (256px tiles)
    */
-  setScale(scale: number): void {
-    this.scale = Math.max(0.5, Math.min(3, scale));  // Clamp between 0.5x and 3x
+  setZoomLevel(level: number): void {
+    // Clamp between 0% and 100% in 10% increments
+    this.zoomLevel = Math.round(Math.max(0, Math.min(100, level)) / 10) * 10;
+
+    // Update viewport renderer's tile size for the new zoom level
+    const currentTileSize = this.getCurrentTileSize();
+    this.viewportRenderer.setTileRenderSize(currentTileSize);
 
     const availableRows = this.rows - STATS_BAR_HEIGHT;
     const { widthTiles, heightTiles } = this.calculateViewportTiles(this.cols, availableRows);
@@ -469,6 +483,25 @@ export class PixelGameRenderer {
   }
 
   /**
+   * Get current scale factor (for backwards compatibility)
+   * @deprecated Use getZoomLevel() instead
+   */
+  getScale(): number {
+    // Return 1 at 100% zoom (256px), 10 at 0% zoom (26px)
+    return 10 - (this.zoomLevel / 100) * 9;
+  }
+
+  /**
+   * Set scale factor (for backwards compatibility)
+   * @deprecated Use setZoomLevel() instead
+   */
+  setScale(scale: number): void {
+    // Convert scale to zoom level: scale 1 = 100%, scale 10 = 0%
+    const zoomLevel = ((10 - scale) / 9) * 100;
+    this.setZoomLevel(zoomLevel);
+  }
+
+  /**
    * Get current render mode
    */
   getRenderMode(): RenderMode {
@@ -480,6 +513,10 @@ export class PixelGameRenderer {
    */
   setRenderMode(mode: RenderMode): void {
     this.renderMode = mode;
+
+    // Update tile size for new render mode
+    const currentTileSize = this.getCurrentTileSize();
+    this.viewportRenderer.setTileRenderSize(currentTileSize);
 
     const availableRows = this.rows - STATS_BAR_HEIGHT;
     const { widthTiles, heightTiles } = this.calculateViewportTiles(this.cols, availableRows);
@@ -506,16 +543,126 @@ export class PixelGameRenderer {
   }
 
   /**
-   * Zoom in (decrease scale = more zoomed in)
+   * Zoom in by 10% (increase zoom level = more zoomed in, less world visible)
    */
   zoomIn(): void {
-    this.setScale(this.scale - 0.2);
+    this.setZoomLevel(this.zoomLevel + 10);
   }
 
   /**
-   * Zoom out (increase scale = more zoomed out)
+   * Zoom out by 10% (decrease zoom level = more zoomed out, more world visible)
    */
   zoomOut(): void {
-    this.setScale(this.scale + 0.2);
+    this.setZoomLevel(this.zoomLevel - 10);
+  }
+
+  /**
+   * Render a frame and return the output string without writing
+   * Use this for batching multiple outputs together
+   */
+  renderToString(world: WorldDataProvider): string {
+    this.tickCount++;
+
+    // Generate stats bar
+    const statsBar = this.renderStatsBar();
+
+    // Render viewport to raw pixel buffer with overlays (already at correct resolution)
+    const { buffer, overlays } = this.viewportRenderer.renderToBuffer(world, this.tickCount);
+
+    // Convert to ANSI lines based on render mode
+    let viewportLines: string[];
+    switch (this.renderMode) {
+      case 'braille':
+        viewportLines = renderBrailleGrid(buffer);
+        break;
+      case 'halfblock':
+        viewportLines = renderHalfBlockGrid(buffer);
+        break;
+      case 'normal':
+      default:
+        viewportLines = buffer.map(row => renderPixelRow(row));
+        break;
+    }
+
+    // Pad viewport lines to fill screen width
+    const paddedLines = viewportLines.map(line => this.padLine(line));
+
+    // Add padding rows if needed to fill the screen
+    const availableRows = this.rows - STATS_BAR_HEIGHT;
+    while (paddedLines.length < availableRows) {
+      paddedLines.push(this.createPaddingLine());
+    }
+
+    // Combine stats bar + viewport
+    const lines = [statsBar, ...paddedLines];
+
+    // Generate output string
+    return this.generateFrameOutput(lines, overlays);
+  }
+
+  /**
+   * Generate frame output string without writing to stream
+   */
+  private generateFrameOutput(lines: string[], overlays: TextOverlay[] = []): string {
+    let output = '';
+    const bgColor = `${ESC}[48;2;20;20;25m`;
+
+    // Performance: Only force full redraw when overlay count changes, not every frame with overlays
+    const overlayCountChanged = overlays.length !== this.previousOverlayCount;
+    this.previousOverlayCount = overlays.length;
+
+    if (this.forceRedraw || this.previousOutput.length !== lines.length || overlayCountChanged) {
+      // Full redraw - write every line from the top
+      output += `${ESC}[H`;  // Move to home
+      for (let y = 0; y < lines.length; y++) {
+        output += `${ESC}[${y + 1};1H`;  // Move to line y+1
+        output += lines[y] + `${ESC}[0m${bgColor}`;
+      }
+      // Clear any remaining lines below
+      output += `${ESC}[J`;  // Clear from cursor to end of screen
+      this.forceRedraw = false;
+    } else {
+      // Incremental update - only redraw changed lines
+      for (let y = 0; y < lines.length; y++) {
+        if (lines[y] !== this.previousOutput[y]) {
+          output += `${ESC}[${y + 1};1H`;  // Move to line y+1
+          output += lines[y] + `${ESC}[0m`;
+        }
+      }
+    }
+
+    // Render text overlays (usernames above players)
+    for (const overlay of overlays) {
+      const { row, col } = this.pixelToTerminal(overlay.pixelX, overlay.pixelY);
+
+      // Account for stats bar (+1) and 1-based terminal rows (+1)
+      const terminalRow = row + STATS_BAR_HEIGHT + 1;
+
+      // Skip if out of bounds
+      if (terminalRow < 1 || terminalRow > this.rows) continue;
+
+      // Center the text
+      const textLen = overlay.text.length + 2;  // +2 for padding spaces
+      const startCol = Math.max(1, col - Math.floor(textLen / 2) + 1);
+
+      // Build the overlay text with ANSI colors
+      const bg = `${ESC}[48;2;${overlay.bgColor.r};${overlay.bgColor.g};${overlay.bgColor.b}m`;
+      const fg = `${ESC}[38;2;${overlay.fgColor.r};${overlay.fgColor.g};${overlay.fgColor.b}m`;
+      const reset = `${ESC}[0m`;
+
+      output += `${ESC}[${terminalRow};${startCol}H${bg}${fg} ${overlay.text} ${reset}`;
+    }
+
+    this.previousOutput = [...lines];
+    return output;
+  }
+
+  /**
+   * Write output directly to stream (for standalone use)
+   */
+  writeOutput(output: string): void {
+    if (output) {
+      this.stream.write(output);
+    }
   }
 }

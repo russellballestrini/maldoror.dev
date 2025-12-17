@@ -52,3 +52,6 @@ drizzle/meta/
 *.tgz
 .cache/
 deploy/.env.prod
+
+# Debug output
+debug-sprites/

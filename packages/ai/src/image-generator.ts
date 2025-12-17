@@ -3,11 +3,9 @@ import sharp from 'sharp';
 import fs from 'fs';
 import path from 'path';
 import type { Sprite, PixelGrid, Pixel } from '@maldoror/protocol';
+import { BASE_SIZE, RESOLUTIONS } from '@maldoror/protocol';
 
-const SPRITE_WIDTH = 16;
-const SPRITE_HEIGHT = 24;
 const DEBUG_DIR = 'debug-sprites';
-
 
 /**
  * Convert raw RGBA buffer to PixelGrid
@@ -41,34 +39,42 @@ function imageToPixelGrid(
   return grid;
 }
 
-
 /**
- * Build the system prompt for sprite generation
+ * Build the prompt for HIGH-FIDELITY character generation
+ * NOT pixel art - we want detailed, smooth artwork that we'll pixelate ourselves
  */
 function buildImagePrompt(description: string): string {
-  return `Create a pixel-art character sprite for a top-down RPG game.
+  return `Create a detailed character illustration for a TOP-DOWN RPG game (like classic Zelda, Pokemon, or Final Fantasy).
 
-CRITICAL REQUIREMENTS:
-- The character MUST fill the ENTIRE image from edge to edge
-- The character's head should touch the TOP edge of the image
-- The character's feet should touch the BOTTOM edge of the image
-- NO empty space, NO margins, NO padding around the character
-- The character must be 100% OPAQUE and SOLID - no transparency in the character itself
+STYLE REQUIREMENTS:
+- High quality, detailed digital art illustration
+- Smooth gradients and shading - NOT pixel art
+- Rich colors with proper lighting and depth
+- Clean, professional game art style
+- Top-down perspective with slight 3/4 view (camera looking down at character)
+- It should not be standing on anything, no background objects, other than the character itself
+
+COMPOSITION REQUIREMENTS:
+- The ENTIRE character must be visible - NO cropping
+- Full body from head to feet, all visible in frame
+- Character should fill most of the image but with small margin to prevent cropping
+- The character must be 100% OPAQUE and SOLID
 - Only the background should be transparent
-- Strong, saturated colors with clear pixel boundaries
-- Clean pixel art style, not blurry or anti-aliased
+- Center the character in the image
 
 DO NOT:
-- Leave any empty space around the character
-- Make the character semi-transparent or ghostly
-- Add any background elements
-- Add text, UI, or borders
+- Create pixel art or blocky/pixelated style
+- Crop any part of the character (head, feet, arms, etc.)
+- Make the character semi-transparent
+- Add any background elements, text, UI, or borders
+- Add any effects or particles around the character
+- Use side-view or profile perspective (this is top-down view)
 
-${description}`;
+CHARACTER: ${description}`;
 }
 
 /**
- * Convert PixelGrid back to PNG buffer for debug output
+ * Convert PixelGrid back to PNG buffer
  */
 async function pixelGridToPng(grid: PixelGrid, width: number, height: number): Promise<Buffer> {
   const data = Buffer.alloc(width * height * 4);
@@ -100,7 +106,7 @@ export interface ImageSpriteGenerationOptions {
   description: string;
   apiKey: string;
   model?: 'dall-e-3' | 'dall-e-2' | 'gpt-image-1';
-  username?: string; // for debug folder naming
+  username?: string;
   onProgress?: (step: string, current: number, total: number) => void;
 }
 
@@ -108,11 +114,11 @@ export interface ImageSpriteGenerationResult {
   success: boolean;
   sprite?: Sprite;
   error?: string;
+  debugDir?: string;
 }
 
 /**
- * Generate a single image with optional reference
- * Uses images.edit() when reference is provided for image-to-image generation
+ * Generate a single high-fidelity image with optional reference
  */
 async function generateSingleImage(
   openai: OpenAI,
@@ -130,7 +136,6 @@ async function generateSingleImage(
   const result = referencePngBuffer
     ? await openai.images.edit({
         ...common,
-        // image-to-image / reference must use edits endpoint
         image: await toFile(referencePngBuffer, 'ref.png', { type: 'image/png' }),
       })
     : await openai.images.generate(common);
@@ -144,20 +149,21 @@ async function generateSingleImage(
 }
 
 /**
- * Resize image buffer to sprite size and convert to PixelGrid
- * Trims transparent edges first to maximize character detail in final sprite
+ * Pixelate a high-fidelity image to a specific size
+ * Uses nearest-neighbor resampling for clean pixel art look
  */
-async function imageToSpriteFrame(imageBuffer: Buffer): Promise<PixelGrid> {
+async function pixelateImageToSize(imageBuffer: Buffer, size: number): Promise<PixelGrid> {
   // First, trim transparent edges to get just the character
   const trimmed = await sharp(imageBuffer)
-    .trim({ threshold: 10 }) // Remove near-transparent edges
+    .trim({ threshold: 10 })
     .toBuffer();
 
-  // Then resize to fill the sprite dimensions
+  // Resize to target size with nearest-neighbor for clean pixels
   const raw = await sharp(trimmed)
-    .resize(SPRITE_WIDTH, SPRITE_HEIGHT, {
-      fit: 'fill', // Stretch to fill entire sprite area
-      kernel: 'nearest', // Keep pixel art crisp
+    .resize(size, size, {
+      fit: 'contain',           // Maintain aspect ratio, fit within bounds
+      kernel: 'nearest',        // Nearest neighbor for pixelated look
+      background: { r: 0, g: 0, b: 0, alpha: 0 }, // Transparent padding
     })
     .ensureAlpha()
     .raw()
@@ -167,9 +173,23 @@ async function imageToSpriteFrame(imageBuffer: Buffer): Promise<PixelGrid> {
 }
 
 /**
+ * Pixelate an image to all resolution sizes
+ */
+async function pixelateImageAllResolutions(imageBuffer: Buffer): Promise<Record<string, PixelGrid>> {
+  const results: Record<string, PixelGrid> = {};
+  for (const size of RESOLUTIONS) {
+    results[String(size)] = await pixelateImageToSize(imageBuffer, size);
+  }
+  return results;
+}
+
+/**
  * Generate a sprite using OpenAI's image generation
- * Generates 8 frames: 4 directions × (standing + walking)
- * Uses reference images for consistency across directions
+ *
+ * Process:
+ * 1. Generate HIGH-FIDELITY images (not pixel art)
+ * 2. Save originals to disk
+ * 3. Pixelate to 256x256 ourselves
  */
 export async function generateImageSprite(
   options: ImageSpriteGenerationOptions
@@ -177,7 +197,11 @@ export async function generateImageSprite(
   const { description, apiKey, model = 'gpt-image-1', username = 'unknown', onProgress } = options;
 
   const openai = new OpenAI({ apiKey });
-  const debugImages: Map<string, Buffer> = new Map();
+
+  // Create debug directory for this generation
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const safeUsername = username.replace(/[^a-zA-Z0-9]/g, '_');
+  const debugDir = path.join(DEBUG_DIR, `${timestamp}_${safeUsername}`);
 
   const progress = (step: string, current: number, total: number) => {
     console.log(`[${current}/${total}] ${step}`);
@@ -185,137 +209,140 @@ export async function generateImageSprite(
   };
 
   try {
+    // Create debug directory
+    fs.mkdirSync(debugDir, { recursive: true });
+
     const basePrompt = buildImagePrompt(description);
 
-    // Reference prompt additions for consistency
-    const refNote = `\nIMPORTANT: Match the EXACT same character from the reference image. Keep the character 100% SOLID and OPAQUE. Fill the entire canvas edge-to-edge.`;
+    // Save prompt for debugging
+    fs.writeFileSync(path.join(debugDir, 'prompt.txt'), basePrompt);
 
-    // Step 1: Generate front/down standing (no reference - first image)
-    progress('Generating front view (standing)', 1, 8);
-    const downStandingPrompt = `${basePrompt}\nFacing forward toward the viewer. Standing pose, arms at sides.`;
-    const downStandingBuffer = await generateSingleImage(openai, model, downStandingPrompt);
-    debugImages.set('1_down_standing', downStandingBuffer);
+    // Reference prompt for consistency
+    const refNote = `\nIMPORTANT: Match the EXACT same character from the reference image. Same clothing, hair, colors, style. Keep smooth detailed art style, NOT pixel art. Ensure ENTIRE character is visible, no cropping.`;
 
-    // Step 2: Generate back/up standing (with reference)
-    progress('Generating back view (standing)', 2, 8);
-    const upStandingPrompt = `${basePrompt}\nFacing AWAY from viewer, showing the character's BACK. Standing pose.${refNote}`;
-    const upStandingBuffer = await generateSingleImage(openai, model, upStandingPrompt, downStandingBuffer);
-    debugImages.set('2_up_standing', upStandingBuffer);
+    // Store original high-res images
+    const originals: Map<string, Buffer> = new Map();
 
-    // Step 3: Generate left standing (with reference)
+    // Step 1: Generate down/front standing (facing camera, walking toward bottom of screen)
+    progress('Generating down view (standing)', 1, 8);
+    const downStandingPrompt = `${basePrompt}\nTop-down RPG view: Character facing DOWN (toward the camera/bottom of screen). Standing idle pose. We see the top of their head and front of body.`;
+    const downStandingOriginal = await generateSingleImage(openai, model, downStandingPrompt);
+    originals.set('1_down_standing', downStandingOriginal);
+    fs.writeFileSync(path.join(debugDir, '1_down_standing_original_1024.png'), downStandingOriginal);
+
+    // Step 2: Generate up/back standing (facing away, walking toward top of screen)
+    progress('Generating up view (standing)', 2, 8);
+    const upStandingPrompt = `${basePrompt}\nTop-down RPG view: Character facing UP (away from camera/top of screen). Standing idle pose. We see the back of their head and back of body.${refNote}`;
+    const upStandingOriginal = await generateSingleImage(openai, model, upStandingPrompt, downStandingOriginal);
+    originals.set('2_up_standing', upStandingOriginal);
+    fs.writeFileSync(path.join(debugDir, '2_up_standing_original_1024.png'), upStandingOriginal);
+
+    // Step 3: Generate left standing (facing left side of screen)
     progress('Generating left view (standing)', 3, 8);
-    const leftStandingPrompt = `${basePrompt}\nSide profile view, character facing LEFT. Standing pose.${refNote}`;
-    const leftStandingBuffer = await generateSingleImage(openai, model, leftStandingPrompt, downStandingBuffer);
-    debugImages.set('3_left_standing', leftStandingBuffer);
+    const leftStandingPrompt = `${basePrompt}\nTop-down RPG view: Character facing LEFT (left side of screen). Standing idle pose. We see the left side profile.${refNote}`;
+    const leftStandingOriginal = await generateSingleImage(openai, model, leftStandingPrompt, downStandingOriginal);
+    originals.set('3_left_standing', leftStandingOriginal);
+    fs.writeFileSync(path.join(debugDir, '3_left_standing_original_1024.png'), leftStandingOriginal);
 
-    // Step 4: Generate right standing (with reference)
+    // Step 4: Generate right standing (facing right side of screen)
     progress('Generating right view (standing)', 4, 8);
-    const rightStandingPrompt = `${basePrompt}\nSide profile view, character facing RIGHT. Standing pose.${refNote}`;
-    const rightStandingBuffer = await generateSingleImage(openai, model, rightStandingPrompt, downStandingBuffer);
-    debugImages.set('4_right_standing', rightStandingBuffer);
+    const rightStandingPrompt = `${basePrompt}\nTop-down RPG view: Character facing RIGHT (right side of screen). Standing idle pose. We see the right side profile.${refNote}`;
+    const rightStandingOriginal = await generateSingleImage(openai, model, rightStandingPrompt, downStandingOriginal);
+    originals.set('4_right_standing', rightStandingOriginal);
+    fs.writeFileSync(path.join(debugDir, '4_right_standing_original_1024.png'), rightStandingOriginal);
 
-    // Step 5: Generate front/down walking
-    progress('Generating front view (walking)', 5, 8);
-    const downWalkingPrompt = `${basePrompt}\nFacing forward toward the viewer. Walking pose with one leg forward mid-stride.${refNote}`;
-    const downWalkingBuffer = await generateSingleImage(openai, model, downWalkingPrompt, downStandingBuffer);
-    debugImages.set('5_down_walking', downWalkingBuffer);
+    // Step 5: Generate down walking
+    progress('Generating down view (walking)', 5, 8);
+    const downWalkingPrompt = `${basePrompt}\nTop-down RPG view: Character facing DOWN, mid-walk pose with one leg forward.${refNote}`;
+    const downWalkingOriginal = await generateSingleImage(openai, model, downWalkingPrompt, downStandingOriginal);
+    originals.set('5_down_walking', downWalkingOriginal);
+    fs.writeFileSync(path.join(debugDir, '5_down_walking_original_1024.png'), downWalkingOriginal);
 
-    // Step 6: Generate back/up walking
-    progress('Generating back view (walking)', 6, 8);
-    const upWalkingPrompt = `${basePrompt}\nFacing AWAY from viewer, showing the character's BACK. Walking pose mid-stride.${refNote}`;
-    const upWalkingBuffer = await generateSingleImage(openai, model, upWalkingPrompt, downStandingBuffer);
-    debugImages.set('6_up_walking', upWalkingBuffer);
+    // Step 6: Generate up walking
+    progress('Generating up view (walking)', 6, 8);
+    const upWalkingPrompt = `${basePrompt}\nTop-down RPG view: Character facing UP (showing back), mid-walk pose with one leg forward.${refNote}`;
+    const upWalkingOriginal = await generateSingleImage(openai, model, upWalkingPrompt, downStandingOriginal);
+    originals.set('6_up_walking', upWalkingOriginal);
+    fs.writeFileSync(path.join(debugDir, '6_up_walking_original_1024.png'), upWalkingOriginal);
 
     // Step 7: Generate left walking
     progress('Generating left view (walking)', 7, 8);
-    const leftWalkingPrompt = `${basePrompt}\nSide profile view, character facing LEFT. Walking pose mid-stride.${refNote}`;
-    const leftWalkingBuffer = await generateSingleImage(openai, model, leftWalkingPrompt, downStandingBuffer);
-    debugImages.set('7_left_walking', leftWalkingBuffer);
+    const leftWalkingPrompt = `${basePrompt}\nTop-down RPG view: Character facing LEFT, mid-walk pose with one leg forward.${refNote}`;
+    const leftWalkingOriginal = await generateSingleImage(openai, model, leftWalkingPrompt, downStandingOriginal);
+    originals.set('7_left_walking', leftWalkingOriginal);
+    fs.writeFileSync(path.join(debugDir, '7_left_walking_original_1024.png'), leftWalkingOriginal);
 
     // Step 8: Generate right walking
     progress('Generating right view (walking)', 8, 8);
-    const rightWalkingPrompt = `${basePrompt}\nSide profile view, character facing RIGHT. Walking pose mid-stride.${refNote}`;
-    const rightWalkingBuffer = await generateSingleImage(openai, model, rightWalkingPrompt, downStandingBuffer);
-    debugImages.set('8_right_walking', rightWalkingBuffer);
+    const rightWalkingPrompt = `${basePrompt}\nTop-down RPG view: Character facing RIGHT, mid-walk pose with one leg forward.${refNote}`;
+    const rightWalkingOriginal = await generateSingleImage(openai, model, rightWalkingPrompt, downStandingOriginal);
+    originals.set('8_right_walking', rightWalkingOriginal);
+    fs.writeFileSync(path.join(debugDir, '8_right_walking_original_1024.png'), rightWalkingOriginal);
 
-    // Convert all to PixelGrids
-    progress('Processing images', 8, 8);
-    const downStanding = await imageToSpriteFrame(downStandingBuffer);
-    const upStanding = await imageToSpriteFrame(upStandingBuffer);
-    const leftStanding = await imageToSpriteFrame(leftStandingBuffer);
-    const rightStanding = await imageToSpriteFrame(rightStandingBuffer);
-    const downWalking = await imageToSpriteFrame(downWalkingBuffer);
-    const upWalking = await imageToSpriteFrame(upWalkingBuffer);
-    const leftWalking = await imageToSpriteFrame(leftWalkingBuffer);
-    const rightWalking = await imageToSpriteFrame(rightWalkingBuffer);
+    // Now pixelate all images at all resolutions
+    progress('Pixelating images at all resolutions', 8, 8);
 
-    // Build sprite with animation frames:
-    // Frame pattern: [standing, walk1, standing, walk2] for smooth animation
-    const sprite: Sprite = {
-      width: SPRITE_WIDTH,
-      height: SPRITE_HEIGHT,
-      frames: {
-        down: [downStanding, downWalking, downStanding, downWalking],
-        up: [upStanding, upWalking, upStanding, upWalking],
-        left: [leftStanding, leftWalking, leftStanding, leftWalking],
-        right: [rightStanding, rightWalking, rightStanding, rightWalking],
-      },
-    };
+    // Generate all resolutions for each direction/pose
+    const downStandingRes = await pixelateImageAllResolutions(downStandingOriginal);
+    const upStandingRes = await pixelateImageAllResolutions(upStandingOriginal);
+    const leftStandingRes = await pixelateImageAllResolutions(leftStandingOriginal);
+    const rightStandingRes = await pixelateImageAllResolutions(rightStandingOriginal);
+    const downWalkingRes = await pixelateImageAllResolutions(downWalkingOriginal);
+    const upWalkingRes = await pixelateImageAllResolutions(upWalkingOriginal);
+    const leftWalkingRes = await pixelateImageAllResolutions(leftWalkingOriginal);
+    const rightWalkingRes = await pixelateImageAllResolutions(rightWalkingOriginal);
 
-    // Save debug files
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    const safeUsername = username.replace(/[^a-zA-Z0-9]/g, '_');
-    const debugDir = path.join(DEBUG_DIR, `${timestamp}_${safeUsername}`);
-
-    try {
-      fs.mkdirSync(debugDir, { recursive: true });
-
-      // Save prompt
-      fs.writeFileSync(path.join(debugDir, 'prompt.txt'), basePrompt);
-
-      // Save all generated images
-      for (const [name, buffer] of debugImages) {
-        fs.writeFileSync(path.join(debugDir, `${name}_original.png`), buffer);
-
-        // Also save resized version
-        const frame = await imageToSpriteFrame(buffer);
-        const smallPng = await pixelGridToPng(frame, SPRITE_WIDTH, SPRITE_HEIGHT);
-        fs.writeFileSync(path.join(debugDir, `${name}_16x24.png`), smallPng);
-
-        // Save scaled version
-        const scaledPng = await sharp(smallPng)
-          .resize(SPRITE_WIDTH * 10, SPRITE_HEIGHT * 10, { kernel: 'nearest' })
-          .png()
-          .toBuffer();
-        fs.writeFileSync(path.join(debugDir, `${name}_scaled.png`), scaledPng);
-      }
-
-      // Save sprite JSON
-      fs.writeFileSync(path.join(debugDir, 'sprite.json'), JSON.stringify(sprite, null, 2));
-
-      console.log(`Debug files saved to: ${debugDir}`);
-    } catch (debugError) {
-      console.error('Failed to save debug files:', debugError);
+    // Save pixelated versions for debugging (just the base size)
+    const baseSize = String(BASE_SIZE);
+    for (const [name, original] of originals) {
+      const pixelated = await pixelateImageToSize(original, BASE_SIZE);
+      const pixelatedPng = await pixelGridToPng(pixelated, BASE_SIZE, BASE_SIZE);
+      fs.writeFileSync(path.join(debugDir, `${name}_pixelated_${BASE_SIZE}.png`), pixelatedPng);
     }
 
-    console.log('Sprite generated successfully (8 frames)');
-    return { success: true, sprite };
+    // Build sprite with base frames and all resolutions
+    const sprite: Sprite = {
+      width: BASE_SIZE,
+      height: BASE_SIZE,
+      frames: {
+        down: [downStandingRes[baseSize]!, downWalkingRes[baseSize]!, downStandingRes[baseSize]!, downWalkingRes[baseSize]!],
+        up: [upStandingRes[baseSize]!, upWalkingRes[baseSize]!, upStandingRes[baseSize]!, upWalkingRes[baseSize]!],
+        left: [leftStandingRes[baseSize]!, leftWalkingRes[baseSize]!, leftStandingRes[baseSize]!, leftWalkingRes[baseSize]!],
+        right: [rightStandingRes[baseSize]!, rightWalkingRes[baseSize]!, rightStandingRes[baseSize]!, rightWalkingRes[baseSize]!],
+      },
+      resolutions: {},
+    };
+
+    // Add all pre-computed resolutions
+    for (const size of RESOLUTIONS) {
+      const sizeKey = String(size);
+      sprite.resolutions![sizeKey] = {
+        down: [downStandingRes[sizeKey]!, downWalkingRes[sizeKey]!, downStandingRes[sizeKey]!, downWalkingRes[sizeKey]!],
+        up: [upStandingRes[sizeKey]!, upWalkingRes[sizeKey]!, upStandingRes[sizeKey]!, upWalkingRes[sizeKey]!],
+        left: [leftStandingRes[sizeKey]!, leftWalkingRes[sizeKey]!, leftStandingRes[sizeKey]!, leftWalkingRes[sizeKey]!],
+        right: [rightStandingRes[sizeKey]!, rightWalkingRes[sizeKey]!, rightStandingRes[sizeKey]!, rightWalkingRes[sizeKey]!],
+      };
+    }
+
+    // Save sprite JSON
+    fs.writeFileSync(path.join(debugDir, 'sprite.json'), JSON.stringify(sprite, null, 2));
+
+    console.log(`Sprite generated successfully. Debug files: ${debugDir}`);
+    return { success: true, sprite, debugDir };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error('Image sprite generation failed:', message);
-    return { success: false, error: message };
+    return { success: false, error: message, debugDir };
   }
 }
 
 /**
  * Quantize colors in a pixel grid to a limited palette
- * This makes sprites look more consistent and "pixel art" like
  */
 export function quantizePixelGrid(
   grid: PixelGrid,
   maxColors: number = 16
 ): PixelGrid {
-  // Collect all non-transparent colors
   const colors: Array<{ r: number; g: number; b: number }> = [];
   for (const row of grid) {
     for (const pixel of row) {
@@ -327,7 +354,6 @@ export function quantizePixelGrid(
 
   if (colors.length === 0) return grid;
 
-  // Simple quantization: round to nearest multiple
   const step = Math.ceil(256 / Math.cbrt(maxColors));
 
   return grid.map(row =>

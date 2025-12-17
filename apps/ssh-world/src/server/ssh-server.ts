@@ -5,7 +5,7 @@ type Session = ssh2.Session;
 import { readFileSync, existsSync } from 'fs';
 import { createHash } from 'crypto';
 import { GameSession } from './game-session.js';
-import { GameServer } from '../game/game-server.js';
+import { WorkerManager } from './worker-manager.js';
 import { db, schema } from '@maldoror/db';
 import { eq } from 'drizzle-orm';
 import type { ProviderConfig } from '@maldoror/ai';
@@ -14,7 +14,7 @@ interface SSHServerConfig {
   port: number;
   hostKeyPath: string;
   banner?: string;
-  gameServer: GameServer;
+  workerManager: WorkerManager;
   worldSeed: bigint;
   providerConfig: ProviderConfig;
 }
@@ -175,7 +175,7 @@ export class SSHServer {
         userId: context.userId,
         cols: ptyInfo.cols,
         rows: ptyInfo.rows,
-        gameServer: this.config.gameServer,
+        workerManager: this.config.workerManager,
         worldSeed: this.config.worldSeed,
         providerConfig: this.config.providerConfig,
       });

@@ -4,7 +4,7 @@ import type {
   RGB,
   WorldDataProvider
 } from '@maldoror/protocol';
-import { TILE_SIZE, PIXEL_SPRITE_WIDTH, PIXEL_SPRITE_HEIGHT } from '@maldoror/protocol';
+import { TILE_SIZE, RESOLUTIONS } from '@maldoror/protocol';
 import {
   createEmptyGrid,
   renderPixelRow,
@@ -16,6 +16,8 @@ import {
 export interface ViewportConfig {
   widthTiles: number;   // Viewport width in tiles
   heightTiles: number;  // Viewport height in tiles
+  tileRenderSize?: number;  // Tile screen render size in pixels (default: TILE_SIZE)
+  dataResolution?: number;  // Resolution to fetch from pre-computed data (default: auto-select)
 }
 
 /**
@@ -48,9 +50,35 @@ export class ViewportRenderer {
   private cameraX: number = 0;  // Camera position in tiles
   private cameraY: number = 0;
   private pendingOverlays: TextOverlay[] = [];  // Collected during render
+  private tileRenderSize: number;  // Tile screen render size in pixels
+  private dataResolution: number;  // Resolution to fetch from pre-computed data
 
   constructor(config: ViewportConfig) {
     this.config = config;
+    this.tileRenderSize = config.tileRenderSize ?? TILE_SIZE;
+    this.dataResolution = config.dataResolution ?? this.getBestResolution(this.tileRenderSize);
+  }
+
+  /**
+   * Get current tile render size
+   */
+  getTileRenderSize(): number {
+    return this.tileRenderSize;
+  }
+
+  /**
+   * Set tile render size and auto-select data resolution
+   */
+  setTileRenderSize(size: number): void {
+    this.tileRenderSize = size;
+    this.dataResolution = this.getBestResolution(size);
+  }
+
+  /**
+   * Get current data resolution being used
+   */
+  getDataResolution(): number {
+    return this.dataResolution;
   }
 
   /**
@@ -69,6 +97,11 @@ export class ViewportRenderer {
     return this.bufferToAnsi(result.buffer);
   }
 
+  // Sprite overflow padding - sprites are now scaled to tile size, so no overflow needed
+  // Keep small padding for safety
+  private spriteOverflowX = 0;
+  private spriteOverflowY = 0;
+
   /**
    * Render the viewport to a raw pixel buffer with text overlays
    */
@@ -76,14 +109,14 @@ export class ViewportRenderer {
     // Reset overlays for this frame
     this.pendingOverlays = [];
 
-    // Calculate pixel dimensions
-    const pixelWidth = this.config.widthTiles * TILE_SIZE;
-    const pixelHeight = this.config.heightTiles * TILE_SIZE;
+    // Calculate pixel dimensions using current tile render size
+    const pixelWidth = this.config.widthTiles * this.tileRenderSize;
+    const pixelHeight = this.config.heightTiles * this.tileRenderSize;
 
     // Create the pixel buffer
     const buffer = createEmptyGrid(pixelWidth, pixelHeight);
 
-    // 1. Render tiles
+    // 1. Render tiles (offset by sprite overflow padding)
     this.renderTiles(buffer, world, tick);
 
     // 2. Render players (sorted by Y for proper overlap)
@@ -99,6 +132,9 @@ export class ViewportRenderer {
    * Render tiles to buffer
    */
   private renderTiles(buffer: PixelGrid, world: WorldDataProvider, tick: number): void {
+    // Use the pre-selected data resolution
+    const resKey = String(this.dataResolution);
+
     for (let ty = 0; ty < this.config.heightTiles; ty++) {
       for (let tx = 0; tx < this.config.widthTiles; tx++) {
         const worldTileX = this.cameraX + tx;
@@ -106,22 +142,33 @@ export class ViewportRenderer {
         const tile = world.getTile(worldTileX, worldTileY);
 
         if (tile) {
-          // Get the right frame for animated tiles
-          let tilePixels = tile.pixels;
+          // Get the right frame for animated tiles, using pre-computed resolution if available
+          let tilePixels: PixelGrid;
           if (tile.animated && tile.animationFrames) {
             const frameIndex = Math.floor(tick / 15) % tile.animationFrames.length;
-            tilePixels = tile.animationFrames[frameIndex] ?? tile.pixels;
+            // Try animation resolutions first
+            if (tile.animationResolutions?.[resKey]) {
+              tilePixels = tile.animationResolutions[resKey][frameIndex] ?? tile.pixels;
+            } else {
+              tilePixels = tile.animationFrames[frameIndex] ?? tile.pixels;
+            }
+          } else {
+            // Use pre-computed resolution if available
+            tilePixels = tile.resolutions?.[resKey] ?? tile.pixels;
           }
 
-          // Copy tile pixels to buffer
-          const bufferX = tx * TILE_SIZE;
-          const bufferY = ty * TILE_SIZE;
+          // Scale to exact tile render size if needed
+          const scaledPixels = this.scaleFrame(tilePixels, this.tileRenderSize, this.tileRenderSize);
 
-          for (let py = 0; py < TILE_SIZE && py < tilePixels.length; py++) {
-            const tileRow = tilePixels[py];
+          // Copy tile pixels to buffer
+          const bufferX = tx * this.tileRenderSize;
+          const bufferY = ty * this.tileRenderSize;
+
+          for (let py = 0; py < this.tileRenderSize && py < scaledPixels.length; py++) {
+            const tileRow = scaledPixels[py];
             if (!tileRow) continue;
 
-            for (let px = 0; px < TILE_SIZE && px < tileRow.length; px++) {
+            for (let px = 0; px < this.tileRenderSize && px < tileRow.length; px++) {
               const pixel = tileRow[px];
               if (pixel && buffer[bufferY + py]) {
                 buffer[bufferY + py]![bufferX + px] = pixel;
@@ -131,6 +178,43 @@ export class ViewportRenderer {
         }
       }
     }
+  }
+
+  /**
+   * Get the best resolution size for the current render size
+   */
+  private getBestResolution(targetSize: number): number {
+    // Find the closest resolution that is >= targetSize
+    for (const res of RESOLUTIONS) {
+      if (res >= targetSize) return res;
+    }
+    // If target is larger than max, return max
+    return RESOLUTIONS[RESOLUTIONS.length - 1] ?? 256;
+  }
+
+  /**
+   * Scale a sprite frame to target size using nearest-neighbor sampling
+   */
+  private scaleFrame(frame: PixelGrid, targetWidth: number, targetHeight: number): PixelGrid {
+    const srcHeight = frame.length;
+    const srcWidth = frame[0]?.length ?? 0;
+
+    // If already correct size, return as-is
+    if (srcWidth === targetWidth && srcHeight === targetHeight) {
+      return frame;
+    }
+
+    const result: PixelGrid = [];
+    for (let y = 0; y < targetHeight; y++) {
+      const row: (RGB | null)[] = [];
+      const srcY = Math.floor(y * srcHeight / targetHeight);
+      for (let x = 0; x < targetWidth; x++) {
+        const srcX = Math.floor(x * srcWidth / targetWidth);
+        row.push(frame[srcY]?.[srcX] ?? null);
+      }
+      result.push(row);
+    }
+    return result;
   }
 
   /**
@@ -151,19 +235,29 @@ export class ViewportRenderer {
         continue;
       }
 
-      // Get the correct sprite frame
-      const directionFrames = sprite.frames[player.direction];
-      const frame = directionFrames[player.animationFrame];
-      if (!frame) continue;
+      // Use the pre-selected data resolution
+      const resKey = String(this.dataResolution);
+
+      // Try to get pre-computed resolution, fall back to base frames
+      let directionFrames = sprite.resolutions?.[resKey]?.[player.direction];
+      if (!directionFrames) {
+        directionFrames = sprite.frames[player.direction];
+      }
+
+      const rawFrame = directionFrames[player.animationFrame];
+      if (!rawFrame) continue;
+
+      // Scale to exact tile render size if needed
+      const frame = this.scaleFrame(rawFrame, this.tileRenderSize, this.tileRenderSize);
 
       // Calculate screen position in pixels
-      // Player position is in tiles, sprite is centered on tile
+      // Player position is in tiles, sprite is now tile-sized
       const screenTileX = player.x - this.cameraX;
       const screenTileY = player.y - this.cameraY;
 
-      // Sprite is positioned so feet are at bottom of tile
-      const bufferX = screenTileX * TILE_SIZE + Math.floor((TILE_SIZE - PIXEL_SPRITE_WIDTH) / 2);
-      const bufferY = screenTileY * TILE_SIZE - (PIXEL_SPRITE_HEIGHT - TILE_SIZE);
+      // Position sprite at the tile location
+      const bufferX = screenTileX * this.tileRenderSize;
+      const bufferY = screenTileY * this.tileRenderSize;
 
       // Composite sprite onto buffer
       for (let py = 0; py < frame.length; py++) {
@@ -187,8 +281,8 @@ export class ViewportRenderer {
       // Add username overlay above sprite for other players
       if (player.userId !== localId) {
         // Center the username above the sprite
-        const usernamePixelX = bufferX + Math.floor(PIXEL_SPRITE_WIDTH / 2);
-        const usernamePixelY = bufferY - 6;  // 6 pixels above sprite
+        const usernamePixelX = bufferX + Math.floor(this.tileRenderSize / 2);
+        const usernamePixelY = bufferY - Math.max(6, Math.floor(this.tileRenderSize / 10));  // Scale overlay offset
 
         this.pendingOverlays.push({
           text: player.username,
@@ -203,6 +297,7 @@ export class ViewportRenderer {
 
   /**
    * Render a placeholder for players without sprites
+   * This is a small fallback marker - the actual placeholder sprite is generated separately
    */
   private renderPlaceholderPlayer(buffer: PixelGrid, player: PlayerVisualState): void {
     const screenTileX = player.x - this.cameraX;
@@ -213,13 +308,15 @@ export class ViewportRenderer {
       return;
     }
 
-    const bufferX = screenTileX * TILE_SIZE + Math.floor(TILE_SIZE / 2) - 4;
-    const bufferY = screenTileY * TILE_SIZE + Math.floor(TILE_SIZE / 2) - 4;
+    // Marker is same size as current tile render size
+    const markerSize = this.tileRenderSize;
+    const bufferX = screenTileX * this.tileRenderSize + this.spriteOverflowX;
+    const bufferY = screenTileY * this.tileRenderSize + this.spriteOverflowY;
 
-    // Simple 8x8 placeholder
+    // Simple colored square placeholder
     const placeholderColor: RGB = { r: 255, g: 200, b: 50 };
-    for (let py = 0; py < 8; py++) {
-      for (let px = 0; px < 8; px++) {
+    for (let py = 0; py < markerSize; py++) {
+      for (let px = 0; px < markerSize; px++) {
         const targetY = bufferY + py;
         const targetX = bufferX + px;
         if (targetY >= 0 && targetY < buffer.length &&
@@ -242,8 +339,8 @@ export class ViewportRenderer {
    */
   getTerminalDimensions(): { width: number; height: number } {
     return {
-      width: this.config.widthTiles * TILE_SIZE * 2,  // 2 chars per pixel
-      height: this.config.heightTiles * TILE_SIZE,     // 1 char per pixel row
+      width: this.config.widthTiles * this.tileRenderSize * 2,  // 2 chars per pixel
+      height: this.config.heightTiles * this.tileRenderSize,     // 1 char per pixel row
     };
   }
 

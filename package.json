@@ -22,7 +22,18 @@
     "docker:up": "docker compose -f docker/docker-compose.yml up -d",
     "docker:down": "docker compose -f docker/docker-compose.yml down",
     "docker:logs": "docker compose -f docker/docker-compose.yml logs -f",
-    "setup": "pnpm install && pnpm docker:up && pnpm db:push"
+    "setup": "pnpm install && pnpm docker:up && pnpm db:push",
+    "deploy": "./deploy/deploy.sh",
+    "deploy:hot": "./deploy/hot-reload.sh",
+    "prod:ssh": "ssh -p 22022 root@134.199.180.251",
+    "prod:play": "ssh abyss.maldoror.dev",
+    "prod:db": "ssh -p 22022 root@134.199.180.251 'docker exec -it deploy-postgres-1 psql -U maldoror -d maldoror'",
+    "prod:query": "./deploy/prod-query.sh",
+    "prod:logs": "ssh -p 22022 root@134.199.180.251 'docker logs -f deploy-ssh-world-1'",
+    "prod:logs:all": "ssh -p 22022 root@134.199.180.251 'cd /opt/maldoror && docker compose -f deploy/docker-compose.prod.yml logs -f'",
+    "prod:status": "ssh -p 22022 root@134.199.180.251 'cd /opt/maldoror && docker compose -f deploy/docker-compose.prod.yml ps'",
+    "prod:restart": "ssh -p 22022 root@134.199.180.251 'cd /opt/maldoror && docker compose -f deploy/docker-compose.prod.yml restart ssh-world'",
+    "prod:stats": "open http://134.199.180.251:8404/stats"
   },
   "devDependencies": {
     "@maldoror/tsconfig": "workspace:*",

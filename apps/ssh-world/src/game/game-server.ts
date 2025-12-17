@@ -16,6 +16,8 @@ interface PlayerState {
   direction: Direction;
   animationFrame: number;
   isOnline: boolean;
+  isMoving: boolean;
+  lastMoveTime: number;
 }
 
 interface ChatMessage {
@@ -27,6 +29,7 @@ interface ChatMessage {
 
 type ChatCallback = (message: ChatMessage) => void;
 type SpriteReloadCallback = (userId: string) => void;
+
 
 /**
  * Main game server coordinating all systems
@@ -41,6 +44,7 @@ export class GameServer {
   private inputQueue: PlayerInput[] = [];
   private chatCallbacks: Map<string, ChatCallback> = new Map();
   private spriteReloadCallbacks: Map<string, SpriteReloadCallback> = new Map();
+  private globalSpriteReloadCallback: SpriteReloadCallback | null = null;
   private recentChat: ChatMessage[] = [];
 
   constructor(config: GameServerConfig) {
@@ -67,11 +71,19 @@ export class GameServer {
 
     // Tick: update game state
     this.gameLoop.onTick(async (ctx) => {
-      // Update animation frames
+      const now = Date.now();
+      // Update animation frames only for moving players
       for (const player of this.players.values()) {
         if (player.isOnline) {
-          // Cycle animation
-          player.animationFrame = (ctx.tick % 4) as 0 | 1 | 2 | 3;
+          // Stop moving after 200ms of no input
+          if (player.isMoving && now - player.lastMoveTime > 200) {
+            player.isMoving = false;
+            player.animationFrame = 0;
+          }
+          // Only cycle animation when moving
+          if (player.isMoving) {
+            player.animationFrame = (ctx.tick % 4) as 0 | 1 | 2 | 3;
+          }
         }
       }
     });
@@ -113,6 +125,8 @@ export class GameServer {
       existing.sessionId = sessionId;
       existing.username = username;
       existing.isOnline = true;
+      existing.isMoving = false;
+      existing.animationFrame = 0;
     } else {
       // New player
       this.players.set(userId, {
@@ -124,6 +138,8 @@ export class GameServer {
         direction: 'down',
         animationFrame: 0,
         isOnline: true,
+        isMoving: false,
+        lastMoveTime: 0,
       });
     }
 
@@ -182,6 +198,10 @@ export class GameServer {
       else if (dx < 0) player.direction = 'left';
       else if (dx > 0) player.direction = 'right';
 
+      // Mark as moving for animation
+      player.isMoving = true;
+      player.lastMoveTime = Date.now();
+
       // Update spatial index
       this.spatialIndex.updatePlayer(input.userId, player.x, player.y);
     }
@@ -195,6 +215,9 @@ export class GameServer {
     if (player) {
       player.x = x;
       player.y = y;
+      // Mark as moving for animation
+      player.isMoving = true;
+      player.lastMoveTime = Date.now();
       this.spatialIndex.updatePlayer(userId, x, y);
     }
   }
@@ -315,7 +338,12 @@ export class GameServer {
    * Called when a player regenerates their avatar
    */
   async broadcastSpriteReload(changedUserId: string): Promise<void> {
-    // Notify all online players to reload this user's sprite
+    // If running in worker, use global callback to notify main process
+    if (this.globalSpriteReloadCallback) {
+      this.globalSpriteReloadCallback(changedUserId);
+    }
+
+    // Also notify direct callbacks (for non-worker mode / local dev)
     for (const [_userId, callback] of this.spriteReloadCallbacks) {
       callback(changedUserId);
     }
@@ -338,5 +366,12 @@ export class GameServer {
       if (player.isOnline) count++;
     }
     return count;
+  }
+
+  /**
+   * Set global sprite reload callback (used by worker for IPC)
+   */
+  setGlobalSpriteReloadCallback(callback: SpriteReloadCallback): void {
+    this.globalSpriteReloadCallback = callback;
   }
 }

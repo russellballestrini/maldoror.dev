@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { SSHServer } from './server/ssh-server.js';
-import { GameServer } from './game/game-server.js';
+import { WorkerManager } from './server/worker-manager.js';
 import { db, schema } from '@maldoror/db';
 import type { ProviderConfig } from '@maldoror/ai';
 
@@ -30,12 +30,16 @@ async function main() {
     console.log(`Created new world with seed: ${worldSeed}`);
   }
 
-  // Initialize game server
-  const gameServer = new GameServer({
+  // Initialize worker manager (manages game server in child process)
+  const workerManager = new WorkerManager({
     worldSeed,
     tickRate: 15,
     chunkCacheSize: 256,
   });
+
+  // Start worker
+  await workerManager.start();
+  console.log('Game worker started');
 
   // Initialize SSH server
   const sshServer = new SSHServer({
@@ -48,14 +52,25 @@ async function main() {
     ╚══════════════════════════════════════╝
 
 `,
-    gameServer,
+    workerManager,
     worldSeed,
     providerConfig,
   });
 
-  // Start servers
-  gameServer.start();
+  // Start SSH server
   sshServer.start();
+
+  // Hot reload handler - SIGUSR1 triggers worker reload
+  // SSH connections stay alive, only game logic restarts
+  process.on('SIGUSR1', async () => {
+    console.log('\n=== Hot reload triggered (SIGUSR1) ===');
+    try {
+      await workerManager.hotReload();
+      console.log('=== Hot reload complete ===\n');
+    } catch (error) {
+      console.error('Hot reload failed:', error);
+    }
+  });
 
   // Graceful shutdown with connection draining
   let isShuttingDown = false;
@@ -85,7 +100,7 @@ async function main() {
 
     console.log('All sessions closed, shutting down...');
     sshServer.stop();
-    gameServer.stop();
+    workerManager.stop();
     process.exit(0);
   };
 
@@ -94,6 +109,7 @@ async function main() {
 
   console.log(`SSH server listening on port ${process.env.SSH_PORT || 2222}`);
   console.log('Connect with: ssh -p 2222 localhost');
+  console.log('Hot reload: kill -USR1 <pid>');
 }
 
 main().catch((error) => {

@@ -1,5 +1,5 @@
-import type { Tile, Sprite, PlayerVisualState, PixelGrid, RGB, WorldDataProvider, Pixel } from '@maldoror/protocol';
-import { CHUNK_SIZE_TILES } from '@maldoror/protocol';
+import type { Tile, Sprite, PlayerVisualState, PixelGrid, RGB, WorldDataProvider, Pixel, DirectionFrames } from '@maldoror/protocol';
+import { CHUNK_SIZE_TILES, BASE_SIZE, RESOLUTIONS } from '@maldoror/protocol';
 import { BASE_TILES, getTileById } from './base-tiles.js';
 import { SeededRandom, ValueNoise } from '../noise/noise.js';
 
@@ -268,10 +268,32 @@ export class TileProvider implements WorldDataProvider {
 }
 
 /**
+ * Downscale a pixel grid using nearest-neighbor sampling
+ */
+function downscaleGrid(grid: PixelGrid, targetSize: number): PixelGrid {
+  const srcSize = grid.length;
+  if (srcSize === targetSize) return grid;
+
+  const result: PixelGrid = [];
+  for (let y = 0; y < targetSize; y++) {
+    const row: Pixel[] = [];
+    const srcY = Math.floor(y * srcSize / targetSize);
+    for (let x = 0; x < targetSize; x++) {
+      const srcX = Math.floor(x * srcSize / targetSize);
+      row.push(grid[srcY]?.[srcX] ?? null);
+    }
+    result.push(row);
+  }
+  return result;
+}
+
+/**
  * Create a placeholder sprite for players without generated sprites
- * 16x24 pixels, simple humanoid shape with walking animation
+ * 256x256 pixels base with all resolutions pre-computed
  */
 export function createPlaceholderSprite(baseColor: RGB = { r: 100, g: 150, b: 255 }): Sprite {
+  const SIZE = BASE_SIZE;
+
   const darkColor: RGB = {
     r: Math.floor(baseColor.r * 0.6),
     g: Math.floor(baseColor.g * 0.6),
@@ -280,76 +302,40 @@ export function createPlaceholderSprite(baseColor: RGB = { r: 100, g: 150, b: 25
   const skinColor: RGB = { r: 255, g: 220, b: 180 };
   const hairColor: RGB = { r: 60, g: 40, b: 30 };
 
-  // Walking animation offsets: [frame0, frame1, frame2, frame3]
-  // Each frame alternates leg positions for walking animation
-  const legOffsets: Record<number, { leftLeg: number; rightLeg: number }> = {
-    0: { leftLeg: 0, rightLeg: 0 },    // Standing
-    1: { leftLeg: -2, rightLeg: 2 },   // Left forward
-    2: { leftLeg: 0, rightLeg: 0 },    // Standing
-    3: { leftLeg: 2, rightLeg: -2 },   // Right forward
-  };
-
-  // Create a walking animation frame
-  const createFrame = (direction: 'up' | 'down' | 'left' | 'right', frameNum: number): PixelGrid => {
+  const createFrame = (): PixelGrid => {
     const grid: PixelGrid = [];
-    const offset = legOffsets[frameNum] ?? { leftLeg: 0, rightLeg: 0 };
 
-    for (let y = 0; y < 24; y++) {
+    // Scale factors for 256x256 (original was 16x16, so 16x scale)
+    const scale = SIZE / 16;
+
+    for (let y = 0; y < SIZE; y++) {
       const row: (RGB | null)[] = [];
-      for (let x = 0; x < 16; x++) {
-        // Hair (y: 0-1, x: 5-10)
-        if (y >= 0 && y <= 1 && x >= 5 && x <= 10) {
-          row.push(hairColor);
-        }
-        // Head (y: 2-6, x: 5-10)
-        else if (y >= 2 && y <= 6 && x >= 5 && x <= 10) {
-          // Face features based on direction
-          if (direction === 'down' && y === 4 && (x === 6 || x === 9)) {
-            row.push({ r: 50, g: 50, b: 50 }); // Eyes
-          } else if (direction === 'up' && y === 3 && x >= 6 && x <= 9) {
-            row.push(hairColor); // Back of head
-          } else if (direction === 'left' && x === 5) {
-            row.push(skinColor);
-          } else if (direction === 'right' && x === 10) {
-            row.push(skinColor);
-          } else {
-            row.push(skinColor);
-          }
-        }
-        // Body (y: 7-15, x: 4-11)
-        else if (y >= 7 && y <= 15 && x >= 4 && x <= 11) {
-          row.push(baseColor);
-        }
-        // Arms (y: 8-13, x: 2-3 and 12-13)
-        else if (y >= 8 && y <= 13 && (x === 2 || x === 3 || x === 12 || x === 13)) {
-          // Hide back arm based on direction
-          if (direction === 'left' && x > 8) {
-            row.push(null);
-          } else if (direction === 'right' && x < 8) {
-            row.push(null);
-          } else {
-            row.push(skinColor);
-          }
-        }
-        // Legs with walking animation (y: 16-23)
-        else if (y >= 16 && y <= 23) {
-          // Left leg (base x: 5-7)
-          const leftLegY = y - offset.leftLeg;
-          const rightLegY = y - offset.rightLeg;
+      // Map to original 16x16 coordinate space
+      const origY = Math.floor(y / scale);
+      for (let x = 0; x < SIZE; x++) {
+        const origX = Math.floor(x / scale);
+        let pixel: RGB | null = null;
 
-          // Check if this pixel is part of a leg
-          const isLeftLeg = x >= 5 && x <= 7 && leftLegY >= 16 && leftLegY <= 23;
-          const isRightLeg = x >= 8 && x <= 10 && rightLegY >= 16 && rightLegY <= 23;
-
-          if (isLeftLeg || isRightLeg) {
-            row.push(darkColor);
-          } else {
-            row.push(null);
+        // Hair (top)
+        if (origY >= 0 && origY < 2 && origX >= 5 && origX <= 10) {
+          pixel = hairColor;
+        }
+        // Head
+        else if (origY >= 1 && origY < 5 && origX >= 5 && origX <= 10) {
+          pixel = skinColor;
+        }
+        // Body
+        else if (origY >= 5 && origY < 10 && origX >= 4 && origX <= 11) {
+          pixel = baseColor;
+        }
+        // Legs
+        else if (origY >= 10 && origY < 15) {
+          if ((origX >= 5 && origX < 7) || (origX >= 9 && origX < 11)) {
+            pixel = darkColor;
           }
         }
-        else {
-          row.push(null);
-        }
+
+        row.push(pixel);
       }
       grid.push(row);
     }
@@ -357,14 +343,37 @@ export function createPlaceholderSprite(baseColor: RGB = { r: 100, g: 150, b: 25
     return grid;
   };
 
+  const frame = createFrame();
+  const baseFrames: DirectionFrames = [frame, frame, frame, frame];
+
+  // Generate all resolutions
+  const resolutions: Record<string, {
+    up: DirectionFrames;
+    down: DirectionFrames;
+    left: DirectionFrames;
+    right: DirectionFrames;
+  }> = {};
+
+  for (const size of RESOLUTIONS) {
+    const scaledFrame = downscaleGrid(frame, size);
+    const scaledFrames: DirectionFrames = [scaledFrame, scaledFrame, scaledFrame, scaledFrame];
+    resolutions[String(size)] = {
+      up: scaledFrames,
+      down: scaledFrames,
+      left: scaledFrames,
+      right: scaledFrames,
+    };
+  }
+
   return {
-    width: 16,
-    height: 24,
+    width: SIZE,
+    height: SIZE,
     frames: {
-      up: [createFrame('up', 0), createFrame('up', 1), createFrame('up', 2), createFrame('up', 3)],
-      down: [createFrame('down', 0), createFrame('down', 1), createFrame('down', 2), createFrame('down', 3)],
-      left: [createFrame('left', 0), createFrame('left', 1), createFrame('left', 2), createFrame('left', 3)],
-      right: [createFrame('right', 0), createFrame('right', 1), createFrame('right', 2), createFrame('right', 3)],
+      up: baseFrames,
+      down: baseFrames,
+      left: baseFrames,
+      right: baseFrames,
     },
+    resolutions,
   };
 }

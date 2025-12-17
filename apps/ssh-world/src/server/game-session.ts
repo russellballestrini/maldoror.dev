@@ -2,7 +2,7 @@ import type { Duplex } from 'stream';
 import { PixelGameRenderer, InputHandler } from '@maldoror/render';
 import { TileProvider, createPlaceholderSprite } from '@maldoror/world';
 import type { Direction, AnimationFrame, PlayerVisualState, Sprite } from '@maldoror/protocol';
-import { GameServer } from '../game/game-server.js';
+import { WorkerManager, ReloadState } from './worker-manager.js';
 import { OnboardingFlow } from './onboarding.js';
 import { AvatarScreen } from './avatar-screen.js';
 import { db, schema } from '@maldoror/db';
@@ -16,7 +16,7 @@ interface GameSessionConfig {
   userId?: string;
   cols: number;
   rows: number;
-  gameServer: GameServer;
+  workerManager: WorkerManager;
   worldSeed: bigint;
   providerConfig: ProviderConfig;
 }
@@ -28,7 +28,7 @@ export class GameSession {
   private userId: string | null;
   private cols: number;
   private rows: number;
-  private gameServer: GameServer;
+  private workerManager: WorkerManager;
   private worldSeed: bigint;
   private providerConfig: ProviderConfig;
   private renderer: PixelGameRenderer | null = null;
@@ -46,6 +46,30 @@ export class GameSession {
   private moveTimer: NodeJS.Timeout | null = null;
   private currentPrompt: string = '';
   private showPlayerList: boolean = false;
+  // Cache for player list (Tab menu)
+  private cachedAllPlayers: Array<{
+    userId: string;
+    username: string;
+    x: number;
+    y: number;
+    isOnline: boolean;
+  }> = [];
+  // Performance: Cache visible players query
+  private cachedVisiblePlayers: Array<{
+    userId: string;
+    username: string;
+    x: number;
+    y: number;
+    direction: string;
+    animationFrame: number;
+  }> = [];
+  private lastQueryX: number = -999;
+  private lastQueryY: number = -999;
+  // Performance: Track sprites being loaded to prevent duplicate DB queries
+  private loadingSprites: Set<string> = new Set();
+  // Hot reload state
+  private reloadState: ReloadState = 'running';
+  private unsubscribeReload: (() => void) | null = null;
 
   constructor(config: GameSessionConfig) {
     this.stream = config.stream;
@@ -54,7 +78,7 @@ export class GameSession {
     this.userId = config.userId || null;
     this.cols = config.cols;
     this.rows = config.rows;
-    this.gameServer = config.gameServer;
+    this.workerManager = config.workerManager;
     this.worldSeed = config.worldSeed;
     this.providerConfig = config.providerConfig;
     this.sessionId = crypto.randomUUID();
@@ -146,16 +170,25 @@ export class GameSession {
       this.destroy();
     });
 
-    // Register with game server
-    await this.gameServer.playerConnect(this.userId!, this.sessionId, this.username);
+    // Register with worker manager
+    await this.workerManager.playerConnect(this.userId!, this.sessionId, this.username);
 
     // Register for sprite reload events
-    this.gameServer.onSpriteReload(this.userId!, (changedUserId) => {
+    this.workerManager.onSpriteReload(this.userId!, (changedUserId) => {
       this.handleSpriteReload(changedUserId);
     });
 
+    // Subscribe to reload state changes for hot reload overlay
+    this.unsubscribeReload = this.workerManager.onReloadState((state) => {
+      this.reloadState = state;
+      if (state === 'running') {
+        // Force a full re-render when reload completes
+        this.renderer?.invalidate();
+      }
+    });
+
     // Start render loop (60ms = ~16fps for smooth animation)
-    this.tickInterval = setInterval(() => this.tick(), 60);
+    this.tickInterval = setInterval(() => this.tick(), 67); // Match server's 15Hz tick rate
   }
 
   private updateLocalPlayerState(): void {
@@ -174,8 +207,16 @@ export class GameSession {
     this.tileProvider.updatePlayer(state);
   }
 
-  private tick(): void {
+  private async tick(): Promise<void> {
     if (this.destroyed || !this.renderer || !this.tileProvider) return;
+
+    // Show reload overlay if reloading
+    if (this.reloadState === 'reloading') {
+      const output = this.renderer.renderToString(this.tileProvider);
+      const overlay = this.generateReloadOverlay();
+      this.stream.write(output + overlay);
+      return;
+    }
 
     // Update animation frame when moving
     if (this.isMoving) {
@@ -183,17 +224,22 @@ export class GameSession {
       this.updateLocalPlayerState();
     }
 
-    // Get visible players from game server
-    const visiblePlayers = this.gameServer.getVisiblePlayers(
-      this.playerX,
-      this.playerY,
-      this.cols,
-      this.rows,
-      this.userId!
-    );
+    // Performance: Only re-query visible players when position changes
+    const positionChanged = this.playerX !== this.lastQueryX || this.playerY !== this.lastQueryY;
+    if (positionChanged) {
+      this.cachedVisiblePlayers = await this.workerManager.getVisiblePlayers(
+        this.playerX,
+        this.playerY,
+        this.cols,
+        this.rows,
+        this.userId!
+      );
+      this.lastQueryX = this.playerX;
+      this.lastQueryY = this.playerY;
+    }
 
     // Update other players in tile provider
-    for (const player of visiblePlayers) {
+    for (const player of this.cachedVisiblePlayers) {
       const state: PlayerVisualState = {
         userId: player.userId,
         username: player.username,
@@ -205,13 +251,14 @@ export class GameSession {
       };
       this.tileProvider.updatePlayer(state);
 
-      // Load sprite if not already loaded
-      if (!this.tileProvider.getPlayerSprite(player.userId)) {
+      // Performance: Load sprite if not already loaded AND not already loading
+      if (!this.tileProvider.getPlayerSprite(player.userId) && !this.loadingSprites.has(player.userId)) {
         // Set placeholder immediately for rendering
         const color = this.getPlayerColor(player.userId);
         this.tileProvider.setPlayerSprite(player.userId, createPlaceholderSprite(color));
 
-        // Load actual sprite from database asynchronously
+        // Mark as loading and load actual sprite from database asynchronously
+        this.loadingSprites.add(player.userId);
         this.loadPlayerSprite(player.userId);
       }
     }
@@ -219,21 +266,26 @@ export class GameSession {
     // Center camera on player
     this.renderer.setCamera(this.playerX, this.playerY);
 
-    // Render frame
-    this.renderer.render(this.tileProvider);
+    // Performance: Batch all output into single write
+    let output = this.renderer.renderToString(this.tileProvider);
 
-    // Render player list overlay if showing
+    // Add player list overlay if showing
     if (this.showPlayerList) {
-      this.renderPlayerListOverlay();
+      output += this.generatePlayerListOverlay();
+    }
+
+    // Single write for entire frame
+    if (output) {
+      this.stream.write(output);
     }
   }
 
   /**
-   * Render the player list overlay (Tab menu)
+   * Generate the player list overlay (Tab menu) as a string
    */
-  private renderPlayerListOverlay(): void {
+  private generatePlayerListOverlay(): string {
     const ESC = '\x1b';
-    const players = this.gameServer.getAllPlayers();
+    const players = this.cachedAllPlayers;
 
     // Calculate overlay dimensions
     const overlayWidth = 50;
@@ -296,7 +348,62 @@ export class GameSession {
 
     output += reset;
 
-    this.stream.write(output);
+    return output;
+  }
+
+  /**
+   * Generate the reload/reconnecting overlay
+   */
+  private generateReloadOverlay(): string {
+    const ESC = '\x1b';
+
+    // Calculate overlay dimensions
+    const overlayWidth = 40;
+    const overlayHeight = 7;
+    const startX = Math.floor((this.cols - overlayWidth) / 2);
+    const startY = Math.floor((this.rows - overlayHeight) / 2);
+
+    // Colors
+    const bgColor = `${ESC}[48;2;20;20;35m`;
+    const borderColor = `${ESC}[38;2;100;100;150m`;
+    const textColor = `${ESC}[38;2;255;200;100m`;
+    const subTextColor = `${ESC}[38;2;150;150;170m`;
+    const reset = `${ESC}[0m`;
+
+    // Spinner frames
+    const spinnerFrames = ['◐', '◓', '◑', '◒'];
+    const spinnerFrame = spinnerFrames[Math.floor(Date.now() / 200) % spinnerFrames.length];
+
+    let output = '';
+
+    // Top border
+    output += `${ESC}[${startY};${startX}H${bgColor}${borderColor}╔${'═'.repeat(overlayWidth - 2)}╗`;
+
+    // Empty row
+    output += `${ESC}[${startY + 1};${startX}H${bgColor}${borderColor}║${' '.repeat(overlayWidth - 2)}║`;
+
+    // Main message with spinner
+    const message = ` ${spinnerFrame} Updating Server... `;
+    const msgPad = Math.floor((overlayWidth - 2 - message.length) / 2);
+    output += `${ESC}[${startY + 2};${startX}H${bgColor}${borderColor}║${' '.repeat(msgPad)}${textColor}${message}${' '.repeat(overlayWidth - 2 - msgPad - message.length)}${borderColor}║`;
+
+    // Empty row
+    output += `${ESC}[${startY + 3};${startX}H${bgColor}${borderColor}║${' '.repeat(overlayWidth - 2)}║`;
+
+    // Sub message
+    const subMessage = 'Please wait...';
+    const subPad = Math.floor((overlayWidth - 2 - subMessage.length) / 2);
+    output += `${ESC}[${startY + 4};${startX}H${bgColor}${borderColor}║${' '.repeat(subPad)}${subTextColor}${subMessage}${' '.repeat(overlayWidth - 2 - subPad - subMessage.length)}${borderColor}║`;
+
+    // Empty row
+    output += `${ESC}[${startY + 5};${startX}H${bgColor}${borderColor}║${' '.repeat(overlayWidth - 2)}║`;
+
+    // Bottom border
+    output += `${ESC}[${startY + 6};${startX}H${bgColor}${borderColor}╚${'═'.repeat(overlayWidth - 2)}╝`;
+
+    output += reset;
+
+    return output;
   }
 
   private getPlayerColor(userId: string): { r: number; g: number; b: number } {
@@ -342,13 +449,24 @@ export class GameSession {
         this.openAvatarScreen();
         break;
       case 'toggle_players':
-        this.showPlayerList = !this.showPlayerList;
-        this.renderer?.invalidate();
+        this.togglePlayerList();
         break;
       case 'quit':
         this.quit();
         break;
     }
+  }
+
+  /**
+   * Toggle the player list overlay
+   */
+  private async togglePlayerList(): Promise<void> {
+    this.showPlayerList = !this.showPlayerList;
+    if (this.showPlayerList) {
+      // Fetch fresh player list when opening
+      this.cachedAllPlayers = await this.workerManager.getAllPlayers();
+    }
+    this.renderer?.invalidate();
   }
 
   /**
@@ -395,7 +513,7 @@ export class GameSession {
       }
 
       // Broadcast to all players
-      await this.gameServer.broadcastSpriteReload(this.userId!);
+      await this.workerManager.broadcastSpriteReload(this.userId!);
     }
 
     // Reinitialize renderer
@@ -409,7 +527,7 @@ export class GameSession {
 
     // Resume render loop
     this.renderer.invalidate();
-    this.tickInterval = setInterval(() => this.tick(), 60);
+    this.tickInterval = setInterval(() => this.tick(), 67); // Match server's 15Hz tick rate
   }
 
   /**
@@ -469,6 +587,9 @@ export class GameSession {
       }
     } catch (error) {
       console.error(`Failed to load sprite for ${playerId}:`, error);
+    } finally {
+      // Performance: Clear from loading set so we don't re-query
+      this.loadingSprites.delete(playerId);
     }
   }
 
@@ -491,8 +612,8 @@ export class GameSession {
     // Update local state
     this.updateLocalPlayerState();
 
-    // Queue input for game server
-    this.gameServer.queueInput({
+    // Queue input for worker manager
+    this.workerManager.queueInput({
       userId: this.userId!,
       sessionId: this.sessionId,
       type: 'move',
@@ -502,7 +623,7 @@ export class GameSession {
     });
 
     // Update spatial index
-    this.gameServer.updatePlayerPosition(this.userId!, this.playerX, this.playerY);
+    this.workerManager.updatePlayerPosition(this.userId!, this.playerX, this.playerY);
 
     // Stop "moving" animation after a short delay
     if (this.moveTimer) {
@@ -538,12 +659,18 @@ export class GameSession {
       this.moveTimer = null;
     }
 
+    // Unsubscribe from reload state changes
+    if (this.unsubscribeReload) {
+      this.unsubscribeReload();
+      this.unsubscribeReload = null;
+    }
+
     // Clean up renderer
     if (this.renderer) {
       this.renderer.cleanup();
     }
 
-    // Save state and disconnect from game server
+    // Save state and disconnect from worker manager
     if (this.userId) {
       // Save position
       await db
@@ -558,7 +685,7 @@ export class GameSession {
         })
         .where(eq(schema.playerState.userId, this.userId));
 
-      await this.gameServer.playerDisconnect(this.userId);
+      await this.workerManager.playerDisconnect(this.userId);
     }
   }
 }

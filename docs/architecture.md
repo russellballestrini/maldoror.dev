@@ -150,42 +150,32 @@ Filter online players in viewport
 Return to GameSession for rendering
 ```
 
-## Known Performance Bottlenecks
+## Performance Optimizations (Implemented)
 
-### 1. Tick Rate Mismatch
-- **Issue:** Server (67ms) vs Client render (60ms) causes animation jitter
-- **Impact:** Visible desynchronization, stuttery movement
-- **Fix:** Synchronize client render to server tick rate
+### 1. Tick Rate Synchronization ✅
+- **Issue:** Server (67ms) vs Client render (60ms) caused animation jitter
+- **Solution:** Client render loop now uses 67ms interval to match server's 15Hz tick rate
+- **Location:** `game-session.ts:173`
 
-### 2. Spatial Query Every Frame
-- **Issue:** Each client calls `getVisiblePlayers()` every render tick
-- **Impact:** 3 clients × 17 FPS = 51 queries/second
-- **Fix:** Cache visible players, only re-query on position change
+### 2. Cached Visible Players Query ✅
+- **Issue:** Each client called `getVisiblePlayers()` every render tick
+- **Solution:** Results cached per session, only re-queried when player position changes
+- **Location:** `game-session.ts:201-213` - `cachedVisiblePlayers`, `lastQueryX`, `lastQueryY`
 
-### 3. Full Redraw with Overlays
-- **Issue:** Username labels force full screen redraw every frame
-- **Impact:** No incremental updates possible, higher bandwidth
-- **Fix:** Track overlay changes, only redraw when needed
+### 3. Incremental Overlay Redraw ✅
+- **Issue:** Username labels forced full screen redraw every frame
+- **Solution:** Track overlay count changes, only force full redraw when overlay count changes
+- **Location:** `pixel-game-renderer.ts:362-364` - `previousOverlayCount`
 
-### 4. Database Queries in Render Loop
-- **Issue:** `loadPlayerSprite()` can fire during render tick
-- **Impact:** Async DB calls can stack up with many players
-- **Fix:** Implement sprite cache with LRU eviction
+### 4. Sprite Loading Deduplication ✅
+- **Issue:** `loadPlayerSprite()` could fire multiple times during render ticks
+- **Solution:** Track sprites being loaded in a Set, skip duplicate load requests
+- **Location:** `game-session.ts:229-237` - `loadingSprites` Set
 
-### 5. Unbuffered Stream Output
+### 5. Batched Stream Output ✅
 - **Issue:** Multiple `stream.write()` calls per frame
-- **Impact:** Syscall overhead, potential terminal flicker
-- **Fix:** Batch all output into single write per frame
-
-## Recommended Optimizations
-
-| Priority | Fix | Impact |
-|----------|-----|--------|
-| 1 | Cache visible players query | High - reduces queries 90%+ |
-| 2 | Batch ANSI output | Medium - reduces syscalls |
-| 3 | Match tick rates (67ms) | Medium - smoother animation |
-| 4 | Track overlay dirty state | Medium - enables incremental updates |
-| 5 | Sprite cache with TTL | Low - reduces DB load |
+- **Solution:** `renderToString()` returns frame as string, concatenate with overlays, single write
+- **Location:** `pixel-game-renderer.ts:529-577`, `game-session.ts:243-254`
 
 ## File Locations
 

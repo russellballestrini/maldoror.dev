@@ -48,6 +48,14 @@ services:
       NODE_ENV: production
     volumes:
       - ssh_keys:/app/apps/ssh-world/keys
+      # Mount dist directories for hot reload (code can be updated without container restart)
+      - ../apps/ssh-world/dist:/app/apps/ssh-world/dist:ro
+      - ../packages/ai/dist:/app/packages/ai/dist:ro
+      - ../packages/db/dist:/app/packages/db/dist:ro
+      - ../packages/protocol/dist:/app/packages/protocol/dist:ro
+      - ../packages/queue/dist:/app/packages/queue/dist:ro
+      - ../packages/render/dist:/app/packages/render/dist:ro
+      - ../packages/world/dist:/app/packages/world/dist:ro
     depends_on:
       postgres:
         condition: service_healthy

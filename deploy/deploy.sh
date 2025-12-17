@@ -81,6 +81,31 @@ scp "$PROJECT_ROOT/deploy/.env.prod" "$SERVER:$DEPLOY_DIR/.env"
 echo ">>> Fixing file permissions..."
 ssh_cmd "chmod 644 $DEPLOY_DIR/deploy/haproxy.cfg"
 
+echo ">>> Building locally for dist sync..."
+cd "$PROJECT_ROOT"
+pnpm build
+
+# Rebuild db package with tsup (required for ESM compatibility in production)
+echo ">>> Rebuilding db package with tsup..."
+cd "$PROJECT_ROOT/packages/db"
+npx tsup src/index.ts src/schema/index.ts \
+    --format esm \
+    --dts \
+    --clean \
+    --external drizzle-orm \
+    --external pg \
+    --external @maldoror/protocol
+cd "$PROJECT_ROOT"
+
+echo ">>> Syncing dist directories..."
+rsync -avz --delete -e "ssh -p $ADMIN_SSH_PORT" "$PROJECT_ROOT/apps/ssh-world/dist/" "$SERVER:$DEPLOY_DIR/apps/ssh-world/dist/"
+rsync -avz --delete -e "ssh -p $ADMIN_SSH_PORT" "$PROJECT_ROOT/packages/ai/dist/" "$SERVER:$DEPLOY_DIR/packages/ai/dist/"
+rsync -avz --delete -e "ssh -p $ADMIN_SSH_PORT" "$PROJECT_ROOT/packages/db/dist/" "$SERVER:$DEPLOY_DIR/packages/db/dist/"
+rsync -avz --delete -e "ssh -p $ADMIN_SSH_PORT" "$PROJECT_ROOT/packages/protocol/dist/" "$SERVER:$DEPLOY_DIR/packages/protocol/dist/"
+rsync -avz --delete -e "ssh -p $ADMIN_SSH_PORT" "$PROJECT_ROOT/packages/queue/dist/" "$SERVER:$DEPLOY_DIR/packages/queue/dist/"
+rsync -avz --delete -e "ssh -p $ADMIN_SSH_PORT" "$PROJECT_ROOT/packages/render/dist/" "$SERVER:$DEPLOY_DIR/packages/render/dist/"
+rsync -avz --delete -e "ssh -p $ADMIN_SSH_PORT" "$PROJECT_ROOT/packages/world/dist/" "$SERVER:$DEPLOY_DIR/packages/world/dist/"
+
 echo ">>> Checking if this is first deploy..."
 POSTGRES_RUNNING=$(ssh_cmd "docker ps --filter name=deploy-postgres -q" 2>/dev/null || echo "")
 
@@ -106,3 +131,6 @@ echo ""
 echo "Game SSH:  ssh abyss.maldoror.dev"
 echo "Admin SSH: ssh -p $ADMIN_SSH_PORT root@134.199.180.251"
 echo "Stats:     http://134.199.180.251:8404/stats"
+echo ""
+echo "For future deploys without disconnecting users:"
+echo "  pnpm deploy:hot"
