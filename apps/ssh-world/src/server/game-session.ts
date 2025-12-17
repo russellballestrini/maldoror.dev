@@ -296,6 +296,7 @@ export class GameSession {
       stream: this.stream,
       currentPrompt: this.currentPrompt,
       providerConfig: this.providerConfig,
+      username: this.username,
     });
 
     const result = await screen.run();

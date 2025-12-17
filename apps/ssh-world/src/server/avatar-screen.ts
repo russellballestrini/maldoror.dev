@@ -1,7 +1,7 @@
 import type { Duplex } from 'stream';
 import type { Sprite } from '@maldoror/protocol';
 import { ANSIBuilder, renderHalfBlockGrid } from '@maldoror/render';
-import { generatePixelSprite, type ProviderConfig } from '@maldoror/ai';
+import { generateImageSprite, type ProviderConfig } from '@maldoror/ai';
 
 const SPINNER_FRAMES = ['◐', '◓', '◑', '◒'];
 const SPINNER_INTERVAL = 200;
@@ -16,6 +16,7 @@ interface AvatarScreenConfig {
   stream: Duplex;
   currentPrompt?: string;
   providerConfig: ProviderConfig;
+  username?: string;
 }
 
 type ScreenState = 'input' | 'generating' | 'preview' | 'error';
@@ -35,6 +36,10 @@ export class AvatarScreen {
   private providerConfig: ProviderConfig;
   private inputBuffer: string = '';
   private destroyed: boolean = false;
+  private username: string;
+  private progressStep: string = '';
+  private progressCurrent: number = 0;
+  private progressTotal: number = 8;
 
   constructor(config: AvatarScreenConfig) {
     this.stream = config.stream;
@@ -42,17 +47,22 @@ export class AvatarScreen {
     this.prompt = config.currentPrompt ?? '';
     this.inputBuffer = this.prompt;
     this.providerConfig = config.providerConfig;
+    this.username = config.username ?? 'unknown';
   }
 
   async run(): Promise<AvatarScreenResult> {
-    // Enter alternate screen and setup
+    // Enter alternate screen and setup with dark background
     this.stream.write(
       this.ansi
         .enterAlternateScreen()
         .hideCursor()
+        .setBackground({ type: 'rgb', value: [20, 20, 25] })
         .clearScreen()
         .build()
     );
+
+    // Fill entire screen with background color
+    this.fillBackground();
 
     this.render();
 
@@ -135,16 +145,22 @@ export class AvatarScreen {
     this.render();
 
     try {
-      const result = await generatePixelSprite({
+      // Use image-based generation for better quality sprites
+      const result = await generateImageSprite({
         description: this.prompt,
-        providerConfig: this.providerConfig,
-        maxRetries: 2,
+        apiKey: this.providerConfig.apiKey,
+        username: this.username,
+        onProgress: (step, current, total) => {
+          this.progressStep = step;
+          this.progressCurrent = current;
+          this.progressTotal = total;
+          this.renderGeneratingState();
+        },
       });
 
       this.stopSpinner();
 
       if (result.success && result.sprite) {
-        // Generator now returns protocol Sprite directly
         this.sprite = result.sprite;
         this.state = 'preview';
       } else {
@@ -189,14 +205,34 @@ export class AvatarScreen {
     );
   }
 
-  private render(): void {
-    // Clear and redraw
+  private fillBackground(): void {
+    // Write background color to ensure it covers the entire terminal
     this.stream.write(
       this.ansi
+        .setBackground({ type: 'rgb', value: [20, 20, 25] })
+        .build()
+    );
+    // Fill visible area with spaces to ensure background color is set
+    for (let y = 0; y < 30; y++) {
+      this.stream.write(
+        this.ansi
+          .moveTo(0, y)
+          .write(' '.repeat(100))
+          .build()
+      );
+    }
+  }
+
+  private render(): void {
+    // Clear and redraw with dark background
+    this.stream.write(
+      this.ansi
+        .setBackground({ type: 'rgb', value: [20, 20, 25] })
         .clearScreen()
         .moveTo(0, 0)
         .build()
     );
+    this.fillBackground();
 
     // Draw box border
     this.drawBox();
@@ -300,8 +336,11 @@ export class AvatarScreen {
       ? this.inputBuffer.slice(-50)
       : this.inputBuffer;
 
+    // Clear the input area first, then write text
     this.stream.write(
       this.ansi
+        .moveTo(x + 2, 8)
+        .write(' '.repeat(50)) // Clear the line
         .moveTo(x + 2, 8)
         .setForeground({ type: 'rgb', value: [255, 255, 255] })
         .write(displayText)
@@ -345,11 +384,43 @@ export class AvatarScreen {
   private renderGeneratingState(): void {
     const x = 8;
 
+    // Progress header
+    const progressText = this.progressCurrent > 0
+      ? `Generating avatar [${this.progressCurrent}/${this.progressTotal}]`
+      : 'Generating your avatar...';
+
+    this.stream.write(
+      this.ansi
+        .moveTo(x, 6)
+        .setForeground({ type: 'rgb', value: [180, 180, 180] })
+        .write(progressText + ' '.repeat(30))
+        .build()
+    );
+
+    // Current step
+    if (this.progressStep) {
+      this.stream.write(
+        this.ansi
+          .moveTo(x, 8)
+          .setForeground({ type: 'rgb', value: [255, 200, 100] })
+          .write(this.progressStep + ' '.repeat(40))
+          .build()
+      );
+    }
+
+    // Progress bar
+    const barWidth = 40;
+    const filled = Math.floor((this.progressCurrent / this.progressTotal) * barWidth);
+    const progressBar = '█'.repeat(filled) + '░'.repeat(barWidth - filled);
+
     this.stream.write(
       this.ansi
         .moveTo(x, 10)
-        .setForeground({ type: 'rgb', value: [180, 180, 180] })
-        .write('Generating your avatar...')
+        .setForeground({ type: 'rgb', value: [100, 180, 100] })
+        .write('[')
+        .write(progressBar)
+        .write(']')
+        .resetAttributes()
         .build()
     );
 
@@ -360,7 +431,7 @@ export class AvatarScreen {
 
     this.stream.write(
       this.ansi
-        .moveTo(x, 12)
+        .moveTo(x, 13)
         .setForeground({ type: 'rgb', value: [100, 100, 120] })
         .write(`"${truncatedPrompt}"`)
         .build()
@@ -369,7 +440,7 @@ export class AvatarScreen {
     // Spinner
     this.stream.write(
       this.ansi
-        .moveTo(30, 13)
+        .moveTo(x, 15)
         .setForeground({ type: 'rgb', value: [255, 200, 100] })
         .write(SPINNER_FRAMES[this.spinnerFrame]!)
         .resetAttributes()
@@ -379,9 +450,9 @@ export class AvatarScreen {
 
     this.stream.write(
       this.ansi
-        .moveTo(x, 16)
+        .moveTo(x, 17)
         .setForeground({ type: 'rgb', value: [100, 100, 120] })
-        .write('This may take a few seconds...')
+        .write('Generating 8 frames (4 directions x 2 poses)...')
         .resetAttributes()
         .build()
     );
