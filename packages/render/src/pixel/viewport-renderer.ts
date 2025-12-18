@@ -2,7 +2,9 @@ import type {
   PixelGrid,
   PlayerVisualState,
   RGB,
-  WorldDataProvider
+  WorldDataProvider,
+  Direction,
+  BuildingDirection
 } from '@maldoror/protocol';
 import { TILE_SIZE, RESOLUTIONS } from '@maldoror/protocol';
 import {
@@ -50,6 +52,57 @@ export type { WorldDataProvider } from '@maldoror/protocol';
 export type CameraMode = 'follow' | 'free';
 
 /**
+ * Camera rotation angle (90° increments)
+ */
+export type CameraRotation = 0 | 90 | 180 | 270;
+
+/**
+ * Direction remapping for camera rotation
+ * Maps world direction → visual direction based on camera angle
+ */
+const DIRECTION_REMAP: Record<CameraRotation, Record<Direction, Direction>> = {
+  0:   { up: 'up',    down: 'down',  left: 'left',  right: 'right' },
+  90:  { up: 'right', down: 'left',  left: 'up',    right: 'down'  },
+  180: { up: 'down',  down: 'up',    left: 'right', right: 'left'  },
+  270: { up: 'left',  down: 'right', left: 'down',  right: 'up'    },
+};
+
+/**
+ * Movement remapping for screen-relative controls
+ * Maps screen direction → world direction based on camera angle
+ */
+export const MOVEMENT_REMAP: Record<CameraRotation, Record<Direction, Direction>> = {
+  0:   { up: 'up',    down: 'down',  left: 'left',  right: 'right' },
+  90:  { up: 'left',  down: 'right', left: 'down',  right: 'up'    },
+  180: { up: 'down',  down: 'up',    left: 'right', right: 'left'  },
+  270: { up: 'right', down: 'left',  left: 'up',    right: 'down'  },
+};
+
+/**
+ * Camera rotation to building direction mapping
+ * When camera rotates, we show the building from a different direction
+ */
+const CAMERA_TO_BUILDING_DIRECTION: Record<CameraRotation, BuildingDirection> = {
+  0:   'north',
+  90:  'east',
+  180: 'south',
+  270: 'west',
+};
+
+/**
+ * Rotate a point around the origin by camera angle
+ * Used to transform world coordinates to screen-relative coordinates
+ */
+function rotatePoint(x: number, y: number, angle: CameraRotation): { x: number; y: number } {
+  switch (angle) {
+    case 0:   return { x, y };
+    case 90:  return { x: -y, y: x };
+    case 180: return { x: -x, y: -y };
+    case 270: return { x: y, y: -x };
+  }
+}
+
+/**
  * Render the game viewport to ANSI strings
  */
 export class ViewportRenderer {
@@ -62,6 +115,8 @@ export class ViewportRenderer {
   private targetCenterY: number = 0;
   // Camera mode
   private cameraMode: CameraMode = 'follow';
+  // Camera rotation (0°, 90°, 180°, 270°)
+  private cameraRotation: CameraRotation = 0;
   private pendingOverlays: TextOverlay[] = [];  // Collected during render
   private tileRenderSize: number;  // Tile screen render size in pixels
   private dataResolution: number;  // Resolution to fetch from pre-computed data
@@ -128,6 +183,65 @@ export class ViewportRenderer {
   toggleCameraMode(): CameraMode {
     this.cameraMode = this.cameraMode === 'follow' ? 'free' : 'follow';
     return this.cameraMode;
+  }
+
+  /**
+   * Get camera rotation
+   */
+  getCameraRotation(): CameraRotation {
+    return this.cameraRotation;
+  }
+
+  /**
+   * Rotate camera clockwise by 90°
+   */
+  rotateCameraClockwise(): CameraRotation {
+    this.cameraRotation = ((this.cameraRotation + 90) % 360) as CameraRotation;
+    return this.cameraRotation;
+  }
+
+  /**
+   * Rotate camera counter-clockwise by 90°
+   */
+  rotateCameraCounterClockwise(): CameraRotation {
+    this.cameraRotation = ((this.cameraRotation + 270) % 360) as CameraRotation;
+    return this.cameraRotation;
+  }
+
+  /**
+   * Get the visual direction for a world direction based on camera rotation
+   */
+  getVisualDirection(worldDirection: Direction): Direction {
+    return DIRECTION_REMAP[this.cameraRotation][worldDirection];
+  }
+
+  /**
+   * Get the world direction for a screen direction based on camera rotation
+   * Used for screen-relative movement controls
+   */
+  getWorldDirection(screenDirection: Direction): Direction {
+    return MOVEMENT_REMAP[this.cameraRotation][screenDirection];
+  }
+
+  /**
+   * Get the building direction for current camera rotation
+   * Used to select which building sprite rotation to render
+   */
+  getBuildingDirection(): BuildingDirection {
+    return CAMERA_TO_BUILDING_DIRECTION[this.cameraRotation];
+  }
+
+  /**
+   * Transform world pixel coordinates to screen pixel coordinates
+   * Applies camera rotation around the camera center point
+   */
+  private worldToScreen(worldX: number, worldY: number, cameraX: number, cameraY: number): { x: number; y: number } {
+    // Get offset from camera center in world coordinates
+    const offsetX = worldX - cameraX;
+    const offsetY = worldY - cameraY;
+    // Rotate the offset
+    const rotated = rotatePoint(offsetX, offsetY, this.cameraRotation);
+    return rotated;  // Returns offset from screen center
   }
 
   /**
@@ -242,17 +356,25 @@ export class ViewportRenderer {
   }
 
   /**
-   * Render tiles to buffer with sub-pixel camera positioning
+   * Render tiles to buffer with sub-pixel camera positioning and camera rotation
    */
-  private renderTiles(buffer: PixelGrid, world: WorldDataProvider, tick: number, origin: { x: number; y: number }): void {
+  private renderTiles(buffer: PixelGrid, world: WorldDataProvider, tick: number, _origin: { x: number; y: number }): void {
     // Use the pre-selected data resolution
     const resKey = String(this.dataResolution);
 
-    // Calculate which tiles are visible (with +1 padding for partial tiles at edges)
-    const startTileX = Math.floor(origin.x / this.tileRenderSize);
-    const startTileY = Math.floor(origin.y / this.tileRenderSize);
-    const endTileX = Math.ceil((origin.x + buffer[0]!.length) / this.tileRenderSize);
-    const endTileY = Math.ceil((origin.y + buffer.length) / this.tileRenderSize);
+    // Screen center in buffer coordinates
+    const screenCenterX = buffer[0]!.length / 2;
+    const screenCenterY = buffer.length / 2;
+
+    // Calculate the world bounds we need to sample (larger area to cover rotated viewport)
+    const viewportRadius = Math.max(buffer[0]!.length, buffer.length) / this.tileRenderSize + 2;
+    const cameraTileX = Math.floor(this.cameraCenterX / this.tileRenderSize);
+    const cameraTileY = Math.floor(this.cameraCenterY / this.tileRenderSize);
+
+    const startTileX = cameraTileX - Math.ceil(viewportRadius);
+    const startTileY = cameraTileY - Math.ceil(viewportRadius);
+    const endTileX = cameraTileX + Math.ceil(viewportRadius);
+    const endTileY = cameraTileY + Math.ceil(viewportRadius);
 
     for (let worldTileY = startTileY; worldTileY <= endTileY; worldTileY++) {
       for (let worldTileX = startTileX; worldTileX <= endTileX; worldTileX++) {
@@ -280,9 +402,16 @@ export class ViewportRenderer {
             : `tile:${tile.id}`;
           const scaledPixels = this.scaleFrame(tilePixels, this.tileRenderSize, this.tileRenderSize, frameId);
 
-          // Calculate screen position (world pixel position minus viewport origin)
-          const screenX = Math.round(worldTileX * this.tileRenderSize - origin.x);
-          const screenY = Math.round(worldTileY * this.tileRenderSize - origin.y);
+          // Calculate screen position with rotation
+          // World pixel position of tile center
+          const worldPixelX = (worldTileX + 0.5) * this.tileRenderSize;
+          const worldPixelY = (worldTileY + 0.5) * this.tileRenderSize;
+          // Transform to screen coordinates (offset from screen center)
+          const screenOffset = this.worldToScreen(worldPixelX, worldPixelY, this.cameraCenterX, this.cameraCenterY);
+          // Convert to buffer coordinates (top-left of tile)
+          // Use Math.floor for consistent alignment of adjacent tiles
+          const screenX = Math.floor(screenCenterX + screenOffset.x - this.tileRenderSize / 2);
+          const screenY = Math.floor(screenCenterY + screenOffset.y - this.tileRenderSize / 2);
 
           // Copy tile pixels to buffer (handling partial tiles at edges)
           for (let py = 0; py < scaledPixels.length; py++) {
@@ -308,35 +437,51 @@ export class ViewportRenderer {
   }
 
   /**
-   * Render building tiles on top of terrain (with transparency support)
+   * Render building tiles on top of terrain (with transparency support and camera rotation)
    */
-  private renderBuildings(buffer: PixelGrid, world: WorldDataProvider, origin: { x: number; y: number }): void {
+  private renderBuildings(buffer: PixelGrid, world: WorldDataProvider, _origin: { x: number; y: number }): void {
     // Skip if world doesn't support buildings
     if (!world.getBuildingTileAt) return;
 
     const resKey = String(this.dataResolution);
+    const buildingDirection = this.getBuildingDirection();
 
-    // Calculate which tiles are visible
-    const startTileX = Math.floor(origin.x / this.tileRenderSize);
-    const startTileY = Math.floor(origin.y / this.tileRenderSize);
-    const endTileX = Math.ceil((origin.x + buffer[0]!.length) / this.tileRenderSize);
-    const endTileY = Math.ceil((origin.y + buffer.length) / this.tileRenderSize);
+    // Screen center in buffer coordinates
+    const screenCenterX = buffer[0]!.length / 2;
+    const screenCenterY = buffer.length / 2;
+
+    // Calculate the world bounds we need to sample (larger area to cover rotated viewport)
+    const viewportRadius = Math.max(buffer[0]!.length, buffer.length) / this.tileRenderSize + 2;
+    const cameraTileX = Math.floor(this.cameraCenterX / this.tileRenderSize);
+    const cameraTileY = Math.floor(this.cameraCenterY / this.tileRenderSize);
+
+    const startTileX = cameraTileX - Math.ceil(viewportRadius);
+    const startTileY = cameraTileY - Math.ceil(viewportRadius);
+    const endTileX = cameraTileX + Math.ceil(viewportRadius);
+    const endTileY = cameraTileY + Math.ceil(viewportRadius);
 
     for (let worldTileY = startTileY; worldTileY <= endTileY; worldTileY++) {
       for (let worldTileX = startTileX; worldTileX <= endTileX; worldTileX++) {
-        const buildingTile = world.getBuildingTileAt(worldTileX, worldTileY);
+        const buildingTile = world.getBuildingTileAt(worldTileX, worldTileY, buildingDirection);
         if (!buildingTile) continue;
 
         // Get the appropriate resolution
         const tilePixels = buildingTile.resolutions?.[resKey] ?? buildingTile.pixels;
 
         // Scale to exact tile render size if needed (with caching by position)
-        const frameId = `building:${worldTileX},${worldTileY}`;
+        const frameId = `building:${worldTileX},${worldTileY}:${buildingDirection}`;
         const scaledPixels = this.scaleFrame(tilePixels, this.tileRenderSize, this.tileRenderSize, frameId);
 
-        // Calculate screen position
-        const screenX = Math.round(worldTileX * this.tileRenderSize - origin.x);
-        const screenY = Math.round(worldTileY * this.tileRenderSize - origin.y);
+        // Calculate screen position with rotation
+        // World pixel position of tile center
+        const worldPixelX = (worldTileX + 0.5) * this.tileRenderSize;
+        const worldPixelY = (worldTileY + 0.5) * this.tileRenderSize;
+        // Transform to screen coordinates (offset from screen center)
+        const screenOffset = this.worldToScreen(worldPixelX, worldPixelY, this.cameraCenterX, this.cameraCenterY);
+        // Convert to buffer coordinates (top-left of tile)
+        // Use Math.floor for consistent alignment of adjacent tiles
+        const screenX = Math.floor(screenCenterX + screenOffset.x - this.tileRenderSize / 2);
+        const screenY = Math.floor(screenCenterY + screenOffset.y - this.tileRenderSize / 2);
 
         // Copy building pixels to buffer (only non-transparent pixels)
         for (let py = 0; py < scaledPixels.length; py++) {
@@ -441,44 +586,64 @@ export class ViewportRenderer {
   }
 
   /**
-   * Render players to buffer with sub-pixel camera positioning
+   * Render players to buffer with sub-pixel camera positioning and camera rotation
    */
-  private renderPlayers(buffer: PixelGrid, world: WorldDataProvider, _tick: number, origin: { x: number; y: number }): void {
+  private renderPlayers(buffer: PixelGrid, world: WorldDataProvider, _tick: number, _origin: { x: number; y: number }): void {
     const players = world.getPlayers();
     const localId = world.getLocalPlayerId();
 
+    // Screen center in buffer coordinates
+    const screenCenterX = buffer[0]!.length / 2;
+    const screenCenterY = buffer.length / 2;
+
     // Sort by Y position for proper layering (lower Y drawn first)
-    const sortedPlayers = [...players].sort((a, b) => a.y - b.y);
+    // When camera is rotated, we need to sort by the rotated Y position
+    const sortedPlayers = [...players].sort((a, b) => {
+      const aWorld = { x: a.x * this.tileRenderSize, y: a.y * this.tileRenderSize };
+      const bWorld = { x: b.x * this.tileRenderSize, y: b.y * this.tileRenderSize };
+      const aScreen = this.worldToScreen(aWorld.x, aWorld.y, this.cameraCenterX, this.cameraCenterY);
+      const bScreen = this.worldToScreen(bWorld.x, bWorld.y, this.cameraCenterX, this.cameraCenterY);
+      return aScreen.y - bScreen.y;
+    });
 
     for (const player of sortedPlayers) {
       const sprite = world.getPlayerSprite(player.userId);
       if (!sprite) {
         // Render placeholder if no sprite
-        this.renderPlaceholderPlayer(buffer, player, origin);
+        this.renderPlaceholderPlayer(buffer, player, screenCenterX, screenCenterY);
         continue;
       }
 
       // Use the pre-selected data resolution
       const resKey = String(this.dataResolution);
 
+      // Remap direction based on camera rotation (world direction → visual direction)
+      const visualDirection = this.getVisualDirection(player.direction);
+
       // Try to get pre-computed resolution, fall back to base frames
-      let directionFrames = sprite.resolutions?.[resKey]?.[player.direction];
+      let directionFrames = sprite.resolutions?.[resKey]?.[visualDirection];
       if (!directionFrames) {
-        directionFrames = sprite.frames[player.direction];
+        directionFrames = sprite.frames[visualDirection];
       }
 
       const rawFrame = directionFrames[player.animationFrame];
       if (!rawFrame) continue;
 
       // Scale to exact tile render size if needed (with caching)
-      const frameId = `player:${player.userId}:${player.direction}:${player.animationFrame}`;
+      // Use visual direction in cache key since same world direction shows different sprite when rotated
+      const frameId = `player:${player.userId}:${visualDirection}:${player.animationFrame}`;
       const frame = this.scaleFrame(rawFrame, this.tileRenderSize, this.tileRenderSize, frameId);
 
-      // Calculate screen position (world pixel position minus viewport origin)
-      const worldPixelX = player.x * this.tileRenderSize;
-      const worldPixelY = player.y * this.tileRenderSize;
-      const screenX = Math.round(worldPixelX - origin.x);
-      const screenY = Math.round(worldPixelY - origin.y);
+      // Calculate screen position with rotation
+      // World pixel position of player (center of their tile)
+      const worldPixelX = (player.x + 0.5) * this.tileRenderSize;
+      const worldPixelY = (player.y + 0.5) * this.tileRenderSize;
+      // Transform to screen coordinates (offset from screen center)
+      const screenOffset = this.worldToScreen(worldPixelX, worldPixelY, this.cameraCenterX, this.cameraCenterY);
+      // Convert to buffer coordinates (top-left of sprite)
+      // Use Math.floor for consistent alignment with terrain tiles
+      const screenX = Math.floor(screenCenterX + screenOffset.x - this.tileRenderSize / 2);
+      const screenY = Math.floor(screenCenterY + screenOffset.y - this.tileRenderSize / 2);
 
       // Composite sprite onto buffer
       for (let py = 0; py < frame.length; py++) {
@@ -520,12 +685,14 @@ export class ViewportRenderer {
    * Render a placeholder for players without sprites
    * This is a small fallback marker - the actual placeholder sprite is generated separately
    */
-  private renderPlaceholderPlayer(buffer: PixelGrid, player: PlayerVisualState, origin: { x: number; y: number }): void {
-    // Calculate screen position (world pixel position minus viewport origin)
-    const worldPixelX = player.x * this.tileRenderSize;
-    const worldPixelY = player.y * this.tileRenderSize;
-    const screenX = Math.round(worldPixelX - origin.x);
-    const screenY = Math.round(worldPixelY - origin.y);
+  private renderPlaceholderPlayer(buffer: PixelGrid, player: PlayerVisualState, screenCenterX: number, screenCenterY: number): void {
+    // Calculate screen position with rotation
+    const worldPixelX = (player.x + 0.5) * this.tileRenderSize;
+    const worldPixelY = (player.y + 0.5) * this.tileRenderSize;
+    const screenOffset = this.worldToScreen(worldPixelX, worldPixelY, this.cameraCenterX, this.cameraCenterY);
+    // Use Math.floor for consistent alignment with terrain tiles
+    const screenX = Math.floor(screenCenterX + screenOffset.x - this.tileRenderSize / 2);
+    const screenY = Math.floor(screenCenterY + screenOffset.y - this.tileRenderSize / 2);
 
     // Marker is same size as current tile render size
     const markerSize = this.tileRenderSize;

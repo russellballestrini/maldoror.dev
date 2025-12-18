@@ -1,14 +1,13 @@
 import type { Duplex } from 'stream';
-import type { BuildingSprite } from '@maldoror/protocol';
 import { ANSIBuilder, renderHalfBlockGrid } from '@maldoror/render';
-import { generateBuildingSprite, type ProviderConfig } from '@maldoror/ai';
+import { generateBuildingSprite, type ProviderConfig, type DirectionalBuildingSprite } from '@maldoror/ai';
 
 const SPINNER_FRAMES = ['◐', '◓', '◑', '◒'];
 const SPINNER_INTERVAL = 200;
 
 export interface BuildingScreenResult {
   action: 'confirm' | 'cancel';
-  sprite?: BuildingSprite;
+  sprite?: DirectionalBuildingSprite;
   prompt?: string;
 }
 
@@ -30,7 +29,7 @@ export class BuildingScreen {
   private ansi: ANSIBuilder;
   private state: ScreenState = 'input';
   private prompt: string = '';
-  private sprite: BuildingSprite | null = null;
+  private sprite: DirectionalBuildingSprite | null = null;
   private errorMessage: string = '';
   private spinnerFrame: number = 0;
   private spinnerInterval: NodeJS.Timeout | null = null;
@@ -550,13 +549,16 @@ export class BuildingScreen {
   private renderBuildingPreview(startX: number, startY: number): void {
     if (!this.sprite) return;
 
+    // Use 'north' direction for preview (camera at 0° rotation)
+    const northSprite = this.sprite.north;
+
     // Render 3×3 grid of tiles
     // Use a smaller resolution for preview (26 or 51)
     const previewRes = '51';
 
     for (let ty = 0; ty < 3; ty++) {
       for (let tx = 0; tx < 3; tx++) {
-        const tile = this.sprite.tiles[ty]?.[tx];
+        const tile = northSprite.tiles[ty]?.[tx];
         if (!tile) continue;
 
         // Use the pre-computed resolution or fall back to base

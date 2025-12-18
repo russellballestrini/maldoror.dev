@@ -1,6 +1,7 @@
 import type { Duplex } from 'stream';
 import type { WorldDataProvider } from '@maldoror/protocol';
-import { ViewportRenderer, type ViewportConfig, type TextOverlay, type CameraMode } from './viewport-renderer.js';
+import { ViewportRenderer, type ViewportConfig, type TextOverlay, type CameraMode, type CameraRotation } from './viewport-renderer.js';
+import type { Direction } from '@maldoror/protocol';
 import {
   renderPixelRow,
   renderHalfBlockGrid,
@@ -408,7 +409,7 @@ export class PixelGameRenderer {
   }
 
   /**
-   * Render the stats bar showing username, coordinates, zoom, render mode, camera mode, and debug info
+   * Render the stats bar showing username, coordinates, zoom, render mode, camera mode, rotation, and debug info
    */
   private renderStatsBar(): string {
     const tileSize = this.getCurrentTileSize();
@@ -419,7 +420,9 @@ export class PixelGameRenderer {
     const zoomStr = `${this.zoomLevel}%`;
     const modeStr = this.renderMode.charAt(0).toUpperCase();  // B, H, or N
     const cameraMode = this.viewportRenderer.getCameraMode();
+    const cameraRotation = this.viewportRenderer.getCameraRotation();
     const camStr = cameraMode === 'free' ? ' [FREE]' : '';
+    const rotStr = cameraRotation !== 0 ? ` R:${cameraRotation}°` : '';
     const bytesStr = this.lastFrameBytes >= 1024
       ? `${(this.lastFrameBytes / 1024).toFixed(0)}KB`
       : `${this.lastFrameBytes}B`;
@@ -428,7 +431,7 @@ export class PixelGameRenderer {
     const debugStr = `${tileSize}px ${widthTiles}x${heightTiles}t`;
 
     const leftText = ` ${this.username}`;
-    const centerText = `${modeStr}:${zoomStr}${camStr} [${fpsStr}] [${debugStr}]`;
+    const centerText = `${modeStr}:${zoomStr}${rotStr}${camStr} [${fpsStr}] [${debugStr}]`;
     const rightText = `${coordStr} `;
 
     // Calculate padding for center alignment
@@ -894,6 +897,37 @@ export class PixelGameRenderer {
    */
   panCameraByTiles(deltaTilesX: number, deltaTilesY: number): void {
     this.viewportRenderer.panCameraByTiles(deltaTilesX, deltaTilesY);
+  }
+
+  /**
+   * Get current camera rotation (0, 90, 180, or 270 degrees)
+   */
+  getCameraRotation(): CameraRotation {
+    return this.viewportRenderer.getCameraRotation();
+  }
+
+  /**
+   * Rotate camera clockwise by 90 degrees
+   * Returns the new rotation
+   */
+  rotateCameraClockwise(): CameraRotation {
+    return this.viewportRenderer.rotateCameraClockwise();
+  }
+
+  /**
+   * Rotate camera counter-clockwise by 90 degrees
+   * Returns the new rotation
+   */
+  rotateCameraCounterClockwise(): CameraRotation {
+    return this.viewportRenderer.rotateCameraCounterClockwise();
+  }
+
+  /**
+   * Get the world direction for a screen direction based on camera rotation
+   * Used for screen-relative movement controls
+   */
+  getWorldDirection(screenDirection: Direction): Direction {
+    return this.viewportRenderer.getWorldDirection(screenDirection);
   }
 
   /**

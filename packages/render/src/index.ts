@@ -44,8 +44,10 @@ export {
 
 export {
   ViewportRenderer,
+  MOVEMENT_REMAP,
   type ViewportConfig,
   type WorldDataProvider,
+  type CameraRotation,
 } from './pixel/viewport-renderer.js';
 
 export {

@@ -86,6 +86,9 @@ export class InputHandler {
       { key: 'ArrowDown', shift: true, action: 'pan_camera_down' },
       { key: 'ArrowLeft', shift: true, action: 'pan_camera_left' },
       { key: 'ArrowRight', shift: true, action: 'pan_camera_right' },
+      // Camera rotation
+      { key: '[', action: 'rotate_camera_ccw' },
+      { key: ']', action: 'rotate_camera_cw' },
     ]);
 
     // Chat mode bindings

@@ -3,6 +3,7 @@ import {
   uuid,
   integer,
   text,
+  varchar,
   timestamp,
   index,
   unique,
@@ -11,8 +12,14 @@ import { relations } from 'drizzle-orm';
 import { buildings } from './buildings';
 
 /**
+ * Building direction type for camera rotation support
+ * north = 0° (original), east = 90° CW, south = 180°, west = 270° CW
+ */
+export type BuildingDirection = 'north' | 'east' | 'south' | 'west';
+
+/**
  * Building tiles table - Individual PNG files for building tile resolutions
- * Each row represents one PNG file: tile position + resolution
+ * Each row represents one PNG file: tile position + resolution + direction
  */
 export const buildingTiles = pgTable('building_tiles', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -23,13 +30,16 @@ export const buildingTiles = pgTable('building_tiles', {
   tileY: integer('tile_y').notNull(), // 0-2
   resolution: integer('resolution').notNull(), // 26, 51, 77, ... 256
 
+  // Direction for camera rotation (north=0°, east=90°, south=180°, west=270°)
+  direction: varchar('direction', { length: 8 }).notNull().default('north'),
+
   // File info
   filePath: text('file_path').notNull(), // relative path to PNG
 
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({
   buildingIdx: index('idx_building_tiles_building').on(table.buildingId),
-  uniqueTile: unique('uq_building_tiles').on(table.buildingId, table.tileX, table.tileY, table.resolution),
+  uniqueTile: unique('uq_building_tiles').on(table.buildingId, table.tileX, table.tileY, table.resolution, table.direction),
 }));
 
 /**

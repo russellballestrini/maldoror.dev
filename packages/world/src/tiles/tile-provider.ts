@@ -1,4 +1,4 @@
-import type { Tile, Sprite, PlayerVisualState, PixelGrid, RGB, WorldDataProvider, Pixel, DirectionFrames, BuildingSprite, BuildingTile } from '@maldoror/protocol';
+import type { Tile, Sprite, PlayerVisualState, PixelGrid, RGB, WorldDataProvider, Pixel, DirectionFrames, BuildingSprite, BuildingTile, BuildingDirection } from '@maldoror/protocol';
 import { CHUNK_SIZE_TILES, BASE_SIZE, RESOLUTIONS, isPositionInBuilding, getBuildingTileIndex } from '@maldoror/protocol';
 import { BASE_TILES, getTileById } from './base-tiles.js';
 import { SeededRandom, ValueNoise } from '../noise/noise.js';
@@ -67,11 +67,23 @@ interface ProceduralTileCache {
 }
 
 /**
+ * Directional sprites for a building (all 4 rotations for camera support)
+ */
+export interface DirectionalBuildingSprites {
+  north: BuildingSprite;
+  east: BuildingSprite;
+  south: BuildingSprite;
+  west: BuildingSprite;
+}
+
+/**
  * Cached building data
+ * Supports both single-direction (legacy) and directional sprites
  */
 export interface BuildingData {
   id: string;
-  sprite: BuildingSprite;
+  sprite: BuildingSprite;  // Primary sprite (north) or legacy single sprite
+  directionalSprites?: DirectionalBuildingSprites;  // All 4 directions if available
   anchorX: number;
   anchorY: number;
 }
@@ -315,8 +327,15 @@ export class TileProvider implements WorldDataProvider {
 
   /**
    * Add a building to the tile provider
+   * @param directionalSprites - Optional full directional sprites for camera rotation support
    */
-  setBuilding(buildingId: string, anchorX: number, anchorY: number, sprite: BuildingSprite): void {
+  setBuilding(
+    buildingId: string,
+    anchorX: number,
+    anchorY: number,
+    sprite: BuildingSprite,
+    directionalSprites?: DirectionalBuildingSprites
+  ): void {
     // Remove from old spatial hash location if exists
     const existing = this.buildings.get(buildingId);
     if (existing) {
@@ -326,6 +345,7 @@ export class TileProvider implements WorldDataProvider {
     this.buildings.set(buildingId, {
       id: buildingId,
       sprite,
+      directionalSprites,
       anchorX,
       anchorY,
     });
@@ -405,16 +425,51 @@ export class TileProvider implements WorldDataProvider {
   }
 
   /**
+   * Remap tile indices based on camera direction
+   * When camera rotates, we need to access different tiles from the directional sprite
+   * to maintain visual coherence with the coordinate transformation
+   */
+  private remapTileIndex(tileX: number, tileY: number, direction: BuildingDirection): [number, number] {
+    switch (direction) {
+      case 'north':
+        // No remapping - tiles[tileY][tileX]
+        return [tileX, tileY];
+      case 'east':
+        // 90° CW - tiles[tileX][2-tileY] displays as: 2 5 8 / 1 4 7 / 0 3 6
+        return [2 - tileY, tileX];
+      case 'south':
+        // 180° - tiles[2-tileY][2-tileX]
+        return [2 - tileX, 2 - tileY];
+      case 'west':
+        // 270° CW - tiles[2-tileX][tileY] (opposite of east)
+        return [tileY, 2 - tileX];
+    }
+  }
+
+  /**
    * Get building tile at world coordinates, if any
    * Returns the BuildingTile for rendering, or null if no building at that position
    * Uses spatial hash for O(1) average lookup instead of O(N)
+   * @param direction - Building direction for camera rotation (defaults to 'north')
    */
-  getBuildingTileAt(worldX: number, worldY: number): BuildingTile | null {
+  getBuildingTileAt(worldX: number, worldY: number, direction: BuildingDirection = 'north'): BuildingTile | null {
     for (const building of this.getBuildingsNearPosition(worldX, worldY)) {
       const tileIndex = getBuildingTileIndex(worldX, worldY, building.anchorX, building.anchorY);
       if (tileIndex) {
         const [tileX, tileY] = tileIndex;
-        return building.sprite.tiles[tileY]?.[tileX] ?? null;
+        // Check if we have the proper directional sprite
+        const hasDirectionalSprite = building.directionalSprites?.[direction] != null;
+
+        if (hasDirectionalSprite) {
+          // Use directional sprite with remapped indices to account for coordinate transformation
+          const [remappedX, remappedY] = this.remapTileIndex(tileX, tileY, direction);
+          const sprite = building.directionalSprites![direction];
+          return sprite.tiles[remappedY]?.[remappedX] ?? null;
+        } else {
+          // Fall back to primary sprite (north) without remapping
+          // The building will appear as north view regardless of camera rotation
+          return building.sprite.tiles[tileY]?.[tileX] ?? null;
+        }
       }
     }
     return null;

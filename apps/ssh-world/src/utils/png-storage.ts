@@ -49,14 +49,16 @@ export function getSpritePngPath(
 
 /**
  * Get building tile PNG file path
+ * @param direction - Building direction (north, east, south, west) for camera rotation support
  */
 export function getBuildingPngPath(
   buildingId: string,
   tileX: number,
   tileY: number,
-  resolution: number
+  resolution: number,
+  direction: string = 'north'
 ): string {
-  return path.join(BUILDINGS_BASE, buildingId, `tile_${tileX}_${tileY}_${resolution}.png`);
+  return path.join(BUILDINGS_BASE, buildingId, `tile_${direction}_${tileX}_${tileY}_${resolution}.png`);
 }
 
 /**

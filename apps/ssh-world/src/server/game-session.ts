@@ -1,7 +1,8 @@
 import type { Duplex } from 'stream';
 import { PixelGameRenderer, InputHandler } from '@maldoror/render';
 import { TileProvider, createPlaceholderSprite } from '@maldoror/world';
-import type { Direction, AnimationFrame, PlayerVisualState, Sprite, BuildingSprite } from '@maldoror/protocol';
+import type { Direction, AnimationFrame, PlayerVisualState, Sprite } from '@maldoror/protocol';
+import type { DirectionalBuildingSprite } from '@maldoror/ai';
 import { getBuildingTilePositions } from '@maldoror/protocol';
 import { WorkerManager, ReloadState } from './worker-manager.js';
 import { OnboardingFlow } from './onboarding.js';
@@ -11,7 +12,7 @@ import { db, schema } from '@maldoror/db';
 import { eq, and, between } from 'drizzle-orm';
 import type { ProviderConfig } from '@maldoror/ai';
 import { saveSpriteToDisk, loadSpriteFromDisk } from '../utils/sprite-storage.js';
-import { saveBuildingToDisk, loadBuildingFromDisk } from '../utils/building-storage.js';
+import { saveBuildingToDisk, loadAllBuildingDirections } from '../utils/building-storage.js';
 
 interface GameSessionConfig {
   stream: Duplex;
@@ -456,6 +457,7 @@ export class GameSession {
     const commands = [
       { key: '← ↑ → ↓ / WASD', desc: 'Move your character' },
       { key: '+ / -', desc: 'Zoom in / out' },
+      { key: '[ / ]', desc: 'Rotate camera' },
       { key: 'V', desc: 'Cycle render mode (halfblock/braille/text)' },
       { key: 'C', desc: 'Toggle camera mode (follow/free)' },
       { key: 'H / Home', desc: 'Snap camera to player' },
@@ -540,16 +542,16 @@ export class GameSession {
 
     switch (action) {
       case 'move_up':
-        this.move(0, -1, 'up');
+        this.moveScreenRelative('up');
         break;
       case 'move_down':
-        this.move(0, 1, 'down');
+        this.moveScreenRelative('down');
         break;
       case 'move_left':
-        this.move(-1, 0, 'left');
+        this.moveScreenRelative('left');
         break;
       case 'move_right':
-        this.move(1, 0, 'right');
+        this.moveScreenRelative('right');
         break;
       case 'zoom_in':
         this.renderer?.zoomIn();
@@ -588,6 +590,12 @@ export class GameSession {
         break;
       case 'pan_camera_right':
         this.panCamera(1, 0);
+        break;
+      case 'rotate_camera_cw':
+        this.rotateCameraClockwise();
+        break;
+      case 'rotate_camera_ccw':
+        this.rotateCameraCounterClockwise();
         break;
       case 'show_help':
         this.showHelpModal = true;
@@ -651,6 +659,32 @@ export class GameSession {
     }
     this.renderer.panCameraByTiles(dx, dy);
     this.renderer.invalidate();
+  }
+
+  /**
+   * Rotate camera clockwise by 90°
+   */
+  private rotateCameraClockwise(): void {
+    if (!this.renderer) return;
+    this.renderer.rotateCameraClockwise();
+    this.renderer.invalidate();
+  }
+
+  /**
+   * Rotate camera counter-clockwise by 90°
+   */
+  private rotateCameraCounterClockwise(): void {
+    if (!this.renderer) return;
+    this.renderer.rotateCameraCounterClockwise();
+    this.renderer.invalidate();
+  }
+
+  /**
+   * Get the world direction for a screen direction based on camera rotation
+   */
+  private getWorldDirection(screenDirection: Direction): Direction {
+    if (!this.renderer) return screenDirection;
+    return this.renderer.getWorldDirection(screenDirection);
   }
 
   /**
@@ -811,7 +845,7 @@ export class GameSession {
   /**
    * Save building - sprite to file, metadata to database
    */
-  private async saveBuilding(prompt: string, sprite: BuildingSprite): Promise<void> {
+  private async saveBuilding(prompt: string, sprite: DirectionalBuildingSprite): Promise<void> {
     if (!this.userId) return;
 
     // Calculate anchor position (bottom-center of building, one tile above player)
@@ -844,11 +878,16 @@ export class GameSession {
       return;
     }
 
-    // Save sprite to file
+    // Save all directional sprites to file
     await saveBuildingToDisk(building.id, sprite);
 
-    // Add building to tile provider
-    this.tileProvider?.setBuilding(building.id, anchorX, anchorY, sprite);
+    // Add building to tile provider with all directional sprites
+    this.tileProvider?.setBuilding(building.id, anchorX, anchorY, sprite.north, {
+      north: sprite.north,
+      east: sprite.east,
+      south: sprite.south,
+      west: sprite.west,
+    });
 
     // Broadcast building placement to other players
     try {
@@ -881,10 +920,15 @@ export class GameSession {
         continue;
       }
 
-      // Load sprite from disk
-      const sprite = await loadBuildingFromDisk(building.id);
-      if (sprite) {
-        this.tileProvider.setBuilding(building.id, building.anchorX, building.anchorY, sprite);
+      // Load all directional sprites from disk
+      const dirSprite = await loadAllBuildingDirections(building.id);
+      if (dirSprite) {
+        this.tileProvider.setBuilding(building.id, building.anchorX, building.anchorY, dirSprite.north, {
+          north: dirSprite.north,
+          east: dirSprite.east,
+          south: dirSprite.south,
+          west: dirSprite.west,
+        });
       }
     }
   }
@@ -900,10 +944,15 @@ export class GameSession {
       return;
     }
 
-    // Load building sprite from disk
-    const sprite = await loadBuildingFromDisk(buildingId);
-    if (sprite) {
-      this.tileProvider.setBuilding(buildingId, anchorX, anchorY, sprite);
+    // Load all directional sprites from disk
+    const dirSprite = await loadAllBuildingDirections(buildingId);
+    if (dirSprite) {
+      this.tileProvider.setBuilding(buildingId, anchorX, anchorY, dirSprite.north, {
+        north: dirSprite.north,
+        east: dirSprite.east,
+        south: dirSprite.south,
+        west: dirSprite.west,
+      });
       console.log(`[Building] Received building ${buildingId} at (${anchorX}, ${anchorY})`);
     }
   }
@@ -969,6 +1018,24 @@ export class GameSession {
         this.loadingSprites.delete(playerId);
       }
     }));
+  }
+
+  /**
+   * Move in a screen-relative direction (remapped based on camera rotation)
+   */
+  private moveScreenRelative(screenDirection: Direction): void {
+    const worldDirection = this.getWorldDirection(screenDirection);
+
+    // Convert direction to delta
+    const deltas: Record<Direction, { dx: number; dy: number }> = {
+      up: { dx: 0, dy: -1 },
+      down: { dx: 0, dy: 1 },
+      left: { dx: -1, dy: 0 },
+      right: { dx: 1, dy: 0 },
+    };
+
+    const { dx, dy } = deltas[worldDirection];
+    this.move(dx, dy, worldDirection);
   }
 
   private move(dx: number, dy: number, direction: Direction): void {

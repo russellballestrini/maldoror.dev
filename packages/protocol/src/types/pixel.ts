@@ -125,12 +125,18 @@ export interface BuildingTileData {
 }
 
 /**
+ * Building direction type for camera rotation support
+ * north = 0° (camera at default), east = 90° CW, south = 180°, west = 270° CW
+ */
+export type BuildingDirection = 'north' | 'east' | 'south' | 'west';
+
+/**
  * World data provider interface
  * Used by renderers to get tile and player data
  */
 export interface WorldDataProvider {
   getTile(tileX: number, tileY: number): Tile | null;
-  getBuildingTileAt?(tileX: number, tileY: number): BuildingTileData | null;
+  getBuildingTileAt?(tileX: number, tileY: number, direction?: BuildingDirection): BuildingTileData | null;
   getPlayers(): PlayerVisualState[];
   getPlayerSprite(userId: string): Sprite | null;
   getLocalPlayerId(): string;
