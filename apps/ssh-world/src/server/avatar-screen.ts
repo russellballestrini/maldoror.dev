@@ -199,6 +199,9 @@ export class AvatarScreen extends BaseModalScreen {
     // Draw box border
     this.drawModalBox();
 
+    // Clear the modal content area to prevent ghost content from previous states
+    this.clearModalContent();
+
     switch (this.state) {
       case 'input':
         this.renderInputState();
@@ -212,6 +215,25 @@ export class AvatarScreen extends BaseModalScreen {
       case 'error':
         this.renderErrorState();
         break;
+    }
+  }
+
+  /**
+   * Clear the modal content area (inside the box borders)
+   * This prevents ghost content from previous states
+   */
+  private clearModalContent(): void {
+    const startX = 6;
+    const contentWidth = 58;
+    // Clear rows 3-23 (inside the modal box)
+    for (let y = 3; y < 23; y++) {
+      this.stream.write(
+        this.ansi
+          .moveTo(startX, y)
+          .setBackground({ type: 'rgb', value: [BG_PRIMARY.r, BG_PRIMARY.g, BG_PRIMARY.b] })
+          .write(' '.repeat(contentWidth))
+          .build()
+      );
     }
   }
 

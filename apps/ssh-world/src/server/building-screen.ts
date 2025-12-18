@@ -192,6 +192,9 @@ export class BuildingScreen extends BaseModalScreen {
     this.fillBackground();
     this.drawModalBox();
 
+    // Clear the modal content area to prevent ghost content from previous states
+    this.clearModalContent();
+
     switch (this.state) {
       case 'input':
         this.renderInputState();
@@ -205,6 +208,25 @@ export class BuildingScreen extends BaseModalScreen {
       case 'error':
         this.renderErrorState();
         break;
+    }
+  }
+
+  /**
+   * Clear the modal content area (inside the box borders)
+   * This prevents ghost content from previous states
+   */
+  private clearModalContent(): void {
+    const startX = 4;
+    const contentWidth = 68;
+    // Clear rows 2-23 (inside the modal box)
+    for (let y = 2; y < 24; y++) {
+      this.stream.write(
+        this.ansi
+          .moveTo(startX, y)
+          .setBackground({ type: 'rgb', value: [BG_PRIMARY.r, BG_PRIMARY.g, BG_PRIMARY.b] })
+          .write(' '.repeat(contentWidth))
+          .build()
+      );
     }
   }
 

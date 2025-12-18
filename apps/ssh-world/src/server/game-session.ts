@@ -6,6 +6,11 @@ import {
   HelpModalComponent,
   PlayerListComponent,
   ReloadOverlayComponent,
+  BG_PRIMARY,
+  CRIMSON_BRIGHT,
+  ACCENT_GOLD,
+  fg,
+  bg,
 } from '@maldoror/render';
 import { TileProvider, createPlaceholderSprite } from '@maldoror/world';
 import type { Direction, AnimationFrame, PlayerVisualState, Sprite } from '@maldoror/protocol';
@@ -260,8 +265,8 @@ export class GameSession {
     // Clean up boot screen and start game
     boot.hide();
 
-    // Small delay before starting renderer to let boot screen show completion
-    await new Promise(resolve => setTimeout(resolve, 200));
+    // Show dramatic "FIGHT!" entrance screen (Mortal Kombat style)
+    await this.showEntranceScreen();
 
     // Initialize the renderer (this enters alternate screen and starts rendering)
     this.renderer.initialize();
@@ -991,6 +996,79 @@ export class GameSession {
       clearInterval(this.tickInterval);
       this.tickInterval = setInterval(() => this.tick(), this.currentTickMs);
     }
+  }
+
+  /**
+   * Show dramatic entrance screen (Mortal Kombat "FIGHT!" style)
+   * Brief dramatic pause before the game begins
+   */
+  private async showEntranceScreen(): Promise<void> {
+    const ESC = '\x1b';
+    const bgAnsi = bg(BG_PRIMARY);
+    const crimsonFg = fg(CRIMSON_BRIGHT);
+    const goldFg = fg(ACCENT_GOLD);
+    const reset = `${ESC}[0m`;
+
+    // Fill screen with brand dark background
+    for (let row = 1; row <= this.rows; row++) {
+      this.stream.write(`${ESC}[${row};1H${bgAnsi}${' '.repeat(this.cols)}`);
+    }
+
+    // Center calculation
+    const centerY = Math.floor(this.rows / 2);
+
+    // Stage 1: Username appears (fade in effect via delay)
+    const nameDisplay = this.username.toUpperCase();
+    const nameX = Math.floor((this.cols - nameDisplay.length) / 2);
+    this.stream.write(`${ESC}[${centerY - 2};${nameX}H${goldFg}${nameDisplay}${reset}`);
+    await new Promise(resolve => setTimeout(resolve, 400));
+
+    // Stage 2: "VS" appears
+    const vsText = 'VS';
+    const vsX = Math.floor((this.cols - vsText.length) / 2);
+    this.stream.write(`${ESC}[${centerY};${vsX}H${crimsonFg}${vsText}${reset}`);
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    // Stage 3: "THE ABYSS" appears
+    const abyssText = 'THE ABYSS';
+    const abyssX = Math.floor((this.cols - abyssText.length) / 2);
+    this.stream.write(`${ESC}[${centerY + 2};${abyssX}H${goldFg}${abyssText}${reset}`);
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Stage 4: FIGHT! in big ASCII art
+    const fightArt = [
+      '███████╗██╗ ██████╗ ██╗  ██╗████████╗██╗',
+      '██╔════╝██║██╔════╝ ██║  ██║╚══██╔══╝██║',
+      '█████╗  ██║██║  ███╗███████║   ██║   ██║',
+      '██╔══╝  ██║██║   ██║██╔══██║   ██║   ╚═╝',
+      '██║     ██║╚██████╔╝██║  ██║   ██║   ██╗',
+      '╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝',
+    ];
+
+    const fightWidth = fightArt[0]!.length;
+    const fightX = Math.floor((this.cols - fightWidth) / 2);
+    const fightY = centerY + 5;
+
+    // Flash effect: bright crimson
+    for (let i = 0; i < fightArt.length; i++) {
+      this.stream.write(`${ESC}[${fightY + i};${fightX}H${crimsonFg}${fightArt[i]}${reset}`);
+    }
+
+    // Hold for dramatic effect
+    await new Promise(resolve => setTimeout(resolve, 800));
+
+    // Quick flash white then fade
+    const whiteFg = `${ESC}[38;2;255;255;255m`;
+    for (let i = 0; i < fightArt.length; i++) {
+      this.stream.write(`${ESC}[${fightY + i};${fightX}H${whiteFg}${fightArt[i]}${reset}`);
+    }
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // Back to crimson
+    for (let i = 0; i < fightArt.length; i++) {
+      this.stream.write(`${ESC}[${fightY + i};${fightX}H${crimsonFg}${fightArt[i]}${reset}`);
+    }
+    await new Promise(resolve => setTimeout(resolve, 400));
   }
 
   async destroy(): Promise<void> {
