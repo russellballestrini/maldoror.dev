@@ -1,9 +1,9 @@
 import type { Duplex } from 'stream';
-import { ANSIBuilder, renderHalfBlockGrid } from '@maldoror/render';
+import { renderHalfBlockGrid } from '@maldoror/render';
 import { generateBuildingSprite, type ProviderConfig, type DirectionalBuildingSprite } from '@maldoror/ai';
+import { BaseModalScreen } from './base-modal-screen.js';
 
-const SPINNER_FRAMES = ['◐', '◓', '◑', '◒'];
-const SPINNER_INTERVAL = 200;
+const GENERATION_TIMEOUT = 120000; // 2 minutes
 
 export interface BuildingScreenResult {
   action: 'confirm' | 'cancel';
@@ -19,52 +19,28 @@ interface BuildingScreenConfig {
   playerY: number;
 }
 
-type ScreenState = 'input' | 'generating' | 'preview' | 'error';
-
 /**
  * Modal screen for building placement
  */
-export class BuildingScreen {
-  private stream: Duplex;
-  private ansi: ANSIBuilder;
-  private state: ScreenState = 'input';
+export class BuildingScreen extends BaseModalScreen {
   private prompt: string = '';
   private sprite: DirectionalBuildingSprite | null = null;
-  private errorMessage: string = '';
-  private spinnerFrame: number = 0;
-  private spinnerInterval: NodeJS.Timeout | null = null;
   private providerConfig: ProviderConfig;
-  private inputBuffer: string = '';
-  private destroyed: boolean = false;
   private username: string;
-  private progressStep: string = '';
-  private progressCurrent: number = 0;
-  private progressTotal: number = 3;
-  private isGenerating: boolean = false;
   private playerX: number;
   private playerY: number;
 
   constructor(config: BuildingScreenConfig) {
-    this.stream = config.stream;
-    this.ansi = new ANSIBuilder();
+    super(config.stream);
     this.providerConfig = config.providerConfig;
     this.username = config.username ?? 'unknown';
     this.playerX = config.playerX;
     this.playerY = config.playerY;
+    this.progressTotal = 3;
   }
 
   async run(): Promise<BuildingScreenResult> {
-    // Enter alternate screen and setup with dark background
-    this.stream.write(
-      this.ansi
-        .enterAlternateScreen()
-        .hideCursor()
-        .setBackground({ type: 'rgb', value: [20, 20, 25] })
-        .clearScreen()
-        .build()
-    );
-
-    this.fillBackground();
+    this.enterScreen();
     this.render();
 
     return new Promise((resolve) => {
@@ -154,20 +130,23 @@ export class BuildingScreen {
         throw new Error('API key not configured');
       }
 
-      const result = await generateBuildingSprite({
-        description: this.prompt,
-        apiKey: this.providerConfig.apiKey,
-        username: this.username,
-        onProgress: (step, current, total) => {
-          this.progressStep = step;
-          this.progressCurrent = current;
-          this.progressTotal = total;
-          this.renderGeneratingState();
-        },
-      });
-
-      this.stopSpinner();
-      this.isGenerating = false;
+      // Wrap with timeout to prevent hung generations from blocking the server
+      const result = await Promise.race([
+        generateBuildingSprite({
+          description: this.prompt,
+          apiKey: this.providerConfig.apiKey,
+          username: this.username,
+          onProgress: (step, current, total) => {
+            this.progressStep = step;
+            this.progressCurrent = current;
+            this.progressTotal = total;
+            this.renderGeneratingState();
+          },
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Generation timed out after 2 minutes')), GENERATION_TIMEOUT)
+        ),
+      ]);
 
       if (result.success && result.sprite) {
         this.sprite = result.sprite;
@@ -179,58 +158,27 @@ export class BuildingScreen {
         console.log('[BUILDING] Generation failed:', this.errorMessage);
       }
     } catch (error) {
-      this.stopSpinner();
-      this.isGenerating = false;
       this.errorMessage = error instanceof Error ? error.message : 'Unknown error';
       this.state = 'error';
       console.log('[BUILDING] Generation exception:', this.errorMessage);
+    } finally {
+      // Always stop spinner and reset generation flag
+      this.stopSpinner();
+      this.isGenerating = false;
     }
 
     this.render();
   }
 
-  private startSpinner(): void {
-    this.spinnerFrame = 0;
-    this.spinnerInterval = setInterval(() => {
-      this.spinnerFrame = (this.spinnerFrame + 1) % SPINNER_FRAMES.length;
-      if (this.state === 'generating') {
-        this.renderSpinnerOnly();
-      }
-    }, SPINNER_INTERVAL);
-  }
-
-  private stopSpinner(): void {
-    if (this.spinnerInterval) {
-      clearInterval(this.spinnerInterval);
-      this.spinnerInterval = null;
-    }
-  }
-
-  private renderSpinnerOnly(): void {
+  protected renderSpinnerOnly(): void {
     this.stream.write(
       this.ansi
         .moveTo(30, 13)
         .setForeground({ type: 'rgb', value: [255, 200, 100] })
-        .write(SPINNER_FRAMES[this.spinnerFrame]!)
+        .write(this.getSpinnerChar())
         .resetAttributes()
         .build()
     );
-  }
-
-  private fillBackground(): void {
-    this.stream.write(
-      this.ansi
-        .setBackground({ type: 'rgb', value: [20, 20, 25] })
-        .build()
-    );
-    for (let y = 0; y < 30; y++) {
-      this.stream.write(
-        this.ansi
-          .moveTo(0, y)
-          .write(' '.repeat(100))
-          .build()
-      );
-    }
   }
 
   private render(): void {
@@ -242,7 +190,7 @@ export class BuildingScreen {
         .build()
     );
     this.fillBackground();
-    this.drawBox();
+    this.drawModalBox();
 
     switch (this.state) {
       case 'input':
@@ -260,53 +208,16 @@ export class BuildingScreen {
     }
   }
 
-  private drawBox(): void {
-    const boxWidth = 70;
-    const boxHeight = 24;
-    const startX = 3;
-    const startY = 1;
-
-    // Top border
-    this.stream.write(
-      this.ansi
-        .moveTo(startX, startY)
-        .setForeground({ type: 'rgb', value: [100, 150, 80] })
-        .write('╔' + '═'.repeat(boxWidth - 2) + '╗')
-        .build()
-    );
-
-    // Sides
-    for (let y = 1; y < boxHeight - 1; y++) {
-      this.stream.write(
-        this.ansi
-          .moveTo(startX, startY + y)
-          .write('║')
-          .moveTo(startX + boxWidth - 1, startY + y)
-          .write('║')
-          .build()
-      );
-    }
-
-    // Bottom border
-    this.stream.write(
-      this.ansi
-        .moveTo(startX, startY + boxHeight - 1)
-        .write('╚' + '═'.repeat(boxWidth - 2) + '╝')
-        .resetAttributes()
-        .build()
-    );
-
-    // Title
-    const title = ' BUILD STRUCTURE ';
-    const titleX = startX + Math.floor((boxWidth - title.length) / 2);
-    this.stream.write(
-      this.ansi
-        .moveTo(titleX, startY)
-        .setForeground({ type: 'rgb', value: [150, 200, 100] })
-        .write(title)
-        .resetAttributes()
-        .build()
-    );
+  private drawModalBox(): void {
+    super.drawBox({
+      width: 70,
+      height: 24,
+      startX: 3,
+      startY: 1,
+      title: 'BUILD STRUCTURE',
+      borderColor: [100, 150, 80],
+      titleColor: [150, 200, 100],
+    });
   }
 
   private renderInputState(): void {
@@ -483,7 +394,7 @@ export class BuildingScreen {
       this.ansi
         .moveTo(x, 14)
         .setForeground({ type: 'rgb', value: [255, 200, 100] })
-        .write(SPINNER_FRAMES[this.spinnerFrame]!)
+        .write(this.getSpinnerChar())
         .resetAttributes()
         .hideCursor()
         .build()
@@ -623,34 +534,4 @@ export class BuildingScreen {
     );
   }
 
-  private wrapText(text: string, maxWidth: number): string[] {
-    const words = text.split(' ');
-    const lines: string[] = [];
-    let currentLine = '';
-
-    for (const word of words) {
-      if (currentLine.length + word.length + 1 <= maxWidth) {
-        currentLine += (currentLine ? ' ' : '') + word;
-      } else {
-        if (currentLine) lines.push(currentLine);
-        currentLine = word;
-      }
-    }
-    if (currentLine) lines.push(currentLine);
-
-    return lines;
-  }
-
-  private cleanup(): void {
-    this.destroyed = true;
-    this.stopSpinner();
-
-    this.stream.write(
-      this.ansi
-        .exitAlternateScreen()
-        .showCursor()
-        .resetAttributes()
-        .build()
-    );
-  }
 }

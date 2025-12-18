@@ -5,6 +5,10 @@ import path from 'path';
 import type { Sprite, PixelGrid, Pixel } from '@maldoror/protocol';
 import { BASE_SIZE, RESOLUTIONS } from '@maldoror/protocol';
 
+// Configure Sharp for better memory management in high-concurrency environments
+sharp.cache(false);     // Disable file cache to free memory immediately
+sharp.concurrency(2);   // Limit parallel Sharp operations to prevent memory spikes
+
 const DEBUG_DIR = 'debug-sprites';
 
 /**

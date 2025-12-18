@@ -1,15 +1,26 @@
 import * as Sentry from "@sentry/node";
-import { nodeProfilingIntegration } from "@sentry/profiling-node";
+
+const isProduction = process.env.NODE_ENV === 'production';
+
+// Only load profiling in production - the native module isn't available for all Node versions
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let profilingIntegration: any = null;
+if (isProduction) {
+  try {
+    const { nodeProfilingIntegration } = await import("@sentry/profiling-node");
+    profilingIntegration = nodeProfilingIntegration();
+  } catch {
+    console.log('[Sentry] Profiling unavailable, skipping');
+  }
+}
 
 Sentry.init({
   dsn: process.env.SENTRY_DSN || "https://d6fabb4de8a1426f456cf07e2682f9a2@o4510553170378752.ingest.us.sentry.io/4510553192267776",
   sendDefaultPii: true,
   environment: process.env.NODE_ENV || 'development',
   tracesSampleRate: 1.0,
-  profilesSampleRate: 1.0,
-  integrations: [
-    nodeProfilingIntegration(),
-  ],
+  profilesSampleRate: profilingIntegration ? 1.0 : 0,
+  integrations: profilingIntegration ? [profilingIntegration] : [],
   beforeSend(event) {
     // Add memory info to all events
     const mem = process.memoryUsage();

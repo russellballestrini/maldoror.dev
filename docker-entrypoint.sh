@@ -3,8 +3,8 @@ set -e
 
 echo "Starting Maldoror SSH World..."
 
-# Set Node.js memory limit to prevent OOM crashes (512MB heap)
-export NODE_OPTIONS="--max-old-space-size=512"
+# Set Node.js memory limit (2GB heap for building sprite data)
+export NODE_OPTIONS="--max-old-space-size=2048"
 
 # Generate SSH host key if it doesn't exist
 if [ ! -f "$SSH_HOST_KEY_PATH" ]; then

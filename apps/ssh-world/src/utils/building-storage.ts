@@ -2,7 +2,9 @@ import * as fs from 'fs';
 import type { BuildingSprite, PixelGrid } from '@maldoror/protocol';
 import { RESOLUTIONS } from '@maldoror/protocol';
 import { db, schema } from '@maldoror/db';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, type InferSelectModel } from 'drizzle-orm';
+
+type BuildingTileRecord = InferSelectModel<typeof schema.buildingTiles>;
 import { BUILDING_DIRECTIONS, type BuildingDirection, type DirectionalBuildingSprite } from '@maldoror/ai';
 import {
   ensureBuildingDir,
@@ -154,9 +156,16 @@ export async function loadBuildingFromDisk(
     sprite.tiles.push(row);
   }
 
-  // Load only base resolution (9 files instead of 90)
-  for (const record of tileRecords) {
-    const pixels = await loadBuildingTile(buildingId, record.tileX, record.tileY, 256, direction);
+  // Load all tiles in parallel (9 files instead of 90, but parallel not sequential)
+  const tilePixels = await Promise.all(
+    tileRecords.map(async (record: BuildingTileRecord) => ({
+      record,
+      pixels: await loadBuildingTile(buildingId, record.tileX, record.tileY, 256, direction)
+    }))
+  );
+
+  // Apply loaded pixels to sprite
+  for (const { record, pixels } of tilePixels) {
     if (pixels) {
       const tile = sprite.tiles[record.tileY]?.[record.tileX];
       if (tile) {
@@ -218,10 +227,16 @@ export async function loadBuildingAtResolution(
     return null;
   }
 
-  const tiles = new Map<string, PixelGrid>();
+  // Load all tiles in parallel for better performance
+  const tilePixels = await Promise.all(
+    tileRecords.map(async (record: BuildingTileRecord) => ({
+      record,
+      pixels: await loadBuildingTile(buildingId, record.tileX, record.tileY, resolution, direction)
+    }))
+  );
 
-  for (const record of tileRecords) {
-    const pixels = await loadBuildingTile(buildingId, record.tileX, record.tileY, resolution, direction);
+  const tiles = new Map<string, PixelGrid>();
+  for (const { record, pixels } of tilePixels) {
     if (pixels) {
       tiles.set(`${record.tileX},${record.tileY}`, pixels);
     }

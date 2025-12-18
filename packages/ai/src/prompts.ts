@@ -31,10 +31,46 @@ The sprite format is JSON with this structure:
 
 /**
  * System prompt for pixel sprite generation (16x24 RGB mode) - COMPACT FORMAT
+ * CRITICAL: Directional consistency is paramount - each direction must show the character
+ * oriented correctly for that direction of MOVEMENT.
  */
-export const PIXEL_SPRITE_SYSTEM_PROMPT = `You are a pixel art sprite generator. Create character sprites for a dark, surreal terminal-based MMO.
+export const PIXEL_SPRITE_SYSTEM_PROMPT = `You are a pixel art sprite generator creating character sprites for a terminal-based MMO.
 
-JSON STRUCTURE:
+=== CRITICAL DIRECTIONAL REQUIREMENTS ===
+
+Each direction represents the character WALKING IN THAT DIRECTION:
+
+**DOWN** - Character walks TOWARD the viewer (southward movement)
+- Face visible, looking at camera
+- Body facing forward
+- Legs positioned for walking toward viewer
+
+**UP** - Character walks AWAY from the viewer (northward movement)
+- Back of head visible, facing away from camera
+- Body facing away, we see their back
+- Legs positioned for walking away from viewer
+
+**LEFT** - Character walks to the LEFT (westward movement)
+- Character's body faces LEFT
+- We see their RIGHT side profile
+- Head turned left, body oriented left
+- Left arm/leg forward, right arm/leg back (walking left)
+- NEVER show front or back - this is a SIDE VIEW facing LEFT
+
+**RIGHT** - Character walks to the RIGHT (eastward movement)
+- Character's body faces RIGHT
+- We see their LEFT side profile
+- Head turned right, body oriented right
+- Right arm/leg forward, left arm/leg back (walking right)
+- NEVER show front or back - this is a SIDE VIEW facing RIGHT
+
+=== COMMON MISTAKES TO AVOID ===
+- LEFT view showing character facing right (WRONG - must face left)
+- RIGHT view showing character facing left (WRONG - must face right)
+- Side views showing front/back of character (WRONG - must show profile)
+- Mirrored sprites (left and right should be distinct, not flipped copies)
+
+=== JSON STRUCTURE ===
 {
   "width": 16,
   "height": 24,
@@ -46,13 +82,13 @@ JSON STRUCTURE:
   }
 }
 
-PIXEL FORMAT (compact strings):
+=== PIXEL FORMAT ===
 - "0" = transparent pixel
 - "RRRGGGBBBf" = visible pixel (9 digits for RGB 000-255, then 'f')
 
-Example row: ["0","0","0","090090106f","090090106f","0","0","0","0","0","0","0","090090106f","090090106f","0","0"]
+Example: ["0","0","090090106f","090090106f","0","0"]
 
-COLOR PALETTE (use these muted, dark colors):
+=== COLOR PALETTE (muted, dark tones) ===
 - Purple: "074044106f"
 - Blue: "046074106f"
 - Gray: "090090106f"
@@ -60,16 +96,10 @@ COLOR PALETTE (use these muted, dark colors):
 - Skin: "210180140f"
 - Dark: "040040050f"
 
-LAYOUT (16 wide x 24 tall):
-- Rows 0-6: Head area (transparent sides)
+=== LAYOUT (16 wide x 24 tall) ===
+- Rows 0-6: Head area
 - Rows 7-15: Torso/arms
-- Rows 16-23: Legs/feet
-
-Direction meanings:
-- down = front view (character faces toward viewer)
-- up = back view (character faces away from viewer)
-- left = character faces LEFT (viewer sees their right side)
-- right = character faces RIGHT (viewer sees their left side)`;
+- Rows 16-23: Legs/feet`;
 
 /**
  * Build user prompt from description (legacy ASCII mode)
@@ -98,10 +128,18 @@ export function buildPixelSpritePrompt(description: string, vibe?: string): stri
 
   prompt += `
 
-Generate:
-- 4 directions (up, down, left, right)
-- 24 rows per direction
-- 16 pixels per row
+REQUIREMENTS:
+- Generate all 4 directions: up, down, left, right
+- Each direction must show the character walking IN THAT DIRECTION
+- LEFT: Character faces LEFT, we see their RIGHT profile (side view)
+- RIGHT: Character faces RIGHT, we see their LEFT profile (side view)
+- DOWN: Character faces TOWARD viewer (front view)
+- UP: Character faces AWAY from viewer (back view)
+
+CRITICAL: For LEFT direction, the character MUST be facing left. For RIGHT direction, the character MUST be facing right. These are NOT mirrors of each other.
+
+FORMAT:
+- 24 rows per direction, 16 pixels per row
 - Use "0" for transparent, "RRRGGGBBBf" for visible pixels`;
 
   return prompt;

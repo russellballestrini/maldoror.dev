@@ -22,8 +22,24 @@ export type { CameraMode } from './viewport-renderer.js';
 
 const ESC = '\x1b';
 
-// Stats bar height in rows
-const STATS_BAR_HEIGHT = 1;
+/**
+ * Layout configuration for the game screen
+ * Defines reserved space for UI elements around the viewport
+ */
+export interface LayoutConfig {
+  headerRows: number;      // Rows reserved at top (default: 2 for stats bar)
+  footerRows: number;      // Rows reserved at bottom (default: 0)
+  leftSidebarCols: number; // Cols reserved on left (default: 0)
+  rightSidebarCols: number; // Cols reserved on right (default: 0)
+}
+
+// Default layout with just the header
+const DEFAULT_LAYOUT: LayoutConfig = {
+  headerRows: 2,       // Stats bar + separator
+  footerRows: 0,       // No footer by default
+  leftSidebarCols: 0,  // No left sidebar
+  rightSidebarCols: 0, // No right sidebar
+};
 
 /**
  * Render mode options
@@ -43,6 +59,7 @@ export interface PixelGameRendererConfig {
   username?: string;
   zoomLevel?: number;  // Zoom percentage: 100 = full resolution, 50 = half resolution (sees more world)
   renderMode?: RenderMode;  // Rendering mode (default: 'braille' for max resolution)
+  layout?: Partial<LayoutConfig>;  // Optional layout configuration (reserves space for UI elements)
 }
 
 /**
@@ -74,6 +91,8 @@ export class PixelGameRenderer {
   private playerY: number = 0;
   private zoomLevel: number;  // 100 = full resolution, 50 = half (zoomed out), etc.
   private renderMode: RenderMode;
+  // Layout configuration (reserves space for UI elements around viewport)
+  private layout: LayoutConfig;
   // FPS tracking
   private frameCount: number = 0;
   private fps: number = 0;
@@ -94,12 +113,13 @@ export class PixelGameRenderer {
     this.username = config.username ?? 'Unknown';
     this.renderMode = config.renderMode ?? 'halfblock';  // Default to halfblock for good balance
     this.zoomLevel = config.zoomLevel ?? 100;  // Default to 100% zoom (most zoomed in)
+    this.layout = { ...DEFAULT_LAYOUT, ...config.layout };  // Merge with defaults
 
-    // Calculate viewport size based on terminal size
-    const availableRows = config.rows - STATS_BAR_HEIGHT;
+    // Calculate viewport size based on terminal size minus layout reservations
+    const { availableCols, availableRows } = this.getViewportArea();
     const currentTileSize = this.getCurrentTileSize();
-    const { widthTiles, heightTiles } = this.calculateViewportTiles(config.cols, availableRows);
-    const { pixelWidth, pixelHeight } = this.calculatePixelDimensions(config.cols, availableRows);
+    const { widthTiles, heightTiles } = this.calculateViewportTiles(availableCols, availableRows);
+    const { pixelWidth, pixelHeight } = this.calculatePixelDimensions(availableCols, availableRows);
 
     const viewportConfig: ViewportConfig = {
       widthTiles: Math.max(1, widthTiles),
@@ -110,6 +130,29 @@ export class PixelGameRenderer {
     };
 
     this.viewportRenderer = new ViewportRenderer(viewportConfig);
+  }
+
+  /**
+   * Get the available viewport area after subtracting layout reservations
+   */
+  private getViewportArea(): { availableCols: number; availableRows: number } {
+    const availableCols = this.cols - this.layout.leftSidebarCols - this.layout.rightSidebarCols;
+    const availableRows = this.rows - this.layout.headerRows - this.layout.footerRows;
+    return {
+      availableCols: Math.max(1, availableCols),
+      availableRows: Math.max(1, availableRows),
+    };
+  }
+
+  /**
+   * Get the starting position for the viewport (accounting for header and left sidebar)
+   * Note: Used when rendering sidebar/footer layouts
+   */
+  getViewportOrigin(): { startCol: number; startRow: number } {
+    return {
+      startCol: this.layout.leftSidebarCols + 1,  // 1-based terminal columns
+      startRow: this.layout.headerRows + 1,        // 1-based terminal rows
+    };
   }
 
   /**
@@ -124,7 +167,7 @@ export class PixelGameRenderer {
     const MIN_TILE_SIZE = 4;   // At 0% zoom, tiles are 4 pixels on screen
 
     // Calculate max tile size to fill viewport height (so character is fully visible at 100%)
-    const availableRows = this.rows - STATS_BAR_HEIGHT;
+    const { availableRows } = this.getViewportArea();
     let maxTileSize: number;
     switch (this.renderMode) {
       case 'braille':
@@ -226,9 +269,9 @@ export class PixelGameRenderer {
     this.cols = cols;
     this.rows = rows;
 
-    const availableRows = rows - STATS_BAR_HEIGHT;
-    const { widthTiles, heightTiles } = this.calculateViewportTiles(cols, availableRows);
-    const { pixelWidth, pixelHeight } = this.calculatePixelDimensions(cols, availableRows);
+    const { availableCols, availableRows } = this.getViewportArea();
+    const { widthTiles, heightTiles } = this.calculateViewportTiles(availableCols, availableRows);
+    const { pixelWidth, pixelHeight } = this.calculatePixelDimensions(availableCols, availableRows);
 
     this.viewportRenderer.resize(
       Math.max(1, widthTiles),
@@ -370,7 +413,7 @@ export class PixelGameRenderer {
     // The line already has ANSI codes. We need to add padding spaces
     // to reach the full column width
     const tileSize = this.getCurrentTileSize();
-    const availableRows = this.rows - STATS_BAR_HEIGHT;
+    const availableRows = this.rows - this.layout.headerRows;
     const { widthTiles } = this.calculateViewportTiles(this.cols, availableRows);
 
     // Calculate viewport pixel width and convert to terminal chars
@@ -410,44 +453,80 @@ export class PixelGameRenderer {
 
   /**
    * Render the stats bar showing username, coordinates, zoom, render mode, camera mode, rotation, and debug info
+   * Returns 2 lines: main header bar + separator line
    */
   private renderStatsBar(): string {
     const tileSize = this.getCurrentTileSize();
-    const availableRows = this.rows - STATS_BAR_HEIGHT;
-    const { widthTiles, heightTiles } = this.calculateViewportTiles(this.cols, availableRows);
+    const { availableCols, availableRows } = this.getViewportArea();
+    const { widthTiles, heightTiles } = this.calculateViewportTiles(availableCols, availableRows);
 
-    const coordStr = `(${this.playerX}, ${this.playerY})`;
-    const zoomStr = `${this.zoomLevel}%`;
-    const modeStr = this.renderMode.charAt(0).toUpperCase();  // B, H, or N
+    // Colors
+    const bgHeader = `${ESC}[48;2;25;25;35m`;  // Dark purple-gray background
+    const bgSep = `${ESC}[48;2;45;40;55m`;     // Slightly lighter separator
+    const fgName = `${ESC}[38;2;120;220;255m`; // Bright cyan for username
+    const fgLabel = `${ESC}[38;2;140;140;160m`; // Dim for labels
+    const fgValue = `${ESC}[38;2;255;200;100m`; // Gold for values
+    const fgCoord = `${ESC}[38;2;160;180;200m`; // Blue-gray for coordinates
+    const fgSep = `${ESC}[38;2;60;55;70m`;     // Dim separator color
+    const reset = `${ESC}[0m`;
+
+    // Build header content with generous padding
+    const leftSection = `  ${fgName}${this.username}${fgLabel}`;
+
+    // Mode info
+    const modeStr = this.renderMode === 'braille' ? 'BRAILLE' :
+                    this.renderMode === 'halfblock' ? 'HALF' : 'NORMAL';
     const cameraMode = this.viewportRenderer.getCameraMode();
     const cameraRotation = this.viewportRenderer.getCameraRotation();
-    const camStr = cameraMode === 'free' ? ' [FREE]' : '';
-    const rotStr = cameraRotation !== 0 ? ` R:${cameraRotation}°` : '';
+    const camStr = cameraMode === 'free' ? '  FREE CAM' : '';
+    const rotStr = cameraRotation !== 0 ? `  ROT ${cameraRotation}°` : '';
+
+    // Performance info
     const bytesStr = this.lastFrameBytes >= 1024
       ? `${(this.lastFrameBytes / 1024).toFixed(0)}KB`
       : `${this.lastFrameBytes}B`;
-    const skipStr = this.framesSkipped > 0 ? ` skip:${this.framesSkipped}` : '';
-    const fpsStr = `${this.fps}fps ${this.lastRenderTime}ms ${bytesStr}${skipStr}`;
-    const debugStr = `${tileSize}px ${widthTiles}x${heightTiles}t`;
+    const skipStr = this.framesSkipped > 0 ? `  skip:${this.framesSkipped}` : '';
 
-    const leftText = ` ${this.username}`;
-    const centerText = `${modeStr}:${zoomStr}${rotStr}${camStr} [${fpsStr}] [${debugStr}]`;
-    const rightText = `${coordStr} `;
+    // Center content with clear sections
+    const centerSection = `${fgLabel}Mode: ${fgValue}${modeStr}${fgLabel}  Zoom: ${fgValue}${this.zoomLevel}%${fgValue}${rotStr}${camStr}`;
 
-    // Calculate padding for center alignment
-    const totalWidth = this.cols;
-    const leftPadding = Math.max(0, Math.floor((totalWidth - centerText.length) / 2) - leftText.length);
-    const rightPadding = Math.max(0, totalWidth - leftText.length - leftPadding - centerText.length - rightText.length);
+    // Right content
+    const rightSection = `${fgLabel}Pos: ${fgCoord}(${this.playerX}, ${this.playerY})  `;
 
-    // Create stats bar with dark background
-    // Using ANSI: white text on dark gray background
-    const bg = `${ESC}[48;2;30;30;40m`;  // Dark blue-gray background
-    const fgName = `${ESC}[38;2;100;200;255m`;  // Cyan for username
-    const fgMode = `${ESC}[38;2;255;200;100m`;  // Gold for mode/zoom
-    const fgCoord = `${ESC}[38;2;180;180;180m`;  // Gray for coordinates
-    const reset = `${ESC}[0m`;
+    // Debug info (only shown if there's space)
+    const debugStr = `${fgLabel}${this.fps}fps ${this.lastRenderTime}ms ${bytesStr}${skipStr}  ${tileSize}px ${widthTiles}×${heightTiles}`;
 
-    return `${bg}${fgName}${leftText}${' '.repeat(leftPadding)}${fgMode}${centerText}${' '.repeat(rightPadding)}${fgCoord}${rightText}${reset}`;
+    // Calculate spacing
+    const leftLen = this.stripAnsi(leftSection).length;
+    const centerLen = this.stripAnsi(centerSection).length;
+    const rightLen = this.stripAnsi(rightSection).length;
+    const debugLen = this.stripAnsi(debugStr).length;
+
+    // Try to fit debug info, otherwise skip it
+    const availableCenter = this.cols - leftLen - rightLen;
+    const showDebug = availableCenter >= centerLen + debugLen + 4;
+
+    const actualCenter = showDebug ? `${centerSection}  ${debugStr}` : centerSection;
+    const actualCenterLen = showDebug ? centerLen + debugLen + 2 : centerLen;
+
+    const leftPad = Math.max(2, Math.floor((this.cols - actualCenterLen) / 2) - leftLen);
+    const rightPad = Math.max(2, this.cols - leftLen - leftPad - actualCenterLen - rightLen);
+
+    // Line 1: Main header bar
+    const line1 = `${bgHeader}${leftSection}${' '.repeat(leftPad)}${actualCenter}${' '.repeat(rightPad)}${rightSection}${reset}`;
+
+    // Line 2: Subtle separator line
+    const sepChar = '─';
+    const line2 = `${bgSep}${fgSep}${sepChar.repeat(this.cols)}${reset}`;
+
+    return `${line1}\n${ESC}[2;1H${line2}`;
+  }
+
+  /**
+   * Strip ANSI codes from string for length calculation
+   */
+  private stripAnsi(str: string): string {
+    return str.replace(/\x1b\[[0-9;]*m/g, '');
   }
 
   /**
@@ -484,7 +563,7 @@ export class PixelGameRenderer {
     // Render text overlays (usernames above players)
     for (const overlay of overlays) {
       const { row, col } = this.pixelToTerminal(overlay.pixelX, overlay.pixelY);
-      const terminalRow = row + STATS_BAR_HEIGHT + 1;
+      const terminalRow = row + this.layout.headerRows + 1;
 
       if (terminalRow < 1 || terminalRow > this.rows) continue;
 
@@ -519,7 +598,7 @@ export class PixelGameRenderer {
       if (!row) continue;
 
       // Move to start of viewport row (after stats bar)
-      output += `${ESC}[${y + STATS_BAR_HEIGHT + 1};1H`;
+      output += `${ESC}[${y + this.layout.headerRows + 1};1H`;
 
       for (let x = 0; x < row.length; x++) {
         const cell = row[x];
@@ -570,7 +649,7 @@ export class PixelGameRenderer {
         if (lastY !== y || lastX !== x - 1) {
           // Account for multi-char cells in normal mode
           const termCol = this.renderMode === 'normal' ? x * 2 + 1 : x + 1;
-          output += `${ESC}[${y + STATS_BAR_HEIGHT + 1};${termCol}H`;
+          output += `${ESC}[${y + this.layout.headerRows + 1};${termCol}H`;
         }
 
         // Emit foreground color if changed
@@ -624,7 +703,7 @@ export class PixelGameRenderer {
    * Get viewport dimensions in tiles
    */
   getViewportTiles(): { widthTiles: number; heightTiles: number } {
-    const availableRows = this.rows - STATS_BAR_HEIGHT;
+    const availableRows = this.rows - this.layout.headerRows;
     return this.calculateViewportTiles(this.cols, availableRows);
   }
 
@@ -647,7 +726,7 @@ export class PixelGameRenderer {
     const currentTileSize = this.getCurrentTileSize();
     this.viewportRenderer.setTileRenderSize(currentTileSize);
 
-    const availableRows = this.rows - STATS_BAR_HEIGHT;
+    const availableRows = this.rows - this.layout.headerRows;
     const { widthTiles, heightTiles } = this.calculateViewportTiles(this.cols, availableRows);
     const { pixelWidth, pixelHeight } = this.calculatePixelDimensions(this.cols, availableRows);
 
@@ -699,7 +778,7 @@ export class PixelGameRenderer {
     const currentTileSize = this.getCurrentTileSize();
     this.viewportRenderer.setTileRenderSize(currentTileSize);
 
-    const availableRows = this.rows - STATS_BAR_HEIGHT;
+    const availableRows = this.rows - this.layout.headerRows;
     const { widthTiles, heightTiles } = this.calculateViewportTiles(this.cols, availableRows);
     const { pixelWidth, pixelHeight } = this.calculatePixelDimensions(this.cols, availableRows);
 
@@ -779,7 +858,7 @@ export class PixelGameRenderer {
     const paddedLines = viewportLines.map(line => this.padLine(line));
 
     // Add padding rows if needed to fill the screen
-    const availableRows = this.rows - STATS_BAR_HEIGHT;
+    const availableRows = this.rows - this.layout.headerRows;
     while (paddedLines.length < availableRows) {
       paddedLines.push(this.createPaddingLine());
     }
@@ -827,7 +906,7 @@ export class PixelGameRenderer {
       const { row, col } = this.pixelToTerminal(overlay.pixelX, overlay.pixelY);
 
       // Account for stats bar (+1) and 1-based terminal rows (+1)
-      const terminalRow = row + STATS_BAR_HEIGHT + 1;
+      const terminalRow = row + this.layout.headerRows + 1;
 
       // Skip if out of bounds
       if (terminalRow < 1 || terminalRow > this.rows) continue;
@@ -950,5 +1029,39 @@ export class PixelGameRenderer {
    */
   getCameraTilePosition(): { x: number; y: number } {
     return this.viewportRenderer.getCameraTilePosition();
+  }
+
+  // ========================================
+  // Layout Configuration Methods
+  // ========================================
+
+  /**
+   * Get current layout configuration
+   */
+  getLayout(): LayoutConfig {
+    return { ...this.layout };
+  }
+
+  /**
+   * Update layout configuration
+   * Use this to reserve space for UI elements (chat, sidebar, footer)
+   */
+  setLayout(newLayout: Partial<LayoutConfig>): void {
+    this.layout = { ...this.layout, ...newLayout };
+
+    // Recalculate viewport
+    const { availableCols, availableRows } = this.getViewportArea();
+    const { widthTiles, heightTiles } = this.calculateViewportTiles(availableCols, availableRows);
+    const { pixelWidth, pixelHeight } = this.calculatePixelDimensions(availableCols, availableRows);
+
+    this.viewportRenderer.setTileRenderSize(this.getCurrentTileSize());
+    this.viewportRenderer.resize(
+      Math.max(1, widthTiles),
+      Math.max(1, heightTiles)
+    );
+    this.viewportRenderer.setPixelDimensions(pixelWidth, pixelHeight);
+    this.viewportRenderer.setCamera(this.playerX, this.playerY);
+
+    this.invalidate();
   }
 }

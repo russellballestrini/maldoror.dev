@@ -1,3 +1,6 @@
+// Component system (new)
+export * from './components/index.js';
+
 // ANSI utilities
 export { ANSIBuilder } from './ansi/builder.js';
 export * from './ansi/codes.js';

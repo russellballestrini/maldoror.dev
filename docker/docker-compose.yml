@@ -6,7 +6,7 @@ services:
     container_name: maldoror-postgres
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5433}:5432"
     environment:
       POSTGRES_USER: maldoror
       POSTGRES_PASSWORD: maldoror_dev

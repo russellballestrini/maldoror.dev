@@ -1,10 +1,13 @@
 services:
+  # Note: Using system Caddy (not Docker) for SSL termination
+  # System Caddyfile at /etc/caddy/Caddyfile proxies abyss.maldoror.dev to localhost:3000
+
   haproxy:
     image: haproxy:2.9-alpine
     restart: unless-stopped
     ports:
       - "22:22"      # Game SSH (users connect here)
-      - "8404:8404"  # Stats dashboard
+      - "8404:8404"  # HAProxy stats dashboard
     volumes:
       - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
     depends_on:
@@ -36,9 +39,9 @@ services:
       context: ..
       dockerfile: Dockerfile
     restart: unless-stopped
-    # HAProxy handles SSH traffic, stats port exposed directly
+    # HAProxy handles SSH, system Caddy handles HTTP/HTTPS
     ports:
-      - "3000:3000"  # Stats endpoint
+      - "3000:3000"  # Stats endpoint (proxied by system Caddy for HTTPS)
     expose:
       - "2222"
     env_file:

@@ -1,10 +1,10 @@
 import type { Duplex } from 'stream';
 import type { Sprite } from '@maldoror/protocol';
-import { ANSIBuilder, renderHalfBlockGrid } from '@maldoror/render';
+import { renderHalfBlockGrid } from '@maldoror/render';
 import { generateImageSprite, type ProviderConfig } from '@maldoror/ai';
+import { BaseModalScreen } from './base-modal-screen.js';
 
-const SPINNER_FRAMES = ['◐', '◓', '◑', '◒'];
-const SPINNER_INTERVAL = 200;
+const GENERATION_TIMEOUT = 120000; // 2 minutes
 
 export interface AvatarScreenResult {
   action: 'confirm' | 'cancel';
@@ -19,52 +19,26 @@ interface AvatarScreenConfig {
   username?: string;
 }
 
-type ScreenState = 'input' | 'generating' | 'preview' | 'error';
-
 /**
  * Modal screen for avatar regeneration
  */
-export class AvatarScreen {
-  private stream: Duplex;
-  private ansi: ANSIBuilder;
-  private state: ScreenState = 'input';
+export class AvatarScreen extends BaseModalScreen {
   private prompt: string;
   private sprite: Sprite | null = null;
-  private errorMessage: string = '';
-  private spinnerFrame: number = 0;
-  private spinnerInterval: NodeJS.Timeout | null = null;
   private providerConfig: ProviderConfig;
-  private inputBuffer: string = '';
-  private destroyed: boolean = false;
   private username: string;
-  private progressStep: string = '';
-  private progressCurrent: number = 0;
-  private progressTotal: number = 8;
-  private isGenerating: boolean = false;
 
   constructor(config: AvatarScreenConfig) {
-    this.stream = config.stream;
-    this.ansi = new ANSIBuilder();
+    super(config.stream);
     this.prompt = config.currentPrompt ?? '';
     this.inputBuffer = ''; // Start with empty input - user types fresh prompt
     this.providerConfig = config.providerConfig;
     this.username = config.username ?? 'unknown';
+    this.progressTotal = 8;
   }
 
   async run(): Promise<AvatarScreenResult> {
-    // Enter alternate screen and setup with dark background
-    this.stream.write(
-      this.ansi
-        .enterAlternateScreen()
-        .hideCursor()
-        .setBackground({ type: 'rgb', value: [20, 20, 25] })
-        .clearScreen()
-        .build()
-    );
-
-    // Fill entire screen with background color
-    this.fillBackground();
-
+    this.enterScreen();
     this.render();
 
     return new Promise((resolve) => {
@@ -157,20 +131,23 @@ export class AvatarScreen {
         throw new Error('API key not configured');
       }
       // Use image-based generation for better quality sprites
-      const result = await generateImageSprite({
-        description: this.prompt,
-        apiKey: this.providerConfig.apiKey,
-        username: this.username,
-        onProgress: (step, current, total) => {
-          this.progressStep = step;
-          this.progressCurrent = current;
-          this.progressTotal = total;
-          this.renderGeneratingState();
-        },
-      });
-
-      this.stopSpinner();
-      this.isGenerating = false;
+      // Wrap with timeout to prevent hung generations from blocking the server
+      const result = await Promise.race([
+        generateImageSprite({
+          description: this.prompt,
+          apiKey: this.providerConfig.apiKey,
+          username: this.username,
+          onProgress: (step, current, total) => {
+            this.progressStep = step;
+            this.progressCurrent = current;
+            this.progressTotal = total;
+            this.renderGeneratingState();
+          },
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Generation timed out after 2 minutes')), GENERATION_TIMEOUT)
+        ),
+      ]);
 
       if (result.success && result.sprite) {
         this.sprite = result.sprite;
@@ -182,62 +159,29 @@ export class AvatarScreen {
         console.log('[AVATAR] Generation failed, state set to error:', this.errorMessage);
       }
     } catch (error) {
-      this.stopSpinner();
-      this.isGenerating = false;
       this.errorMessage = error instanceof Error ? error.message : 'Unknown error';
       this.state = 'error';
       console.log('[AVATAR] Generation exception, state set to error:', this.errorMessage);
+    } finally {
+      // Always stop spinner and reset generation flag
+      this.stopSpinner();
+      this.isGenerating = false;
     }
 
     console.log('[AVATAR] Calling render() with state:', this.state);
     this.render();
   }
 
-  private startSpinner(): void {
-    this.spinnerFrame = 0;
-    this.spinnerInterval = setInterval(() => {
-      this.spinnerFrame = (this.spinnerFrame + 1) % SPINNER_FRAMES.length;
-      if (this.state === 'generating') {
-        this.renderSpinnerOnly();
-      }
-    }, SPINNER_INTERVAL);
-  }
-
-  private stopSpinner(): void {
-    if (this.spinnerInterval) {
-      clearInterval(this.spinnerInterval);
-      this.spinnerInterval = null;
-    }
-  }
-
-  private renderSpinnerOnly(): void {
+  protected renderSpinnerOnly(): void {
     // Just update the spinner character
     this.stream.write(
       this.ansi
         .moveTo(30, 13)
         .setForeground({ type: 'rgb', value: [255, 200, 100] })
-        .write(SPINNER_FRAMES[this.spinnerFrame]!)
+        .write(this.getSpinnerChar())
         .resetAttributes()
         .build()
     );
-  }
-
-  private fillBackground(): void {
-    // Write background color to ensure it covers the entire terminal
-    this.stream.write(
-      this.ansi
-        .setBackground({ type: 'rgb', value: [20, 20, 25] })
-        .build()
-    );
-    // Fill visible area with spaces to ensure background color is set
-    for (let y = 0; y < 30; y++) {
-      this.stream.write(
-        this.ansi
-          .moveTo(0, y)
-          .write(' '.repeat(100))
-          .build()
-      );
-    }
   }
 
   private render(): void {
@@ -252,7 +196,7 @@ export class AvatarScreen {
     this.fillBackground();
 
     // Draw box border
-    this.drawBox();
+    this.drawModalBox();
 
     switch (this.state) {
       case 'input':
@@ -270,53 +214,16 @@ export class AvatarScreen {
     }
   }
 
-  private drawBox(): void {
-    const boxWidth = 60;
-    const boxHeight = 22;
-    const startX = 5;
-    const startY = 2;
-
-    // Top border
-    this.stream.write(
-      this.ansi
-        .moveTo(startX, startY)
-        .setForeground({ type: 'rgb', value: [100, 80, 180] })
-        .write('╔' + '═'.repeat(boxWidth - 2) + '╗')
-        .build()
-    );
-
-    // Sides
-    for (let y = 1; y < boxHeight - 1; y++) {
-      this.stream.write(
-        this.ansi
-          .moveTo(startX, startY + y)
-          .write('║')
-          .moveTo(startX + boxWidth - 1, startY + y)
-          .write('║')
-          .build()
-      );
-    }
-
-    // Bottom border
-    this.stream.write(
-      this.ansi
-        .moveTo(startX, startY + boxHeight - 1)
-        .write('╚' + '═'.repeat(boxWidth - 2) + '╝')
-        .resetAttributes()
-        .build()
-    );
-
-    // Title
-    const title = ' REGENERATE AVATAR ';
-    const titleX = startX + Math.floor((boxWidth - title.length) / 2);
-    this.stream.write(
-      this.ansi
-        .moveTo(titleX, startY)
-        .setForeground({ type: 'rgb', value: [180, 100, 255] })
-        .write(title)
-        .resetAttributes()
-        .build()
-    );
+  private drawModalBox(): void {
+    super.drawBox({
+      width: 60,
+      height: 22,
+      startX: 5,
+      startY: 2,
+      title: 'REGENERATE AVATAR',
+      borderColor: [100, 80, 180],
+      titleColor: [180, 100, 255],
+    });
   }
 
   private renderInputState(): void {
@@ -484,7 +391,7 @@ export class AvatarScreen {
       this.ansi
         .moveTo(x, 15)
         .setForeground({ type: 'rgb', value: [255, 200, 100] })
-        .write(SPINNER_FRAMES[this.spinnerFrame]!)
+        .write(this.getSpinnerChar())
         .resetAttributes()
         .hideCursor()
         .build()
@@ -613,35 +520,4 @@ export class AvatarScreen {
     );
   }
 
-  private wrapText(text: string, maxWidth: number): string[] {
-    const words = text.split(' ');
-    const lines: string[] = [];
-    let currentLine = '';
-
-    for (const word of words) {
-      if (currentLine.length + word.length + 1 <= maxWidth) {
-        currentLine += (currentLine ? ' ' : '') + word;
-      } else {
-        if (currentLine) lines.push(currentLine);
-        currentLine = word;
-      }
-    }
-    if (currentLine) lines.push(currentLine);
-
-    return lines;
-  }
-
-  private cleanup(): void {
-    this.destroyed = true;
-    this.stopSpinner();
-
-    // Exit alternate screen
-    this.stream.write(
-      this.ansi
-        .exitAlternateScreen()
-        .showCursor()
-        .resetAttributes()
-        .build()
-    );
-  }
 }

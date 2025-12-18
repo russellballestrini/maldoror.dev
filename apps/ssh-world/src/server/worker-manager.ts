@@ -79,6 +79,19 @@ export class WorkerManager {
       this.worker = null;
       this.workerReady = false;
     }
+    this.clearPendingRequests();
+  }
+
+  /**
+   * Clear all pending requests and their timeouts
+   * Called during shutdown to prevent memory leaks from dangling promises
+   */
+  clearPendingRequests(): void {
+    for (const [_id, pending] of this.pendingRequests) {
+      clearTimeout(pending.timeout);
+      pending.reject(new Error('WorkerManager shutdown'));
+    }
+    this.pendingRequests.clear();
   }
 
   /**

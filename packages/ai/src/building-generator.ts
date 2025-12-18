@@ -5,6 +5,10 @@ import path from 'path';
 import type { PixelGrid, Pixel, BuildingSprite, BuildingTile } from '@maldoror/protocol';
 import { BASE_SIZE, RESOLUTIONS } from '@maldoror/protocol';
 
+// Configure Sharp for better memory management in high-concurrency environments
+sharp.cache(false);     // Disable file cache to free memory immediately
+sharp.concurrency(2);   // Limit parallel Sharp operations to prevent memory spikes
+
 /**
  * Building direction type for camera rotation support
  * north = 0° (original), east = 90° CW, south = 180°, west = 270° CW
@@ -59,35 +63,46 @@ function imageToPixelGrid(
 }
 
 /**
- * Build the prompt for building generation (north/front view - no reference)
+ * Build the prompt for structure generation (north/front view - no reference)
+ * Supports any placeable structure: buildings, farms, gardens, monuments, etc.
  */
 function buildBuildingPromptNorth(description: string): string {
-  return `Create a detailed TOP-DOWN isometric view of a building/structure for an RPG game.
+  return `Create a detailed TOP-DOWN isometric view of a structure/construction for an RPG game world.
+
+This can be ANY type of structure the player wants to build:
+- Buildings (houses, towers, shops, temples)
+- Farms and agricultural plots (crop fields, orchards, barns)
+- Gardens and landscaping (flower beds, hedges, fountains)
+- Infrastructure (bridges, walls, fences, roads)
+- Monuments and decorations (statues, obelisks, shrines)
+- Natural constructions (tree houses, caves, rock formations)
+- Industrial (mills, forges, mines)
+- Or anything else creative!
 
 STYLE REQUIREMENTS:
 - High quality, detailed digital art illustration
-- TOP-DOWN isometric perspective (slight 3/4 view looking down at the building)
-- Show the NORTH/FRONT face of the building prominently
+- TOP-DOWN isometric perspective (slight 3/4 view looking down)
+- Show the NORTH/FRONT face prominently
 - Clean, professional game art style
 - Rich colors with proper shading and depth
 
 COMPOSITION REQUIREMENTS:
-- The building should fill the ENTIRE square image
-- Building must be a 3x3 tile grid structure when divided equally
+- The structure should fill the ENTIRE square image
+- Must be a 3x3 tile grid structure when divided equally
 - Each of the 9 sections should be visually coherent as individual tiles
-- The building should have clear edges that align with the tile grid
+- The structure should have clear edges that align with the tile grid
 - Transparent/empty background only - no ground, grass, or surroundings
-- The building itself should be 100% opaque
+- The structure itself should be 100% opaque
 
 DO NOT:
 - Create pixel art or blocky style
-- Add any background elements, ground, shadows on ground, or surroundings
+- Add any background elements, ground plane, shadows on ground, or surroundings
 - Add text, UI, borders, or frames
-- Make any part of the building semi-transparent
+- Make any part semi-transparent (except intentional gaps/openings)
 
-BUILDING TO CREATE: ${description}
+STRUCTURE TO CREATE: ${description}
 
-This is the NORTH-FACING view (front entrance side of the building).`;
+This is the NORTH-FACING view (front/main viewing angle).`;
 }
 
 /**
@@ -98,52 +113,52 @@ function buildBuildingPromptDirection(
   direction: 'east' | 'south' | 'west'
 ): string {
   const directionInstructions = {
-    east: `CAMERA POSITION: You are now standing to the EAST of the building, looking WEST at it.
+    east: `CAMERA POSITION: You are now standing to the EAST of the structure, looking WEST at it.
 
 WHAT YOU SEE:
-- The EAST wall of the building is now the prominent front-facing wall
-- This was the RIGHT side of the building in the reference (north view)
-- Rotate the entire building 90° CLOCKWISE from the reference
+- The EAST side is now the prominent front-facing view
+- This was the RIGHT side in the reference (north view)
+- Rotate the entire structure 90° CLOCKWISE from the reference
 - Features that were on the right in the reference are now facing you`,
 
-    south: `CAMERA POSITION: You are now standing to the SOUTH of the building, looking NORTH at it.
+    south: `CAMERA POSITION: You are now standing to the SOUTH of the structure, looking NORTH at it.
 
 WHAT YOU SEE:
-- The SOUTH wall (back) of the building is now the prominent front-facing wall
-- This was the rear of the building in the reference (north view)
-- Rotate the entire building 180° from the reference
+- The SOUTH side (back) is now the prominent front-facing view
+- This was the rear in the reference (north view)
+- Rotate the entire structure 180° from the reference
 - You are looking at the opposite side from the reference`,
 
-    west: `CAMERA POSITION: You are now standing to the WEST of the building, looking EAST at it.
+    west: `CAMERA POSITION: You are now standing to the WEST of the structure, looking EAST at it.
 
 WHAT YOU SEE:
-- The WEST wall of the building is now the prominent front-facing wall
-- This was the LEFT side of the building in the reference (north view)
-- Rotate the entire building 270° CLOCKWISE (or 90° COUNTER-CLOCKWISE) from the reference
+- The WEST side is now the prominent front-facing view
+- This was the LEFT side in the reference (north view)
+- Rotate the entire structure 270° CLOCKWISE (or 90° COUNTER-CLOCKWISE) from the reference
 - Features that were on the left in the reference are now facing you`,
   };
 
-  return `Recreate the EXACT same building from the reference image, but viewed from the ${direction.toUpperCase()}.
+  return `Recreate the EXACT same structure from the reference image, but viewed from the ${direction.toUpperCase()}.
 
 ${directionInstructions[direction]}
 
 CRITICAL REQUIREMENTS:
-- This MUST be the IDENTICAL building from the reference - same architecture, colors, materials, windows, doors, roof
+- This MUST be the IDENTICAL structure from the reference - same design, colors, materials, features
 - TOP-DOWN isometric perspective (slight 3/4 view looking down)
-- Building fills the ENTIRE square image
+- Structure fills the ENTIRE square image
 - 3x3 tile grid structure when divided equally
 - Transparent background ONLY - no ground, grass, shadows, or surroundings
-- Building must be 100% opaque
+- Structure must be 100% opaque
 
 DO NOT:
-- Create a different building
-- Change the architectural style, colors, or features
-- Add or remove any elements from the building
+- Create a different structure
+- Change the design style, colors, or features
+- Add or remove any elements
 - Add any background elements
-- Add doors, bridges, or entrances that weren't visible on that side in the reference
-- Duplicate features that only exist on one side of the building
+- Add features that weren't visible on that side in the reference
+- Duplicate features that only exist on one side
 
-IMPORTANT: Features like doors, bridges, and entrances should ONLY appear on the sides where they existed in the reference. If the reference shows a bridge on the north side, the south view should show the BACK of the building with NO bridge.`;
+IMPORTANT: Features should ONLY appear on the sides where they existed in the reference. Maintain consistency across all views.`;
 }
 
 export interface BuildingGenerationOptions {
@@ -247,54 +262,52 @@ async function pixelateTileToSize(tileBuffer: Buffer, size: number): Promise<Pix
 }
 
 /**
- * Pixelate a tile to all resolution sizes
+ * Pixelate a tile to all resolution sizes (parallel)
  */
 async function pixelateTileAllResolutions(tileBuffer: Buffer): Promise<Record<string, PixelGrid>> {
-  const results: Record<string, PixelGrid> = {};
-  for (const size of RESOLUTIONS) {
-    results[String(size)] = await pixelateTileToSize(tileBuffer, size);
-  }
-  return results;
+  const entries = await Promise.all(
+    RESOLUTIONS.map(async (size) => [String(size), await pixelateTileToSize(tileBuffer, size)] as const)
+  );
+  return Object.fromEntries(entries);
 }
 
 /**
  * Process a single building image into a BuildingSprite
- * Splits into 9 tiles and pixelates each to all resolutions
+ * Splits into 9 tiles and pixelates each to all resolutions (parallel)
  */
 async function processImageToSprite(
   imageBuffer: Buffer,
   debugDir: string,
   direction: BuildingDirection
 ): Promise<BuildingSprite> {
-  const tileBuffers: Buffer[][] = [];
+  // Extract all 9 tiles in parallel
+  const tilePromises = Array.from({ length: 9 }, async (_, i) => {
+    const x = i % 3;
+    const y = Math.floor(i / 3);
+    const tile = await extractTile(imageBuffer, x, y);
+    fs.writeFileSync(path.join(debugDir, `tile_${direction}_${x}_${y}.png`), tile);
+    return { x, y, tile };
+  });
+  const extractedTiles = await Promise.all(tilePromises);
 
-  // Split into 9 tiles
-  for (let y = 0; y < 3; y++) {
-    const row: Buffer[] = [];
-    for (let x = 0; x < 3; x++) {
-      const tile = await extractTile(imageBuffer, x, y);
-      row.push(tile);
-      fs.writeFileSync(path.join(debugDir, `tile_${direction}_${x}_${y}.png`), tile);
-    }
-    tileBuffers.push(row);
-  }
-
-  // Pixelate all tiles to all resolutions
-  const tiles: BuildingTile[][] = [];
-
-  for (let y = 0; y < 3; y++) {
-    const row: BuildingTile[] = [];
-    for (let x = 0; x < 3; x++) {
-      const tileBuffer = tileBuffers[y]![x]!;
-      const resolutions = await pixelateTileAllResolutions(tileBuffer);
-      const baseSize = String(BASE_SIZE);
-
-      row.push({
+  // Pixelate all tiles in parallel
+  const pixelatedPromises = extractedTiles.map(async ({ x, y, tile }) => {
+    const resolutions = await pixelateTileAllResolutions(tile);
+    const baseSize = String(BASE_SIZE);
+    return {
+      x, y,
+      buildingTile: {
         pixels: resolutions[baseSize]!,
         resolutions,
-      });
-    }
-    tiles.push(row);
+      } as BuildingTile
+    };
+  });
+  const pixelatedTiles = await Promise.all(pixelatedPromises);
+
+  // Arrange into 3x3 grid
+  const tiles: BuildingTile[][] = [[], [], []];
+  for (const { x, y, buildingTile } of pixelatedTiles) {
+    tiles[y]![x] = buildingTile;
   }
 
   return {
@@ -374,14 +387,15 @@ export async function generateBuildingSprite(
       west: westImage,
     };
 
-    // Step 3: Process each direction into a BuildingSprite
+    // Step 3: Process all 4 directions into BuildingSprites in parallel
     progress('Processing tiles for all directions', 3, 5);
-    const directionalSprite: DirectionalBuildingSprite = {
-      north: await processImageToSprite(buildingImages.north, debugDir, 'north'),
-      east: await processImageToSprite(buildingImages.east, debugDir, 'east'),
-      south: await processImageToSprite(buildingImages.south, debugDir, 'south'),
-      west: await processImageToSprite(buildingImages.west, debugDir, 'west'),
-    };
+    const [north, east, south, west] = await Promise.all([
+      processImageToSprite(buildingImages.north, debugDir, 'north'),
+      processImageToSprite(buildingImages.east, debugDir, 'east'),
+      processImageToSprite(buildingImages.south, debugDir, 'south'),
+      processImageToSprite(buildingImages.west, debugDir, 'west'),
+    ]);
+    const directionalSprite: DirectionalBuildingSprite = { north, east, south, west };
 
     // Step 4: Save summary data for debugging (full sprite JSON is too large)
     progress('Saving sprite data', 4, 5);

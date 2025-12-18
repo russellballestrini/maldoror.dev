@@ -1,5 +1,12 @@
 import type { Duplex } from 'stream';
-import { PixelGameRenderer, InputHandler } from '@maldoror/render';
+import {
+  PixelGameRenderer,
+  ComponentManager,
+  InputRouter,
+  HelpModalComponent,
+  PlayerListComponent,
+  ReloadOverlayComponent,
+} from '@maldoror/render';
 import { TileProvider, createPlaceholderSprite } from '@maldoror/world';
 import type { Direction, AnimationFrame, PlayerVisualState, Sprite } from '@maldoror/protocol';
 import type { DirectionalBuildingSprite } from '@maldoror/ai';
@@ -8,6 +15,7 @@ import { WorkerManager, ReloadState } from './worker-manager.js';
 import { OnboardingFlow } from './onboarding.js';
 import { AvatarScreen } from './avatar-screen.js';
 import { BuildingScreen } from './building-screen.js';
+import { BootScreen } from './boot-screen.js';
 import { db, schema } from '@maldoror/db';
 import { eq, and, between } from 'drizzle-orm';
 import type { ProviderConfig } from '@maldoror/ai';
@@ -37,7 +45,11 @@ export class GameSession {
   private worldSeed: bigint;
   private providerConfig: ProviderConfig;
   private renderer: PixelGameRenderer | null = null;
-  private inputHandler: InputHandler | null = null;
+  private componentManager: ComponentManager | null = null;
+  private inputRouter: InputRouter | null = null;
+  private helpModal: HelpModalComponent | null = null;
+  private playerListModal: PlayerListComponent | null = null;
+  private reloadOverlay: ReloadOverlayComponent | null = null;
   private tileProvider: TileProvider | null = null;
   private sessionId: string;
   private destroyed: boolean = false;
@@ -51,8 +63,6 @@ export class GameSession {
   private inputSequence: number = 0;
   private moveTimer: NodeJS.Timeout | null = null;
   private currentPrompt: string = '';
-  private showPlayerList: boolean = false;
-  private showHelpModal: boolean = false;
   // Cache for player list (Tab menu)
   private cachedAllPlayers: Array<{
     userId: string;
@@ -111,7 +121,19 @@ export class GameSession {
       this.username = result.username;
     }
 
+    // Show boot screen for returning users
+    const boot = new BootScreen(this.stream, this.cols, this.rows);
+    boot.show();
+
+    // Fetch online players for honourable mentions
+    const allPlayers = await this.workerManager.getAllPlayers();
+    const onlinePlayers = allPlayers
+      .filter(p => p.isOnline && p.userId !== this.userId)
+      .map(p => ({ username: p.username }));
+    boot.renderHonourableMentions(onlinePlayers);
+
     // Load player state
+    boot.updateStep('Loading player state...', 'loading');
     const playerState = await db.query.playerState.findFirst({
       where: eq(schema.playerState.userId, this.userId),
     });
@@ -129,15 +151,19 @@ export class GameSession {
         direction: 'down',
       });
     }
+    boot.markPreviousDone();
 
     // Initialize tile provider
+    boot.updateStep('Generating world chunks...', 'loading');
     this.tileProvider = new TileProvider({
       worldSeed: this.worldSeed,
       chunkCacheSize: 64,
     });
     this.tileProvider.setLocalPlayerId(this.userId);
+    boot.markPreviousDone();
 
     // Load avatar - try file first, then database fallback
+    boot.updateStep('Loading avatar sprites...', 'loading');
     let sprite = await loadSpriteFromDisk(this.userId);
     const avatar = await db.query.avatars.findFirst({
       where: eq(schema.avatars.userId, this.userId),
@@ -155,32 +181,51 @@ export class GameSession {
       const placeholderSprite = createPlaceholderSprite({ r: 100, g: 150, b: 255 });
       this.tileProvider.setPlayerSprite(this.userId, placeholderSprite);
     }
+    boot.markPreviousDone();
 
     // Load nearby buildings
+    boot.updateStep('Loading nearby buildings...', 'loading');
     await this.loadNearbyBuildings();
+    boot.markPreviousDone();
 
     // Update local player state
     this.updateLocalPlayerState();
 
     // Initialize renderer
+    boot.updateStep('Initializing renderer...', 'loading');
     this.renderer = new PixelGameRenderer({
       stream: this.stream,
       cols: this.cols,
       rows: this.rows,
       username: this.username,
     });
-    this.renderer.initialize();
+    boot.markPreviousDone();
 
-    // Initialize input handler
-    this.inputHandler = new InputHandler();
-    this.inputHandler.onAction((action, event) => {
+    // Initialize component manager
+    this.componentManager = new ComponentManager(this.cols, this.rows);
+
+    // Create modal components
+    this.helpModal = new HelpModalComponent(this.cols, this.rows);
+    this.helpModal.setOnClose(() => this.componentManager?.popFocus());
+    this.componentManager.addComponent(this.helpModal);
+
+    this.playerListModal = new PlayerListComponent(this.cols, this.rows);
+    this.playerListModal.setOnClose(() => this.componentManager?.popFocus());
+    this.componentManager.addComponent(this.playerListModal);
+
+    this.reloadOverlay = new ReloadOverlayComponent(this.cols, this.rows);
+    this.componentManager.addComponent(this.reloadOverlay);
+
+    // Initialize input router (replaces InputHandler)
+    this.inputRouter = new InputRouter(this.componentManager);
+    this.inputRouter.setFallbackHandler((action, event) => {
       this.handleAction(action, event);
     });
 
     // Set up stream handlers
     this.stream.on('data', (data: Buffer) => {
-      if (this.inputHandler && !this.destroyed && !this.inputPaused) {
-        this.inputHandler.process(data);
+      if (this.inputRouter && !this.destroyed && !this.inputPaused) {
+        this.inputRouter.process(data);
       }
     });
 
@@ -189,7 +234,9 @@ export class GameSession {
     });
 
     // Register with worker manager
+    boot.updateStep('Connecting to game server...', 'loading');
     await this.workerManager.playerConnect(this.userId!, this.sessionId, this.username);
+    boot.markPreviousDone();
 
     // Register for sprite reload events
     this.workerManager.onSpriteReload(this.userId!, (changedUserId) => {
@@ -209,6 +256,15 @@ export class GameSession {
         this.renderer?.invalidate();
       }
     });
+
+    // Clean up boot screen and start game
+    boot.hide();
+
+    // Small delay before starting renderer to let boot screen show completion
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    // Initialize the renderer (this enters alternate screen and starts rendering)
+    this.renderer.initialize();
 
     // Start render loop (60ms = ~16fps for smooth animation)
     this.tickInterval = setInterval(() => this.tick(), 67); // Match server's 15Hz tick rate
@@ -235,10 +291,17 @@ export class GameSession {
 
     // Show reload overlay if reloading
     if (this.reloadState === 'reloading') {
-      const output = this.renderer.renderToString(this.tileProvider);
-      const overlay = this.generateReloadOverlay();
-      this.stream.write(output + overlay);
-      return;
+      // Push reload overlay to focus stack if not already there
+      if (this.reloadOverlay && !this.reloadOverlay.isVisible()) {
+        this.componentManager?.pushFocus(this.reloadOverlay);
+      }
+      // Update spinner animation
+      this.reloadOverlay?.update(67);
+    } else {
+      // Remove reload overlay if no longer reloading
+      if (this.reloadOverlay?.isVisible()) {
+        this.componentManager?.removeFocus(this.reloadOverlay);
+      }
     }
 
     // Update animation frame when moving
@@ -305,222 +368,15 @@ export class GameSession {
     // Performance: Batch all output into single write
     let output = this.renderer.renderToString(this.tileProvider);
 
-    // Add player list overlay if showing
-    if (this.showPlayerList) {
-      output += this.generatePlayerListOverlay();
-    }
-
-    // Add help modal overlay if showing
-    if (this.showHelpModal) {
-      output += this.generateHelpModalOverlay();
+    // Add component overlays (modals, etc.)
+    if (this.componentManager?.hasVisibleComponents()) {
+      output += this.componentManager.renderToString();
     }
 
     // Single write for entire frame
     if (output) {
       this.stream.write(output);
     }
-  }
-
-  /**
-   * Generate the player list overlay (Tab menu) as a string
-   */
-  private generatePlayerListOverlay(): string {
-    const ESC = '\x1b';
-    const players = this.cachedAllPlayers;
-
-    // Calculate overlay dimensions
-    const overlayWidth = 50;
-    const overlayHeight = Math.min(players.length + 4, 20);
-    const startX = Math.floor((this.cols - overlayWidth) / 2);
-    const startY = Math.floor((this.rows - overlayHeight) / 2);
-
-    // Semi-transparent background using dark color
-    const bgColor = `${ESC}[48;2;20;20;35m`;
-    const borderColor = `${ESC}[38;2;100;100;150m`;
-    const headerColor = `${ESC}[38;2;255;200;100m`;
-    const textColor = `${ESC}[38;2;200;200;200m`;
-    const selfColor = `${ESC}[38;2;100;255;150m`;
-    const reset = `${ESC}[0m`;
-
-    let output = '';
-
-    // Draw overlay box
-    // Top border
-    output += `${ESC}[${startY};${startX}H${bgColor}${borderColor}╔${'═'.repeat(overlayWidth - 2)}╗`;
-
-    // Title row
-    const title = ` PLAYERS ONLINE (${players.length}) `;
-    const titlePad = Math.floor((overlayWidth - 2 - title.length) / 2);
-    output += `${ESC}[${startY + 1};${startX}H${bgColor}${borderColor}║${' '.repeat(titlePad)}${headerColor}${title}${borderColor}${' '.repeat(overlayWidth - 2 - titlePad - title.length)}║`;
-
-    // Separator
-    output += `${ESC}[${startY + 2};${startX}H${bgColor}${borderColor}╟${'─'.repeat(overlayWidth - 2)}╢`;
-
-    // Column headers
-    const nameHeader = 'Name';
-    const posHeader = 'Position';
-    const pingHeader = 'Ping';
-    output += `${ESC}[${startY + 3};${startX}H${bgColor}${borderColor}║ ${headerColor}${nameHeader.padEnd(20)}${posHeader.padEnd(18)}${pingHeader.padEnd(8)}${borderColor}║`;
-
-    // Player rows
-    const maxPlayers = Math.min(players.length, overlayHeight - 5);
-    for (let i = 0; i < maxPlayers; i++) {
-      const player = players[i]!;
-      const isSelf = player.userId === this.userId;
-      const color = isSelf ? selfColor : textColor;
-      const name = (isSelf ? '► ' : '  ') + player.username.slice(0, 16).padEnd(18);
-      const pos = `(${player.x}, ${player.y})`.padEnd(18);
-      const ping = '--ms'.padEnd(8);  // TODO: actual ping
-
-      output += `${ESC}[${startY + 4 + i};${startX}H${bgColor}${borderColor}║${color}${name}${pos}${ping}${borderColor}║`;
-    }
-
-    // Fill remaining rows
-    for (let i = maxPlayers; i < overlayHeight - 5; i++) {
-      output += `${ESC}[${startY + 4 + i};${startX}H${bgColor}${borderColor}║${' '.repeat(overlayWidth - 2)}║`;
-    }
-
-    // Bottom border
-    output += `${ESC}[${startY + overlayHeight - 1};${startX}H${bgColor}${borderColor}╚${'═'.repeat(overlayWidth - 2)}╝`;
-
-    // Footer hint
-    const hint = ' Press TAB to close ';
-    output += `${ESC}[${startY + overlayHeight};${startX + Math.floor((overlayWidth - hint.length) / 2)}H${textColor}${hint}`;
-
-    output += reset;
-
-    return output;
-  }
-
-  /**
-   * Generate the reload/reconnecting overlay
-   */
-  private generateReloadOverlay(): string {
-    const ESC = '\x1b';
-
-    // Calculate overlay dimensions
-    const overlayWidth = 40;
-    const overlayHeight = 7;
-    const startX = Math.floor((this.cols - overlayWidth) / 2);
-    const startY = Math.floor((this.rows - overlayHeight) / 2);
-
-    // Colors
-    const bgColor = `${ESC}[48;2;20;20;35m`;
-    const borderColor = `${ESC}[38;2;100;100;150m`;
-    const textColor = `${ESC}[38;2;255;200;100m`;
-    const subTextColor = `${ESC}[38;2;150;150;170m`;
-    const reset = `${ESC}[0m`;
-
-    // Spinner frames
-    const spinnerFrames = ['◐', '◓', '◑', '◒'];
-    const spinnerFrame = spinnerFrames[Math.floor(Date.now() / 200) % spinnerFrames.length];
-
-    let output = '';
-
-    // Top border
-    output += `${ESC}[${startY};${startX}H${bgColor}${borderColor}╔${'═'.repeat(overlayWidth - 2)}╗`;
-
-    // Empty row
-    output += `${ESC}[${startY + 1};${startX}H${bgColor}${borderColor}║${' '.repeat(overlayWidth - 2)}║`;
-
-    // Main message with spinner
-    const message = ` ${spinnerFrame} Updating Server... `;
-    const msgPad = Math.floor((overlayWidth - 2 - message.length) / 2);
-    output += `${ESC}[${startY + 2};${startX}H${bgColor}${borderColor}║${' '.repeat(msgPad)}${textColor}${message}${' '.repeat(overlayWidth - 2 - msgPad - message.length)}${borderColor}║`;
-
-    // Empty row
-    output += `${ESC}[${startY + 3};${startX}H${bgColor}${borderColor}║${' '.repeat(overlayWidth - 2)}║`;
-
-    // Sub message
-    const subMessage = 'Please wait...';
-    const subPad = Math.floor((overlayWidth - 2 - subMessage.length) / 2);
-    output += `${ESC}[${startY + 4};${startX}H${bgColor}${borderColor}║${' '.repeat(subPad)}${subTextColor}${subMessage}${' '.repeat(overlayWidth - 2 - subPad - subMessage.length)}${borderColor}║`;
-
-    // Empty row
-    output += `${ESC}[${startY + 5};${startX}H${bgColor}${borderColor}║${' '.repeat(overlayWidth - 2)}║`;
-
-    // Bottom border
-    output += `${ESC}[${startY + 6};${startX}H${bgColor}${borderColor}╚${'═'.repeat(overlayWidth - 2)}╝`;
-
-    output += reset;
-
-    return output;
-  }
-
-  /**
-   * Generate the help modal overlay
-   */
-  private generateHelpModalOverlay(): string {
-    const ESC = '\x1b';
-
-    // Help content
-    const commands = [
-      { key: '← ↑ → ↓ / WASD', desc: 'Move your character' },
-      { key: '+ / -', desc: 'Zoom in / out' },
-      { key: '[ / ]', desc: 'Rotate camera' },
-      { key: 'V', desc: 'Cycle render mode (halfblock/braille/text)' },
-      { key: 'C', desc: 'Toggle camera mode (follow/free)' },
-      { key: 'H / Home', desc: 'Snap camera to player' },
-      { key: 'Shift + Arrows', desc: 'Pan camera (in free mode)' },
-      { key: 'Tab', desc: 'Show player list' },
-      { key: 'R', desc: 'Edit your avatar' },
-      { key: 'B', desc: 'Place a building' },
-      { key: 'Q', desc: 'Quit game' },
-      { key: '?', desc: 'Show this help' },
-    ];
-
-    // Calculate overlay dimensions
-    const overlayWidth = 56;
-    const overlayHeight = commands.length + 6;
-    const startX = Math.floor((this.cols - overlayWidth) / 2);
-    const startY = Math.floor((this.rows - overlayHeight) / 2);
-
-    // Colors
-    const bgColor = `${ESC}[48;2;25;25;35m`;
-    const borderColor = `${ESC}[38;2;100;120;180m`;
-    const headerColor = `${ESC}[38;2;255;220;100m`;
-    const keyColor = `${ESC}[38;2;120;200;255m`;
-    const descColor = `${ESC}[38;2;200;200;210m`;
-    const hintColor = `${ESC}[38;2;150;150;170m`;
-    const reset = `${ESC}[0m`;
-
-    let output = '';
-
-    // Top border
-    output += `${ESC}[${startY};${startX}H${bgColor}${borderColor}╔${'═'.repeat(overlayWidth - 2)}╗`;
-
-    // Title row
-    const title = ' ⌨ KEYBOARD CONTROLS ';
-    const titlePad = Math.floor((overlayWidth - 2 - title.length) / 2);
-    output += `${ESC}[${startY + 1};${startX}H${bgColor}${borderColor}║${' '.repeat(titlePad)}${headerColor}${title}${borderColor}${' '.repeat(overlayWidth - 2 - titlePad - title.length)}║`;
-
-    // Separator
-    output += `${ESC}[${startY + 2};${startX}H${bgColor}${borderColor}╟${'─'.repeat(overlayWidth - 2)}╢`;
-
-    // Empty row
-    output += `${ESC}[${startY + 3};${startX}H${bgColor}${borderColor}║${' '.repeat(overlayWidth - 2)}║`;
-
-    // Command rows
-    for (let i = 0; i < commands.length; i++) {
-      const cmd = commands[i]!;
-      const keyPadded = cmd.key.padEnd(18);
-      const descPadded = cmd.desc.padEnd(32);
-      output += `${ESC}[${startY + 4 + i};${startX}H${bgColor}${borderColor}║ ${keyColor}${keyPadded}${descColor}${descPadded} ${borderColor}║`;
-    }
-
-    // Empty row
-    output += `${ESC}[${startY + 4 + commands.length};${startX}H${bgColor}${borderColor}║${' '.repeat(overlayWidth - 2)}║`;
-
-    // Bottom border
-    output += `${ESC}[${startY + 5 + commands.length};${startX}H${bgColor}${borderColor}╚${'═'.repeat(overlayWidth - 2)}╝`;
-
-    // Footer hint
-    const hint = ' Press ESC to close ';
-    output += `${ESC}[${startY + 6 + commands.length};${startX + Math.floor((overlayWidth - hint.length) / 2)}H${hintColor}${hint}`;
-
-    output += reset;
-
-    return output;
   }
 
   private getPlayerColor(userId: string): { r: number; g: number; b: number } {
@@ -598,15 +454,14 @@ export class GameSession {
         this.rotateCameraCounterClockwise();
         break;
       case 'show_help':
-        this.showHelpModal = true;
-        this.renderer?.invalidate();
+        // Push help modal to focus stack
+        if (this.helpModal && !this.helpModal.isVisible()) {
+          this.componentManager?.pushFocus(this.helpModal);
+        }
         break;
       case 'open_menu':
-        // Escape key - close help modal if showing
-        if (this.showHelpModal) {
-          this.showHelpModal = false;
-          this.renderer?.invalidate();
-        }
+        // ESC is now handled by the component system
+        // If no modal is open, this is a no-op (future: open menu)
         break;
       case 'quit':
         this.quit();
@@ -618,12 +473,17 @@ export class GameSession {
    * Toggle the player list overlay
    */
   private async togglePlayerList(): Promise<void> {
-    this.showPlayerList = !this.showPlayerList;
-    if (this.showPlayerList) {
+    if (!this.playerListModal) return;
+
+    if (this.playerListModal.isVisible()) {
+      // Close player list
+      this.componentManager?.popFocus();
+    } else {
       // Fetch fresh player list when opening
       this.cachedAllPlayers = await this.workerManager.getAllPlayers();
+      this.playerListModal.setPlayers(this.cachedAllPlayers, this.userId);
+      this.componentManager?.pushFocus(this.playerListModal);
     }
-    this.renderer?.invalidate();
   }
 
   /**
@@ -1092,6 +952,13 @@ export class GameSession {
     if (this.renderer) {
       this.renderer.resize(cols, rows);
     }
+    if (this.componentManager) {
+      this.componentManager.resize(cols, rows);
+    }
+    // Update modal component positions for new screen size
+    this.helpModal?.updateScreenSize(cols, rows);
+    this.playerListModal?.updateScreenSize(cols, rows);
+    this.reloadOverlay?.updateScreenSize(cols, rows);
   }
 
   /**
@@ -1146,6 +1013,30 @@ export class GameSession {
       this.unsubscribeReload();
       this.unsubscribeReload = null;
     }
+
+    // Remove sprite/building callbacks to prevent memory leaks
+    if (this.userId) {
+      this.workerManager.offSpriteReload(this.userId);
+      this.workerManager.offBuildingPlacement(this.userId);
+    }
+
+    // Remove player from tile provider cache
+    if (this.userId && this.tileProvider) {
+      this.tileProvider.removePlayer(this.userId);
+    }
+
+    // Remove stream listeners
+    this.stream.removeAllListeners('data');
+
+    // Clean up component manager
+    if (this.componentManager) {
+      this.componentManager.destroy();
+      this.componentManager = null;
+    }
+    this.inputRouter = null;
+    this.helpModal = null;
+    this.playerListModal = null;
+    this.reloadOverlay = null;
 
     // Clean up renderer
     if (this.renderer) {

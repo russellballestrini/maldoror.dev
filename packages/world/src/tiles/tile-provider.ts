@@ -296,10 +296,11 @@ export class TileProvider implements WorldDataProvider {
   }
 
   /**
-   * Remove player
+   * Remove player and their cached sprite
    */
   removePlayer(userId: string): void {
     this.players.delete(userId);
+    this.sprites.delete(userId);  // Also remove cached sprite to free memory
   }
 
   /**
@@ -589,6 +590,17 @@ export class TileProvider implements WorldDataProvider {
   clearCache(): void {
     this.chunkCache.clear();
     this.tileCache.clear();
+  }
+
+  /**
+   * Destroy and clean up all resources
+   */
+  destroy(): void {
+    this.players.clear();
+    this.sprites.clear();
+    this.buildings.clear();
+    this.buildingsByChunk.clear();
+    this.clearCache();
   }
 }
 
