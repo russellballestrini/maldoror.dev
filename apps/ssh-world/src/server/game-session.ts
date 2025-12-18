@@ -51,6 +51,7 @@ export class GameSession {
   private moveTimer: NodeJS.Timeout | null = null;
   private currentPrompt: string = '';
   private showPlayerList: boolean = false;
+  private showHelpModal: boolean = false;
   // Cache for player list (Tab menu)
   private cachedAllPlayers: Array<{
     userId: string;
@@ -248,9 +249,12 @@ export class GameSession {
     // Increment tick counter for periodic refreshes
     this.tickCounter++;
 
-    // Refresh visible players when position changes OR periodically (every ~1 second = 15 ticks)
-    const positionChanged = this.playerX !== this.lastQueryX || this.playerY !== this.lastQueryY;
-    const periodicRefresh = this.tickCounter % 15 === 0;
+    // Performance: Only refresh visible players if moved >2 tiles OR periodically (every ~3 seconds = 45 ticks)
+    const POSITION_THRESHOLD = 2;
+    const positionChanged =
+      Math.abs(this.playerX - this.lastQueryX) > POSITION_THRESHOLD ||
+      Math.abs(this.playerY - this.lastQueryY) > POSITION_THRESHOLD;
+    const periodicRefresh = this.tickCounter % 45 === 0;
     if (positionChanged || periodicRefresh) {
       this.cachedVisiblePlayers = await this.workerManager.getVisiblePlayers(
         this.playerX,
@@ -262,6 +266,9 @@ export class GameSession {
       this.lastQueryX = this.playerX;
       this.lastQueryY = this.playerY;
     }
+
+    // Collect missing sprite IDs for batch loading
+    const missingPlayerIds: string[] = [];
 
     // Update other players in tile provider
     for (const player of this.cachedVisiblePlayers) {
@@ -276,16 +283,19 @@ export class GameSession {
       };
       this.tileProvider.updatePlayer(state);
 
-      // Performance: Load sprite if not already loaded AND not already loading
+      // Performance: Collect missing sprites for batch loading
       if (!this.tileProvider.getPlayerSprite(player.userId) && !this.loadingSprites.has(player.userId)) {
         // Set placeholder immediately for rendering
         const color = this.getPlayerColor(player.userId);
         this.tileProvider.setPlayerSprite(player.userId, createPlaceholderSprite(color));
-
-        // Mark as loading and load actual sprite from database asynchronously
-        this.loadingSprites.add(player.userId);
-        this.loadPlayerSprite(player.userId);
+        missingPlayerIds.push(player.userId);
       }
+    }
+
+    // Performance: Batch load all missing sprites at once
+    if (missingPlayerIds.length > 0) {
+      missingPlayerIds.forEach(id => this.loadingSprites.add(id));
+      this.batchLoadPlayerSprites(missingPlayerIds);
     }
 
     // Center camera on player
@@ -297,6 +307,11 @@ export class GameSession {
     // Add player list overlay if showing
     if (this.showPlayerList) {
       output += this.generatePlayerListOverlay();
+    }
+
+    // Add help modal overlay if showing
+    if (this.showHelpModal) {
+      output += this.generateHelpModalOverlay();
     }
 
     // Single write for entire frame
@@ -431,6 +446,81 @@ export class GameSession {
     return output;
   }
 
+  /**
+   * Generate the help modal overlay
+   */
+  private generateHelpModalOverlay(): string {
+    const ESC = '\x1b';
+
+    // Help content
+    const commands = [
+      { key: '← ↑ → ↓ / WASD', desc: 'Move your character' },
+      { key: '+ / -', desc: 'Zoom in / out' },
+      { key: 'V', desc: 'Cycle render mode (halfblock/braille/text)' },
+      { key: 'C', desc: 'Toggle camera mode (follow/free)' },
+      { key: 'H / Home', desc: 'Snap camera to player' },
+      { key: 'Shift + Arrows', desc: 'Pan camera (in free mode)' },
+      { key: 'Tab', desc: 'Show player list' },
+      { key: 'R', desc: 'Edit your avatar' },
+      { key: 'B', desc: 'Place a building' },
+      { key: 'Q', desc: 'Quit game' },
+      { key: '?', desc: 'Show this help' },
+    ];
+
+    // Calculate overlay dimensions
+    const overlayWidth = 56;
+    const overlayHeight = commands.length + 6;
+    const startX = Math.floor((this.cols - overlayWidth) / 2);
+    const startY = Math.floor((this.rows - overlayHeight) / 2);
+
+    // Colors
+    const bgColor = `${ESC}[48;2;25;25;35m`;
+    const borderColor = `${ESC}[38;2;100;120;180m`;
+    const headerColor = `${ESC}[38;2;255;220;100m`;
+    const keyColor = `${ESC}[38;2;120;200;255m`;
+    const descColor = `${ESC}[38;2;200;200;210m`;
+    const hintColor = `${ESC}[38;2;150;150;170m`;
+    const reset = `${ESC}[0m`;
+
+    let output = '';
+
+    // Top border
+    output += `${ESC}[${startY};${startX}H${bgColor}${borderColor}╔${'═'.repeat(overlayWidth - 2)}╗`;
+
+    // Title row
+    const title = ' ⌨ KEYBOARD CONTROLS ';
+    const titlePad = Math.floor((overlayWidth - 2 - title.length) / 2);
+    output += `${ESC}[${startY + 1};${startX}H${bgColor}${borderColor}║${' '.repeat(titlePad)}${headerColor}${title}${borderColor}${' '.repeat(overlayWidth - 2 - titlePad - title.length)}║`;
+
+    // Separator
+    output += `${ESC}[${startY + 2};${startX}H${bgColor}${borderColor}╟${'─'.repeat(overlayWidth - 2)}╢`;
+
+    // Empty row
+    output += `${ESC}[${startY + 3};${startX}H${bgColor}${borderColor}║${' '.repeat(overlayWidth - 2)}║`;
+
+    // Command rows
+    for (let i = 0; i < commands.length; i++) {
+      const cmd = commands[i]!;
+      const keyPadded = cmd.key.padEnd(18);
+      const descPadded = cmd.desc.padEnd(32);
+      output += `${ESC}[${startY + 4 + i};${startX}H${bgColor}${borderColor}║ ${keyColor}${keyPadded}${descColor}${descPadded} ${borderColor}║`;
+    }
+
+    // Empty row
+    output += `${ESC}[${startY + 4 + commands.length};${startX}H${bgColor}${borderColor}║${' '.repeat(overlayWidth - 2)}║`;
+
+    // Bottom border
+    output += `${ESC}[${startY + 5 + commands.length};${startX}H${bgColor}${borderColor}╚${'═'.repeat(overlayWidth - 2)}╝`;
+
+    // Footer hint
+    const hint = ' Press ESC to close ';
+    output += `${ESC}[${startY + 6 + commands.length};${startX + Math.floor((overlayWidth - hint.length) / 2)}H${hintColor}${hint}`;
+
+    output += reset;
+
+    return output;
+  }
+
   private getPlayerColor(userId: string): { r: number; g: number; b: number } {
     // Generate deterministic color from userId
     let hash = 0;
@@ -498,6 +588,17 @@ export class GameSession {
         break;
       case 'pan_camera_right':
         this.panCamera(1, 0);
+        break;
+      case 'show_help':
+        this.showHelpModal = true;
+        this.renderer?.invalidate();
+        break;
+      case 'open_menu':
+        // Escape key - close help modal if showing
+        if (this.showHelpModal) {
+          this.showHelpModal = false;
+          this.renderer?.invalidate();
+        }
         break;
       case 'quit':
         this.quit();
@@ -838,33 +939,36 @@ export class GameSession {
   }
 
   /**
-   * Load sprite for another player
+   * Batch load multiple player sprites in parallel
+   * More efficient than loading one at a time when multiple players enter viewport
    */
-  private async loadPlayerSprite(playerId: string): Promise<void> {
-    if (!this.tileProvider) return;
+  private async batchLoadPlayerSprites(playerIds: string[]): Promise<void> {
+    if (!this.tileProvider || playerIds.length === 0) return;
 
-    try {
-      // Try file first
-      const sprite = await loadSpriteFromDisk(playerId);
-      if (sprite) {
-        this.tileProvider.setPlayerSprite(playerId, sprite);
-        return;
+    // Load all sprites in parallel
+    await Promise.all(playerIds.map(async (playerId) => {
+      try {
+        // Try file first
+        const sprite = await loadSpriteFromDisk(playerId);
+        if (sprite) {
+          this.tileProvider?.setPlayerSprite(playerId, sprite);
+          return;
+        }
+
+        // Fallback to database
+        const avatar = await db.query.avatars.findFirst({
+          where: eq(schema.avatars.userId, playerId),
+        });
+
+        if (avatar?.spriteJson) {
+          this.tileProvider?.setPlayerSprite(playerId, avatar.spriteJson as Sprite);
+        }
+      } catch (error) {
+        console.error(`Failed to load sprite for ${playerId}:`, error);
+      } finally {
+        this.loadingSprites.delete(playerId);
       }
-
-      // Fallback to database (for existing sprites before file storage)
-      const avatar = await db.query.avatars.findFirst({
-        where: eq(schema.avatars.userId, playerId),
-      });
-
-      if (avatar?.spriteJson) {
-        this.tileProvider.setPlayerSprite(playerId, avatar.spriteJson as Sprite);
-      }
-    } catch (error) {
-      console.error(`Failed to load sprite for ${playerId}:`, error);
-    } finally {
-      // Performance: Clear from loading set so we don't re-query
-      this.loadingSprites.delete(playerId);
-    }
+    }));
   }
 
   private move(dx: number, dy: number, direction: Direction): void {

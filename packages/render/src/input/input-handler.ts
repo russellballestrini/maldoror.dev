@@ -35,10 +35,11 @@ export class InputHandler {
   private setupDefaultBindings(): void {
     // Game mode bindings
     this.bindings.set('game', [
-      { key: 'ArrowUp', action: 'move_up' },
-      { key: 'ArrowDown', action: 'move_down' },
-      { key: 'ArrowLeft', action: 'move_left' },
-      { key: 'ArrowRight', action: 'move_right' },
+      // Arrow keys for movement (explicit shift: false to not conflict with camera pan)
+      { key: 'ArrowUp', shift: false, action: 'move_up' },
+      { key: 'ArrowDown', shift: false, action: 'move_down' },
+      { key: 'ArrowLeft', shift: false, action: 'move_left' },
+      { key: 'ArrowRight', shift: false, action: 'move_right' },
       { key: 'w', action: 'move_up' },
       { key: 'W', action: 'move_up' },
       { key: 's', action: 'move_down' },
@@ -72,6 +73,8 @@ export class InputHandler {
       { key: 'Q', action: 'quit' },
       // Player list
       { key: 'Tab', action: 'toggle_players' },
+      // Help
+      { key: '?', action: 'show_help' },
       // Camera controls
       { key: 'c', action: 'toggle_camera_mode' },
       { key: 'C', action: 'toggle_camera_mode' },
@@ -140,14 +143,25 @@ export class InputHandler {
   private handleKeyEvent(event: ParsedKey): void {
     const modeBindings = this.bindings.get(this.mode) || [];
 
-    // Find matching binding
-    const binding = modeBindings.find(
+    // Find matching binding - prefer more specific bindings (with explicit modifiers)
+    // First try exact modifier match, then fallback to wildcard (undefined) modifiers
+    const exactMatch = modeBindings.find(
+      (b) =>
+        b.key === event.key &&
+        b.ctrl === event.ctrl &&
+        b.alt === event.alt &&
+        b.shift === event.shift
+    );
+
+    const wildcardMatch = modeBindings.find(
       (b) =>
         b.key === event.key &&
         (b.ctrl === undefined || b.ctrl === event.ctrl) &&
         (b.alt === undefined || b.alt === event.alt) &&
         (b.shift === undefined || b.shift === event.shift)
     );
+
+    const binding = exactMatch || wildcardMatch;
 
     if (binding) {
       this.dispatch(binding.action, event);
