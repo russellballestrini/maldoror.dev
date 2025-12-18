@@ -65,6 +65,9 @@ export class ViewportRenderer {
   private pendingOverlays: TextOverlay[] = [];  // Collected during render
   private tileRenderSize: number;  // Tile screen render size in pixels
   private dataResolution: number;  // Resolution to fetch from pre-computed data
+  // Performance: Cache scaled frames to avoid repeated scaling
+  private scaledFrameCache: Map<string, PixelGrid> = new Map();
+  private lastCacheClearSize: number = 0;
 
   constructor(config: ViewportConfig) {
     this.config = config;
@@ -269,8 +272,11 @@ export class ViewportRenderer {
             tilePixels = tile.resolutions?.[resKey] ?? tile.pixels;
           }
 
-          // Scale to exact tile render size if needed
-          const scaledPixels = this.scaleFrame(tilePixels, this.tileRenderSize, this.tileRenderSize);
+          // Scale to exact tile render size if needed (with caching)
+          const frameId = tile.animated
+            ? `tile:${tile.id}:${Math.floor(tick / 15) % (tile.animationFrames?.length ?? 1)}`
+            : `tile:${tile.id}`;
+          const scaledPixels = this.scaleFrame(tilePixels, this.tileRenderSize, this.tileRenderSize, frameId);
 
           // Calculate screen position (world pixel position minus viewport origin)
           const screenX = Math.round(worldTileX * this.tileRenderSize - origin.x);
@@ -322,8 +328,9 @@ export class ViewportRenderer {
         // Get the appropriate resolution
         const tilePixels = buildingTile.resolutions?.[resKey] ?? buildingTile.pixels;
 
-        // Scale to exact tile render size if needed
-        const scaledPixels = this.scaleFrame(tilePixels, this.tileRenderSize, this.tileRenderSize);
+        // Scale to exact tile render size if needed (with caching by position)
+        const frameId = `building:${worldTileX},${worldTileY}`;
+        const scaledPixels = this.scaleFrame(tilePixels, this.tileRenderSize, this.tileRenderSize, frameId);
 
         // Calculate screen position
         const screenX = Math.round(worldTileX * this.tileRenderSize - origin.x);
@@ -366,8 +373,9 @@ export class ViewportRenderer {
 
   /**
    * Scale a sprite frame to target size using nearest-neighbor sampling
+   * Uses caching when frameId is provided for performance
    */
-  private scaleFrame(frame: PixelGrid, targetWidth: number, targetHeight: number): PixelGrid {
+  private scaleFrame(frame: PixelGrid, targetWidth: number, targetHeight: number, frameId?: string): PixelGrid {
     const srcHeight = frame.length;
     const srcWidth = frame[0]?.length ?? 0;
 
@@ -375,6 +383,37 @@ export class ViewportRenderer {
     if (srcWidth === targetWidth && srcHeight === targetHeight) {
       return frame;
     }
+
+    // Clear cache if tile size changed
+    if (this.lastCacheClearSize !== this.tileRenderSize) {
+      this.scaledFrameCache.clear();
+      this.lastCacheClearSize = this.tileRenderSize;
+    }
+
+    // Check cache if we have an ID
+    if (frameId) {
+      const cacheKey = `${frameId}:${targetWidth}x${targetHeight}`;
+      const cached = this.scaledFrameCache.get(cacheKey);
+      if (cached) {
+        return cached;
+      }
+
+      // Scale and cache
+      const result = this.scaleFrameUncached(frame, targetWidth, targetHeight);
+      this.scaledFrameCache.set(cacheKey, result);
+      return result;
+    }
+
+    // No ID, scale without caching
+    return this.scaleFrameUncached(frame, targetWidth, targetHeight);
+  }
+
+  /**
+   * Scale a frame without caching (internal helper)
+   */
+  private scaleFrameUncached(frame: PixelGrid, targetWidth: number, targetHeight: number): PixelGrid {
+    const srcHeight = frame.length;
+    const srcWidth = frame[0]?.length ?? 0;
 
     const result: PixelGrid = [];
     for (let y = 0; y < targetHeight; y++) {
@@ -419,8 +458,9 @@ export class ViewportRenderer {
       const rawFrame = directionFrames[player.animationFrame];
       if (!rawFrame) continue;
 
-      // Scale to exact tile render size if needed
-      const frame = this.scaleFrame(rawFrame, this.tileRenderSize, this.tileRenderSize);
+      // Scale to exact tile render size if needed (with caching)
+      const frameId = `player:${player.userId}:${player.direction}:${player.animationFrame}`;
+      const frame = this.scaleFrame(rawFrame, this.tileRenderSize, this.tileRenderSize, frameId);
 
       // Calculate screen position (world pixel position minus viewport origin)
       const worldPixelX = player.x * this.tileRenderSize;

@@ -97,12 +97,36 @@ export class TileProvider implements WorldDataProvider {
   private buildings: Map<string, BuildingData> = new Map(); // Building ID -> BuildingData
   private localPlayerId: string = '';
   private useEdgeBlending: boolean = false; // Disabled - just use base tiles
+  private buildingsByChunk: Map<string, Set<string>> = new Map(); // Spatial hash for O(1) building lookups
 
   constructor(config: TileProviderConfig) {
     this.worldSeed = config.worldSeed;
     this.noise = new ValueNoise(config.worldSeed);
     this.maxChunks = config.chunkCacheSize ?? 64;
-    this.maxTiles = 256; // Cache up to 256 procedural tiles
+    this.maxTiles = config.chunkCacheSize ? config.chunkCacheSize * 16 : 1024; // Cache up to 1024 procedural tiles (was 256)
+  }
+
+  /**
+   * Get chunk key for spatial hashing
+   */
+  private getChunkKey(x: number, y: number): string {
+    const chunkX = Math.floor(x / CHUNK_SIZE_TILES);
+    const chunkY = Math.floor(y / CHUNK_SIZE_TILES);
+    return `${chunkX},${chunkY}`;
+  }
+
+  /**
+   * Get all chunk keys a building spans (buildings are 4x4 tiles)
+   */
+  private getBuildingChunkKeys(anchorX: number, anchorY: number): string[] {
+    const keys = new Set<string>();
+    // Buildings span 4x4 tiles from anchor
+    for (let dy = 0; dy < 4; dy++) {
+      for (let dx = 0; dx < 4; dx++) {
+        keys.add(this.getChunkKey(anchorX + dx, anchorY + dy));
+      }
+    }
+    return Array.from(keys);
   }
 
   /**
@@ -293,19 +317,55 @@ export class TileProvider implements WorldDataProvider {
    * Add a building to the tile provider
    */
   setBuilding(buildingId: string, anchorX: number, anchorY: number, sprite: BuildingSprite): void {
+    // Remove from old spatial hash location if exists
+    const existing = this.buildings.get(buildingId);
+    if (existing) {
+      this.unregisterBuildingFromSpatialHash(buildingId, existing.anchorX, existing.anchorY);
+    }
+
     this.buildings.set(buildingId, {
       id: buildingId,
       sprite,
       anchorX,
       anchorY,
     });
+
+    // Register in spatial hash
+    this.registerBuildingInSpatialHash(buildingId, anchorX, anchorY);
   }
 
   /**
    * Remove a building by ID
    */
   removeBuilding(buildingId: string): void {
+    const building = this.buildings.get(buildingId);
+    if (building) {
+      this.unregisterBuildingFromSpatialHash(buildingId, building.anchorX, building.anchorY);
+    }
     this.buildings.delete(buildingId);
+  }
+
+  private registerBuildingInSpatialHash(buildingId: string, anchorX: number, anchorY: number): void {
+    for (const key of this.getBuildingChunkKeys(anchorX, anchorY)) {
+      let set = this.buildingsByChunk.get(key);
+      if (!set) {
+        set = new Set();
+        this.buildingsByChunk.set(key, set);
+      }
+      set.add(buildingId);
+    }
+  }
+
+  private unregisterBuildingFromSpatialHash(buildingId: string, anchorX: number, anchorY: number): void {
+    for (const key of this.getBuildingChunkKeys(anchorX, anchorY)) {
+      const set = this.buildingsByChunk.get(key);
+      if (set) {
+        set.delete(buildingId);
+        if (set.size === 0) {
+          this.buildingsByChunk.delete(key);
+        }
+      }
+    }
   }
 
   /**
@@ -316,10 +376,27 @@ export class TileProvider implements WorldDataProvider {
   }
 
   /**
+   * Get buildings that might be at a position (from spatial hash)
+   */
+  private getBuildingsNearPosition(worldX: number, worldY: number): BuildingData[] {
+    const chunkKey = this.getChunkKey(worldX, worldY);
+    const buildingIds = this.buildingsByChunk.get(chunkKey);
+    if (!buildingIds) return [];
+
+    const result: BuildingData[] = [];
+    for (const id of buildingIds) {
+      const building = this.buildings.get(id);
+      if (building) result.push(building);
+    }
+    return result;
+  }
+
+  /**
    * Check if a world position is blocked by a building
+   * Uses spatial hash for O(1) average lookup instead of O(N)
    */
   isBuildingAt(worldX: number, worldY: number): boolean {
-    for (const building of this.buildings.values()) {
+    for (const building of this.getBuildingsNearPosition(worldX, worldY)) {
       if (isPositionInBuilding(worldX, worldY, building.anchorX, building.anchorY)) {
         return true;
       }
@@ -330,9 +407,10 @@ export class TileProvider implements WorldDataProvider {
   /**
    * Get building tile at world coordinates, if any
    * Returns the BuildingTile for rendering, or null if no building at that position
+   * Uses spatial hash for O(1) average lookup instead of O(N)
    */
   getBuildingTileAt(worldX: number, worldY: number): BuildingTile | null {
-    for (const building of this.buildings.values()) {
+    for (const building of this.getBuildingsNearPosition(worldX, worldY)) {
       const tileIndex = getBuildingTileIndex(worldX, worldY, building.anchorX, building.anchorY);
       if (tileIndex) {
         const [tileX, tileY] = tileIndex;
@@ -344,9 +422,10 @@ export class TileProvider implements WorldDataProvider {
 
   /**
    * Get building at world coordinates, if any
+   * Uses spatial hash for O(1) average lookup instead of O(N)
    */
   getBuildingAt(worldX: number, worldY: number): BuildingData | null {
-    for (const building of this.buildings.values()) {
+    for (const building of this.getBuildingsNearPosition(worldX, worldY)) {
       if (isPositionInBuilding(worldX, worldY, building.anchorX, building.anchorY)) {
         return building;
       }
