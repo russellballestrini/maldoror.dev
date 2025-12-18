@@ -4,9 +4,12 @@ import * as Sentry from '@sentry/node';
 
 import 'dotenv/config';
 import { SSHServer } from './server/ssh-server.js';
+import { StatsServer } from './server/stats-server.js';
 import { WorkerManager } from './server/worker-manager.js';
 import { db, schema } from '@maldoror/db';
 import type { ProviderConfig } from '@maldoror/ai';
+
+const startTime = new Date();
 
 async function main() {
   // Configure AI provider from environment
@@ -64,6 +67,16 @@ async function main() {
   // Start SSH server
   sshServer.start();
 
+  // Start stats HTTP server
+  const statsServer = new StatsServer({
+    port: parseInt(process.env.STATS_PORT || '3000', 10),
+    getSessionCount: () => sshServer.getSessionCount(),
+    workerManager,
+    worldSeed,
+    startTime,
+  });
+  statsServer.start();
+
   // Hot reload handler - SIGUSR1 triggers worker reload
   // SSH connections stay alive, only game logic restarts
   process.on('SIGUSR1', async () => {
@@ -105,6 +118,7 @@ async function main() {
 
     console.log('All sessions closed, shutting down...');
     sshServer.stop();
+    statsServer.stop();
     workerManager.stop();
     process.exit(0);
   };
