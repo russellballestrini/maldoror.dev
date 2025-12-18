@@ -30,10 +30,21 @@
     "prod:db": "ssh -p 22022 root@134.199.180.251 'docker exec -it deploy-postgres-1 psql -U maldoror -d maldoror'",
     "prod:query": "./deploy/prod-query.sh",
     "prod:logs": "ssh -p 22022 root@134.199.180.251 'docker logs -f deploy-ssh-world-1'",
+    "prod:logs:tail": "ssh -p 22022 root@134.199.180.251 'docker logs --tail=100 deploy-ssh-world-1'",
+    "prod:logs:errors": "ssh -p 22022 root@134.199.180.251 'docker logs deploy-ssh-world-1 2>&1 | grep -i error | tail -50'",
     "prod:logs:all": "ssh -p 22022 root@134.199.180.251 'cd /opt/maldoror && docker compose -f deploy/docker-compose.prod.yml logs -f'",
     "prod:status": "ssh -p 22022 root@134.199.180.251 'cd /opt/maldoror && docker compose -f deploy/docker-compose.prod.yml ps'",
     "prod:restart": "ssh -p 22022 root@134.199.180.251 'cd /opt/maldoror && docker compose -f deploy/docker-compose.prod.yml restart ssh-world'",
-    "prod:stats": "open http://134.199.180.251:8404/stats"
+    "prod:stats": "open http://134.199.180.251:8404/stats",
+    "prod:metrics": "curl -s http://134.199.180.251:3000/stats | jq .",
+    "prod:health": "curl -s http://134.199.180.251:3000/health | jq .",
+    "prod:memory": "ssh -p 22022 root@134.199.180.251 'docker stats --no-stream --format \"table {{.Name}}\\t{{.CPUPerc}}\\t{{.MemUsage}}\\t{{.NetIO}}\"'",
+    "prod:db:counts": "ssh -p 22022 root@134.199.180.251 'docker exec deploy-postgres-1 psql -U maldoror -d maldoror -c \"SELECT relname as table, n_live_tup as rows FROM pg_stat_user_tables ORDER BY n_live_tup DESC;\"'",
+    "prod:db:size": "ssh -p 22022 root@134.199.180.251 'docker exec deploy-postgres-1 psql -U maldoror -d maldoror -c \"SELECT pg_size_pretty(pg_database_size(current_database())) as db_size;\"'",
+    "prod:db:connections": "ssh -p 22022 root@134.199.180.251 'docker exec deploy-postgres-1 psql -U maldoror -d maldoror -c \"SELECT count(*) as active_connections, state FROM pg_stat_activity WHERE datname = current_database() GROUP BY state;\"'",
+    "prod:db:activity": "ssh -p 22022 root@134.199.180.251 'docker exec deploy-postgres-1 psql -U maldoror -d maldoror -c \"SELECT pid, state, query_start, left(query, 60) as query FROM pg_stat_activity WHERE datname = current_database() AND state != '\\''idle'\\'' ORDER BY query_start;\"'",
+    "prod:uptime": "ssh -p 22022 root@134.199.180.251 'docker inspect deploy-ssh-world-1 --format \"Started: {{.State.StartedAt}}\" && uptime'",
+    "prod:watch": "watch -n 5 'curl -s http://134.199.180.251:3000/stats | jq \"{uptime: .server.uptime_human, memory_mb: .server.memory.heap_used_mb, sessions: .server.active_sessions, online: .players.online_now}\"'"
   },
   "devDependencies": {
     "@maldoror/tsconfig": "workspace:*",
