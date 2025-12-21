@@ -87,6 +87,9 @@ export class SSHServer {
       didAttemptAuth = true;
 
       if (ctx.method === 'publickey') {
+        // Debug: log the username we receive
+        console.log(`Auth attempt: username="${ctx.username}" method=${ctx.method}`);
+
         // Default: extract fingerprint directly from the SSH key
         let fingerprint = this.extractFingerprint(ctx.key);
         let isProxied = false;
