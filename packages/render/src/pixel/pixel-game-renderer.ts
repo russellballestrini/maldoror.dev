@@ -966,6 +966,7 @@ export class PixelGameRenderer {
   /**
    * Render only changed cells (for incremental update)
    * OPTIMIZED: Uses array.push + join instead of string concatenation
+   * DELTA COMPRESSION: Tracks stats and uses efficient cursor movement
    */
   private renderChangedCells(cells: CellGrid): string {
     const chunks: string[] = [];
@@ -974,22 +975,51 @@ export class PixelGameRenderer {
     let lastFg: { r: number; g: number; b: number } | null = null;
     let lastBg: { r: number; g: number; b: number } | null = null;
 
+    // Stats tracking
+    let changedCells = 0;
+    let totalCells = 0;
+    let contiguousRuns = 0;
+    let cursorJumps = 0;
+
     for (let y = 0; y < cells.length; y++) {
       const row = cells[y];
       const prevRow = this.previousCells[y];
       if (!row) continue;
 
+      // Quick row-level check: if row references are identical, skip entirely
+      // This is a cheap pointer comparison before expensive cell comparison
+      if (row === prevRow) {
+        totalCells += row.length;
+        continue;
+      }
+
       for (let x = 0; x < row.length; x++) {
         const cell = row[x];
         const prevCell = prevRow?.[x];
+        totalCells++;
 
         if (!cell || cellsEqual(cell, prevCell)) continue;
+
+        changedCells++;
 
         // Move cursor only if not contiguous with last cell
         if (lastY !== y || lastX !== x - 1) {
           // Account for multi-char cells in normal mode
           const termCol = this.renderMode === 'normal' ? x * 2 + 1 : x + 1;
-          chunks.push(`${ESC}[${y + this.layout.headerRows + 1};${termCol}H`);
+
+          // Use relative cursor movement when more efficient (same row, small gap)
+          if (lastY === y && x > lastX && x - lastX <= 4) {
+            // Cursor right is shorter than absolute for small gaps
+            const spaces = this.renderMode === 'normal' ? (x - lastX - 1) * 2 : x - lastX - 1;
+            if (spaces > 0) {
+              chunks.push(`${ESC}[${spaces}C`);
+            }
+          } else {
+            chunks.push(`${ESC}[${y + this.layout.headerRows + 1};${termCol}H`);
+          }
+          cursorJumps++;
+        } else {
+          contiguousRuns++;
         }
 
         // Emit foreground color if changed
@@ -1013,6 +1043,10 @@ export class PixelGameRenderer {
     if (chunks.length > 0) {
       chunks.push(`${ESC}[0m`);
     }
+
+    // Record cell diff stats
+    perfStats.recordCellDiff(changedCells, totalCells);
+
     return chunks.join('');
   }
 
