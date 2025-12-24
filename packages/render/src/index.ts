@@ -78,5 +78,12 @@ export {
   pregenerateBrightnessVariants,
 } from './pixel/brightness-cache.js';
 
+// Prediction cache for probabilistic pre-rendering
+export {
+  predictionCache,
+  type PredictionType,
+  type PreRenderedPrediction,
+} from './pixel/prediction-cache.js';
+
 // Transport (backpressure handling)
 export { OutputPump, type OutputPumpMetrics } from './transport/index.js';
