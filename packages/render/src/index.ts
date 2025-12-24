@@ -64,6 +64,7 @@ export {
   type GameWorldAdapter,
   type RenderMode,
   type PerfOptimizations,
+  type FoveatedConfig,
 } from './pixel/pixel-game-renderer.js';
 
 // Performance stats

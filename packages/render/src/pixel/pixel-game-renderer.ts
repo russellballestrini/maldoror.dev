@@ -71,11 +71,29 @@ const DEFAULT_LAYOUT: LayoutConfig = {
 export type RenderMode = 'normal' | 'halfblock' | 'braille';
 
 /**
+ * Foveated zone configuration
+ */
+export interface FoveatedConfig {
+  zoneARadius: number;  // Tiles around player for Zone A (60Hz), default: 3
+  zoneBRadius: number;  // Additional tiles for Zone B (15Hz), default: 6
+  zoneBDivisor: number; // Update Zone B every N frames, default: 4 (15Hz at 60fps)
+  zoneCDivisor: number; // Update Zone C every N frames, default: 15 (4Hz at 60fps)
+}
+
+const DEFAULT_FOVEATED: FoveatedConfig = {
+  zoneARadius: 3,
+  zoneBRadius: 6,
+  zoneBDivisor: 4,
+  zoneCDivisor: 15,
+};
+
+/**
  * Performance optimization options
  */
 export interface PerfOptimizations {
   crle?: boolean;           // Chromatic Run-Length Encoding (default: true)
   foveated?: boolean;       // Foveated temporal rendering (default: false)
+  foveatedConfig?: Partial<FoveatedConfig>;  // Zone configuration
   enablePerfStats?: boolean; // Enable performance logging (default: false)
 }
 
@@ -142,6 +160,14 @@ export class PixelGameRenderer {
   private readonly STATS_BAR_TTL_MS = 1000;  // 1Hz update
   // Performance optimizations
   private useCRLE: boolean = true;  // CRLE enabled by default
+  private useFoveated: boolean = false;  // Foveated rendering disabled by default
+  private foveatedConfig: FoveatedConfig = { ...DEFAULT_FOVEATED };
+  // Foveated: Track last update tick for zones B and C
+  private lastZoneBUpdate: number = 0;
+  private lastZoneCUpdate: number = 0;
+  // Foveated: Store previous cells for zones B and C (to avoid re-rendering)
+  private zoneBCells: CellGrid = [];
+  private zoneCCells: CellGrid = [];
 
   constructor(config: PixelGameRendererConfig) {
     this.stream = config.stream;
@@ -155,6 +181,10 @@ export class PixelGameRenderer {
     // Initialize performance optimizations
     const opts = config.optimizations ?? {};
     this.useCRLE = opts.crle !== false;  // CRLE enabled by default
+    this.useFoveated = opts.foveated === true;  // Foveated disabled by default
+    if (opts.foveatedConfig) {
+      this.foveatedConfig = { ...DEFAULT_FOVEATED, ...opts.foveatedConfig };
+    }
     if (opts.enablePerfStats) {
       perfStats.enable();
     }
@@ -354,6 +384,172 @@ export class PixelGameRenderer {
   }
 
   /**
+   * Enable or disable foveated temporal rendering
+   */
+  setFoveated(enabled: boolean): void {
+    this.useFoveated = enabled;
+    console.log(`[PerfOpt] Foveated rendering ${enabled ? 'enabled' : 'disabled'}`);
+    if (enabled) {
+      console.log(`[PerfOpt] Zones: A=${this.foveatedConfig.zoneARadius} tiles (60Hz), B=${this.foveatedConfig.zoneBRadius} tiles (${60/this.foveatedConfig.zoneBDivisor}Hz), C=rest (${60/this.foveatedConfig.zoneCDivisor}Hz)`);
+    }
+  }
+
+  /**
+   * Check if foveated rendering is enabled
+   */
+  isFoveatedEnabled(): boolean {
+    return this.useFoveated;
+  }
+
+  /**
+   * Calculate which zone a cell belongs to based on player position
+   * Returns 'A' (foveal), 'B' (parafoveal), or 'C' (peripheral)
+   */
+  private getCellZone(cellX: number, cellY: number): 'A' | 'B' | 'C' {
+    // Convert cell position to tile position based on render mode
+    let tileX: number, tileY: number;
+    const tileSize = this.getCurrentTileSize();
+
+    switch (this.renderMode) {
+      case 'braille':
+        // Braille: 2 pixels per cell width, 4 pixels per cell height
+        tileX = Math.floor((cellX * 2) / tileSize);
+        tileY = Math.floor((cellY * 4) / tileSize);
+        break;
+      case 'halfblock':
+        // Halfblock: 1 pixel per cell width, 2 pixels per cell height
+        tileX = Math.floor(cellX / tileSize);
+        tileY = Math.floor((cellY * 2) / tileSize);
+        break;
+      case 'normal':
+      default:
+        // Normal: 2 chars per pixel = 1 cell per pixel
+        tileX = Math.floor((cellX * 2) / tileSize);
+        tileY = Math.floor(cellY / tileSize);
+        break;
+    }
+
+    // Calculate distance from player (Manhattan distance for performance)
+    const { availableCols, availableRows } = this.getViewportArea();
+    const { widthTiles, heightTiles } = this.calculateViewportTiles(availableCols, availableRows);
+
+    // Player is at center of viewport
+    const centerTileX = Math.floor(widthTiles / 2);
+    const centerTileY = Math.floor(heightTiles / 2);
+
+    const distX = Math.abs(tileX - centerTileX);
+    const distY = Math.abs(tileY - centerTileY);
+    const dist = Math.max(distX, distY);  // Chebyshev distance for square zones
+
+    if (dist <= this.foveatedConfig.zoneARadius) {
+      return 'A';
+    } else if (dist <= this.foveatedConfig.zoneBRadius) {
+      return 'B';
+    } else {
+      return 'C';
+    }
+  }
+
+  /**
+   * Apply foveated rendering to cell grid
+   * Only updates cells in zones that should update this tick
+   */
+  private applyFoveatedRendering(cells: CellGrid): CellGrid {
+    const tick = this.tickCount;
+    const shouldUpdateZoneB = (tick - this.lastZoneBUpdate) >= this.foveatedConfig.zoneBDivisor;
+    const shouldUpdateZoneC = (tick - this.lastZoneCUpdate) >= this.foveatedConfig.zoneCDivisor;
+
+    if (shouldUpdateZoneB) {
+      this.lastZoneBUpdate = tick;
+    }
+    if (shouldUpdateZoneC) {
+      this.lastZoneCUpdate = tick;
+    }
+
+    // Track stats
+    let zoneACount = 0;
+    let zoneBCount = 0;
+    let zoneCCount = 0;
+    let skippedCount = 0;
+
+    // Create result grid, copying from cached zones where appropriate
+    const result: CellGrid = [];
+
+    for (let y = 0; y < cells.length; y++) {
+      const row = cells[y];
+      if (!row) {
+        result.push([]);
+        continue;
+      }
+
+      const resultRow: CellGrid[number] = [];
+      for (let x = 0; x < row.length; x++) {
+        const cell = row[x];
+        if (!cell) continue;
+
+        const zone = this.getCellZone(x, y);
+
+        if (zone === 'A') {
+          // Zone A: Always update (60Hz)
+          resultRow.push(cell);
+          zoneACount++;
+        } else if (zone === 'B') {
+          if (shouldUpdateZoneB) {
+            // Zone B: Update this tick
+            resultRow.push(cell);
+            zoneBCount++;
+          } else {
+            // Zone B: Use cached value or current if no cache
+            const cached = this.zoneBCells[y]?.[x];
+            resultRow.push(cached ?? cell);
+            skippedCount++;
+          }
+        } else {
+          if (shouldUpdateZoneC) {
+            // Zone C: Update this tick
+            resultRow.push(cell);
+            zoneCCount++;
+          } else {
+            // Zone C: Use cached value or current if no cache
+            const cached = this.zoneCCells[y]?.[x];
+            resultRow.push(cached ?? cell);
+            skippedCount++;
+          }
+        }
+      }
+      result.push(resultRow);
+    }
+
+    // Update cached cells for zones B and C
+    if (shouldUpdateZoneB || shouldUpdateZoneC) {
+      for (let y = 0; y < cells.length; y++) {
+        const row = cells[y];
+        if (!row) continue;
+
+        if (!this.zoneBCells[y]) this.zoneBCells[y] = [];
+        if (!this.zoneCCells[y]) this.zoneCCells[y] = [];
+
+        for (let x = 0; x < row.length; x++) {
+          const cell = row[x];
+          if (!cell) continue;
+
+          const zone = this.getCellZone(x, y);
+          if (zone === 'B' && shouldUpdateZoneB) {
+            this.zoneBCells[y]![x] = cell;
+          } else if (zone === 'C' && shouldUpdateZoneC) {
+            this.zoneCCells[y]![x] = cell;
+          }
+        }
+      }
+    }
+
+    // Record foveated stats
+    perfStats.recordFoveated(zoneACount, zoneBCount, zoneCCount, skippedCount);
+
+    return result;
+  }
+
+  /**
    * Handle terminal resize
    */
   resize(cols: number, rows: number): void {
@@ -462,6 +658,11 @@ export class PixelGameRenderer {
       default:
         viewportCells = renderNormalGridCells(quantizedBuffer);
         break;
+    }
+
+    // Apply foveated rendering if enabled (reduces updates for peripheral zones)
+    if (this.useFoveated) {
+      viewportCells = this.applyFoveatedRendering(viewportCells);
     }
 
     // Output using cell-level diffing for minimal bandwidth
