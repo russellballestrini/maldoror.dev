@@ -70,5 +70,13 @@ export {
 // Performance stats
 export { perfStats, type PerfStats } from './pixel/perf-stats.js';
 
+// Brightness cache
+export {
+  brightnessCache,
+  BRIGHTNESS_LEVELS,
+  quantizeBrightness,
+  pregenerateBrightnessVariants,
+} from './pixel/brightness-cache.js';
+
 // Transport (backpressure handling)
 export { OutputPump, type OutputPumpMetrics } from './transport/index.js';
