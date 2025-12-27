@@ -26,6 +26,10 @@ export {
   VOID_TILE,
   BASE_TILES,
   getTileById,
+  setTerrainTile,
+  setTerrainTiles,
+  getAITileCount,
+  hasAITile,
 } from './tiles/base-tiles.js';
 
 export {

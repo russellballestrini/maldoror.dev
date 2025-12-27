@@ -7,3 +7,4 @@ export * from './world';
 export * from './sessions';
 export * from './npcs';
 export * from './roads';
+export * from './terrain-tiles';

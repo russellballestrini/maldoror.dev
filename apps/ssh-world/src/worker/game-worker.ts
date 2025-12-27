@@ -10,6 +10,8 @@ import type { PlayerInput, NPCVisualState, Sprite } from '@maldoror/protocol';
 import type { NPCCreateData } from '../utils/npc-storage.js';
 import type { ProviderConfig } from '@maldoror/ai';
 import { WorkerSession } from './worker-session.js';
+import { loadAllTerrainTilesFromDB } from '../utils/terrain-storage.js';
+import { setTerrainTiles } from '@maldoror/world';
 
 // Message types for IPC
 export interface WorkerInitMessage {
@@ -267,7 +269,7 @@ export type WorkerToMainMessage =
 
 let gameServer: GameServer | null = null;
 let worldSeed: bigint = 0n;
-let providerConfig: ProviderConfig = { provider: 'openai', model: 'gpt-image-1' };
+let providerConfig: ProviderConfig = { provider: 'openai', model: 'gpt-image-1-mini' };
 const workerSessions: Map<string, WorkerSession> = new Map();
 
 function send(message: WorkerToMainMessage): void {
@@ -311,6 +313,13 @@ process.on('message', async (msg: MainToWorkerMessage) => {
         gameServer.setGlobalNPCCreatedCallback((npc: NPCVisualState) => {
           send({ type: 'npc_created_broadcast', npc });
         });
+
+        // Load AI terrain tiles from database
+        const terrainTiles = await loadAllTerrainTilesFromDB();
+        if (terrainTiles.size > 0) {
+          setTerrainTiles(Array.from(terrainTiles.values()));
+          console.log(`[Worker] Loaded ${terrainTiles.size} AI terrain tiles from database`);
+        }
 
         // Load NPCs from database
         await gameServer.loadNPCs();

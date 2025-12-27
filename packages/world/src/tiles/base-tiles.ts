@@ -219,7 +219,8 @@ export const VOID_TILE: Tile = {
 // ALL BASE TILES
 // ============================================
 
-export const BASE_TILES: Record<string, Tile> = {
+// Fallback tiles (solid colors)
+const FALLBACK_TILES: Record<string, Tile> = {
   grass: GRASS_TILE,
   dirt: DIRT_TILE,
   stone: STONE_TILE,
@@ -228,9 +229,67 @@ export const BASE_TILES: Record<string, Tile> = {
   void: VOID_TILE,
 };
 
+// AI-generated tiles override fallbacks
+const aiTiles: Map<string, Tile> = new Map();
+
+// Combined view (AI tiles take priority)
+export const BASE_TILES: Record<string, Tile> = new Proxy(FALLBACK_TILES, {
+  get(target, prop: string) {
+    return aiTiles.get(prop) ?? target[prop];
+  },
+  has(target, prop: string) {
+    return aiTiles.has(prop) || prop in target;
+  },
+  ownKeys(target) {
+    const fallbackKeys = Object.keys(target);
+    const aiKeys = Array.from(aiTiles.keys());
+    return [...new Set([...fallbackKeys, ...aiKeys])];
+  },
+  getOwnPropertyDescriptor(target, prop: string) {
+    if (aiTiles.has(prop) || prop in target) {
+      return {
+        enumerable: true,
+        configurable: true,
+        value: aiTiles.get(prop) ?? target[prop],
+      };
+    }
+    return undefined;
+  },
+});
+
 /**
  * Get a tile by ID
  */
 export function getTileById(id: string): Tile | undefined {
-  return BASE_TILES[id];
+  return aiTiles.get(id) ?? FALLBACK_TILES[id];
+}
+
+/**
+ * Set an AI-generated terrain tile (overrides fallback)
+ */
+export function setTerrainTile(tile: Tile): void {
+  aiTiles.set(tile.id, tile);
+}
+
+/**
+ * Set multiple AI-generated terrain tiles
+ */
+export function setTerrainTiles(tiles: Tile[]): void {
+  for (const tile of tiles) {
+    aiTiles.set(tile.id, tile);
+  }
+}
+
+/**
+ * Get count of loaded AI terrain tiles
+ */
+export function getAITileCount(): number {
+  return aiTiles.size;
+}
+
+/**
+ * Check if a tile ID has an AI-generated version
+ */
+export function hasAITile(id: string): boolean {
+  return aiTiles.has(id);
 }
