@@ -31,7 +31,7 @@ export interface UnifiedActivityEntry {
   timestamp: Date;
   actorId: string;
   actorName: string;
-  actorType: 'player' | 'npc' | 'bot';
+  actorType: 'player' | 'auton';
   activityType: ActivityType;
   message?: string;
   actionDetails?: {
@@ -125,7 +125,7 @@ export async function getActivitiesFromDb(limit: number = 100): Promise<UnifiedA
     timestamp: row.createdAt,
     actorId: row.actorId,
     actorName: row.actorName,
-    actorType: row.actorType as 'player' | 'npc' | 'bot',
+    actorType: row.actorType as 'player' | 'auton',
     activityType: row.activityType as ActivityType,
     message: row.message || undefined,
     actionDetails: row.actionDetails as UnifiedActivityEntry['actionDetails'],
@@ -192,7 +192,7 @@ export function formatActivityForDisplay(activity: UnifiedActivityEntry): string
 export async function logChatActivity(
   senderId: string,
   senderName: string,
-  senderType: 'player' | 'npc' | 'bot',
+  senderType: 'player' | 'auton',
   message: string,
   position?: { x: number; y: number }
 ): Promise<void> {
@@ -213,7 +213,7 @@ export async function logChatActivity(
 export async function logEmoteActivity(
   actorId: string,
   actorName: string,
-  actorType: 'player' | 'npc' | 'bot',
+  actorType: 'player' | 'auton',
   emote: string,
   position?: { x: number; y: number }
 ): Promise<void> {
@@ -234,7 +234,7 @@ export async function logEmoteActivity(
 export async function logMoveActivity(
   actorId: string,
   actorName: string,
-  actorType: 'player' | 'npc' | 'bot',
+  actorType: 'player' | 'auton',
   direction: string,
   from: { x: number; y: number },
   to: { x: number; y: number }
@@ -271,7 +271,7 @@ export async function logBirthActivity(
   await addUnifiedActivity({
     actorId: childId,
     actorName: childName,
-    actorType: 'npc',
+    actorType: 'auton',
     activityType: 'birth',
     actionDetails: {
       parent1Id,
@@ -298,7 +298,7 @@ export async function logDeathActivity(
   await addUnifiedActivity({
     actorId: deceasedId,
     actorName: deceasedName,
-    actorType: 'npc',
+    actorType: 'auton',
     activityType: 'death',
     actionDetails: {
       causeOfDeath,
@@ -323,7 +323,7 @@ export async function logStageChangeActivity(
   await addUnifiedActivity({
     actorId: npcId,
     actorName: npcName,
-    actorType: 'npc',
+    actorType: 'auton',
     activityType: 'stage_change',
     actionDetails: {
       oldStage,

@@ -326,11 +326,11 @@ export class MaldororBot {
       ...obs.npcs.map(n => ({
         id: n.npcId,
         name: n.name,
-        type: 'npc' as const,
+        type: 'auton' as const,
         x: n.x,
         y: n.y,
         distance: n.distance,
-        isNpc: true,
+        isAuton: true,
       })),
     ];
 

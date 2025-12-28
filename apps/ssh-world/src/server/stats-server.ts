@@ -60,7 +60,7 @@ export interface ChatMessage {
   timestamp: Date;
   senderId: string;
   senderName: string;
-  senderType: 'player' | 'npc' | 'bot';
+  senderType: 'player' | 'auton';
   message: string;
   position?: { x: number; y: number };
 }
@@ -1602,7 +1602,7 @@ export class StatsServer {
   private async getEntities(): Promise<{
     entities: Array<{
       id: string;
-      type: 'player' | 'building' | 'npc' | 'road';
+      type: 'player' | 'building' | 'auton' | 'road';
       x: number;
       y: number;
       spriteUrl?: string;
@@ -1615,7 +1615,7 @@ export class StatsServer {
   }> {
     const entities: Array<{
       id: string;
-      type: 'player' | 'building' | 'npc' | 'road';
+      type: 'player' | 'building' | 'auton' | 'road';
       x: number;
       y: number;
       spriteUrl?: string;
@@ -1694,7 +1694,7 @@ export class StatsServer {
       for (const npc of npcs) {
         entities.push({
           id: npc.id,
-          type: 'npc',
+          type: 'auton',
           x: npc.spawnX,
           y: npc.spawnY,
           name: npc.name,

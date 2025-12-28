@@ -343,7 +343,7 @@ export class NPCBotManager {
           addChatMessage({
             senderId: bot.userId,
             senderName: bot.username,
-            senderType: 'npc',
+            senderType: 'auton',
             message: action.message,
             position: { x: bot.position.x, y: bot.position.y },
           });

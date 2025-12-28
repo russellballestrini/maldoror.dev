@@ -208,11 +208,11 @@ export interface Goal {
 export interface VisibleEntity {
   id: string;
   name: string;
-  type: 'player' | 'npc';
+  type: 'player' | 'auton';
   x: number;
   y: number;
   distance: number;
-  isNpc?: boolean;
+  isAuton?: boolean;
 }
 
 export interface WorldEvent {

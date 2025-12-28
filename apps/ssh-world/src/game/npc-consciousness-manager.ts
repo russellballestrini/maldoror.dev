@@ -242,7 +242,7 @@ export class NPCConsciousnessManager {
       addChatMessage({
         senderId: transition.npcId,
         senderName: transition.npcName,
-        senderType: 'npc',
+        senderType: 'auton',
         message: `*has grown from a ${transition.oldStage} to a ${transition.newStage}*`,
         position: { x: 0, y: 0 },
       });
@@ -260,7 +260,7 @@ export class NPCConsciousnessManager {
       addChatMessage({
         senderId: death.npcId,
         senderName: death.npcName,
-        senderType: 'npc',
+        senderType: 'auton',
         message: `*has passed away peacefully of ${death.causeOfDeath} causes*`,
         position: { x: 0, y: 0 },
       });
@@ -309,7 +309,7 @@ export class NPCConsciousnessManager {
         addChatMessage({
           senderId: familyMemberId,
           senderName: familyNpc.username,
-          senderType: 'npc',
+          senderType: 'auton',
           message: `*mourns the loss of ${death.npcName}*`,
           position: familyNpc.position,
         });
@@ -338,7 +338,7 @@ export class NPCConsciousnessManager {
       addChatMessage({
         senderId: child.id,
         senderName: child.name,
-        senderType: 'npc',
+        senderType: 'auton',
         message: `*has been born!*`,
         position: birthPosition,
       });
@@ -407,7 +407,7 @@ export class NPCConsciousnessManager {
             .filter(e => e.type === 'player')
             .map(e => `${e.name} (${e.x},${e.y})`),
           nearbyNpcs: context.visibleEntities
-            .filter(e => e.type === 'npc')
+            .filter(e => e.type === 'auton')
             .map(e => `${e.name} (${e.x},${e.y})`),
         },
       });
@@ -509,11 +509,11 @@ export class NPCConsciousnessManager {
         .map(n => ({
           id: n.npcId,
           name: n.name,
-          type: 'npc' as const,
+          type: 'auton' as const,
           x: n.x,
           y: n.y,
           distance: Math.sqrt(Math.pow(n.x - npc.position.x, 2) + Math.pow(n.y - npc.position.y, 2)),
-          isNpc: true,
+          isAuton: true,
         })),
     ];
 
@@ -599,7 +599,7 @@ export class NPCConsciousnessManager {
           addChatMessage({
             senderId: npc.userId,
             senderName: npc.username,
-            senderType: 'npc',
+            senderType: 'auton',
             message: action.message,
             position: npc.position,
           });
@@ -645,7 +645,7 @@ export class NPCConsciousnessManager {
           addChatMessage({
             senderId: npc.userId,
             senderName: npc.username,
-            senderType: 'npc',
+            senderType: 'auton',
             message: `Hey everyone! I'm organizing ${gathering.name}! ${action.eventDetails.description || 'Come join us!'}`,
             position: npc.position,
           });
@@ -702,7 +702,7 @@ export class NPCConsciousnessManager {
           addChatMessage({
             senderId: npc.userId,
             senderName: npc.username,
-            senderType: 'npc',
+            senderType: 'auton',
             message: `*${action.emote}*`,
             position: npc.position,
           });

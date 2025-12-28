@@ -440,7 +440,7 @@ export class AgentSession extends EventEmitter {
       addChatMessage({
         senderId: this.userId,
         senderName: this.username,
-        senderType: 'bot',
+        senderType: 'auton',
         message: truncatedMessage,
         position: { x: this.position.x, y: this.position.y },
       });

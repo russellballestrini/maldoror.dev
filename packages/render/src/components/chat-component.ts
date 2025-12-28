@@ -23,7 +23,7 @@ export interface ChatEntry {
   id: string;
   actorId: string;
   actorName: string;
-  actorType: 'player' | 'npc' | 'bot';
+  actorType: 'player' | 'auton';
   type: 'chat' | 'action' | 'event';
   message: string;
   position?: { x: number; y: number };
@@ -574,10 +574,8 @@ export class ChatComponent extends Component {
       return '[YOU]';
     }
     switch (entry.actorType) {
-      case 'npc':
-        return '[NPC]';
-      case 'bot':
-        return '[BOT]';
+      case 'auton':
+        return '[A]';
       case 'player':
         return '';
       default:
@@ -593,10 +591,8 @@ export class ChatComponent extends Component {
       return { type: 'rgb', value: [100, 255, 100] };
     }
     switch (entry.actorType) {
-      case 'npc':
-        return { type: 'rgb', value: [255, 153, 0] };
-      case 'bot':
-        return { type: 'rgb', value: [255, 100, 170] };
+      case 'auton':
+        return { type: 'rgb', value: [255, 153, 0] };  // Orange for autons
       case 'player':
         return { type: 'rgb', value: [100, 200, 255] };
       default:

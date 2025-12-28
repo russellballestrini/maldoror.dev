@@ -41,7 +41,7 @@ export const unifiedActivityLog = pgTable('unified_activity_log', {
   // Actor info
   actorId: uuid('actor_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   actorName: varchar('actor_name', { length: 64 }).notNull(),
-  actorType: varchar('actor_type', { length: 16 }).notNull(), // 'player' | 'npc' | 'bot'
+  actorType: varchar('actor_type', { length: 16 }).notNull(), // 'player' | 'auton'
 
   // Activity type
   activityType: varchar('activity_type', { length: 32 }).notNull(),
