@@ -327,6 +327,7 @@ export class ChatComponent extends Component {
    * Handle input events
    */
   handleInput(event: ParsedKey): InputResult {
+    console.log('[ChatComponent] handleInput:', event.key, 'inputActive:', this.inputActive, 'state:', this.state);
     // When input is active, capture all keys
     if (this.inputActive) {
       return this.handleInputMode(event);

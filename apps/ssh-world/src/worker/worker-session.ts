@@ -750,8 +750,15 @@ export class WorkerSession {
    * Handle sending a chat message
    */
   private handleChatSend(message: string): void {
-    console.log('[WorkerSession] handleChatSend called with:', message);
-    if (!this.userId || !message.trim()) return;
+    console.log('[WorkerSession] handleChatSend called with:', message, 'userId:', this.userId);
+    if (!this.userId) {
+      console.log('[WorkerSession] No userId, cannot send message');
+      return;
+    }
+    if (!message.trim()) {
+      console.log('[WorkerSession] Empty message, not sending');
+      return;
+    }
 
     addChatMessage({
       senderId: this.userId,
