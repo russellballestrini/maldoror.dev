@@ -496,7 +496,15 @@ export class GameSession {
     // Render chat sidebar if visible
     if (this.chatVisible && this.chatComponent) {
       this.chatComponent.render();
-      output += this.renderChatSidebar();
+      const chatOutput = this.renderChatSidebar();
+      // Debug: Log chat render info every 100 ticks
+      if (this.tickCount % 100 === 0) {
+        const bounds = this.chatComponent.getBounds();
+        console.log(`[Chat] Rendering: cols=${this.cols}, chatWidth=${this.getChatWidth()}, bounds=${JSON.stringify(bounds)}, outputLen=${chatOutput.length}`);
+      }
+      output += chatOutput;
+    } else if (this.tickCount % 100 === 0) {
+      console.log(`[Chat] NOT rendering: chatVisible=${this.chatVisible}, chatComponent=${!!this.chatComponent}`);
     }
 
     // Add component overlays (modals, etc.)
