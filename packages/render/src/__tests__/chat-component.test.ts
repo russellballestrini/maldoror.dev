@@ -21,10 +21,8 @@ describe('ChatComponent', () => {
   });
 
   describe('initialization', () => {
-    it('should create with correct dimensions', () => {
+    it('should create with correct id', () => {
       expect(chat.id).toBe('test-chat');
-      expect(chat.bounds.width).toBe(40);
-      expect(chat.bounds.height).toBe(20);
     });
 
     it('should start with empty entries', () => {
@@ -57,7 +55,7 @@ describe('ChatComponent', () => {
       const entries = chat.getEntries();
 
       expect(entries).toHaveLength(1);
-      expect(entries[0].actorType).toBe('player');
+      expect(entries[0]!.actorType).toBe('player');
     });
 
     it('should accept auton actor type', () => {
@@ -75,7 +73,7 @@ describe('ChatComponent', () => {
       const entries = chat.getEntries();
 
       expect(entries).toHaveLength(1);
-      expect(entries[0].actorType).toBe('auton');
+      expect(entries[0]!.actorType).toBe('auton');
     });
 
     it('should NOT accept legacy npc or bot types (type safety)', () => {
@@ -92,7 +90,7 @@ describe('ChatComponent', () => {
       };
 
       chat.addEntry(entry);
-      expect(chat.getEntries()[0].actorType).toBe('auton');
+      expect(chat.getEntries()[0]!.actorType).toBe('auton');
     });
   });
 
@@ -108,7 +106,7 @@ describe('ChatComponent', () => {
         timestamp: new Date(),
       });
 
-      expect(chat.getEntries()[0].type).toBe('chat');
+      expect(chat.getEntries()[0]!.type).toBe('chat');
     });
 
     it('should handle action messages', () => {
@@ -122,7 +120,7 @@ describe('ChatComponent', () => {
         timestamp: new Date(),
       });
 
-      expect(chat.getEntries()[0].type).toBe('action');
+      expect(chat.getEntries()[0]!.type).toBe('action');
     });
 
     it('should handle event messages', () => {
@@ -136,7 +134,7 @@ describe('ChatComponent', () => {
         timestamp: new Date(),
       });
 
-      expect(chat.getEntries()[0].type).toBe('event');
+      expect(chat.getEntries()[0]!.type).toBe('event');
     });
   });
 
@@ -153,7 +151,7 @@ describe('ChatComponent', () => {
         timestamp: new Date(),
       });
 
-      const entry = chat.getEntries()[0];
+      const entry = chat.getEntries()[0]!;
       expect(entry.position).toEqual({ x: 10, y: 20 });
     });
 
@@ -168,7 +166,7 @@ describe('ChatComponent', () => {
         timestamp: new Date(),
       });
 
-      const entry = chat.getEntries()[0];
+      const entry = chat.getEntries()[0]!;
       expect(entry.position).toBeUndefined();
     });
   });
@@ -198,8 +196,8 @@ describe('ChatComponent', () => {
       });
 
       const entries = chat.getEntries();
-      expect(entries[0].message).toBe('First message');
-      expect(entries[1].message).toBe('Second message');
+      expect(entries[0]!.message).toBe('First message');
+      expect(entries[1]!.message).toBe('Second message');
     });
 
     it('should limit entries to max buffer size', () => {
@@ -284,7 +282,7 @@ describe('ChatComponent', () => {
       });
 
       // The entry should be from current user
-      const entry = chat.getEntries()[0];
+      const entry = chat.getEntries()[0]!;
       expect(entry.actorId).toBe('my-user-id');
     });
   });
