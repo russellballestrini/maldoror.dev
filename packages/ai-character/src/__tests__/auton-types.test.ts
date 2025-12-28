@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import type { VisibleEntity, CognitiveContext } from '../consciousness/types';
+import type { VisibleEntity, CognitiveContext } from '../consciousness/types.js';
 
 describe('VisibleEntity type', () => {
   describe('actor type constraints', () => {
@@ -47,8 +47,8 @@ describe('VisibleEntity type', () => {
         { id: '3', name: 'Auton2', type: 'auton', x: 2, y: 2, distance: 2, isAuton: true },
       ];
 
-      const players = entities.filter(e => e.type === 'player');
-      const autons = entities.filter(e => e.type === 'auton');
+      const players = entities.filter((e: VisibleEntity) => e.type === 'player');
+      const autons = entities.filter((e: VisibleEntity) => e.type === 'auton');
 
       expect(players).toHaveLength(1);
       expect(autons).toHaveLength(2);
@@ -93,7 +93,7 @@ describe('VisibleEntity type', () => {
         { id: '2', name: 'Far', type: 'auton', x: 10, y: 10, distance: 14.14, isAuton: true },
       ];
 
-      const nearby = entities.filter(e => e.distance < 5);
+      const nearby = entities.filter((e: VisibleEntity) => e.distance < 5);
       expect(nearby).toHaveLength(1);
       expect(nearby[0]!.name).toBe('Near');
     });
@@ -109,8 +109,9 @@ describe('CognitiveContext visible entities', () => {
       ],
     };
 
-    const players = mockContext.visibleEntities!.filter(e => e.type === 'player');
-    const autons = mockContext.visibleEntities!.filter(e => e.type === 'auton');
+    const entities = mockContext.visibleEntities!;
+    const players = entities.filter((e: VisibleEntity) => e.type === 'player');
+    const autons = entities.filter((e: VisibleEntity) => e.type === 'auton');
 
     expect(players).toHaveLength(1);
     expect(autons).toHaveLength(1);
@@ -125,10 +126,11 @@ describe('Type union exhaustiveness', () => {
           return 'handling player';
         case 'auton':
           return 'handling auton';
-        default:
+        default: {
           // This should never be reached if types are exhaustive
-          const _exhaustive: never = entity.type;
-          return _exhaustive;
+          const exhaustiveCheck: never = entity.type;
+          throw new Error(`Unexpected entity type: ${exhaustiveCheck}`);
+        }
       }
     };
 

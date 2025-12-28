@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { ActivityType, UnifiedActivityEntry } from '../server/activity-logger';
+import type { ActivityType, UnifiedActivityEntry } from '../server/activity-logger.js';
 
 // Mock the database for testing
 vi.mock('@maldoror/db', () => ({
