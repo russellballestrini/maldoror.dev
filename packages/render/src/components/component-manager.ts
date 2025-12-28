@@ -193,10 +193,12 @@ export class ComponentManager {
    */
   handleInput(event: ParsedKey): boolean {
     const focused = this.getFocusedComponent();
+    console.log('[ComponentManager] handleInput:', event.type, event.key, 'focused:', focused?.constructor.name, 'isModal:', focused?.isModal());
 
     // If there's a modal focus, only route to the focused component
     if (focused && focused.isModal()) {
       const result = focused.handleInput(event);
+      console.log('[ComponentManager] Modal handled:', result.handled);
       return result.handled;
     }
 

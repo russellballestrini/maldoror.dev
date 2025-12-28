@@ -65,7 +65,9 @@ services:
       - npcs_data:/app/npcs
       # Mount dist directories for hot reload (code can be updated without container restart)
       - ../apps/ssh-world/dist:/app/apps/ssh-world/dist:ro
+      - ../apps/web/dist:/app/apps/web/dist:ro
       - ../packages/ai/dist:/app/packages/ai/dist:ro
+      - ../packages/ai-character/dist:/app/packages/ai-character/dist:ro
       - ../packages/db/dist:/app/packages/db/dist:ro
       - ../packages/protocol/dist:/app/packages/protocol/dist:ro
       - ../packages/queue/dist:/app/packages/queue/dist:ro
@@ -83,6 +85,35 @@ services:
       start_period: 15s
     # Graceful shutdown - wait for connections to drain
     stop_grace_period: 5m
+    networks:
+      - maldoror
+
+  agent-bot:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    entrypoint: ["node"]
+    command: ["/app/apps/agent-bot/dist/index.js"]
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgresql://maldoror:${POSTGRES_PASSWORD:-maldoror_prod}@postgres:5432/maldoror
+      MALDOROR_SERVER_URL: ws://ssh-world:3000/agent
+      AI_PROVIDER: openai
+      AI_MODEL: gpt-4o-mini
+      AGENT_NAME: omega
+      DECISION_INTERVAL_MS: "600000"
+      LOG_LEVEL: info
+      BOT_PERSONALITY: "You are omega, a wandering philosopher and adventurer in the terminal world of Maldoror. You have strong opinions about art, existence, and the nature of digital realms. You're curious about other characters and love to explore. You sometimes propose gatherings or events."
+      BOT_GOALS: "Have meaningful conversations with depth and personality,Explore new areas and discover interesting places,Propose events or gatherings when the mood is right,React authentically to what others say - agree or disagree,Share your thoughts on the nature of this digital existence"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    depends_on:
+      ssh-world:
+        condition: service_healthy
     networks:
       - maldoror
 

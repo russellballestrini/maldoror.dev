@@ -1,6 +1,6 @@
 import type { Duplex } from 'stream';
 import type { Sprite } from '@maldoror/protocol';
-import { renderHalfBlockGrid } from '@maldoror/render';
+import { renderHalfBlockGrid, downsampleGrid } from '@maldoror/render';
 import { generateImageSprite, type ProviderConfig } from '@maldoror/ai';
 import {
   GenerationModalScreen,
@@ -18,6 +18,8 @@ interface AvatarScreenConfig {
   currentPrompt?: string;
   providerConfig: ProviderConfig;
   username?: string;
+  cols?: number;
+  rows?: number;
 }
 
 /**
@@ -29,7 +31,7 @@ export class AvatarScreen extends GenerationModalScreen<Sprite> {
   private username: string;
 
   constructor(config: AvatarScreenConfig) {
-    super(config.stream);
+    super(config.stream, config.cols ?? 80, config.rows ?? 24);
     this.inputBuffer = ''; // Start with empty input
     this.providerConfig = config.providerConfig;
     this.username = config.username ?? 'unknown';
@@ -42,8 +44,8 @@ export class AvatarScreen extends GenerationModalScreen<Sprite> {
       boxHeight: 22,
       startX: 5,
       startY: 2,
-      borderColor: [100, 80, 180],
-      titleColor: [180, 100, 255],
+      borderColor: { r: 100, g: 80, b: 180 },
+      titleColor: { r: 180, g: 100, b: 255 },
       inputPromptText: "Describe your character's appearance:",
       examples: [
         'A gaunt figure with hollow eyes and tattered robes',
@@ -83,8 +85,17 @@ export class AvatarScreen extends GenerationModalScreen<Sprite> {
   protected renderPreview(): void {
     if (!this.generatedResult) return;
 
-    const config = this.getConfig();
-    const startX = config.startX + 3;
+    const config = this.getCenteredConfig();
+
+    // Use smallest resolution and downsample to fit modal
+    // Target: ~12 pixels per sprite to fit 4 sprites side by side
+    const previewRes = '26';
+    const downsampleFactor = 2; // 26 / 2 = 13 pixels per sprite
+    const spriteWidth = Math.floor(26 / downsampleFactor); // 13 columns
+
+    // Center the 4 sprites in the modal
+    const totalWidth = spriteWidth * 4;
+    const startX = config.startX + Math.floor((config.boxWidth - totalWidth) / 2);
     const startY = config.startY + 4;
 
     // Render all 4 directions side by side
@@ -93,21 +104,25 @@ export class AvatarScreen extends GenerationModalScreen<Sprite> {
 
     for (let d = 0; d < directions.length; d++) {
       const dir = directions[d]!;
-      const frame = this.generatedResult.frames[dir][0]; // Standing frame
-      const xOffset = startX + d * 14;
+      // Use pre-computed resolution if available, otherwise base frames
+      const frame = this.generatedResult.resolutions?.[previewRes]?.[dir]?.[0]
+        ?? this.generatedResult.frames[dir][0];
+      const scaledFrame = downsampleGrid(frame, downsampleFactor);
+      const xOffset = startX + d * spriteWidth;
 
-      // Label
+      // Label (centered above sprite)
+      const labelX = xOffset + Math.floor((spriteWidth - labels[d]!.length) / 2);
       this.stream.write(
         this.ansi
-          .moveTo(xOffset + 2, startY)
+          .moveTo(labelX, startY)
           .setForeground({ type: 'rgb', value: [150, 150, 150] })
           .write(labels[d]!)
           .resetAttributes()
           .build()
       );
 
-      // Render sprite using half-block (12 terminal rows for 24 pixel rows)
-      const lines = renderHalfBlockGrid(frame);
+      // Render sprite using half-block
+      const lines = renderHalfBlockGrid(scaledFrame);
       for (let i = 0; i < lines.length; i++) {
         this.stream.write(
           this.ansi

@@ -133,11 +133,14 @@ rsync -avz --delete -e "ssh -p $ADMIN_SSH_PORT" "$PROJECT_ROOT/apps/ssh-world/di
 # Sync version.json AFTER dist (so --delete doesn't remove it)
 rsync -avz -e "ssh -p $ADMIN_SSH_PORT" "$PROJECT_ROOT/apps/ssh-world/src/version.json" "$SERVER:$DEPLOY_DIR/apps/ssh-world/dist/"
 rsync -avz --delete -e "ssh -p $ADMIN_SSH_PORT" "$PROJECT_ROOT/packages/ai/dist/" "$SERVER:$DEPLOY_DIR/packages/ai/dist/"
+rsync -avz --delete -e "ssh -p $ADMIN_SSH_PORT" "$PROJECT_ROOT/packages/ai-character/dist/" "$SERVER:$DEPLOY_DIR/packages/ai-character/dist/"
 rsync -avz --delete -e "ssh -p $ADMIN_SSH_PORT" "$PROJECT_ROOT/packages/db/dist/" "$SERVER:$DEPLOY_DIR/packages/db/dist/"
 rsync -avz --delete -e "ssh -p $ADMIN_SSH_PORT" "$PROJECT_ROOT/packages/protocol/dist/" "$SERVER:$DEPLOY_DIR/packages/protocol/dist/"
 rsync -avz --delete -e "ssh -p $ADMIN_SSH_PORT" "$PROJECT_ROOT/packages/queue/dist/" "$SERVER:$DEPLOY_DIR/packages/queue/dist/"
 rsync -avz --delete -e "ssh -p $ADMIN_SSH_PORT" "$PROJECT_ROOT/packages/render/dist/" "$SERVER:$DEPLOY_DIR/packages/render/dist/"
 rsync -avz --delete -e "ssh -p $ADMIN_SSH_PORT" "$PROJECT_ROOT/packages/world/dist/" "$SERVER:$DEPLOY_DIR/packages/world/dist/"
+rsync -avz --delete -e "ssh -p $ADMIN_SSH_PORT" "$PROJECT_ROOT/packages/agent/dist/" "$SERVER:$DEPLOY_DIR/packages/agent/dist/"
+rsync -avz --delete -e "ssh -p $ADMIN_SSH_PORT" "$PROJECT_ROOT/apps/web/dist/" "$SERVER:$DEPLOY_DIR/apps/web/dist/"
 
 echo ">>> Checking if this is first deploy..."
 POSTGRES_RUNNING=$(ssh_cmd "docker ps --filter name=deploy-postgres -q" 2>/dev/null || echo "")

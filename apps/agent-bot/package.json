@@ -1,0 +1,29 @@
+{
+  "name": "@maldoror/agent-bot",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@maldoror/agent": "workspace:*",
+    "@maldoror/ai": "workspace:*",
+    "@maldoror/ai-character": "workspace:*",
+    "@maldoror/db": "workspace:*",
+    "ai": "catalog:",
+    "@ai-sdk/anthropic": "catalog:",
+    "@ai-sdk/openai": "catalog:",
+    "dotenv": "^16.4.0"
+  },
+  "devDependencies": {
+    "@maldoror/tsconfig": "workspace:*",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "catalog:"
+  }
+}

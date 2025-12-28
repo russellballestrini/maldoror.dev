@@ -21,3 +21,5 @@ export { HelpModalComponent } from './help-modal.js';
 export { PlayerListComponent } from './player-list.js';
 export type { PlayerInfo } from './player-list.js';
 export { ReloadOverlayComponent } from './reload-overlay.js';
+export { ChatComponent } from './chat-component.js';
+export type { ChatEntry, ChatComponentConfig } from './chat-component.js';

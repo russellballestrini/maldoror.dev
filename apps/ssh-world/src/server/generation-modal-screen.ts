@@ -1,13 +1,23 @@
 import type { Duplex } from 'stream';
-import { BG_PRIMARY } from '@maldoror/render';
+import {
+  BG_PRIMARY,
+  type RGB,
+  rgbToAnsiBg,
+  ansiMoveTo,
+  ANSI_RESET,
+  ANSI_HIDE_CURSOR,
+  ANSI_SHOW_CURSOR,
+  ANSI_CLEAR_SCREEN,
+  renderInputBoxToStream,
+  updateInputValueToStream,
+  renderKeyboardHintsToStream,
+  renderListToStream,
+  renderProgressBarToStream,
+  renderTextToStream,
+} from '@maldoror/render';
 import { BaseModalScreen } from './base-modal-screen.js';
 
 const GENERATION_TIMEOUT = 1200000; // 20 minutes
-
-/**
- * RGB color tuple
- */
-export type RGB = [number, number, number];
 
 /**
  * Configuration for the generation modal
@@ -59,9 +69,23 @@ export abstract class GenerationModalScreen<T> extends BaseModalScreen {
   protected generatedResult: T | null = null;
   private dataListener: ((data: Buffer) => void) | null = null;
   private resolvePromise: ((result: GenerationResult<T>) => void) | null = null;
+  private spinnerX: number = 0;
+  private spinnerY: number = 0;
 
-  constructor(stream: Duplex) {
-    super(stream);
+  constructor(stream: Duplex, cols: number = 80, rows: number = 24) {
+    super(stream, cols, rows);
+  }
+
+  /**
+   * Get centered config with startX and startY calculated from screen dimensions.
+   */
+  protected getCenteredConfig(): GenerationModalConfig {
+    const config = this.getConfig();
+    return {
+      ...config,
+      startX: this.getCenteredX(config.boxWidth),
+      startY: this.getCenteredY(config.boxHeight),
+    };
   }
 
   /**
@@ -124,7 +148,7 @@ export abstract class GenerationModalScreen<T> extends BaseModalScreen {
         }
 
         const byte = data[0]!;
-        const config = this.getConfig();
+        const config = this.getCenteredConfig();
 
         if (this.state === 'input') {
           if (byte === 0x0d || byte === 0x0a) {
@@ -183,12 +207,17 @@ export abstract class GenerationModalScreen<T> extends BaseModalScreen {
     if (this.isGenerating) return;
     this.isGenerating = true;
 
-    const config = this.getConfig();
+    const config = this.getCenteredConfig();
     const startTime = Date.now();
 
     this.state = 'generating';
     this.progressTotal = config.progressTotal;
-    this.startSpinner();
+
+    // Calculate spinner position
+    this.spinnerX = config.startX + 3;
+    this.spinnerY = config.startY + 13;
+    this.startSpinner(this.spinnerX, this.spinnerY);
+
     this.render();
 
     try {
@@ -231,25 +260,14 @@ export abstract class GenerationModalScreen<T> extends BaseModalScreen {
   }
 
   protected renderSpinnerOnly(): void {
-    const config = this.getConfig();
-    const spinnerX = config.startX + Math.floor(config.boxWidth / 2);
-    this.stream.write(
-      this.ansi
-        .moveTo(spinnerX, config.startY + 12)
-        .setForeground({ type: 'rgb', value: [255, 200, 100] })
-        .write(this.getSpinnerChar())
-        .resetAttributes()
-        .build()
-    );
+    // Spinner is handled by SpinnerController now
   }
 
   private render(): void {
-    this.stream.write(
-      this.ansi
-        .setBackground({ type: 'rgb', value: [BG_PRIMARY.r, BG_PRIMARY.g, BG_PRIMARY.b] })
-        .clearScreen()
-        .moveTo(0, 0)
-        .build()
+    this.write(
+      rgbToAnsiBg(BG_PRIMARY) +
+      ANSI_CLEAR_SCREEN +
+      ansiMoveTo(0, 0)
     );
     this.fillBackground();
     this.drawModalBox();
@@ -272,7 +290,7 @@ export abstract class GenerationModalScreen<T> extends BaseModalScreen {
   }
 
   private drawModalBox(): void {
-    const config = this.getConfig();
+    const config = this.getCenteredConfig();
     super.drawBox({
       width: config.boxWidth,
       height: config.boxHeight,
@@ -285,181 +303,145 @@ export abstract class GenerationModalScreen<T> extends BaseModalScreen {
   }
 
   private clearModalContent(): void {
-    const config = this.getConfig();
+    const config = this.getCenteredConfig();
     const contentWidth = config.boxWidth - 4;
+    const bg = rgbToAnsiBg(BG_PRIMARY);
     for (let y = config.startY + 1; y < config.startY + config.boxHeight - 1; y++) {
-      this.stream.write(
-        this.ansi
-          .moveTo(config.startX + 2, y)
-          .setBackground({ type: 'rgb', value: [BG_PRIMARY.r, BG_PRIMARY.g, BG_PRIMARY.b] })
-          .write(' '.repeat(contentWidth))
-          .build()
-      );
+      this.write(ansiMoveTo(y, config.startX + 2) + bg + ' '.repeat(contentWidth));
     }
+    this.write(ANSI_RESET);
   }
 
   private renderInputState(): void {
-    const config = this.getConfig();
+    const config = this.getCenteredConfig();
     const x = config.startX + 3;
     const inputWidth = config.boxWidth - 10;
 
-    const displayText = this.inputBuffer.length > inputWidth - 5
-      ? this.inputBuffer.slice(-(inputWidth - 5))
-      : this.inputBuffer;
-
     // Instructions
-    this.stream.write(
-      this.ansi
-        .moveTo(x, config.startY + 3)
-        .setForeground({ type: 'rgb', value: [180, 180, 180] })
-        .write(config.inputPromptText)
-        .resetAttributes()
-        .build()
-    );
+    renderTextToStream((s) => this.write(s), {
+      x,
+      y: config.startY + 3,
+      text: config.inputPromptText,
+      color: { r: 180, g: 180, b: 180 },
+      backgroundColor: BG_PRIMARY,
+    });
 
     // Input box
-    const inputBoxWidth = inputWidth;
-    this.stream.write(
-      this.ansi
-        .moveTo(x, config.startY + 5)
-        .setForeground({ type: 'rgb', value: [80, 80, 100] })
-        .write('┌' + '─'.repeat(inputBoxWidth) + '┐')
-        .moveTo(x, config.startY + 6)
-        .write('│')
-        .moveTo(x + inputBoxWidth + 1, config.startY + 6)
-        .write('│')
-        .moveTo(x, config.startY + 7)
-        .write('└' + '─'.repeat(inputBoxWidth) + '┘')
-        .resetAttributes()
-        .build()
-    );
-
-    // Input text
-    this.stream.write(
-      this.ansi
-        .moveTo(x + 2, config.startY + 6)
-        .write(' '.repeat(inputBoxWidth - 2))
-        .moveTo(x + 2, config.startY + 6)
-        .setForeground({ type: 'rgb', value: [255, 255, 255] })
-        .write(displayText)
-        .resetAttributes()
-        .build()
-    );
+    renderInputBoxToStream((s) => this.write(s), {
+      x,
+      y: config.startY + 5,
+      width: inputWidth + 2,
+      value: this.inputBuffer,
+      placeholder: 'Type your description...',
+      borderColor: { r: 80, g: 80, b: 100 },
+      backgroundColor: BG_PRIMARY,
+      textColor: { r: 255, g: 255, b: 255 },
+      placeholderColor: { r: 80, g: 80, b: 100 },
+      cursorVisible: true,
+    });
 
     // Examples
-    this.stream.write(
-      this.ansi
-        .moveTo(x, config.startY + 10)
-        .setForeground({ type: 'rgb', value: [100, 100, 120] })
-        .write('Examples:')
-        .build()
-    );
-
-    for (let i = 0; i < config.examples.length; i++) {
-      this.stream.write(
-        this.ansi
-          .moveTo(x, config.startY + 11 + i)
-          .setForeground({ type: 'rgb', value: [100, 100, 120] })
-          .write(`  - ${config.examples[i]}`)
-          .build()
-      );
-    }
+    renderListToStream((s) => this.write(s), {
+      x,
+      y: config.startY + 10,
+      items: config.examples,
+      style: 'dash',
+      headerText: 'Examples:',
+      headerColor: { r: 100, g: 100, b: 120 },
+      bulletColor: { r: 100, g: 100, b: 120 },
+      itemColor: { r: 100, g: 100, b: 120 },
+      backgroundColor: BG_PRIMARY,
+    });
 
     // Additional info
     const additionalInfo = this.getAdditionalInputInfo();
-    const infoStartY = config.startY + 11 + config.examples.length + 1;
-    for (let i = 0; i < additionalInfo.length; i++) {
-      this.stream.write(
-        this.ansi
-          .moveTo(x, infoStartY + i)
-          .setForeground({ type: 'rgb', value: [150, 150, 100] })
-          .write(additionalInfo[i]!)
-          .build()
-      );
+    if (additionalInfo.length > 0) {
+      const infoStartY = config.startY + 11 + config.examples.length + 1;
+      renderListToStream((s) => this.write(s), {
+        x,
+        y: infoStartY,
+        items: additionalInfo,
+        style: 'none',
+        itemColor: { r: 150, g: 150, b: 100 },
+        backgroundColor: BG_PRIMARY,
+        indent: 0,
+      });
     }
 
     // Controls
-    this.stream.write(
-      this.ansi
-        .moveTo(x, config.startY + config.boxHeight - 3)
-        .setForeground({ type: 'rgb', value: [100, 200, 100] })
-        .write('[Enter]')
-        .setForeground({ type: 'rgb', value: [180, 180, 180] })
-        .write(' Generate  ')
-        .setForeground({ type: 'rgb', value: [200, 100, 100] })
-        .write('[Esc]')
-        .setForeground({ type: 'rgb', value: [180, 180, 180] })
-        .write(' Cancel')
-        .resetAttributes()
-        .build()
-    );
+    renderKeyboardHintsToStream((s) => this.write(s), {
+      x,
+      y: config.startY + config.boxHeight - 3,
+      hints: [
+        { key: 'Enter', action: 'Generate', type: 'primary' },
+        { key: 'Esc', action: 'Cancel', type: 'danger' },
+      ],
+      backgroundColor: BG_PRIMARY,
+    });
 
-    // Position cursor
-    const cursorX = x + 2 + displayText.length;
-    this.stream.write(
-      this.ansi
-        .moveTo(cursorX, config.startY + 6)
-        .showCursor()
-        .build()
-    );
+    // Show cursor in input
+    const displayLen = Math.min(this.inputBuffer.length, inputWidth - 4);
+    this.write(ansiMoveTo(config.startY + 6, x + 1 + displayLen) + ANSI_SHOW_CURSOR);
   }
 
   private renderInputOnly(): void {
-    const config = this.getConfig();
+    const config = this.getCenteredConfig();
     const x = config.startX + 3;
     const inputWidth = config.boxWidth - 10;
 
-    const displayText = this.inputBuffer.length > inputWidth - 5
-      ? this.inputBuffer.slice(-(inputWidth - 5))
-      : this.inputBuffer;
-    const padded = displayText.padEnd(inputWidth - 2, ' ');
-
-    this.stream.write(
-      `\x1b[${config.startY + 7};${x + 3}H\x1b[48;2;${BG_PRIMARY.r};${BG_PRIMARY.g};${BG_PRIMARY.b}m\x1b[38;2;255;255;255m${padded}\x1b[${config.startY + 7};${x + 3 + displayText.length}H`
+    updateInputValueToStream(
+      (s) => this.write(s),
+      x,
+      config.startY + 5,
+      inputWidth,
+      this.inputBuffer,
+      { r: 255, g: 255, b: 255 },
+      BG_PRIMARY
     );
   }
 
   protected renderGeneratingState(): void {
-    const config = this.getConfig();
+    const config = this.getCenteredConfig();
     const x = config.startX + 3;
 
     const progressText = this.progressCurrent > 0
       ? `Generating [${this.progressCurrent}/${this.progressTotal}]`
       : 'Generating...';
 
-    this.stream.write(
-      this.ansi
-        .moveTo(x, config.startY + 4)
-        .setForeground({ type: 'rgb', value: [180, 180, 180] })
-        .write(progressText + ' '.repeat(30))
-        .build()
-    );
+    // Progress text
+    renderTextToStream((s) => this.write(s), {
+      x,
+      y: config.startY + 4,
+      text: progressText.padEnd(40),
+      color: { r: 180, g: 180, b: 180 },
+      backgroundColor: BG_PRIMARY,
+    });
 
+    // Current step
     if (this.progressStep) {
-      this.stream.write(
-        this.ansi
-          .moveTo(x, config.startY + 6)
-          .setForeground({ type: 'rgb', value: [255, 200, 100] })
-          .write(this.progressStep + ' '.repeat(40))
-          .build()
-      );
+      renderTextToStream((s) => this.write(s), {
+        x,
+        y: config.startY + 6,
+        text: this.progressStep.padEnd(50),
+        color: { r: 255, g: 200, b: 100 },
+        backgroundColor: BG_PRIMARY,
+      });
     }
 
     // Progress bar
     const barWidth = Math.min(config.boxWidth - 12, 50);
-    const filled = Math.floor((this.progressCurrent / this.progressTotal) * barWidth);
-    const progressBar = '█'.repeat(filled) + '░'.repeat(barWidth - filled);
-
-    this.stream.write(
-      this.ansi
-        .moveTo(x, config.startY + 8)
-        .setForeground({ type: 'rgb', value: [100, 180, 100] })
-        .write('[')
-        .write(progressBar)
-        .write(']')
-        .resetAttributes()
-        .build()
-    );
+    renderProgressBarToStream((s) => this.write(s), {
+      x,
+      y: config.startY + 8,
+      width: barWidth + 2,
+      progress: this.progressTotal > 0 ? this.progressCurrent / this.progressTotal : 0,
+      style: 'block',
+      filledColor: { r: 100, g: 180, b: 100 },
+      emptyColor: { r: 60, g: 55, b: 65 },
+      backgroundColor: BG_PRIMARY,
+      brackets: true,
+      bracketColor: { r: 100, g: 180, b: 100 },
+    });
 
     // Prompt display
     const maxPromptLen = config.boxWidth - 15;
@@ -467,106 +449,89 @@ export abstract class GenerationModalScreen<T> extends BaseModalScreen {
       ? this.prompt.slice(0, maxPromptLen - 3) + '...'
       : this.prompt;
 
-    this.stream.write(
-      this.ansi
-        .moveTo(x, config.startY + 11)
-        .setForeground({ type: 'rgb', value: [100, 100, 120] })
-        .write(`"${truncatedPrompt}"`)
-        .build()
-    );
-
-    // Spinner
-    this.stream.write(
-      this.ansi
-        .moveTo(x, config.startY + 13)
-        .setForeground({ type: 'rgb', value: [255, 200, 100] })
-        .write(this.getSpinnerChar())
-        .resetAttributes()
-        .hideCursor()
-        .build()
-    );
+    renderTextToStream((s) => this.write(s), {
+      x,
+      y: config.startY + 11,
+      text: `"${truncatedPrompt}"`,
+      color: { r: 100, g: 100, b: 120 },
+      backgroundColor: BG_PRIMARY,
+    });
 
     // Generating message
-    this.stream.write(
-      this.ansi
-        .moveTo(x, config.startY + 15)
-        .setForeground({ type: 'rgb', value: [100, 100, 120] })
-        .write(config.generatingMessage)
-        .resetAttributes()
-        .build()
-    );
+    renderTextToStream((s) => this.write(s), {
+      x,
+      y: config.startY + 15,
+      text: config.generatingMessage,
+      color: { r: 100, g: 100, b: 120 },
+      backgroundColor: BG_PRIMARY,
+    });
+
+    this.write(ANSI_HIDE_CURSOR);
   }
 
   private renderPreviewState(): void {
-    const config = this.getConfig();
+    const config = this.getCenteredConfig();
     const x = config.startX + 3;
 
-    this.stream.write(
-      this.ansi
-        .moveTo(x, config.startY + 2)
-        .setForeground({ type: 'rgb', value: [100, 200, 100] })
-        .write('Generated successfully!')
-        .resetAttributes()
-        .build()
-    );
+    // Success message
+    renderTextToStream((s) => this.write(s), {
+      x,
+      y: config.startY + 2,
+      text: 'Generated successfully!',
+      color: { r: 100, g: 200, b: 100 },
+      backgroundColor: BG_PRIMARY,
+    });
 
     // Call abstract preview rendering
     this.renderPreview();
 
     // Controls
-    this.stream.write(
-      this.ansi
-        .moveTo(x, config.startY + config.boxHeight - 3)
-        .setForeground({ type: 'rgb', value: [100, 200, 100] })
-        .write('[Enter]')
-        .setForeground({ type: 'rgb', value: [180, 180, 180] })
-        .write(` ${this.getConfirmButtonText()}  `)
-        .setForeground({ type: 'rgb', value: [200, 100, 100] })
-        .write('[Esc]')
-        .setForeground({ type: 'rgb', value: [180, 180, 180] })
-        .write(' Cancel')
-        .resetAttributes()
-        .hideCursor()
-        .build()
-    );
+    renderKeyboardHintsToStream((s) => this.write(s), {
+      x,
+      y: config.startY + config.boxHeight - 3,
+      hints: [
+        { key: 'Enter', action: this.getConfirmButtonText(), type: 'primary' },
+        { key: 'Esc', action: 'Cancel', type: 'danger' },
+      ],
+      backgroundColor: BG_PRIMARY,
+    });
+
+    this.write(ANSI_HIDE_CURSOR);
   }
 
   private renderErrorState(): void {
-    const config = this.getConfig();
+    const config = this.getCenteredConfig();
     const x = config.startX + 3;
 
-    this.stream.write(
-      this.ansi
-        .moveTo(x, config.startY + 8)
-        .setForeground({ type: 'rgb', value: [255, 100, 100] })
-        .write('Generation failed')
-        .resetAttributes()
-        .build()
-    );
+    renderTextToStream((s) => this.write(s), {
+      x,
+      y: config.startY + 8,
+      text: 'Generation failed',
+      color: { r: 255, g: 100, b: 100 },
+      backgroundColor: BG_PRIMARY,
+    });
 
     const errorLines = this.wrapText(this.errorMessage, config.boxWidth - 10);
     for (let i = 0; i < Math.min(errorLines.length, 3); i++) {
-      this.stream.write(
-        this.ansi
-          .moveTo(x, config.startY + 10 + i)
-          .setForeground({ type: 'rgb', value: [180, 100, 100] })
-          .write(errorLines[i]!)
-          .resetAttributes()
-          .build()
-      );
+      renderTextToStream((s) => this.write(s), {
+        x,
+        y: config.startY + 10 + i,
+        text: errorLines[i]!,
+        color: { r: 180, g: 100, b: 100 },
+        backgroundColor: BG_PRIMARY,
+      });
     }
 
     // Controls
-    this.stream.write(
-      this.ansi
-        .moveTo(x, config.startY + config.boxHeight - 3)
-        .setForeground({ type: 'rgb', value: [200, 100, 100] })
-        .write('[Esc]')
-        .setForeground({ type: 'rgb', value: [180, 180, 180] })
-        .write(' Cancel')
-        .resetAttributes()
-        .hideCursor()
-        .build()
-    );
+    renderKeyboardHintsToStream((s) => this.write(s), {
+      x,
+      y: config.startY + config.boxHeight - 3,
+      hints: [
+        { key: 'Esc', action: 'Cancel', type: 'danger' },
+      ],
+      backgroundColor: BG_PRIMARY,
+    });
+
+    this.write(ANSI_HIDE_CURSOR);
   }
 }

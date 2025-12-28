@@ -74,6 +74,10 @@ rsync -avz --delete \
     -e "ssh -p $ADMIN_SSH_PORT" \
     "$PROJECT_ROOT/packages/world/dist/" "$SERVER:$DEPLOY_DIR/packages/world/dist/"
 
+rsync -avz --delete \
+    -e "ssh -p $ADMIN_SSH_PORT" \
+    "$PROJECT_ROOT/packages/agent/dist/" "$SERVER:$DEPLOY_DIR/packages/agent/dist/"
+
 echo ">>> Triggering hot reload..."
 # Get the PID of the node process inside the container and send SIGUSR1
 ssh_cmd "docker exec deploy-ssh-world-1 sh -c 'kill -USR1 1'"

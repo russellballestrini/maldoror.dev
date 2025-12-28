@@ -6,14 +6,12 @@ import {
   HelpModalComponent,
   PlayerListComponent,
   ReloadOverlayComponent,
+  ChatComponent,
   OutputPump,
-  BG_PRIMARY,
-  CRIMSON_BRIGHT,
-  ACCENT_GOLD,
-  fg,
-  bg,
   type PerfOptimizations,
+  type ChatEntry,
 } from '@maldoror/render';
+import { getChatMessages, addChatMessage } from './stats-server.js';
 
 /**
  * Performance optimizations configuration
@@ -69,6 +67,8 @@ export class GameSession {
   private helpModal: HelpModalComponent | null = null;
   private playerListModal: PlayerListComponent | null = null;
   private reloadOverlay: ReloadOverlayComponent | null = null;
+  private chatComponent: ChatComponent | null = null;
+  private chatVisible: boolean = true;
   private tileProvider: TileProvider | null = null;
   private sessionId: string;
   private destroyed: boolean = false;
@@ -240,14 +240,21 @@ export class GameSession {
     // Update local player state
     this.updateLocalPlayerState();
 
-    // Initialize renderer
+    // Initialize renderer with chat sidebar
     boot.updateStep('Initializing renderer...', 'loading');
+    const chatWidth = this.chatVisible ? this.getChatWidth() : 0;
     this.renderer = new PixelGameRenderer({
       stream: this.stream,
       cols: this.cols,
       rows: this.rows,
       username: this.username,
       optimizations: PERF_OPTIMIZATIONS,
+      layout: {
+        headerRows: 2,
+        footerRows: 0,
+        leftSidebarCols: 0,
+        rightSidebarCols: chatWidth,
+      },
     });
     boot.markPreviousDone();
 
@@ -266,11 +273,36 @@ export class GameSession {
     this.reloadOverlay = new ReloadOverlayComponent(this.cols, this.rows);
     this.componentManager.addComponent(this.reloadOverlay);
 
+    // Create chat component (sidebar, not modal)
+    this.chatComponent = new ChatComponent({
+      id: 'chat',
+      bounds: {
+        x: this.cols - this.getChatWidth(),
+        y: 2,  // Below header
+        width: this.getChatWidth(),
+        height: this.rows - 2,
+      },
+      visible: this.chatVisible,
+      focusable: true,
+      currentUserId: this.userId ?? undefined,
+      showActions: true,
+      onSendMessage: (message: string) => this.handleChatSend(message),
+    });
+    this.componentManager.addComponent(this.chatComponent);
+    if (this.chatVisible) {
+      this.chatComponent.show();
+    }
+
     // Initialize input router (replaces InputHandler)
     this.inputRouter = new InputRouter(this.componentManager);
     this.inputRouter.setFallbackHandler((action, event) => {
       this.handleAction(action, event);
     });
+
+    // Add chat keybindings (using ` for toggle since c is camera mode)
+    this.inputRouter.addBinding({ key: '`', action: 'toggle_chat' });
+    this.inputRouter.addBinding({ key: 'Enter', action: 'focus_chat' });
+    // Note: 't' already exists as 'start_chat' which we'll repurpose
 
     // Set up stream handlers
     this.stream.on('data', (data: Buffer) => {
@@ -318,8 +350,7 @@ export class GameSession {
     // Initialize OutputPump for SSH backpressure handling
     this.outputPump = new OutputPump(this.stream, { maxQueuedBytes: 512 * 1024 });
 
-    // Show dramatic "FIGHT!" entrance screen (Mortal Kombat style)
-    await this.showEntranceScreen();
+    // Entrance screen removed - go straight to game
 
     // Initialize the renderer (this enters alternate screen and starts rendering)
     this.renderer.initialize();
@@ -390,6 +421,11 @@ export class GameSession {
     this.refreshVisiblePlayersIfNeeded();
     this.refreshVisibleNPCsIfNeeded();
 
+    // Poll chat messages every 10 ticks (~1.5s at 15fps)
+    if (this.tickCounter % 10 === 0) {
+      this.pollChatMessages();
+    }
+
     // Collect missing sprite IDs for batch loading
     const missingPlayerIds: string[] = [];
 
@@ -456,6 +492,12 @@ export class GameSession {
 
     // Performance: Batch all output into single write
     let output = this.renderer.renderToString(this.tileProvider);
+
+    // Render chat sidebar if visible
+    if (this.chatVisible && this.chatComponent) {
+      this.chatComponent.render();
+      output += this.renderChatSidebar();
+    }
 
     // Add component overlays (modals, etc.)
     if (this.componentManager?.hasVisibleComponents()) {
@@ -641,6 +683,13 @@ export class GameSession {
           this.componentManager?.pushFocus(this.helpModal);
         }
         break;
+      case 'toggle_chat':
+        this.toggleChat();
+        break;
+      case 'focus_chat':
+      case 'start_chat':
+        this.focusChat();
+        break;
       case 'open_menu':
         // ESC is now handled by the component system
         // If no modal is open, this is a no-op (future: open menu)
@@ -760,6 +809,8 @@ export class GameSession {
         currentPrompt: this.currentPrompt,
         providerConfig: this.providerConfig,
         username: this.username,
+        cols: this.cols,
+        rows: this.rows,
       });
 
       const result = await screen.run();
@@ -794,12 +845,19 @@ export class GameSession {
     }
 
     // Always reinitialize renderer and resume input
+    const chatWidth = this.chatVisible ? this.getChatWidth() : 0;
     this.renderer = new PixelGameRenderer({
       stream: this.stream,
       cols: this.cols,
       rows: this.rows,
       username: this.username,
       optimizations: PERF_OPTIMIZATIONS,
+      layout: {
+        headerRows: 2,
+        footerRows: 0,
+        leftSidebarCols: 0,
+        rightSidebarCols: chatWidth,
+      },
     });
     this.renderer.initialize();
 
@@ -854,6 +912,8 @@ export class GameSession {
         username: this.username,
         playerX: this.playerX,
         playerY: this.playerY,
+        cols: this.cols,
+        rows: this.rows,
       });
 
       const result = await screen.run();
@@ -871,12 +931,19 @@ export class GameSession {
     }
 
     // Reinitialize renderer and resume
+    const chatWidthB = this.chatVisible ? this.getChatWidth() : 0;
     this.renderer = new PixelGameRenderer({
       stream: this.stream,
       cols: this.cols,
       rows: this.rows,
       username: this.username,
       optimizations: PERF_OPTIMIZATIONS,
+      layout: {
+        headerRows: 2,
+        footerRows: 0,
+        leftSidebarCols: 0,
+        rightSidebarCols: chatWidthB,
+      },
     });
     this.renderer.initialize();
 
@@ -967,6 +1034,8 @@ export class GameSession {
         username: this.username,
         playerX: this.playerX,
         playerY: this.playerY,
+        cols: this.cols,
+        rows: this.rows,
       });
 
       const result = await screen.run();
@@ -1004,12 +1073,19 @@ export class GameSession {
     }
 
     // Reinitialize renderer and resume
+    const chatWidthN = this.chatVisible ? this.getChatWidth() : 0;
     this.renderer = new PixelGameRenderer({
       stream: this.stream,
       cols: this.cols,
       rows: this.rows,
       username: this.username,
       optimizations: PERF_OPTIMIZATIONS,
+      layout: {
+        headerRows: 2,
+        footerRows: 0,
+        leftSidebarCols: 0,
+        rightSidebarCols: chatWidthN,
+      },
     });
     this.renderer.initialize();
 
@@ -1350,6 +1426,14 @@ export class GameSession {
     this.rows = rows;
     if (this.renderer) {
       this.renderer.resize(cols, rows);
+      // Update layout for new size
+      const chatWidth = this.chatVisible ? this.getChatWidth() : 0;
+      this.renderer.setLayout({
+        headerRows: 2,
+        footerRows: 0,
+        leftSidebarCols: 0,
+        rightSidebarCols: chatWidth,
+      });
     }
     if (this.componentManager) {
       this.componentManager.resize(cols, rows);
@@ -1358,6 +1442,15 @@ export class GameSession {
     this.helpModal?.updateScreenSize(cols, rows);
     this.playerListModal?.updateScreenSize(cols, rows);
     this.reloadOverlay?.updateScreenSize(cols, rows);
+    // Update chat component bounds
+    if (this.chatComponent && this.chatVisible) {
+      this.chatComponent.resize({
+        x: cols - this.getChatWidth(),
+        y: 2,
+        width: this.getChatWidth(),
+        height: rows - 2,
+      });
+    }
   }
 
   /**
@@ -1393,76 +1486,175 @@ export class GameSession {
   }
 
   /**
-   * Show dramatic entrance screen (Mortal Kombat "FIGHT!" style)
-   * Brief dramatic pause before the game begins
+   * Get appropriate chat width based on terminal size
    */
-  private async showEntranceScreen(): Promise<void> {
+  private getChatWidth(): number {
+    // 40 cols for normal terminals, narrower for small screens
+    if (this.cols < 100) {
+      return Math.min(32, Math.floor(this.cols * 0.35));
+    }
+    return 40;
+  }
+
+  /**
+   * Toggle chat visibility
+   */
+  private toggleChat(): void {
+    this.chatVisible = !this.chatVisible;
+    const chatWidth = this.chatVisible ? this.getChatWidth() : 0;
+
+    // Update renderer layout
+    if (this.renderer) {
+      this.renderer.setLayout({
+        headerRows: 2,
+        footerRows: 0,
+        leftSidebarCols: 0,
+        rightSidebarCols: chatWidth,
+      });
+      this.renderer.invalidate();
+    }
+
+    // Show/hide chat component
+    if (this.chatComponent) {
+      if (this.chatVisible) {
+        this.chatComponent.resize({
+          x: this.cols - this.getChatWidth(),
+          y: 2,
+          width: this.getChatWidth(),
+          height: this.rows - 2,
+        });
+        this.chatComponent.show();
+      } else {
+        this.chatComponent.hide();
+        // If chat was focused, unfocus it
+        if (this.chatComponent.getState() === 'focused') {
+          this.componentManager?.popFocus();
+        }
+      }
+    }
+  }
+
+  /**
+   * Focus the chat for input
+   */
+  private focusChat(): void {
+    if (!this.chatVisible) {
+      this.toggleChat();  // Show chat first
+    }
+
+    if (this.chatComponent && !this.chatComponent.isInputActive()) {
+      // Push chat to focus stack and activate input
+      this.componentManager?.pushFocus(this.chatComponent);
+      this.chatComponent.activateInput();
+    }
+  }
+
+  /**
+   * Handle sending a chat message
+   */
+  private handleChatSend(message: string): void {
+    if (!this.userId || !message.trim()) return;
+
+    addChatMessage({
+      senderId: this.userId,
+      senderName: this.username,
+      senderType: 'player',
+      message: message.trim(),
+      position: { x: this.playerX, y: this.playerY },
+    });
+
+    // Blur chat after sending
+    if (this.chatComponent) {
+      this.chatComponent.deactivateInput();
+      this.componentManager?.popFocus();
+    }
+  }
+
+  /**
+   * Render chat sidebar to ANSI string
+   */
+  private renderChatSidebar(): string {
+    if (!this.chatComponent) return '';
+
+    const buffer = this.chatComponent.getBuffer();
+    const bounds = this.chatComponent.getBounds();
     const ESC = '\x1b';
-    const bgAnsi = bg(BG_PRIMARY);
-    const crimsonFg = fg(CRIMSON_BRIGHT);
-    const goldFg = fg(ACCENT_GOLD);
-    const reset = `${ESC}[0m`;
+    let output = '';
 
-    // Fill screen with brand dark background
-    for (let row = 1; row <= this.rows; row++) {
-      this.stream.write(`${ESC}[${row};1H${bgAnsi}${' '.repeat(this.cols)}`);
+    // Position cursor and render each row
+    for (let y = 0; y < bounds.height; y++) {
+      // Move cursor to sidebar position (1-indexed for ANSI)
+      output += `${ESC}[${bounds.y + y + 1};${bounds.x + 1}H`;
+
+      for (let x = 0; x < bounds.width; x++) {
+        const cell = buffer.getCell(x, y);
+        if (!cell) continue;
+
+        // Build ANSI escape for this cell
+        let cellOutput = '';
+
+        // Foreground color
+        if (cell.fg && cell.fg.type !== 'default' && cell.fg.value !== undefined) {
+          if (cell.fg.type === 'rgb' && Array.isArray(cell.fg.value)) {
+            const [r, g, b] = cell.fg.value;
+            cellOutput += `${ESC}[38;2;${r};${g};${b}m`;
+          } else if ((cell.fg.type === '256' || cell.fg.type === '16') && typeof cell.fg.value === 'number') {
+            cellOutput += `${ESC}[38;5;${cell.fg.value}m`;
+          }
+        }
+
+        // Background color
+        if (cell.bg && cell.bg.type !== 'default' && cell.bg.value !== undefined) {
+          if (cell.bg.type === 'rgb' && Array.isArray(cell.bg.value)) {
+            const [r, g, b] = cell.bg.value;
+            cellOutput += `${ESC}[48;2;${r};${g};${b}m`;
+          } else if ((cell.bg.type === '256' || cell.bg.type === '16') && typeof cell.bg.value === 'number') {
+            cellOutput += `${ESC}[48;5;${cell.bg.value}m`;
+          }
+        }
+
+        // Attributes
+        if (cell.attrs) {
+          if (cell.attrs.bold) cellOutput += `${ESC}[1m`;
+          if (cell.attrs.dim) cellOutput += `${ESC}[2m`;
+          if (cell.attrs.italic) cellOutput += `${ESC}[3m`;
+          if (cell.attrs.underline) cellOutput += `${ESC}[4m`;
+          if (cell.attrs.blink) cellOutput += `${ESC}[5m`;
+          if (cell.attrs.inverse) cellOutput += `${ESC}[7m`;
+        }
+
+        cellOutput += cell.char;
+        cellOutput += `${ESC}[0m`;  // Reset after each cell
+
+        output += cellOutput;
+      }
     }
 
-    // Center calculation
-    const centerY = Math.floor(this.rows / 2);
+    return output;
+  }
 
-    // Stage 1: Username appears (fade in effect via delay)
-    const nameDisplay = this.username.toUpperCase();
-    const nameX = Math.floor((this.cols - nameDisplay.length) / 2);
-    this.stream.write(`${ESC}[${centerY - 2};${nameX}H${goldFg}${nameDisplay}${reset}`);
-    await new Promise(resolve => setTimeout(resolve, 400));
+  /**
+   * Poll and update chat messages
+   */
+  private pollChatMessages(): void {
+    if (!this.chatComponent) return;
 
-    // Stage 2: "VS" appears
-    const vsText = 'VS';
-    const vsX = Math.floor((this.cols - vsText.length) / 2);
-    this.stream.write(`${ESC}[${centerY};${vsX}H${crimsonFg}${vsText}${reset}`);
-    await new Promise(resolve => setTimeout(resolve, 300));
+    const messages = getChatMessages();
+    if (messages.length === 0) return;
 
-    // Stage 3: "THE ABYSS" appears
-    const abyssText = 'THE ABYSS';
-    const abyssX = Math.floor((this.cols - abyssText.length) / 2);
-    this.stream.write(`${ESC}[${centerY + 2};${abyssX}H${goldFg}${abyssText}${reset}`);
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // Convert ChatMessage to ChatEntry format
+    const entries: ChatEntry[] = messages.map(msg => ({
+      id: `${msg.senderId}-${msg.timestamp.getTime()}`,
+      actorId: msg.senderId,
+      actorName: msg.senderName,
+      actorType: msg.senderType,
+      type: 'chat' as const,
+      message: msg.message,
+      position: msg.position,
+      timestamp: msg.timestamp,
+    }));
 
-    // Stage 4: FIGHT! in big ASCII art
-    const fightArt = [
-      '███████╗██╗ ██████╗ ██╗  ██╗████████╗██╗',
-      '██╔════╝██║██╔════╝ ██║  ██║╚══██╔══╝██║',
-      '█████╗  ██║██║  ███╗███████║   ██║   ██║',
-      '██╔══╝  ██║██║   ██║██╔══██║   ██║   ╚═╝',
-      '██║     ██║╚██████╔╝██║  ██║   ██║   ██╗',
-      '╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝',
-    ];
-
-    const fightWidth = fightArt[0]!.length;
-    const fightX = Math.floor((this.cols - fightWidth) / 2);
-    const fightY = centerY + 5;
-
-    // Flash effect: bright crimson
-    for (let i = 0; i < fightArt.length; i++) {
-      this.stream.write(`${ESC}[${fightY + i};${fightX}H${crimsonFg}${fightArt[i]}${reset}`);
-    }
-
-    // Hold for dramatic effect
-    await new Promise(resolve => setTimeout(resolve, 800));
-
-    // Quick flash white then fade
-    const whiteFg = `${ESC}[38;2;255;255;255m`;
-    for (let i = 0; i < fightArt.length; i++) {
-      this.stream.write(`${ESC}[${fightY + i};${fightX}H${whiteFg}${fightArt[i]}${reset}`);
-    }
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    // Back to crimson
-    for (let i = 0; i < fightArt.length; i++) {
-      this.stream.write(`${ESC}[${fightY + i};${fightX}H${crimsonFg}${fightArt[i]}${reset}`);
-    }
-    await new Promise(resolve => setTimeout(resolve, 400));
+    this.chatComponent.updateEntries(entries);
   }
 
   /**
@@ -1532,6 +1724,7 @@ export class GameSession {
     this.helpModal = null;
     this.playerListModal = null;
     this.reloadOverlay = null;
+    this.chatComponent = null;
 
     // Clean up renderer
     if (this.renderer) {

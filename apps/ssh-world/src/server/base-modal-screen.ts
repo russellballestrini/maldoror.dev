@@ -1,8 +1,20 @@
 import type { Duplex } from 'stream';
-import { ANSIBuilder, BG_PRIMARY } from '@maldoror/render';
-
-const SPINNER_FRAMES = ['◐', '◓', '◑', '◒'];
-const SPINNER_INTERVAL = 200;
+import {
+  ANSIBuilder,
+  BG_PRIMARY,
+  renderBoxToStream,
+  createSpinner,
+  type SpinnerController,
+  type RGB,
+  rgbToAnsiBg,
+  ansiMoveTo,
+  ANSI_RESET,
+  ANSI_ALTERNATE_SCREEN_ON,
+  ANSI_ALTERNATE_SCREEN_OFF,
+  ANSI_HIDE_CURSOR,
+  ANSI_SHOW_CURSOR,
+  ANSI_CLEAR_SCREEN,
+} from '@maldoror/render';
 
 export type ScreenState = 'input' | 'generating' | 'preview' | 'error';
 
@@ -12,8 +24,8 @@ export interface BoxConfig {
   startX: number;
   startY: number;
   title: string;
-  borderColor: [number, number, number];
-  titleColor: [number, number, number];
+  borderColor: RGB;
+  titleColor: RGB;
 }
 
 /**
@@ -25,18 +37,39 @@ export abstract class BaseModalScreen {
   protected ansi: ANSIBuilder;
   protected state: ScreenState = 'input';
   protected destroyed: boolean = false;
-  protected spinnerFrame: number = 0;
-  protected spinnerInterval: NodeJS.Timeout | null = null;
+  protected spinnerController: SpinnerController | null = null;
   protected inputBuffer: string = '';
   protected errorMessage: string = '';
   protected progressStep: string = '';
   protected progressCurrent: number = 0;
   protected progressTotal: number = 0;
   protected isGenerating: boolean = false;
+  protected screenCols: number;
+  protected screenRows: number;
 
-  constructor(stream: Duplex) {
+  constructor(stream: Duplex, cols: number = 80, rows: number = 24) {
     this.stream = stream;
+    this.screenCols = cols;
+    this.screenRows = rows;
     this.ansi = new ANSIBuilder();
+  }
+
+  /**
+   * Calculate centered X position for a box of given width.
+   */
+  protected getCenteredX(boxWidth: number): number {
+    return Math.max(1, Math.floor((this.screenCols - boxWidth) / 2));
+  }
+
+  /**
+   * Calculate centered Y position for a box of given height.
+   */
+  protected getCenteredY(boxHeight: number): number {
+    return Math.max(1, Math.floor((this.screenRows - boxHeight) / 2));
+  }
+
+  protected write(s: string): void {
+    this.stream.write(s);
   }
 
   /**
@@ -44,98 +77,59 @@ export abstract class BaseModalScreen {
    * IMPORTANT: Enforces Maldoror dark theme - no system override possible
    */
   protected fillBackground(): void {
-    this.stream.write(
-      this.ansi
-        .setBackground({ type: 'rgb', value: [BG_PRIMARY.r, BG_PRIMARY.g, BG_PRIMARY.b] })
-        .build()
-    );
+    const bg = rgbToAnsiBg(BG_PRIMARY);
     for (let y = 0; y < 30; y++) {
-      this.stream.write(
-        this.ansi
-          .moveTo(0, y)
-          .write(' '.repeat(100))
-          .build()
-      );
+      this.write(ansiMoveTo(y, 0) + bg + ' '.repeat(100));
     }
+    this.write(ANSI_RESET);
   }
 
   /**
-   * Draw a box with a title
+   * Draw a box with a title using TUI widgets
    */
   protected drawBox(config: BoxConfig): void {
     const { width, height, startX, startY, title, borderColor, titleColor } = config;
 
-    // Top border
-    this.stream.write(
-      this.ansi
-        .moveTo(startX, startY)
-        .setForeground({ type: 'rgb', value: borderColor })
-        .write('╔' + '═'.repeat(width - 2) + '╗')
-        .build()
-    );
-
-    // Sides
-    for (let y = 1; y < height - 1; y++) {
-      this.stream.write(
-        this.ansi
-          .moveTo(startX, startY + y)
-          .write('║')
-          .moveTo(startX + width - 1, startY + y)
-          .write('║')
-          .build()
-      );
-    }
-
-    // Bottom border
-    this.stream.write(
-      this.ansi
-        .moveTo(startX, startY + height - 1)
-        .write('╚' + '═'.repeat(width - 2) + '╝')
-        .resetAttributes()
-        .build()
-    );
-
-    // Title
-    const paddedTitle = ` ${title} `;
-    const titleX = startX + Math.floor((width - paddedTitle.length) / 2);
-    this.stream.write(
-      this.ansi
-        .moveTo(titleX, startY)
-        .setForeground({ type: 'rgb', value: titleColor })
-        .write(paddedTitle)
-        .resetAttributes()
-        .build()
-    );
+    renderBoxToStream((s) => this.write(s), {
+      x: startX,
+      y: startY,
+      width,
+      height,
+      borderStyle: 'double',
+      borderColor,
+      backgroundColor: BG_PRIMARY,
+      title,
+      titleColor,
+    });
   }
 
   /**
-   * Start the spinner animation
+   * Start the spinner animation at specified position
    */
-  protected startSpinner(): void {
-    this.spinnerFrame = 0;
-    this.spinnerInterval = setInterval(() => {
-      this.spinnerFrame = (this.spinnerFrame + 1) % SPINNER_FRAMES.length;
-      if (this.state === 'generating') {
-        this.renderSpinnerOnly();
-      }
-    }, SPINNER_INTERVAL);
+  protected startSpinner(x: number, y: number): void {
+    this.stopSpinner();
+    this.spinnerController = createSpinner(
+      (s) => this.write(s),
+      {
+        x,
+        y,
+        style: 'circle',
+        color: { r: 255, g: 200, b: 100 },
+        backgroundColor: BG_PRIMARY,
+      },
+      200
+    );
+    this.spinnerController.start();
   }
 
   /**
    * Stop the spinner animation
    */
   protected stopSpinner(): void {
-    if (this.spinnerInterval) {
-      clearInterval(this.spinnerInterval);
-      this.spinnerInterval = null;
+    if (this.spinnerController) {
+      this.spinnerController.stop();
+      this.spinnerController = null;
     }
-  }
-
-  /**
-   * Get the current spinner character
-   */
-  protected getSpinnerChar(): string {
-    return SPINNER_FRAMES[this.spinnerFrame]!;
   }
 
   /**
@@ -175,12 +169,10 @@ export abstract class BaseModalScreen {
     this.stopSpinner();
     // Don't removeAllListeners('data') here - it would remove game session's listener!
     // Each subclass should remove only its own listener before calling cleanup()
-    this.stream.write(
-      this.ansi
-        .exitAlternateScreen()
-        .showCursor()
-        .resetAttributes()
-        .build()
+    this.write(
+      ANSI_ALTERNATE_SCREEN_OFF +
+      ANSI_SHOW_CURSOR +
+      ANSI_RESET
     );
   }
 
@@ -189,13 +181,11 @@ export abstract class BaseModalScreen {
    * IMPORTANT: Enforces Maldoror dark theme - no system override possible
    */
   protected enterScreen(): void {
-    this.stream.write(
-      this.ansi
-        .enterAlternateScreen()
-        .hideCursor()
-        .setBackground({ type: 'rgb', value: [BG_PRIMARY.r, BG_PRIMARY.g, BG_PRIMARY.b] })
-        .clearScreen()
-        .build()
+    this.write(
+      ANSI_ALTERNATE_SCREEN_ON +
+      ANSI_HIDE_CURSOR +
+      rgbToAnsiBg(BG_PRIMARY) +
+      ANSI_CLEAR_SCREEN
     );
     this.fillBackground();
   }

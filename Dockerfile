@@ -14,8 +14,12 @@ COPY packages/protocol/package.json ./packages/protocol/
 COPY packages/render/package.json ./packages/render/
 COPY packages/world/package.json ./packages/world/
 COPY packages/ai/package.json ./packages/ai/
+COPY packages/ai-character/package.json ./packages/ai-character/
 COPY packages/queue/package.json ./packages/queue/
 COPY packages/tsconfig/package.json ./packages/tsconfig/
+COPY packages/agent/package.json ./packages/agent/
+COPY apps/agent-bot/package.json ./apps/agent-bot/
+COPY apps/web/package.json ./apps/web/
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile

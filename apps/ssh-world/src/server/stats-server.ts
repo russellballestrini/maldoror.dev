@@ -1,18 +1,81 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'http';
 import { db, schema } from '@maldoror/db';
-import { sql, count, min, max } from 'drizzle-orm';
+import { sql, count, min, max, eq } from 'drizzle-orm';
 import * as fs from 'fs';
 import * as path from 'path';
+import sharp from 'sharp';
 import type { WorkerManager } from './worker-manager.js';
 import { resourceMonitor } from '../utils/resource-monitor.js';
+import {
+  getUnifiedActivities,
+  formatActivityForDisplay,
+  type UnifiedActivityEntry,
+} from './activity-logger.js';
+import type { PixelGrid } from '@maldoror/protocol';
 
 // Asset directories
 const BUILDINGS_DIR = process.env.BUILDINGS_DIR || '/app/buildings';
 const SPRITES_DIR = process.env.SPRITES_DIR || '/app/sprites';
+const NPCS_DIR = process.env.NPCS_DIR || '/app/npcs';
+const WEB_DIST_DIR = process.env.WEB_DIST_DIR || '/app/apps/web/dist';
 
 // Log capture ring buffer
 const MAX_LOG_LINES = 2000;
 const logBuffer: { timestamp: Date; level: string; message: string }[] = [];
+
+// Bot activity ring buffer
+const MAX_BOT_ENTRIES = 500;
+export interface BotLogEntry {
+  timestamp: Date;
+  type: 'observation' | 'decision' | 'action' | 'error' | 'info';
+  agentName: string;
+  data: {
+    position?: { x: number; y: number };
+    nearbyPlayers?: string[];
+    nearbyNpcs?: string[];
+    llmPrompt?: string;
+    llmResponse?: string;
+    actions?: Array<{ type: string; direction?: string; message?: string }>;
+    error?: string;
+    message?: string;
+    tokens?: { input: number; output: number };
+  };
+}
+const botActivityBuffer: BotLogEntry[] = [];
+
+export function addBotActivity(entry: Omit<BotLogEntry, 'timestamp'>): void {
+  botActivityBuffer.push({ ...entry, timestamp: new Date() });
+  while (botActivityBuffer.length > MAX_BOT_ENTRIES) {
+    botActivityBuffer.shift();
+  }
+}
+
+export function getBotActivity(): BotLogEntry[] {
+  return botActivityBuffer;
+}
+
+// Global chat message buffer
+const MAX_CHAT_ENTRIES = 200;
+export interface ChatMessage {
+  timestamp: Date;
+  senderId: string;
+  senderName: string;
+  senderType: 'player' | 'npc' | 'bot';
+  message: string;
+  position?: { x: number; y: number };
+}
+const chatBuffer: ChatMessage[] = [];
+
+export function addChatMessage(entry: Omit<ChatMessage, 'timestamp'>): void {
+  chatBuffer.push({ ...entry, timestamp: new Date() });
+  while (chatBuffer.length > MAX_CHAT_ENTRIES) {
+    chatBuffer.shift();
+  }
+}
+
+export function getChatMessages(): ChatMessage[] {
+  return chatBuffer;
+}
 
 function captureLog(level: string, ...args: unknown[]): void {
   const message = args.map(arg =>
@@ -153,6 +216,13 @@ export class StatsServer {
     this.server.close();
   }
 
+  /**
+   * Get the underlying HTTP server for WebSocket upgrades
+   */
+  getHttpServer(): ReturnType<typeof createServer> {
+    return this.server;
+  }
+
   private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
     // CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -193,6 +263,59 @@ export class StatsServer {
       }));
     } else if (url.pathname === '/logs' || url.pathname === '/logs/') {
       this.serveLogsPage(req, res, url);
+    } else if (url.pathname === '/bot-logs' || url.pathname === '/bot-logs/') {
+      if (req.method === 'POST') {
+        await this.handleBotLogPost(req, res);
+      } else {
+        this.serveBotLogsPage(req, res, url);
+      }
+    } else if (url.pathname === '/api/bot-activity' || url.pathname === '/api/bot-activity/') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(getBotActivity(), null, 2));
+    } else if (url.pathname === '/api/chat' || url.pathname === '/api/chat/') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(getChatMessages(), null, 2));
+    } else if (url.pathname === '/api/activity' || url.pathname === '/api/activity/') {
+      const limit = parseInt(url.searchParams.get('limit') || '100', 10);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(getUnifiedActivities(limit), null, 2));
+    } else if (url.pathname === '/chat' || url.pathname === '/chat/') {
+      this.serveGlobalChatPage(req, res, url);
+    } else if (url.pathname === '/api/world' || url.pathname === '/api/world/') {
+      try {
+        const worldData = await this.getWorldData();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(worldData, null, 2));
+      } catch (error) {
+        console.error('Error getting world data:', error);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Failed to get world data' }));
+      }
+    } else if (url.pathname === '/api/entities' || url.pathname === '/api/entities/') {
+      try {
+        const entities = await this.getEntities();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(entities, null, 2));
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        const errorStack = error instanceof Error ? error.stack : '';
+        console.error('Error getting entities:', errorMsg, errorStack);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Failed to get entities', details: errorMsg }));
+      }
+    } else if (url.pathname === '/api/terrain-tiles' || url.pathname === '/api/terrain-tiles/') {
+      try {
+        const terrainTiles = await this.getTerrainTiles();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(terrainTiles, null, 2));
+      } catch (error) {
+        console.error('Error getting terrain tiles:', error);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Failed to get terrain tiles' }));
+      }
+    } else if (url.pathname.startsWith('/files/terrain/')) {
+      // Serve terrain tile PNGs dynamically from database
+      await this.serveTerrainTile(req, res, url.pathname);
     } else if (url.pathname === '/files' || url.pathname === '/files/') {
       // File browser index
       this.serveFileBrowserIndex(res);
@@ -202,12 +325,59 @@ export class StatsServer {
     } else if (url.pathname.startsWith('/files/sprites')) {
       // Serve sprites directory
       await this.serveAssetPath(req, res, url.pathname.replace('/files/sprites', ''), SPRITES_DIR, 'sprites');
+    } else if (url.pathname.startsWith('/files/npcs')) {
+      // Serve NPCs directory
+      await this.serveAssetPath(req, res, url.pathname.replace('/files/npcs', ''), NPCS_DIR, 'npcs');
     } else {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-        error: 'Not found',
-        endpoints: ['/stats', '/health', '/operations', '/logs', '/files', '/files/buildings', '/files/sprites']
-      }));
+      // Serve web app static files from root
+      await this.serveWebApp(req, res, url);
+    }
+  }
+
+  /**
+   * Serve the web app static files
+   */
+  private async serveWebApp(_req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+    try {
+      // Determine file path
+      let filePath = url.pathname;
+      if (filePath === '/' || filePath === '') {
+        filePath = '/index.html';
+      }
+
+      const fullPath = path.join(WEB_DIST_DIR, filePath);
+
+      // Security: prevent directory traversal
+      if (!fullPath.startsWith(WEB_DIST_DIR)) {
+        res.writeHead(403, { 'Content-Type': 'text/plain' });
+        res.end('Forbidden');
+        return;
+      }
+
+      // Try to read the file
+      const stat = await fs.promises.stat(fullPath).catch(() => null);
+
+      if (stat && stat.isFile()) {
+        await this.serveFile(res, fullPath);
+      } else {
+        // For SPA routing, serve index.html for non-file paths
+        const indexPath = path.join(WEB_DIST_DIR, 'index.html');
+        const indexStat = await fs.promises.stat(indexPath).catch(() => null);
+
+        if (indexStat && indexStat.isFile()) {
+          await this.serveFile(res, indexPath);
+        } else {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            error: 'Not found',
+            endpoints: ['/stats', '/health', '/operations', '/logs', '/api/world', '/api/entities', '/files']
+          }));
+        }
+      }
+    } catch (error) {
+      console.error('Error serving web app:', error);
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end('Internal Server Error');
     }
   }
 
@@ -377,6 +547,437 @@ export class StatsServer {
       container.scrollTop = container.scrollHeight;
     }
     // Auto-scroll to bottom on load
+    scrollToBottom();
+  </script>
+</body>
+</html>`;
+
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(html);
+  }
+
+  private async handleBotLogPost(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    try {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) {
+        chunks.push(chunk);
+      }
+      const body = Buffer.concat(chunks).toString('utf-8');
+      const entry = JSON.parse(body) as Omit<BotLogEntry, 'timestamp'>;
+      addBotActivity(entry);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true }));
+    } catch (error) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid request' }));
+    }
+  }
+
+  private serveBotLogsPage(_req: IncomingMessage, res: ServerResponse, url: URL): void {
+    const format = url.searchParams.get('format');
+    if (format === 'json') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(getBotActivity(), null, 2));
+      return;
+    }
+
+    const refresh = parseInt(url.searchParams.get('refresh') || '5', 10);
+    const activity = getBotActivity();
+
+    const escapeHtml = (str: string): string => {
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    };
+
+    const formatTimestamp = (date: Date): string => {
+      return date.toISOString().replace('T', ' ').replace('Z', '');
+    };
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  ${refresh > 0 ? `<meta http-equiv="refresh" content="${refresh}">` : ''}
+  <title>Maldoror Bot Activity</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+      background: #0a0a0f;
+      color: #e0e0e0;
+      margin: 0;
+      padding: 20px;
+      line-height: 1.4;
+      font-size: 12px;
+    }
+    h1 { color: #ff9900; margin-bottom: 5px; font-size: 1.4em; }
+    .subtitle { color: #666; margin-bottom: 15px; font-size: 0.9em; }
+    .controls {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 15px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .controls a {
+      background: #1a1a25;
+      color: #66aaff;
+      padding: 6px 12px;
+      border-radius: 4px;
+      text-decoration: none;
+      border: 1px solid #333;
+      font-size: 0.85em;
+    }
+    .controls a:hover { background: #252535; }
+    .controls a.active { background: #333; color: #fff; }
+    .stats { color: #888; font-size: 0.85em; }
+    .activity-container {
+      background: #0d0d12;
+      border: 1px solid #222;
+      border-radius: 8px;
+      overflow: auto;
+      max-height: calc(100vh - 180px);
+    }
+    .entry {
+      padding: 12px 15px;
+      border-bottom: 1px solid #1a1a1f;
+    }
+    .entry:hover { background: #151520; }
+    .entry:last-child { border-bottom: none; }
+    .entry-header {
+      display: flex;
+      gap: 15px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .timestamp { color: #555; }
+    .type {
+      font-weight: bold;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.8em;
+    }
+    .type-observation { background: #1a3a4a; color: #6bcb77; }
+    .type-decision { background: #3a3a1a; color: #ffd93d; }
+    .type-action { background: #3a1a3a; color: #ff9900; }
+    .type-error { background: #4a1a1a; color: #ff6b6b; }
+    .type-info { background: #1a1a3a; color: #66aaff; }
+    .agent-name { color: #888; }
+    .entry-content { color: #aaa; }
+    .position { color: #66ff99; }
+    .players, .npcs { color: #66aaff; }
+    .llm-section {
+      margin-top: 10px;
+      padding: 10px;
+      background: #0a0a10;
+      border-radius: 4px;
+      border-left: 3px solid #333;
+    }
+    .llm-label { color: #666; font-size: 0.8em; margin-bottom: 5px; }
+    .llm-content { white-space: pre-wrap; color: #ccc; font-size: 0.9em; }
+    .actions-list { color: #ff9900; margin-top: 5px; }
+    .error-msg { color: #ff6b6b; }
+    .empty { color: #666; padding: 40px; text-align: center; }
+    .scroll-bottom {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: #333;
+      color: #fff;
+      padding: 10px 15px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85em;
+      border: none;
+    }
+    .scroll-bottom:hover { background: #444; }
+  </style>
+</head>
+<body>
+  <h1>🤖 Bot Activity Log</h1>
+  <p class="subtitle">Showing ${activity.length} entries • ${refresh > 0 ? `Auto-refreshes every ${refresh}s` : 'Auto-refresh off'}</p>
+
+  <div class="controls">
+    <a href="/bot-logs?format=json">JSON</a>
+    <span class="stats">|</span>
+    <span class="stats">Refresh:
+      <a href="/bot-logs?refresh=2" class="${refresh === 2 ? 'active' : ''}">2s</a>
+      <a href="/bot-logs?refresh=5" class="${refresh === 5 ? 'active' : ''}">5s</a>
+      <a href="/bot-logs?refresh=30" class="${refresh === 30 ? 'active' : ''}">30s</a>
+      <a href="/bot-logs?refresh=0" class="${refresh === 0 ? 'active' : ''}">off</a>
+    </span>
+    <span class="stats">|</span>
+    <a href="/logs">Server Logs</a>
+  </div>
+
+  <div class="activity-container" id="activity">
+    ${activity.length === 0 ? '<div class="empty">No bot activity yet. Waiting for bot to connect...</div>' : ''}
+    ${activity.map(entry => {
+      const d = entry.data;
+      let content = '';
+
+      if (d.position) {
+        content += `<span class="position">📍 Position: (${d.position.x}, ${d.position.y})</span>`;
+      }
+      if (d.nearbyPlayers && d.nearbyPlayers.length > 0) {
+        content += `<br><span class="players">👥 Players: ${escapeHtml(d.nearbyPlayers.join(', '))}</span>`;
+      }
+      if (d.nearbyNpcs && d.nearbyNpcs.length > 0) {
+        content += `<br><span class="npcs">🎭 NPCs: ${escapeHtml(d.nearbyNpcs.join(', '))}</span>`;
+      }
+      if (d.message) {
+        content += `<br>${escapeHtml(d.message)}`;
+      }
+      if (d.error) {
+        content += `<br><span class="error-msg">❌ ${escapeHtml(d.error)}</span>`;
+      }
+      if (d.actions && d.actions.length > 0) {
+        const actionStrs = d.actions.map(a => {
+          if (a.type === 'move') return `move ${a.direction}`;
+          if (a.type === 'chat') return `say "${escapeHtml(a.message || '')}"`;
+          return a.type;
+        });
+        content += `<div class="actions-list">⚡ Actions: ${actionStrs.join(', ')}</div>`;
+      }
+
+      let llmSection = '';
+      if (d.llmPrompt) {
+        llmSection += `<div class="llm-section"><div class="llm-label">📝 LLM Prompt:</div><div class="llm-content">${escapeHtml(d.llmPrompt)}</div></div>`;
+      }
+      if (d.llmResponse) {
+        llmSection += `<div class="llm-section"><div class="llm-label">🤖 LLM Response:</div><div class="llm-content">${escapeHtml(d.llmResponse)}</div></div>`;
+      }
+
+      return `
+        <div class="entry">
+          <div class="entry-header">
+            <span class="timestamp">${formatTimestamp(new Date(entry.timestamp))}</span>
+            <span class="type type-${entry.type}">${entry.type.toUpperCase()}</span>
+            <span class="agent-name">${escapeHtml(entry.agentName)}</span>
+          </div>
+          <div class="entry-content">${content}</div>
+          ${llmSection}
+        </div>
+      `;
+    }).join('')}
+  </div>
+
+  <button class="scroll-bottom" onclick="scrollToBottom()">↓ Scroll to Bottom</button>
+
+  <script>
+    function scrollToBottom() {
+      const container = document.getElementById('activity');
+      container.scrollTop = container.scrollHeight;
+    }
+    scrollToBottom();
+  </script>
+</body>
+</html>`;
+
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(html);
+  }
+
+  private serveGlobalChatPage(_req: IncomingMessage, res: ServerResponse, url: URL): void {
+    const format = url.searchParams.get('format');
+    const mode = url.searchParams.get('mode') || 'activity'; // 'chat' or 'activity'
+
+    if (format === 'json') {
+      if (mode === 'activity') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(getUnifiedActivities(200), null, 2));
+      } else {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(getChatMessages(), null, 2));
+      }
+      return;
+    }
+
+    const refresh = parseInt(url.searchParams.get('refresh') || '5', 10);
+    const chatMessages = getChatMessages();
+    const activities = getUnifiedActivities(200);
+
+    const escapeHtml = (str: string): string => {
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    };
+
+    const formatTimestamp = (date: Date): string => {
+      return date.toISOString().replace('T', ' ').replace(/\.\d+Z$/, '');
+    };
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  ${refresh > 0 ? `<meta http-equiv="refresh" content="${refresh}">` : ''}
+  <title>Maldoror Global Chat</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+      background: #0a0a0f;
+      color: #e0e0e0;
+      margin: 0;
+      padding: 20px;
+      line-height: 1.4;
+      font-size: 13px;
+    }
+    h1 { color: #ff9900; margin-bottom: 5px; font-size: 1.4em; }
+    .subtitle { color: #666; margin-bottom: 15px; font-size: 0.9em; }
+    .controls {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 15px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .controls a {
+      background: #1a1a25;
+      color: #66aaff;
+      padding: 6px 12px;
+      border-radius: 4px;
+      text-decoration: none;
+      border: 1px solid #333;
+      font-size: 0.85em;
+    }
+    .controls a:hover { background: #252535; }
+    .controls a.active { background: #333; color: #fff; }
+    .stats { color: #888; font-size: 0.85em; }
+    .chat-container {
+      background: #0d0d12;
+      border: 1px solid #222;
+      border-radius: 8px;
+      overflow: auto;
+      max-height: calc(100vh - 180px);
+      padding: 10px;
+    }
+    .message {
+      padding: 8px 12px;
+      margin: 5px 0;
+      border-radius: 6px;
+      background: #151520;
+    }
+    .message:hover { background: #1a1a28; }
+    .message-header {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 5px;
+    }
+    .timestamp { color: #555; font-size: 0.8em; }
+    .sender {
+      font-weight: bold;
+    }
+    .sender-player { color: #66ff99; }
+    .sender-npc { color: #ff9900; }
+    .sender-bot { color: #ff66aa; }
+    .sender-type {
+      font-size: 0.7em;
+      padding: 2px 6px;
+      border-radius: 3px;
+      text-transform: uppercase;
+    }
+    .type-player { background: #1a3a2a; color: #66ff99; }
+    .type-npc { background: #3a2a1a; color: #ff9900; }
+    .type-bot { background: #3a1a2a; color: #ff66aa; }
+    .position { color: #666; font-size: 0.75em; }
+    .message-text {
+      color: #ddd;
+      margin-left: 2px;
+    }
+    .action-message {
+      background: #12121a;
+      border-left: 3px solid #555;
+    }
+    .action-text {
+      color: #aaa;
+      font-style: italic;
+    }
+    .empty { color: #666; padding: 40px; text-align: center; }
+    .scroll-bottom {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: #333;
+      color: #fff;
+      padding: 10px 15px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85em;
+      border: none;
+    }
+    .scroll-bottom:hover { background: #444; }
+  </style>
+</head>
+<body>
+  <h1>World Activity</h1>
+  <p class="subtitle">${mode === 'activity' ? 'All activity (chat, actions, events)' : 'Chat messages only'} • ${mode === 'activity' ? activities.length : chatMessages.length} entries</p>
+
+  <div class="controls">
+    <span class="stats">View:
+      <a href="/chat?mode=activity&refresh=${refresh}" class="${mode === 'activity' ? 'active' : ''}">Timeline</a>
+      <a href="/chat?mode=chat&refresh=${refresh}" class="${mode === 'chat' ? 'active' : ''}">Chat Only</a>
+    </span>
+    <span class="stats">|</span>
+    <a href="/chat?mode=${mode}&format=json">JSON</a>
+    <span class="stats">|</span>
+    <span class="stats">Refresh:
+      <a href="/chat?mode=${mode}&refresh=2" class="${refresh === 2 ? 'active' : ''}">2s</a>
+      <a href="/chat?mode=${mode}&refresh=5" class="${refresh === 5 ? 'active' : ''}">5s</a>
+      <a href="/chat?mode=${mode}&refresh=30" class="${refresh === 30 ? 'active' : ''}">30s</a>
+      <a href="/chat?mode=${mode}&refresh=0" class="${refresh === 0 ? 'active' : ''}">off</a>
+    </span>
+    <span class="stats">|</span>
+    <a href="/bot-logs">Bot Logs</a>
+    <a href="/logs">Server Logs</a>
+  </div>
+
+  <div class="chat-container" id="chat">
+    ${mode === 'activity' ? (
+      activities.length === 0 ? '<div class="empty">No activity yet. The world is waiting...</div>' :
+      activities.map((act: UnifiedActivityEntry) => `
+        <div class="message ${act.activityType !== 'chat' ? 'action-message' : ''}">
+          <div class="message-header">
+            <span class="timestamp">${formatTimestamp(act.timestamp)}</span>
+            <span class="sender sender-${act.actorType}">${escapeHtml(act.actorName)}</span>
+            <span class="sender-type type-${act.actorType}">${act.actorType}</span>
+            ${act.locationX !== undefined ? `<span class="position">(${act.locationX}, ${act.locationY})</span>` : ''}
+          </div>
+          <div class="message-text ${act.activityType !== 'chat' ? 'action-text' : ''}">${escapeHtml(formatActivityForDisplay(act))}</div>
+        </div>
+      `).join('')
+    ) : (
+      chatMessages.length === 0 ? '<div class="empty">No chat messages yet. Waiting for someone to speak...</div>' :
+      chatMessages.map(msg => `
+        <div class="message">
+          <div class="message-header">
+            <span class="timestamp">${formatTimestamp(new Date(msg.timestamp))}</span>
+            <span class="sender sender-${msg.senderType}">${escapeHtml(msg.senderName)}</span>
+            <span class="sender-type type-${msg.senderType}">${msg.senderType}</span>
+            ${msg.position ? `<span class="position">(${msg.position.x}, ${msg.position.y})</span>` : ''}
+          </div>
+          <div class="message-text">${escapeHtml(msg.message)}</div>
+        </div>
+      `).join('')
+    )}
+  </div>
+
+  <button class="scroll-bottom" onclick="scrollToBottom()">↓ Scroll to Bottom</button>
+
+  <script>
+    function scrollToBottom() {
+      const container = document.getElementById('chat');
+      container.scrollTop = container.scrollHeight;
+    }
     scrollToBottom();
   </script>
 </body>
@@ -781,6 +1382,14 @@ export class StatsServer {
       '.webp': 'image/webp',
       '.json': 'application/json',
       '.txt': 'text/plain',
+      '.html': 'text/html',
+      '.css': 'text/css',
+      '.js': 'application/javascript',
+      '.svg': 'image/svg+xml',
+      '.ico': 'image/x-icon',
+      '.woff': 'font/woff',
+      '.woff2': 'font/woff2',
+      '.map': 'application/json',
     };
 
     const contentType = contentTypes[ext] || 'application/octet-stream';
@@ -969,5 +1578,224 @@ export class StatsServer {
         peak_queued_bytes: peakQueuedBytes,
       },
     };
+  }
+
+  /**
+   * Get world data for web viewer
+   */
+  private async getWorldData(): Promise<{
+    seed: string;
+    chunkSize: number;
+    tileSize: number;
+  }> {
+    const worldRecord = await db.query.world.findFirst();
+    return {
+      seed: worldRecord?.seed?.toString() || '0',
+      chunkSize: 16,
+      tileSize: 256,
+    };
+  }
+
+  /**
+   * Get all entities for web viewer
+   */
+  private async getEntities(): Promise<{
+    entities: Array<{
+      id: string;
+      type: 'player' | 'building' | 'npc' | 'road';
+      x: number;
+      y: number;
+      spriteUrl?: string;
+      name?: string;
+      direction?: string;
+      online?: boolean;
+      lastSeen?: string;
+      tiles?: Array<{ x: number; y: number; url: string }>;
+    }>;
+  }> {
+    const entities: Array<{
+      id: string;
+      type: 'player' | 'building' | 'npc' | 'road';
+      x: number;
+      y: number;
+      spriteUrl?: string;
+      name?: string;
+      direction?: string;
+      online?: boolean;
+      lastSeen?: string;
+      tiles?: Array<{ x: number; y: number; url: string }>;
+    }> = [];
+
+    // Get players from worker manager
+    try {
+      const players = await this.config.workerManager.getAllPlayers();
+      for (const player of players) {
+        entities.push({
+          id: player.userId,
+          type: 'player',
+          x: player.x,
+          y: player.y,
+          name: player.username,
+          direction: 'down',
+          online: player.isOnline,
+          spriteUrl: `/files/sprites/${player.userId}/frame_down_0_256.png`,
+        });
+      }
+    } catch (err) {
+      console.log('Failed to get players:', err instanceof Error ? err.message : err);
+    }
+
+    // Get buildings from database (using raw select to avoid drizzle relation issues)
+    try {
+      const buildings = await db.select().from(schema.buildings);
+
+      for (const building of buildings) {
+        // Generate default 3x3 tile URLs
+        const buildingTiles: Array<{ x: number; y: number; url: string }> = [];
+        for (let ty = 0; ty < 3; ty++) {
+          for (let tx = 0; tx < 3; tx++) {
+            buildingTiles.push({
+              x: tx,
+              y: ty,
+              url: `/files/buildings/${building.id}/tile_north_${tx}_${ty}_256.png`,
+            });
+          }
+        }
+        entities.push({
+          id: building.id,
+          type: 'building',
+          x: building.anchorX,
+          y: building.anchorY,
+          tiles: buildingTiles,
+        });
+      }
+    } catch (err) {
+      console.log('Failed to get buildings:', err instanceof Error ? err.message : err);
+    }
+
+    // Get roads from database (may not exist in older deployments)
+    try {
+      const roads = await db.query.roads.findMany();
+      for (const road of roads) {
+        entities.push({
+          id: `road_${road.x}_${road.y}`,
+          type: 'road',
+          x: road.x,
+          y: road.y,
+        });
+      }
+    } catch (err) {
+      console.log('Failed to get roads:', err instanceof Error ? err.message : err);
+    }
+
+    // Get NPCs from database
+    try {
+      const npcs = await db.select().from(schema.npcs);
+      for (const npc of npcs) {
+        entities.push({
+          id: npc.id,
+          type: 'npc',
+          x: npc.spawnX,
+          y: npc.spawnY,
+          name: npc.name,
+          spriteUrl: `/files/npcs/${npc.id}/frame_down_0_256.png`,
+        });
+      }
+    } catch (err) {
+      console.log('Failed to get NPCs:', err instanceof Error ? err.message : err);
+    }
+
+    return { entities };
+  }
+
+  /**
+   * Get terrain tiles list
+   */
+  private async getTerrainTiles(): Promise<{ tiles: Array<{ id: string; name: string; walkable: boolean }> }> {
+    const tiles = await db.select({
+      id: schema.terrainTiles.id,
+      name: schema.terrainTiles.name,
+      walkable: schema.terrainTiles.walkable,
+    }).from(schema.terrainTiles);
+
+    return { tiles };
+  }
+
+  /**
+   * Serve terrain tile PNG dynamically from database
+   * URL format: /files/terrain/{tileId}_{resolution}.png
+   */
+  private async serveTerrainTile(_req: IncomingMessage, res: ServerResponse, pathname: string): Promise<void> {
+    try {
+      // Parse URL: /files/terrain/{tileId}_{resolution}.png
+      const match = pathname.match(/^\/files\/terrain\/(.+)_(\d+)\.png$/);
+      if (!match) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid terrain tile URL format' }));
+        return;
+      }
+
+      const tileId = match[1]!;
+      const resolutionStr = match[2]!;
+      const resolution = parseInt(resolutionStr, 10);
+
+      // Fetch tile from database
+      const [tile] = await db.select().from(schema.terrainTiles).where(eq(schema.terrainTiles.id, tileId));
+      if (!tile) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Terrain tile not found' }));
+        return;
+      }
+
+      // Get pixel data for requested resolution
+      let pixels: PixelGrid;
+      if (tile.resolutions) {
+        const resolutions = JSON.parse(tile.resolutions) as Record<string, PixelGrid>;
+        pixels = resolutions[String(resolution)] ?? JSON.parse(tile.pixels);
+      } else {
+        pixels = JSON.parse(tile.pixels);
+      }
+
+      // Convert to RGBA buffer
+      const height = pixels.length;
+      const width = pixels[0]?.length ?? 0;
+      const buffer = Buffer.alloc(width * height * 4);
+
+      for (let y = 0; y < height; y++) {
+        const row = pixels[y];
+        if (!row) continue;
+        for (let x = 0; x < width; x++) {
+          const pixel = row[x];
+          const idx = (y * width + x) * 4;
+          if (pixel && 'r' in pixel) {
+            buffer[idx] = pixel.r;
+            buffer[idx + 1] = pixel.g;
+            buffer[idx + 2] = pixel.b;
+            buffer[idx + 3] = 255;
+          } else {
+            buffer[idx] = 0;
+            buffer[idx + 1] = 0;
+            buffer[idx + 2] = 0;
+            buffer[idx + 3] = 0;
+          }
+        }
+      }
+
+      // Convert to PNG
+      const pngBuffer = await sharp(buffer, {
+        raw: { width, height, channels: 4 },
+      }).png({ compressionLevel: 6 }).toBuffer();
+
+      res.writeHead(200, {
+        'Content-Type': 'image/png',
+        'Content-Length': pngBuffer.length,
+        'Cache-Control': 'public, max-age=86400',
+      });
+      res.end(pngBuffer);
+    } catch (error) {
+      console.error('Error serving terrain tile:', error);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Failed to serve terrain tile' }));
+    }
   }
 }

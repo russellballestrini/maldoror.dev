@@ -129,8 +129,10 @@ export class InputRouter {
   }
 
   private handleEvent(event: ParsedKey): void {
+    console.log('[InputRouter] handleEvent:', event.type, event.key);
     // First, try to route through component system
     const handled = this.componentManager.handleInput(event);
+    console.log('[InputRouter] componentManager handled:', handled);
 
     if (handled) {
       return; // Component consumed the event

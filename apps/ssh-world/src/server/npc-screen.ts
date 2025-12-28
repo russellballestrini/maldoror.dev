@@ -1,6 +1,6 @@
 import type { Duplex } from 'stream';
 import type { Sprite } from '@maldoror/protocol';
-import { renderHalfBlockGrid } from '@maldoror/render';
+import { renderHalfBlockGrid, downsampleGrid } from '@maldoror/render';
 import { generateImageSprite, type ProviderConfig } from '@maldoror/ai';
 import {
   GenerationModalScreen,
@@ -28,6 +28,8 @@ interface NPCScreenConfig {
   username?: string;
   playerX: number;
   playerY: number;
+  cols?: number;
+  rows?: number;
 }
 
 /**
@@ -41,7 +43,7 @@ export class NPCScreen extends GenerationModalScreen<NPCCreationData> {
   private playerY: number;
 
   constructor(config: NPCScreenConfig) {
-    super(config.stream);
+    super(config.stream, config.cols ?? 80, config.rows ?? 24);
     this.providerConfig = config.providerConfig;
     this.username = config.username ?? 'unknown';
     this.playerX = config.playerX;
@@ -55,8 +57,8 @@ export class NPCScreen extends GenerationModalScreen<NPCCreationData> {
       boxHeight: 22,
       startX: 4,
       startY: 2,
-      borderColor: [150, 100, 80],
-      titleColor: [255, 180, 100],
+      borderColor: { r: 150, g: 100, b: 80 },
+      titleColor: { r: 255, g: 180, b: 100 },
       inputPromptText: 'Describe the NPC character you want to create:',
       examples: [
         'A wise old sage with a long white beard',
@@ -115,16 +117,28 @@ export class NPCScreen extends GenerationModalScreen<NPCCreationData> {
   protected renderPreview(): void {
     if (!this.generatedResult || !this.generatedResult.sprite) return;
 
-    const config = this.getConfig();
-    const startX = config.startX + 3;
+    const config = this.getCenteredConfig();
+    const sprite = this.generatedResult.sprite;
+
+    // Use smallest resolution and downsample to fit modal
+    const previewRes = '26';
+    const downsampleFactor = 2; // 26 / 2 = 13 pixels per sprite
+    const spriteWidth = Math.floor(26 / downsampleFactor); // 13 columns
+    const spriteHeight = Math.ceil(26 / downsampleFactor / 2); // ~7 terminal rows
+
+    // Center the 4 sprites in the modal
+    const totalWidth = spriteWidth * 4;
+    const startX = config.startX + Math.floor((config.boxWidth - totalWidth) / 2);
     const startY = config.startY + 4;
 
-    // Show NPC name
+    // Show NPC name (centered)
+    const nameText = `Name: ${this.generatedResult.name}`;
+    const nameX = config.startX + Math.floor((config.boxWidth - nameText.length) / 2);
     this.stream.write(
       this.ansi
-        .moveTo(startX, startY)
+        .moveTo(nameX, startY)
         .setForeground({ type: 'rgb', value: [255, 200, 100] })
-        .write(`Name: ${this.generatedResult.name}`)
+        .write(nameText)
         .resetAttributes()
         .build()
     );
@@ -132,17 +146,20 @@ export class NPCScreen extends GenerationModalScreen<NPCCreationData> {
     // Render all 4 directions side by side
     const directions: Array<'down' | 'left' | 'right' | 'up'> = ['down', 'left', 'right', 'up'];
     const labels = ['Front', 'Left', 'Right', 'Back'];
-    const sprite = this.generatedResult.sprite;
 
     for (let d = 0; d < directions.length; d++) {
       const dir = directions[d]!;
-      const frame = sprite.frames[dir][0]; // Standing frame
-      const xOffset = startX + d * 14;
+      // Use pre-computed resolution if available, otherwise base frames
+      const frame = sprite.resolutions?.[previewRes]?.[dir]?.[0]
+        ?? sprite.frames[dir][0];
+      const scaledFrame = downsampleGrid(frame, downsampleFactor);
+      const xOffset = startX + d * spriteWidth;
 
-      // Label
+      // Label (centered above sprite)
+      const labelX = xOffset + Math.floor((spriteWidth - labels[d]!.length) / 2);
       this.stream.write(
         this.ansi
-          .moveTo(xOffset + 2, startY + 2)
+          .moveTo(labelX, startY + 2)
           .setForeground({ type: 'rgb', value: [150, 150, 150] })
           .write(labels[d]!)
           .resetAttributes()
@@ -150,7 +167,7 @@ export class NPCScreen extends GenerationModalScreen<NPCCreationData> {
       );
 
       // Render sprite using half-block
-      const lines = renderHalfBlockGrid(frame);
+      const lines = renderHalfBlockGrid(scaledFrame);
       for (let i = 0; i < lines.length; i++) {
         this.stream.write(
           this.ansi
@@ -162,9 +179,10 @@ export class NPCScreen extends GenerationModalScreen<NPCCreationData> {
     }
 
     // Spawn info
+    const infoY = startY + 3 + spriteHeight + 1;
     this.stream.write(
       this.ansi
-        .moveTo(startX, config.startY + 17)
+        .moveTo(config.startX + 3, infoY)
         .setForeground({ type: 'rgb', value: [150, 150, 100] })
         .write(`Will spawn at (${this.playerX}, ${this.playerY}) and roam nearby`)
         .resetAttributes()

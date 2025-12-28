@@ -5,7 +5,9 @@ import * as Sentry from '@sentry/node';
 import 'dotenv/config';
 import { SSHServer } from './server/ssh-server.js';
 import { StatsServer } from './server/stats-server.js';
+import { AgentServer } from './server/agent-server.js';
 import { WorkerManager } from './server/worker-manager.js';
+import { NPCConsciousnessManager } from './game/npc-consciousness-manager.js';
 import { db, schema } from '@maldoror/db';
 import type { ProviderConfig } from '@maldoror/ai';
 import { resourceMonitor } from './utils/resource-monitor.js';
@@ -59,6 +61,17 @@ async function main() {
   await workerManager.start();
   console.log('Game worker started');
 
+  // Initialize NPC consciousness manager (advanced LLM-powered NPCs with memory, emotions, relationships)
+  const npcManager = new NPCConsciousnessManager({
+    workerManager,
+    apiKey: providerConfig.apiKey || '',
+    defaultProvider: providerConfig.provider,
+    defaultModel: providerConfig.model,
+  });
+  await npcManager.loadFromDB();
+  npcManager.start();
+  console.log(`NPC consciousness manager started with ${npcManager.getNPCCount()} conscious NPCs`);
+
   // Initialize SSH server
   const sshServer = new SSHServer({
     port: parseInt(process.env.SSH_PORT || '2222', 10),
@@ -91,6 +104,12 @@ async function main() {
     startTime,
   });
   statsServer.start();
+
+  // Start agent WebSocket server (attaches to stats server HTTP)
+  const agentServer = new AgentServer({
+    workerManager,
+  });
+  agentServer.attachToServer(statsServer.getHttpServer());
 
   // Hot reload handler - SIGUSR1 triggers worker reload
   // SSH connections stay alive, only game logic restarts
@@ -138,8 +157,10 @@ async function main() {
     }
 
     console.log('All sessions closed, shutting down...');
+    npcManager.stop();
     sshServer.stop();
     statsServer.stop();
+    agentServer.close();
     workerManager.stop();
     process.exit(0);
   };
