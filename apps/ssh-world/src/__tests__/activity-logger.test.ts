@@ -5,7 +5,7 @@
  * all actions and messages from players and autons.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { ActivityType, UnifiedActivityEntry } from '../server/activity-logger.js';
 
 // Mock the database for testing
