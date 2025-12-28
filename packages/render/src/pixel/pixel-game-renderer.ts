@@ -177,6 +177,7 @@ export class PixelGameRenderer {
     this.renderMode = config.renderMode ?? 'halfblock';  // Default to halfblock for good balance
     this.zoomLevel = config.zoomLevel ?? 100;  // Default to 100% zoom (most zoomed in)
     this.layout = { ...DEFAULT_LAYOUT, ...config.layout };  // Merge with defaults
+    console.log(`[RENDERER DEBUG] config.layout=${JSON.stringify(config.layout)}, this.layout=${JSON.stringify(this.layout)}`);
 
     // Initialize performance optimizations
     const opts = config.optimizations ?? {};
@@ -792,7 +793,11 @@ export class PixelGameRenderer {
 
     // Build header content with generous padding
     const fgVersion = `${ESC}[38;2;100;100;120m`; // Dim gray for version
-    const leftSection = `  ${fgName}${this.username} ${fgVersion}${BUILD_VERSION}${fgLabel}`;
+    // DEBUG: Show sidebar width to diagnose chat visibility issue
+    const sidebarDebug = this.layout.rightSidebarCols > 0
+      ? `${ESC}[38;2;0;255;0m[CHAT:${this.layout.rightSidebarCols}]`
+      : `${ESC}[38;2;255;0;0m[NO CHAT]`;
+    const leftSection = `  ${fgName}${this.username} ${fgVersion}${BUILD_VERSION} ${sidebarDebug}${fgLabel}`;
 
     // Mode info
     const modeStr = this.renderMode === 'braille' ? 'BRAILLE' :

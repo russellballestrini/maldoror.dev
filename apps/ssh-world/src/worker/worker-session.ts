@@ -18,13 +18,16 @@ import {
   HelpModalComponent,
   PlayerListComponent,
   ReloadOverlayComponent,
+  ChatComponent,
   BG_PRIMARY,
   CRIMSON_BRIGHT,
   ACCENT_GOLD,
   fg,
   bg,
   type PerfOptimizations,
+  type ChatEntry,
 } from '@maldoror/render';
+import { getChatMessages, addChatMessage } from '../server/stats-server.js';
 
 /**
  * Performance optimizations configuration
@@ -89,6 +92,8 @@ export class WorkerSession {
   private helpModal: HelpModalComponent | null = null;
   private playerListModal: PlayerListComponent | null = null;
   private reloadOverlay: ReloadOverlayComponent | null = null;
+  private chatComponent: ChatComponent | null = null;
+  private chatVisible: boolean = true;
   private tileProvider: TileProvider | null = null;
   private destroyed: boolean = false;
   private inputPaused: boolean = false;
@@ -318,14 +323,21 @@ export class WorkerSession {
     // Update local player state
     this.updateLocalPlayerState();
 
-    // Initialize renderer
+    // Initialize renderer with chat sidebar
     boot?.updateStep('Initializing renderer...', 'loading');
+    const chatWidth = this.chatVisible ? this.getChatWidth() : 0;
     this.renderer = new PixelGameRenderer({
       stream: this.stream,
       cols: this.cols,
       rows: this.rows,
       username: this.username,
       optimizations: PERF_OPTIMIZATIONS,
+      layout: {
+        headerRows: 2,
+        footerRows: 0,
+        leftSidebarCols: 0,
+        rightSidebarCols: chatWidth,
+      },
     });
     boot?.markPreviousDone();
 
@@ -343,6 +355,26 @@ export class WorkerSession {
 
     this.reloadOverlay = new ReloadOverlayComponent(this.cols, this.rows);
     this.componentManager.addComponent(this.reloadOverlay);
+
+    // Create chat component (sidebar, not modal)
+    this.chatComponent = new ChatComponent({
+      id: 'chat',
+      bounds: {
+        x: this.cols - this.getChatWidth(),
+        y: 2,  // Below header
+        width: this.getChatWidth(),
+        height: this.rows - 2,
+      },
+      visible: this.chatVisible,
+      focusable: true,
+      currentUserId: this.userId ?? undefined,
+      showActions: true,
+      onSendMessage: (message: string) => this.handleChatSend(message),
+    });
+    this.componentManager.addComponent(this.chatComponent);
+    if (this.chatVisible) {
+      this.chatComponent.show();
+    }
 
     // Initialize input router
     this.inputRouter = new InputRouter(this.componentManager);
@@ -476,6 +508,22 @@ export class WorkerSession {
     if (missingNPCIds.length > 0) {
       missingNPCIds.forEach(id => this.loadingNPCSprites.add(id));
       void this.batchLoadNPCSprites(missingNPCIds);
+    }
+
+    // Refresh chat messages periodically (every ~10 ticks = ~670ms at 15fps)
+    if (this.tickCounter % 10 === 0 && this.chatComponent && this.chatVisible) {
+      const messages = getChatMessages();
+      const entries: ChatEntry[] = messages.map((m) => ({
+        id: `${m.senderId}-${m.timestamp.getTime()}`,  // Stable ID without array index
+        actorId: m.senderId,
+        actorName: m.senderName,
+        actorType: m.senderType,
+        type: 'chat' as const,
+        message: m.message,
+        position: m.position,
+        timestamp: m.timestamp,
+      }));
+      this.chatComponent.updateEntries(entries);
     }
 
     // Center camera on player
@@ -637,6 +685,14 @@ export class WorkerSession {
       case 'quit':
         this.quit();
         break;
+      case 'toggle_chat':
+        this.toggleChat();
+        break;
+      case 'focus_chat':
+        if (this.chatComponent && this.chatVisible) {
+          this.componentManager?.pushFocus(this.chatComponent);
+        }
+        break;
     }
   }
 
@@ -649,6 +705,66 @@ export class WorkerSession {
       this.cachedAllPlayers = this.gameServer.getAllPlayers();
       this.playerListModal.setPlayers(this.cachedAllPlayers, this.userId);
       this.componentManager?.pushFocus(this.playerListModal);
+    }
+  }
+
+  /**
+   * Toggle chat visibility
+   */
+  private toggleChat(): void {
+    this.chatVisible = !this.chatVisible;
+    const chatWidthT = this.chatVisible ? this.getChatWidth() : 0;
+
+    // Update renderer layout
+    if (this.renderer) {
+      this.renderer.setLayout({
+        headerRows: 2,
+        footerRows: 0,
+        leftSidebarCols: 0,
+        rightSidebarCols: chatWidthT,
+      });
+      this.renderer.invalidate();
+    }
+
+    // Show/hide chat component
+    if (this.chatComponent) {
+      if (this.chatVisible) {
+        this.chatComponent.resize({
+          x: this.cols - this.getChatWidth(),
+          y: 2,
+          width: this.getChatWidth(),
+          height: this.rows - 2,
+        });
+        this.chatComponent.show();
+      } else {
+        // If chat is focused, pop focus first
+        if (this.componentManager?.getFocusedComponent() === this.chatComponent) {
+          this.componentManager.popFocus();
+        }
+        this.chatComponent.hide();
+      }
+    }
+  }
+
+  /**
+   * Handle sending a chat message
+   */
+  private handleChatSend(message: string): void {
+    console.log('[WorkerSession] handleChatSend called with:', message);
+    if (!this.userId || !message.trim()) return;
+
+    addChatMessage({
+      senderId: this.userId,
+      senderName: this.username,
+      senderType: 'player',
+      message: message.trim(),
+      position: { x: this.playerX, y: this.playerY },
+    });
+    console.log('[WorkerSession] Message added to chat buffer');
+
+    // Pop focus from chat after sending
+    if (this.componentManager?.getFocusedComponent() === this.chatComponent) {
+      this.componentManager.popFocus();
     }
   }
 
@@ -711,12 +827,19 @@ export class WorkerSession {
       console.error('Avatar screen error:', err);
     }
 
+    const chatWidthA = this.chatVisible ? this.getChatWidth() : 0;
     this.renderer = new PixelGameRenderer({
       stream: this.stream,
       cols: this.cols,
       rows: this.rows,
       username: this.username,
       optimizations: PERF_OPTIMIZATIONS,
+      layout: {
+        headerRows: 2,
+        footerRows: 0,
+        leftSidebarCols: 0,
+        rightSidebarCols: chatWidthA,
+      },
     });
     this.renderer.initialize();
 
@@ -773,12 +896,19 @@ export class WorkerSession {
       console.error('Building screen error:', err);
     }
 
+    const chatWidthB = this.chatVisible ? this.getChatWidth() : 0;
     this.renderer = new PixelGameRenderer({
       stream: this.stream,
       cols: this.cols,
       rows: this.rows,
       username: this.username,
       optimizations: PERF_OPTIMIZATIONS,
+      layout: {
+        headerRows: 2,
+        footerRows: 0,
+        leftSidebarCols: 0,
+        rightSidebarCols: chatWidthB,
+      },
     });
     this.renderer.initialize();
 
@@ -954,12 +1084,19 @@ export class WorkerSession {
       console.error('NPC screen error:', err);
     }
 
+    const chatWidthN = this.chatVisible ? this.getChatWidth() : 0;
     this.renderer = new PixelGameRenderer({
       stream: this.stream,
       cols: this.cols,
       rows: this.rows,
       username: this.username,
       optimizations: PERF_OPTIMIZATIONS,
+      layout: {
+        headerRows: 2,
+        footerRows: 0,
+        leftSidebarCols: 0,
+        rightSidebarCols: chatWidthN,
+      },
     });
     this.renderer.initialize();
 
@@ -1202,6 +1339,17 @@ export class WorkerSession {
     await new Promise(resolve => setTimeout(resolve, 400));
   }
 
+  /**
+   * Get appropriate chat width based on terminal size
+   */
+  private getChatWidth(): number {
+    // 40 cols for normal terminals, narrower for small screens
+    if (this.cols < 100) {
+      return Math.min(32, Math.floor(this.cols * 0.35));
+    }
+    return 40;
+  }
+
   async destroy(): Promise<void> {
     if (this.destroyed) return;
     this.destroyed = true;
@@ -1224,6 +1372,7 @@ export class WorkerSession {
     this.helpModal = null;
     this.playerListModal = null;
     this.reloadOverlay = null;
+    this.chatComponent = null;
 
     if (this.renderer) {
       this.renderer.cleanup();

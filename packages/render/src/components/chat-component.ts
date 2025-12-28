@@ -56,7 +56,6 @@ export class ChatComponent extends Component {
   private currentUserId?: string;
   private maxEntries: number;
   private onSendMessage?: (message: string) => void;
-  private lastSeenEntryId?: string;
 
   constructor(config: ChatComponentConfig) {
     super({
@@ -111,26 +110,20 @@ export class ChatComponent extends Component {
    * Bulk update entries (for polling from server)
    */
   updateEntries(entries: ChatEntry[]): void {
-    // Find new entries we haven't seen
-    const lastSeen = this.lastSeenEntryId;
+    // Use Set for O(1) duplicate detection
+    const existingIds = new Set(this.entries.map(e => e.id));
     let foundNew = false;
 
     for (const entry of entries) {
-      if (lastSeen && entry.id <= lastSeen) continue;
+      // Skip if we already have this entry
+      if (existingIds.has(entry.id)) continue;
 
       // Skip actions if disabled
       if (!this.showActions && entry.type === 'action') continue;
 
-      // Check if we already have this entry
-      const exists = this.entries.some(e => e.id === entry.id);
-      if (!exists) {
-        this.entries.push(entry);
-        foundNew = true;
-      }
-    }
-
-    if (entries.length > 0) {
-      this.lastSeenEntryId = entries[entries.length - 1]!.id;
+      this.entries.push(entry);
+      existingIds.add(entry.id);
+      foundNew = true;
     }
 
     if (foundNew) {
@@ -381,12 +374,14 @@ export class ChatComponent extends Component {
    * Handle input in typing mode
    */
   private handleInputMode(event: ParsedKey): InputResult {
+    console.log('[ChatComponent] handleInputMode:', event.key, 'buffer:', this.inputBuffer);
     switch (event.key) {
       case 'Escape':
         this.deactivateInput();
         return { handled: true, stopPropagation: true };
 
       case 'Enter':
+        console.log('[ChatComponent] Enter pressed, sending:', this.inputBuffer.trim());
         if (this.inputBuffer.trim()) {
           this.onSendMessage?.(this.inputBuffer.trim());
         }

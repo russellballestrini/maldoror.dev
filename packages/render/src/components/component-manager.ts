@@ -239,9 +239,20 @@ export class ComponentManager {
    * Returns the string to be appended to stream output.
    */
   renderToString(): string {
-    // Render focus stack components (modals/overlays)
     let output = '';
 
+    // First render visible root components (like sidebar panels)
+    for (const component of this.rootComponents) {
+      // Skip components that are in the focus stack (they'll be rendered below)
+      if (this.focusStack.includes(component)) continue;
+
+      if (component.isVisible()) {
+        component.render();
+        output += this.componentToAnsi(component);
+      }
+    }
+
+    // Then render focus stack components (modals/overlays) on top
     for (const component of this.focusStack) {
       if (component.isVisible()) {
         component.render();
@@ -366,6 +377,11 @@ export class ComponentManager {
    * Check if any components need rendering.
    */
   hasVisibleComponents(): boolean {
+    // Check root components (like sidebar panels)
+    if (this.rootComponents.some(c => c.isVisible())) {
+      return true;
+    }
+    // Check focus stack (modals/overlays)
     return this.focusStack.some(c => c.isVisible());
   }
 

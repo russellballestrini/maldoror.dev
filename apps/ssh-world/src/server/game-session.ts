@@ -243,6 +243,7 @@ export class GameSession {
     // Initialize renderer with chat sidebar
     boot.updateStep('Initializing renderer...', 'loading');
     const chatWidth = this.chatVisible ? this.getChatWidth() : 0;
+    console.log(`[CHAT DEBUG] Init renderer: chatVisible=${this.chatVisible}, cols=${this.cols}, chatWidth=${chatWidth}`);
     this.renderer = new PixelGameRenderer({
       stream: this.stream,
       cols: this.cols,

@@ -63,8 +63,10 @@ export class InputRouter {
       { key: 'i', action: 'toggle_inventory' },
       { key: 'm', action: 'toggle_minimap' },
       { key: '/', action: 'start_chat' },
-      { key: 't', action: 'start_chat' },
-      { key: 'T', action: 'start_chat' },
+      { key: 't', action: 'focus_chat' },
+      { key: 'T', action: 'focus_chat' },
+      { key: '`', action: 'toggle_chat' },
+      { key: 'c', action: 'toggle_chat' },
       { key: 'Escape', action: 'open_menu' },
       // Road placement
       { key: 'r', action: 'place_road' },
