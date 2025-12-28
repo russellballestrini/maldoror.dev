@@ -731,7 +731,9 @@ export class PixelGameRenderer {
         break;
     }
 
-    const paddingNeeded = this.cols - viewportCharWidth;
+    // Only pad to the viewport area, not into the sidebar
+    const viewportWidth = this.cols - this.layout.rightSidebarCols;
+    const paddingNeeded = viewportWidth - viewportCharWidth;
 
     if (paddingNeeded > 0) {
       return line + bg(BG_PRIMARY) + ' '.repeat(paddingNeeded) + RESET;
@@ -740,10 +742,11 @@ export class PixelGameRenderer {
   }
 
   /**
-   * Create a full-width padding line with brand background
+   * Create a padding line that fills only the viewport area (not sidebar)
    */
   private createPaddingLine(): string {
-    return bg(BG_PRIMARY) + ' '.repeat(this.cols) + RESET;
+    const viewportWidth = this.cols - this.layout.rightSidebarCols;
+    return bg(BG_PRIMARY) + ' '.repeat(viewportWidth) + RESET;
   }
 
   /**
@@ -820,22 +823,25 @@ export class PixelGameRenderer {
     const rightLen = this.stripAnsi(rightSection).length;
     const debugLen = this.stripAnsi(debugStr).length;
 
+    // Calculate viewport width (excluding right sidebar)
+    const viewportWidth = this.cols - this.layout.rightSidebarCols;
+
     // Try to fit debug info, otherwise skip it
-    const availableCenter = this.cols - leftLen - rightLen;
+    const availableCenter = viewportWidth - leftLen - rightLen;
     const showDebug = availableCenter >= centerLen + debugLen + 4;
 
     const actualCenter = showDebug ? `${centerSection}  ${debugStr}` : centerSection;
     const actualCenterLen = showDebug ? centerLen + debugLen + 2 : centerLen;
 
-    const leftPad = Math.max(2, Math.floor((this.cols - actualCenterLen) / 2) - leftLen);
-    const rightPad = Math.max(2, this.cols - leftLen - leftPad - actualCenterLen - rightLen);
+    const leftPad = Math.max(2, Math.floor((viewportWidth - actualCenterLen) / 2) - leftLen);
+    const rightPad = Math.max(2, viewportWidth - leftLen - leftPad - actualCenterLen - rightLen);
 
-    // Line 1: Main header bar
+    // Line 1: Main header bar (viewport width only)
     const line1 = `${bgHeader}${leftSection}${' '.repeat(leftPad)}${actualCenter}${' '.repeat(rightPad)}${rightSection}${reset}`;
 
-    // Line 2: Subtle separator line
+    // Line 2: Subtle separator line (viewport width only)
     const sepChar = '─';
-    const line2 = `${bgSep}${fgSep}${sepChar.repeat(this.cols)}${reset}`;
+    const line2 = `${bgSep}${fgSep}${sepChar.repeat(viewportWidth)}${reset}`;
 
     return `${line1}\n${ESC}[2;1H${line2}`;
   }
