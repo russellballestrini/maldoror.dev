@@ -13,7 +13,9 @@
     "dev:ssh": "turbo run dev --filter=@maldoror/ssh-world",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
-    "test": "turbo run test",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "clean": "turbo run clean && rm -rf node_modules",
     "db:generate": "pnpm --filter @maldoror/db generate",
     "db:migrate": "pnpm --filter @maldoror/db migrate",
@@ -48,8 +50,10 @@
   },
   "devDependencies": {
     "@maldoror/tsconfig": "workspace:*",
+    "@vitest/coverage-v8": "^4.0.16",
     "turbo": "^2.3.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.0.16"
   },
   "dependencies": {
     "sharp": "^0.34.5"

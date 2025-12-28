@@ -191,21 +191,90 @@ export class ChatComponent extends Component {
   }
 
   /**
-   * Scroll up by given number of lines
+   * Get all entries (for testing)
    */
-  scrollUp(lines: number = 3): void {
-    this.scrollOffset = Math.max(0, this.scrollOffset - lines);
+  getEntries(): ChatEntry[] {
+    return [...this.entries];
+  }
+
+  /**
+   * Set input active state directly
+   */
+  setInputActive(active: boolean): void {
+    if (active) {
+      this.activateInput();
+    } else {
+      this.deactivateInput();
+    }
+  }
+
+  /**
+   * Append a character to input buffer
+   */
+  appendToInput(char: string): void {
+    this.inputBuffer += char;
     this.needsRedraw = true;
   }
 
   /**
-   * Scroll down by given number of lines
+   * Clear input buffer
    */
-  scrollDown(lines: number = 3): void {
+  clearInput(): void {
+    this.inputBuffer = '';
+    this.needsRedraw = true;
+  }
+
+  /**
+   * Remove last character from input
+   */
+  backspace(): void {
+    if (this.inputBuffer.length > 0) {
+      this.inputBuffer = this.inputBuffer.slice(0, -1);
+      this.needsRedraw = true;
+    }
+  }
+
+  /**
+   * Get current scroll offset
+   */
+  getScrollOffset(): number {
+    return this.scrollOffset;
+  }
+
+  /**
+   * Set focus state directly
+   */
+  setFocused(focused: boolean): void {
+    if (focused) {
+      this.focus();
+    } else {
+      this.blur();
+    }
+  }
+
+  /**
+   * Check if the component is focused
+   */
+  isFocused(): boolean {
+    return this.state === 'focused';
+  }
+
+  /**
+   * Scroll up by given number of lines (show older messages)
+   */
+  scrollUp(lines: number = 3): void {
     const contentHeight = this.getContentHeight();
     const viewHeight = this.bounds.height - 4;
     const maxScroll = Math.max(0, contentHeight - viewHeight);
     this.scrollOffset = Math.min(maxScroll, this.scrollOffset + lines);
+    this.needsRedraw = true;
+  }
+
+  /**
+   * Scroll down by given number of lines (show newer messages)
+   */
+  scrollDown(lines: number = 3): void {
+    this.scrollOffset = Math.max(0, this.scrollOffset - lines);
     this.needsRedraw = true;
   }
 
