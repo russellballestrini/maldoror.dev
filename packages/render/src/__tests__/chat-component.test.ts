@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { ChatComponent, type ChatEntry } from '../components/chat-component';
+import { ChatComponent, type ChatEntry } from '../components/chat-component.js';
 
 describe('ChatComponent', () => {
   let chat: ChatComponent;
