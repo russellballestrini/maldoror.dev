@@ -20,6 +20,7 @@ COPY packages/tsconfig/package.json ./packages/tsconfig/
 COPY packages/agent/package.json ./packages/agent/
 COPY apps/agent-bot/package.json ./apps/agent-bot/
 COPY apps/web/package.json ./apps/web/
+COPY apps/web-3d/package.json ./apps/web-3d/
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile

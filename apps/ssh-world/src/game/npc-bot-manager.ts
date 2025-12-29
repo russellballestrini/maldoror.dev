@@ -60,7 +60,7 @@ export class NPCBotManager {
     this.apiKey = config.apiKey;
     this.defaultProvider = config.defaultProvider || 'openai';
     this.defaultModel = config.defaultModel || 'gpt-4o-mini';
-    this.defaultDecisionIntervalMs = config.defaultDecisionIntervalMs || 300000; // 5 minutes
+    this.defaultDecisionIntervalMs = config.defaultDecisionIntervalMs || 7200000; // 2 hours
   }
 
   /**

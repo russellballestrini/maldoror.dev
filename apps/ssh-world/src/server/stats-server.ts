@@ -17,6 +17,7 @@ import type { PixelGrid } from '@maldoror/protocol';
 const BUILDINGS_DIR = process.env.BUILDINGS_DIR || '/app/buildings';
 const SPRITES_DIR = process.env.SPRITES_DIR || '/app/sprites';
 const NPCS_DIR = process.env.NPCS_DIR || '/app/npcs';
+const MODELS_DIR = process.env.MODELS_DIR || '/app/models';
 const WEB_DIST_DIR = process.env.WEB_DIST_DIR || '/app/apps/web/dist';
 
 // Log capture ring buffer
@@ -313,6 +314,17 @@ export class StatsServer {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Failed to get terrain tiles' }));
       }
+    } else if (url.pathname.startsWith('/api/terrain-chunks')) {
+      // Get terrain chunk data for 3D rendering
+      try {
+        const chunks = await this.getTerrainChunks();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(chunks, null, 2));
+      } catch (error) {
+        console.error('Error getting terrain chunks:', error);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Failed to get terrain chunks' }));
+      }
     } else if (url.pathname.startsWith('/files/terrain/')) {
       // Serve terrain tile PNGs dynamically from database
       await this.serveTerrainTile(req, res, url.pathname);
@@ -323,11 +335,14 @@ export class StatsServer {
       // Serve buildings directory
       await this.serveAssetPath(req, res, url.pathname.replace('/files/buildings', ''), BUILDINGS_DIR, 'buildings');
     } else if (url.pathname.startsWith('/files/sprites')) {
-      // Serve sprites directory
-      await this.serveAssetPath(req, res, url.pathname.replace('/files/sprites', ''), SPRITES_DIR, 'sprites');
+      // Serve sprites - try file system first, then database
+      await this.serveSpriteFromDbOrFile(req, res, url.pathname);
     } else if (url.pathname.startsWith('/files/npcs')) {
       // Serve NPCs directory
       await this.serveAssetPath(req, res, url.pathname.replace('/files/npcs', ''), NPCS_DIR, 'npcs');
+    } else if (url.pathname.startsWith('/files/models')) {
+      // Serve 3D models directory (GLB files)
+      await this.serveAssetPath(req, res, url.pathname.replace('/files/models', ''), MODELS_DIR, 'models');
     } else {
       // Serve web app static files from root
       await this.serveWebApp(req, res, url);
@@ -1606,6 +1621,7 @@ export class StatsServer {
       x: number;
       y: number;
       spriteUrl?: string;
+      modelUrl?: string;
       name?: string;
       direction?: string;
       online?: boolean;
@@ -1619,6 +1635,7 @@ export class StatsServer {
       x: number;
       y: number;
       spriteUrl?: string;
+      modelUrl?: string;
       name?: string;
       direction?: string;
       online?: boolean;
@@ -1639,6 +1656,7 @@ export class StatsServer {
           direction: 'down',
           online: player.isOnline,
           spriteUrl: `/files/sprites/${player.userId}/frame_down_0_256.png`,
+          modelUrl: `/files/models/players/${player.userId}.glb`,
         });
       }
     } catch (err) {
@@ -1667,6 +1685,7 @@ export class StatsServer {
           x: building.anchorX,
           y: building.anchorY,
           tiles: buildingTiles,
+          modelUrl: `/files/models/buildings/${building.id}.glb`,
         });
       }
     } catch (err) {
@@ -1699,6 +1718,7 @@ export class StatsServer {
           y: npc.spawnY,
           name: npc.name,
           spriteUrl: `/files/npcs/${npc.id}/frame_down_0_256.png`,
+          modelUrl: `/files/models/npcs/${npc.id}.glb`,
         });
       }
     } catch (err) {
@@ -1719,6 +1739,34 @@ export class StatsServer {
     }).from(schema.terrainTiles);
 
     return { tiles };
+  }
+
+  /**
+   * Get terrain chunks for 3D world rendering
+   * Returns chunk data with tile IDs for each position
+   */
+  private async getTerrainChunks(): Promise<{
+    chunks: Array<{
+      chunkX: number;
+      chunkY: number;
+      tiles: string[][];
+    }>;
+    chunkSize: number;
+  }> {
+    const chunks = await db.select({
+      chunkX: schema.tilemapChunks.chunkX,
+      chunkY: schema.tilemapChunks.chunkY,
+      tiles: schema.tilemapChunks.tiles,
+    }).from(schema.tilemapChunks);
+
+    return {
+      chunks: chunks.map((c: { chunkX: number; chunkY: number; tiles: string[][] }) => ({
+        chunkX: c.chunkX,
+        chunkY: c.chunkY,
+        tiles: c.tiles,
+      })),
+      chunkSize: 16,
+    };
   }
 
   /**
@@ -1796,6 +1844,106 @@ export class StatsServer {
       console.error('Error serving terrain tile:', error);
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Failed to serve terrain tile' }));
+    }
+  }
+
+  /**
+   * Serve sprite from file system, or fall back to database (avatars.spriteJson)
+   */
+  private async serveSpriteFromDbOrFile(_req: IncomingMessage, res: ServerResponse, pathname: string): Promise<void> {
+    // First try file system
+    const relativePath = pathname.replace('/files/sprites', '');
+    const fullPath = path.join(SPRITES_DIR, relativePath);
+
+    try {
+      const stat = await fs.promises.stat(fullPath);
+      if (stat.isFile()) {
+        await this.serveFile(res, fullPath);
+        return;
+      }
+    } catch {
+      // File doesn't exist, try database
+    }
+
+    // Parse URL: /files/sprites/{userId}/frame_{direction}_{frame}_{resolution}.png
+    const match = pathname.match(/^\/files\/sprites\/([^/]+)\/frame_(\w+)_(\d+)_(\d+)\.png$/);
+    if (!match) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Sprite not found' }));
+      return;
+    }
+
+    const userId = match[1]!;
+    const direction = match[2]! as 'up' | 'down' | 'left' | 'right';
+    const frameNum = parseInt(match[3]!, 10);
+    const resolution = parseInt(match[4]!, 10);
+
+    try {
+      // Fetch avatar from database
+      const [avatar] = await db.select().from(schema.avatars).where(eq(schema.avatars.userId, userId));
+      if (!avatar || !avatar.spriteJson) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Avatar not found' }));
+        return;
+      }
+
+      // Get sprite data
+      const spriteJson = avatar.spriteJson as { frames: Record<string, PixelGrid[]> };
+      const frames = spriteJson.frames[direction];
+      if (!frames || !frames[frameNum]) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Sprite frame not found' }));
+        return;
+      }
+
+      const pixels = frames[frameNum] as PixelGrid;
+      const height = pixels.length;
+      const width = pixels[0]?.length ?? 0;
+
+      // Convert to RGBA buffer
+      const buffer = Buffer.alloc(width * height * 4);
+      for (let y = 0; y < height; y++) {
+        const row = pixels[y];
+        if (!row) continue;
+        for (let x = 0; x < width; x++) {
+          const pixel = row[x];
+          const idx = (y * width + x) * 4;
+          if (pixel && 'r' in pixel) {
+            buffer[idx] = pixel.r;
+            buffer[idx + 1] = pixel.g;
+            buffer[idx + 2] = pixel.b;
+            buffer[idx + 3] = 255;
+          } else {
+            buffer[idx] = 0;
+            buffer[idx + 1] = 0;
+            buffer[idx + 2] = 0;
+            buffer[idx + 3] = 0;
+          }
+        }
+      }
+
+      // Scale to requested resolution if needed
+      let pngBuffer: Buffer;
+      if (width !== resolution || height !== resolution) {
+        pngBuffer = await sharp(buffer, {
+          raw: { width, height, channels: 4 },
+        }).resize(resolution, resolution, { kernel: 'nearest' }).png({ compressionLevel: 6 }).toBuffer();
+      } else {
+        pngBuffer = await sharp(buffer, {
+          raw: { width, height, channels: 4 },
+        }).png({ compressionLevel: 6 }).toBuffer();
+      }
+
+      res.writeHead(200, {
+        'Content-Type': 'image/png',
+        'Content-Length': pngBuffer.length,
+        'Cache-Control': 'public, max-age=86400',
+      });
+      res.end(pngBuffer);
+    } catch (error) {
+      console.error('Error serving sprite from database:', error);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Failed to serve sprite' }));
     }
   }
 }

@@ -77,8 +77,8 @@ export class NPCConsciousnessManager {
     this.apiKey = config.apiKey;
     this.defaultProvider = config.defaultProvider || 'openai';
     this.defaultModel = config.defaultModel || 'gpt-4o-mini';
-    // Default 10-15 minutes per NPC (randomized per NPC in addNPC)
-    this.defaultDecisionIntervalMs = config.defaultDecisionIntervalMs || 600000;
+    // Default 2 hours per NPC (randomized per NPC in addNPC)
+    this.defaultDecisionIntervalMs = config.defaultDecisionIntervalMs || 7200000;
     this.socialAnalyzer = createSocialAnalyzer(config.apiKey);
   }
 
@@ -131,9 +131,9 @@ export class NPCConsciousnessManager {
     // Initialize emotional state if needed
     await emotionProcessor.getEmotionalState(npc.id);
 
-    // Randomize interval between 10-15 minutes per NPC for natural staggering
+    // Randomize interval around 2 hours per NPC for natural staggering
     const baseInterval = npc.decisionIntervalMs || this.defaultDecisionIntervalMs;
-    const randomOffset = Math.floor(Math.random() * 300000); // 0-5 min random offset
+    const randomOffset = Math.floor(Math.random() * 600000); // 0-10 min random offset
     const decisionInterval = baseInterval + randomOffset;
 
     // Stagger initial lastDecisionAt so NPCs don't all think at once
@@ -373,15 +373,15 @@ export class NPCConsciousnessManager {
     const npc = this.npcs.get(npcId);
     if (!npc) return;
 
-    // Different intervals for different stages
+    // Different intervals for different stages (all ~2 hours to reduce API costs)
     const intervals: Record<string, number> = {
-      baby: 60000,    // 1 min - babies are active
-      child: 180000,  // 3 min - children are curious
-      adult: 600000,  // 10 min - adults are thoughtful
-      elder: 900000,  // 15 min - elders are contemplative
+      baby: 7200000,   // 2 hours
+      child: 7200000,  // 2 hours
+      adult: 7200000,  // 2 hours
+      elder: 7200000,  // 2 hours
     };
 
-    const newInterval = intervals[stage] || 600000;
+    const newInterval = intervals[stage] || 7200000;
     npc.decisionIntervalMs = newInterval + Math.floor(Math.random() * 60000); // Add some variance
 
     console.log(`[NPCConsciousness] ${npc.username} now thinks every ${Math.round(npc.decisionIntervalMs / 60000)} minutes (${stage})`);
