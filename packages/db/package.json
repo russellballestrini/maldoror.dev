@@ -14,7 +14,7 @@
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsup src/index.ts src/schema/index.ts --format esm --dts --clean --external drizzle-orm --external pg --external @maldoror/protocol",
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
