@@ -122,7 +122,7 @@ export class CanalTownWorldField {
     }
     // A second crossing frames the canonical arrival above the plaza. It is a
     // singular landmark constraint, not a repeating short-period road.
-    if (Math.abs(worldX) <= 22) nearest = Math.min(nearest, Math.abs(worldY + 10));
+    if (Math.abs(worldX) <= 22) nearest = Math.min(nearest, Math.abs(worldY + 6));
     return nearest;
   }
 

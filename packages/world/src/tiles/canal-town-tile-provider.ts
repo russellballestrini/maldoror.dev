@@ -331,13 +331,13 @@ export class CanalTownTileProvider extends TileProvider {
       let upperBridgeX = 0;
       let deepestWater = Number.POSITIVE_INFINITY;
       for (let x = -16; x <= 16; x++) {
-        const sample = this.worldField.sample(x, -10);
+        const sample = this.worldField.sample(x, -6);
         if (sample.isBridge && sample.waterDistance < deepestWater) {
           upperBridgeX = x;
           deepestWater = sample.waterDistance;
         }
       }
-      place('bridge', upperBridgeX, -10);
+      place('bridge', upperBridgeX, -6);
       for (const [x, y] of [[-10, -5], [10, -5], [-10, 6], [10, 6]] as const) place('building', x, y, true);
       for (const [x, y] of [[-6, -3], [6, -3], [-6, 4], [6, 4]] as const) place('foliage', x, y);
       for (const [x, y] of [[-5, -2], [5, -2], [-5, 3], [5, 3]] as const) place('quay-detail', x, y);
@@ -386,7 +386,7 @@ export class CanalTownTileProvider extends TileProvider {
     for (const [dx, dy] of asset.collision) {
       const sample = this.worldField.sample(anchorX + dx, anchorY + dy);
       if (sample.isWater || sample.isBridge || sample.isPlaza) return false;
-      if (role === 'building' && sample.routeDistance < 1.8) return false;
+      if (role === 'building' && !authoredOverhang && sample.routeDistance < 1.8) return false;
     }
 
     // Collision masks are intentionally independent, but opaque lower façade
