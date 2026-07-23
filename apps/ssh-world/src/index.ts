@@ -61,22 +61,29 @@ async function main() {
   await workerManager.start();
   console.log('Game worker started');
 
-  // Initialize NPC consciousness manager (advanced LLM-powered NPCs with memory, emotions, relationships)
-  const npcManager = new NPCConsciousnessManager({
-    workerManager,
-    apiKey: providerConfig.apiKey || '',
-    defaultProvider: providerConfig.provider,
-    defaultModel: providerConfig.model,
-  });
-  await npcManager.loadFromDB();
-  workerManager.onNPCCreated('npc-consciousness', (npc) => {
-    npcManager.loadNPC(npc.npcId).catch((error) => {
-      console.error(`[NPCConsciousness] Failed to activate newly-created NPC ${npc.npcId}:`, error);
-      Sentry.captureException(error);
+  // The current cognitive engine uses metered provider APIs. Keep it opt-in so
+  // an idle world never spends API credit; production remains motor-only until
+  // the subscription-backed cognition transport lands.
+  let npcManager: NPCConsciousnessManager | null = null;
+  if (process.env.MALDOROR_ENABLE_METERED_NPC_COGNITION === '1') {
+    npcManager = new NPCConsciousnessManager({
+      workerManager,
+      apiKey: providerConfig.apiKey || '',
+      defaultProvider: providerConfig.provider,
+      defaultModel: providerConfig.model,
     });
-  });
-  npcManager.start();
-  console.log(`NPC consciousness manager started with ${npcManager.getNPCCount()} conscious NPCs`);
+    await npcManager.loadFromDB();
+    workerManager.onNPCCreated('npc-consciousness', (npc) => {
+      npcManager?.loadNPC(npc.npcId).catch((error) => {
+        console.error(`[NPCConsciousness] Failed to activate newly-created NPC ${npc.npcId}:`, error);
+        Sentry.captureException(error);
+      });
+    });
+    npcManager.start();
+    console.log(`NPC consciousness manager started with ${npcManager.getNPCCount()} conscious NPCs`);
+  } else {
+    console.log('[NPCConsciousness] Metered cognition disabled; persistent motor life remains active');
+  }
 
   // Initialize SSH server
   const sshServer = new SSHServer({
@@ -163,7 +170,7 @@ async function main() {
     }
 
     console.log('All sessions closed, shutting down...');
-    npcManager.stop();
+    npcManager?.stop();
     sshServer.stop();
     statsServer.stop();
     agentServer.close();

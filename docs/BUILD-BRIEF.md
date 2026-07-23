@@ -135,6 +135,8 @@ Monorepo (pnpm + turbo). `packages/*` libs, `apps/*` services.
   restart-safe motor state; `npc-consciousness-manager.ts` owns thought,
   memory, emotion, relationships, and goals, and requests body actions over
   typed IPC. Conscious NPCs are never registered as duplicate player bodies.
+  The metered cognition loop is production-off by default; motor life runs
+  without API spend while a subscription-backed cognition transport is built.
 - `src/utils/` — `sprite-storage`/`npc-storage`/`png-storage`/`terrain-storage`
   (PNG↔PixelGrid + DB), `sprite-hygiene.ts` (despeckle fringe at load).
 
