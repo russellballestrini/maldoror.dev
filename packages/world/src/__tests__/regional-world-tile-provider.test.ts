@@ -8,11 +8,13 @@ import {
 } from '../biomes/biome-world-field.js';
 import type {
   RegionalLandmarkKind,
+  RegionalLandmarkSite,
   RegionalRouteSample,
 } from '../routes/regional-route-field.js';
 import { RegionalMaterialCompositor } from '../tiles/regional-material-compositor.js';
 import {
   RegionalWorldTileProvider,
+  type RegionalAmbientAsset,
   type RegionalLandmarkAsset,
 } from '../tiles/regional-world-tile-provider.js';
 
@@ -92,7 +94,18 @@ function routeSample(x: number, y: number): RegionalRouteSample {
 
 function makeWorld(blockSize = 32, maxCachedBlocks = 32): RegionalWorldTileProvider {
   const field = { sample: (x: number) => biomeSample(nearestFamily(x)) };
-  const routes = { sample: routeSample };
+  const routes = {
+    sample: routeSample,
+    getLandmarkSites: (minX: number, minY: number, maxX: number, maxY: number): RegionalLandmarkSite[] =>
+      SITES.filter(([x]) => x >= minX && x <= maxX && 0 >= minY && 0 <= maxY)
+        .map(([x, _family, landmarkKind]) => ({
+          id: `site:${x}`,
+          x,
+          y: 0,
+          priority: 0.5,
+          landmarkKind,
+        })),
+  };
   const compositor = new RegionalMaterialCompositor({
     worldSeed: 42n,
     field,
@@ -119,14 +132,25 @@ function makeWorld(blockSize = 32, maxCachedBlocks = 32): RegionalWorldTileProvi
     sprite: sprite(COLOURS[family]),
     collision: [[-1, 0], [1, 0]],
   }));
+  const ambient: RegionalAmbientAsset[] = BIOME_FAMILIES.flatMap((family) => [0, 1].map((variant) => ({
+    id: `ambient:${family}:${variant}`,
+    families: [family],
+    routeDistance: [2, 999] as const,
+    sprite: sprite(COLOURS[family]),
+    collision: [[0, 0]] as const,
+  })));
   return new RegionalWorldTileProvider({
     worldSeed: 42n,
     field,
     routes,
     compositor,
     landmarks,
+    ambient,
     blockSize,
     maxCachedBlocks,
+    ambientCellSize: 4,
+    ambientDensity: 1,
+    ambientLandmarkClearance: 4,
   });
 }
 
@@ -157,6 +181,23 @@ describe('RegionalWorldTileProvider', () => {
       expect(world.getTile(siteX, 0).walkable).toBe(true);
     }
     expect(world.getTileAtResolution(0, 0, 4).pixels).toHaveLength(4);
+    expect(world.getRegionalStats().ambientAssets).toBe(BIOME_FAMILIES.length * 2);
+  });
+
+  it('places coordinate-stable ambient masses across all family regions', () => {
+    const world = makeWorld();
+    const placements = world.getAmbientPlacementsInBounds(-24, -40, 224, 40);
+    expect(placements.length).toBeGreaterThan(4);
+    expect(new Set(placements.flatMap((placement) => placement.families))).toEqual(new Set(BIOME_FAMILIES));
+    for (const family of BIOME_FAMILIES) {
+      expect(new Set(placements
+        .filter((placement) => placement.families.includes(family))
+        .map((placement) => placement.assetId)).size).toBe(2);
+    }
+    for (const placement of placements) {
+      expect(Math.abs(placement.anchorY)).toBeGreaterThanOrEqual(2);
+      expect(world.isBuildingAt(placement.anchorX, placement.anchorY)).toBe(true);
+    }
   });
 
   it('keeps overlays and collision exact across cache block sizes and traversal order', () => {
@@ -178,5 +219,11 @@ describe('RegionalWorldTileProvider', () => {
     const world = makeWorld(16, 9);
     for (let x = -320; x <= 320; x += 32) world.getBuildingTileAt(x, 0);
     expect(world.getRegionalStats().cachedBlocks).toBeLessThanOrEqual(9);
+  });
+
+  it('builds only source blocks whose manifest extents can reach a query', () => {
+    const world = makeWorld(32);
+    world.getBuildingTileAt(12, 12);
+    expect(world.getRegionalStats().cachedBlocks).toBe(1);
   });
 });

@@ -79,8 +79,11 @@ export {
 } from './tiles/regional-material-compositor.js';
 export {
   RegionalWorldTileProvider,
+  type RegionalAmbientAsset,
+  type RegionalAssetPlacement,
   type RegionalLandmarkAsset,
   type RegionalLandmarkPlacement,
+  type RegionalVisualAsset,
   type RegionalWorldBiomeSampler,
   type RegionalWorldRouteSampler,
   type RegionalWorldTileProviderConfig,

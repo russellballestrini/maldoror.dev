@@ -133,6 +133,25 @@ research tree. It is a candidate milestone only: ambient silhouettes,
 route-contact layers, parcels, family-scale interactions, and interactive
 prewarming remain open before this provider can replace the live canal world.
 
+The V2 ambient manifest adds two medium-scale clustered silhouettes per family.
+These are not independent prop scatter. One jittered candidate lives in each
+world-space cell; a radius-two diamond priority maximum creates the retained
+low-density process across cache boundaries. Continuous family weights select
+the semantic family, a coordinate-stable low-discrepancy phase selects among
+that family's manifest variants, and explicit route bands, landmark clearance,
+water, and collision constraints decide whether the candidate survives. This
+keeps negative space and prevents adjacent repeated masses without maintaining
+a name-based variant table.
+
+Provider block lookup is derived from actual sprite/collision extents and the
+bounded landmark anchor search. Most overlay queries therefore build one source
+block rather than a fixed 3 x 3 neighbourhood; sprites that really cross a
+boundary still query every possible owner block. Fully transparent sprite
+tiles are memoized and never enter overlay maps. Faithful evidence accepts the
+first six-family mass hierarchy but not live readiness: directional route
+contacts, parcel grammar, greater travel-scale entropy, predictive prewarming,
+and traversal tail measurements remain open.
+
 ## Non-periodic asset placement
 
 Procedural anchors come from a world-space priority field. A candidate survives

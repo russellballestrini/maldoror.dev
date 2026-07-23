@@ -398,6 +398,11 @@ Completed foundations:
   reconstruction, and linear-light terrain contact pass focused tests and a
   faithful six-coordinate walking atlas; the V1 ground-apron version remains
   retained as a rejected sticker-island experiment;
+- a second built-in-subscription atlas adds 12 soft-alpha medium-scale family
+  masses through manifest semantics and radius-two coordinate-stable placement;
+  retained evidence rejects painted path aprons and adjacent duplicate masses,
+  while exact manifest-derived source-block lookup reduces the first identical
+  atlas frame from 2.46 to 1.21 seconds without clipping boundary sprites;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–014 expose the selected research candidates without claiming
@@ -410,9 +415,10 @@ Still open and therefore goal-blocking:
   predictive background prewarming plus p50/p95/p99 traversal evidence remain
   unbuilt;
 - the first six-family landmark silhouettes are sparse prototypes, not a
-  complete world layer; ambient architecture, routeside contacts, parcel
-  composition, authoritative traversal, stronger mountain framing, and cave/
-  highland/coast interactions are not production-complete;
+  complete world layer; the first 12 ambient masses still need directional
+  routeside contacts, parcel composition, far greater travel-scale entropy,
+  authoritative traversal, stronger landmark framing, and cave/highland/coast
+  interactions before the family layer is production-complete;
 - the complete Phase-0 diagnostic comparison and operator direction approval
   have not passed;
 - schedules, needs, relationships, memories, environmental systems, persistent

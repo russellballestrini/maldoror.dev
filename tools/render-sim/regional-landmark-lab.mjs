@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
 import {
+  loadRegionalAmbientKit,
   loadRegionalBiomeMaterialKit,
   loadRegionalLandmarkKit,
   loadRegionalRouteMaterialKit,
@@ -31,6 +32,14 @@ let FRAMES = [
   { name: 'arrival-landmark-regional', centre: [0, 0], displayTileSize: 4 },
 ].filter((frame) => !FRAME_FILTER || frame.name === FRAME_FILTER);
 if (FRAMES.length === 0) throw new Error(`Unknown landmark frame: ${FRAME_FILTER}`);
+const CENTRE_OVERRIDE = process.env.MALDOROR_REGIONAL_LANDMARK_CENTRE;
+if (CENTRE_OVERRIDE) {
+  const centre = CENTRE_OVERRIDE.split(',').map(Number);
+  if (centre.length !== 2 || centre.some((value) => !Number.isFinite(value))) {
+    throw new Error(`Invalid landmark centre: ${CENTRE_OVERRIDE}`);
+  }
+  FRAMES = [{ name: 'custom-walking', centre, displayTileSize: 16 }];
+}
 
 fs.mkdirSync(OUTPUT, { recursive: true });
 const field = new BiomeWorldField(WORLD_SEED, { blockSize: 16, maxCachedBlocks: 32 });
@@ -40,11 +49,15 @@ const routes = new RegionalRouteField(WORLD_SEED, field, {
   maxCachedPaths: 512,
   pathStep: 4,
 });
-const [biomeKit, routeKit, landmarkKit] = await Promise.all([
+const [biomeKit, routeKit, landmarkKit, ambientKit] = await Promise.all([
   loadRegionalBiomeMaterialKit(path.join(ROOT, 'assets/biomes/manifest.json')),
   loadRegionalRouteMaterialKit(path.join(ROOT, 'assets/routes/manifest.json')),
   loadRegionalLandmarkKit(path.join(ROOT, 'assets/biomes/landmarks-manifest.json')),
+  loadRegionalAmbientKit(path.join(ROOT, 'assets/biomes/ambient-manifest.json')),
 ]);
+if (landmarkKit.blockSize !== ambientKit.blockSize) {
+  throw new Error(`Regional asset block-size mismatch: ${landmarkKit.blockSize} vs ${ambientKit.blockSize}`);
+}
 const compositor = new RegionalMaterialCompositor({
   worldSeed: WORLD_SEED,
   field,
@@ -62,11 +75,15 @@ const world = new RegionalWorldTileProvider({
   routes,
   compositor,
   landmarks: landmarkKit.assets,
+  ambient: ambientKit.assets,
   blockSize: landmarkKit.blockSize,
   maxCachedBlocks: 64,
+  ambientCellSize: ambientKit.cellSize,
+  ambientDensity: ambientKit.density,
+  ambientLandmarkClearance: ambientKit.landmarkClearance,
 });
 
-if (process.env.MALDOROR_REGIONAL_LANDMARK_ATLAS === '1') {
+function locateLandmarkFamilies() {
   const assetIds = new Set(landmarkKit.assets.map((asset) => asset.id));
   const found = new Map();
   const seenSites = new Set();
@@ -83,6 +100,16 @@ if (process.env.MALDOROR_REGIONAL_LANDMARK_ATLAS === '1') {
   }
   const missing = [...assetIds].filter((id) => !found.has(id));
   if (missing.length > 0) throw new Error(`Could not locate regional landmarks: ${missing.join(', ')}`);
+  return found;
+}
+
+if (process.env.MALDOROR_REGIONAL_LANDMARK_ATLAS === '1' &&
+    process.env.MALDOROR_REGIONAL_AMBIENT_ATLAS === '1') {
+  throw new Error('Choose either landmark or ambient atlas mode');
+}
+
+if (process.env.MALDOROR_REGIONAL_LANDMARK_ATLAS === '1') {
+  const found = locateLandmarkFamilies();
   FRAMES = landmarkKit.assets.map((asset) => {
     const match = found.get(asset.id);
     return {
@@ -92,6 +119,38 @@ if (process.env.MALDOROR_REGIONAL_LANDMARK_ATLAS === '1') {
       assetId: asset.id,
       landmarkKind: match.site.landmarkKind,
       anchor: [match.placement.anchorX, match.placement.anchorY],
+    };
+  });
+}
+
+if (process.env.MALDOROR_REGIONAL_AMBIENT_ATLAS === '1') {
+  const landmarks = locateLandmarkFamilies();
+  FRAMES = landmarkKit.assets.map((landmarkAsset) => {
+    const family = landmarkAsset.families[0];
+    const landmark = landmarks.get(landmarkAsset.id);
+    let candidates = [];
+    for (const radius of [32, 64, 96]) {
+      candidates = world.getAmbientPlacementsInBounds(
+        landmark.site.x - radius,
+        landmark.site.y - radius,
+        landmark.site.x + radius,
+        landmark.site.y + radius,
+      ).filter((placement) => placement.families.includes(family));
+      if (candidates.length > 0) break;
+    }
+    if (candidates.length === 0) throw new Error(`Could not locate ambient family: ${family}`);
+    candidates.sort((a, b) => (
+      Math.hypot(a.anchorX - landmark.site.x, a.anchorY - landmark.site.y) -
+      Math.hypot(b.anchorX - landmark.site.x, b.anchorY - landmark.site.y)
+    ));
+    const placement = candidates[0];
+    return {
+      name: `${family}-ambient-walking`,
+      centre: [placement.anchorX, placement.anchorY],
+      displayTileSize: 16,
+      assetId: placement.assetId,
+      anchor: [placement.anchorX, placement.anchorY],
+      nearestLandmark: [landmark.site.x, landmark.site.y],
     };
   });
 }
@@ -173,6 +232,8 @@ const metrics = {
   terminalDimensions: [WIDTH / 2, HEIGHT / 4],
   landmarkManifest: path.relative(ROOT, landmarkKit.manifestPath),
   landmarkAssets: landmarkKit.assets.length,
+  ambientManifest: path.relative(ROOT, ambientKit.manifestPath),
+  ambientAssets: ambientKit.assets.length,
   frames: [],
 };
 for (const frame of FRAMES) {
@@ -190,6 +251,12 @@ for (const frame of FRAMES) {
     routeStats: routes.getStats(),
     compositorStats: compositor.getStats(),
     providerStats: world.getRegionalStats(),
+    visibleAmbient: world.getAmbientPlacementsInBounds(
+      frame.centre[0] - Math.ceil(WIDTH / frame.displayTileSize / 2),
+      frame.centre[1] - Math.ceil(HEIGHT / frame.displayTileSize / 2),
+      frame.centre[0] + Math.ceil(WIDTH / frame.displayTileSize / 2),
+      frame.centre[1] + Math.ceil(HEIGHT / frame.displayTileSize / 2),
+    ),
   });
 }
 fs.writeFileSync(path.join(OUTPUT, 'metrics.json'), `${JSON.stringify(metrics, null, 2)}\n`);

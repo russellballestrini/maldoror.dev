@@ -4,6 +4,7 @@ import type { BuildingSprite, BuildingTile, Pixel, PixelGrid, Tile } from '@mald
 import {
   BIOME_FAMILIES,
   type BiomeFamily,
+  type RegionalAmbientAsset,
   type RegionalLandmarkAsset,
   type RegionalLandmarkKind,
   type RegionalCrossingKind,
@@ -33,6 +34,16 @@ export interface RegionalLandmarkKit {
   assets: RegionalLandmarkAsset[];
 }
 
+export interface RegionalAmbientKit {
+  manifestPath: string;
+  sourceTileSize: number;
+  blockSize: number;
+  cellSize: number;
+  density: number;
+  landmarkClearance: number;
+  assets: RegionalAmbientAsset[];
+}
+
 interface BaseMaterialEntry {
   id: string;
   file: string;
@@ -55,6 +66,16 @@ interface LandmarkEntry {
   file: string;
   family: BiomeFamily;
   landmarkKinds: RegionalLandmarkKind[];
+  scale: number;
+  spriteTiles: [number, number];
+  collision: Array<[number, number]>;
+}
+
+interface AmbientEntry {
+  id: string;
+  file: string;
+  family: BiomeFamily;
+  routeDistance: [number, number];
   scale: number;
   spriteTiles: [number, number];
   collision: Array<[number, number]>;
@@ -173,7 +194,7 @@ export async function loadRegionalLandmarkKit(manifestPath: string): Promise<Reg
       families: [entry.family],
       landmarkKinds: entry.landmarkKinds,
       collision: entry.collision,
-      sprite: await loadLandmarkSprite(
+      sprite: await loadRegionalSprite(
         resolveAssetPath(manifestDirectory, entry.file),
         sourceTileSize,
         entry.scale,
@@ -182,6 +203,61 @@ export async function loadRegionalLandmarkKit(manifestPath: string): Promise<Reg
     });
   }
   return { manifestPath: absoluteManifest, sourceTileSize, blockSize, assets };
+}
+
+/** Load the medium-scale ambient mass kit. The manifest owns density, route
+ * bands, family compatibility, and collision; the generated pixels do not. */
+export async function loadRegionalAmbientKit(manifestPath: string): Promise<RegionalAmbientKit> {
+  const absoluteManifest = path.resolve(manifestPath);
+  const manifestDirectory = path.dirname(absoluteManifest);
+  const raw = JSON.parse(await fs.promises.readFile(absoluteManifest, 'utf8')) as unknown;
+  if (!isRecord(raw) || raw.version !== 1 || !Number.isInteger(raw.sourceTileSize) ||
+      !Number.isInteger(raw.blockSize) || !Number.isInteger(raw.cellSize) ||
+      typeof raw.density !== 'number' || typeof raw.landmarkClearance !== 'number' ||
+      !Array.isArray(raw.assets)) {
+    throw new Error(`Invalid regional ambient manifest: ${absoluteManifest}`);
+  }
+  const sourceTileSize = Number(raw.sourceTileSize);
+  const blockSize = Number(raw.blockSize);
+  const cellSize = Number(raw.cellSize);
+  const density = Number(raw.density);
+  const landmarkClearance = Number(raw.landmarkClearance);
+  if (sourceTileSize < 16 || sourceTileSize > 192 || blockSize < 16 || blockSize > 128 ||
+      cellSize < 3 || cellSize > 32 || density < 0 || density > 1 ||
+      landmarkClearance < 4 || landmarkClearance > 64) {
+    throw new Error(`Regional ambient dimensions are invalid: ${absoluteManifest}`);
+  }
+  const entries = raw.assets.map((value, index) => parseAmbientEntry(value, index));
+  const ids = new Set(entries.map((entry) => entry.id));
+  if (ids.size !== entries.length) throw new Error('Regional ambient manifest contains duplicate IDs');
+  const families = new Set(entries.map((entry) => entry.family));
+  for (const family of BIOME_FAMILIES) {
+    if (!families.has(family)) throw new Error(`Regional ambient manifest is missing family: ${family}`);
+  }
+  const assets: RegionalAmbientAsset[] = [];
+  for (const entry of entries) {
+    assets.push({
+      id: entry.id,
+      families: [entry.family],
+      routeDistance: entry.routeDistance,
+      collision: entry.collision,
+      sprite: await loadRegionalSprite(
+        resolveAssetPath(manifestDirectory, entry.file),
+        sourceTileSize,
+        entry.scale,
+        entry.spriteTiles,
+      ),
+    });
+  }
+  return {
+    manifestPath: absoluteManifest,
+    sourceTileSize,
+    blockSize,
+    cellSize,
+    density,
+    landmarkClearance,
+    assets,
+  };
 }
 
 function parseEntry(value: unknown, index: number): MaterialEntry {
@@ -255,6 +331,29 @@ function parseLandmarkEntry(value: unknown, index: number): LandmarkEntry {
   };
 }
 
+function parseAmbientEntry(value: unknown, index: number): AmbientEntry {
+  if (!isRecord(value) ||
+      typeof value.id !== 'string' || value.id.length === 0 ||
+      typeof value.file !== 'string' || value.file.length === 0 ||
+      !BIOME_FAMILIES.includes(value.family as BiomeFamily) ||
+      !isRouteDistance(value.routeDistance) ||
+      !isTileDimensions(value.spriteTiles) ||
+      !Array.isArray(value.collision) || value.collision.length === 0 ||
+      !value.collision.every(isCollisionOffset) ||
+      typeof value.scale !== 'number' || value.scale < 0.2 || value.scale > 1) {
+    throw new Error(`Invalid regional ambient entry at index ${index}`);
+  }
+  return {
+    id: value.id,
+    file: value.file,
+    family: value.family as BiomeFamily,
+    routeDistance: value.routeDistance,
+    scale: value.scale,
+    spriteTiles: value.spriteTiles as [number, number],
+    collision: value.collision as Array<[number, number]>,
+  };
+}
+
 function valueRouteKind(value: unknown): RegionalRouteKind | null {
   if (!isRecord(value) || !ROUTE_KINDS.includes(value.routeKind as RegionalRouteKind)) return null;
   return value.routeKind as RegionalRouteKind;
@@ -315,7 +414,7 @@ async function loadTerrainMasterVariants(
   return variants;
 }
 
-async function loadLandmarkSprite(
+async function loadRegionalSprite(
   imagePath: string,
   tileSize: number,
   scale: number,
@@ -381,6 +480,12 @@ function isCollisionOffset(value: unknown): value is [number, number] {
 function isTileDimensions(value: unknown): value is [number, number] {
   return Array.isArray(value) && value.length === 2 &&
     value.every((part) => Number.isInteger(part) && Number(part) >= 1 && Number(part) <= 8);
+}
+
+function isRouteDistance(value: unknown): value is [number, number] {
+  return Array.isArray(value) && value.length === 2 &&
+    value.every((part) => typeof part === 'number' && Number.isFinite(part) && part >= 0 && part <= 999) &&
+    value[1]! >= value[0]!;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

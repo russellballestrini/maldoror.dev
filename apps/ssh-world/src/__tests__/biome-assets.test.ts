@@ -2,6 +2,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BIOME_FAMILIES } from '@maldoror/world';
 import {
+  loadRegionalAmbientKit,
   loadRegionalBiomeMaterialKit,
   loadRegionalLandmarkKit,
   loadRegionalRouteMaterialKit,
@@ -49,6 +50,24 @@ describe('regional biome material manifest', () => {
       expect(pixels.some((pixel) => pixel === null)).toBe(true);
       expect(pixels.some((pixel) => pixel !== null)).toBe(true);
       expect(pixels.some((pixel) => pixel !== null && pixel.a !== undefined && pixel.a > 0 && pixel.a < 255)).toBe(true);
+    }
+  });
+
+  it('loads twelve soft-alpha ambient masses with explicit world constraints', async () => {
+    const kit = await loadRegionalAmbientKit(path.resolve('assets/biomes/ambient-manifest.json'));
+    expect(kit.sourceTileSize).toBe(48);
+    expect(kit.blockSize).toBe(32);
+    expect(kit.cellSize).toBe(4);
+    expect(kit.density).toBeCloseTo(0.86);
+    expect(kit.assets).toHaveLength(12);
+    expect(new Set(kit.assets.flatMap((asset) => asset.families))).toEqual(new Set(BIOME_FAMILIES));
+    for (const asset of kit.assets) {
+      expect(asset.sprite.width).toBe(5);
+      expect(asset.sprite.height).toBe(4);
+      expect(asset.routeDistance[0]).toBeGreaterThanOrEqual(2);
+      const pixels = asset.sprite.tiles.flatMap((row) => row.flatMap((tile) => tile.pixels.flat()));
+      expect(pixels.some((pixel) => pixel === null)).toBe(true);
+      expect(pixels.some((pixel) => pixel !== null && pixel.a !== undefined && pixel.a < 255)).toBe(true);
     }
   });
 });

@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "sourceTileSize": 48,
+  "blockSize": 32,
+  "cellSize": 4,
+  "density": 0.86,
+  "landmarkClearance": 9,
+  "source": {
+    "file": "generated/regional-ambient-atlas-v2-source.png",
+    "sha256": "db9a703dd28342b265d926f48cb6d4b6a4bbfbc57b410d7c9b94ebb2d84aa4f7",
+    "generation": "built-in Codex/ChatGPT image generation and edit; no metered API",
+    "derivation": "pnpm assets:derive-ambient"
+  },
+  "assets": [
+    { "id": "canal-town-facade-planter-v2", "file": "ambient/canal-town-facade-planter-v2.png", "family": "canal-town", "routeDistance": [2, 14], "scale": 0.95, "spriteTiles": [5, 4], "collision": [[-1, 0], [0, 0]] },
+    { "id": "forest-twin-canopy-v2", "file": "ambient/forest-twin-canopy-v2.png", "family": "forest", "routeDistance": [2, 999], "scale": 0.95, "spriteTiles": [5, 4], "collision": [[-1, 0], [0, 0], [1, 0]] },
+    { "id": "coast-wind-pine-reeds-v2", "file": "ambient/coast-wind-pine-reeds-v2.png", "family": "coast", "routeDistance": [2, 999], "scale": 0.95, "spriteTiles": [5, 4], "collision": [[-1, 0], [0, 0], [1, 0]] },
+    { "id": "rural-orchard-hedge-gate-v2", "file": "ambient/rural-orchard-hedge-gate-v2.png", "family": "rural", "routeDistance": [2, 18], "scale": 0.95, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [1, 0], [2, 0]] },
+    { "id": "mountain-crag-pine-v2", "file": "ambient/mountain-crag-pine-v2.png", "family": "mountain", "routeDistance": [2, 999], "scale": 0.95, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]] },
+    { "id": "ruins-wall-arch-v2", "file": "ambient/ruins-wall-arch-v2.png", "family": "ruins", "routeDistance": [2, 999], "scale": 0.95, "spriteTiles": [5, 4], "collision": [[-1, 0], [0, 0], [1, 0]] },
+    { "id": "canal-town-bank-threshold-v2", "file": "ambient/canal-town-bank-threshold-v2.png", "family": "canal-town", "routeDistance": [2, 9], "scale": 0.95, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [1, 0], [2, 0]] },
+    { "id": "forest-log-understory-v2", "file": "ambient/forest-log-understory-v2.png", "family": "forest", "routeDistance": [2, 999], "scale": 0.95, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]] },
+    { "id": "coast-driftwood-marker-v2", "file": "ambient/coast-driftwood-marker-v2.png", "family": "coast", "routeDistance": [2, 999], "scale": 0.95, "spriteTiles": [5, 4], "collision": [[-1, 0], [0, 0], [1, 0]] },
+    { "id": "rural-field-wall-gate-v2", "file": "ambient/rural-field-wall-gate-v2.png", "family": "rural", "routeDistance": [2, 14], "scale": 0.95, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [1, 0], [2, 0]] },
+    { "id": "mountain-rock-spire-v2", "file": "ambient/mountain-rock-spire-v2.png", "family": "mountain", "routeDistance": [2, 999], "scale": 0.95, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]] },
+    { "id": "ruins-columns-rubble-v2", "file": "ambient/ruins-columns-rubble-v2.png", "family": "ruins", "routeDistance": [2, 999], "scale": 0.95, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]] }
+  ]
+}

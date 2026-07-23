@@ -12,22 +12,32 @@ import {
 } from '../biomes/biome-world-field.js';
 import type {
   RegionalLandmarkKind,
+  RegionalLandmarkSite,
   RegionalRouteSample,
 } from '../routes/regional-route-field.js';
 import { RegionalMaterialCompositor } from './regional-material-compositor.js';
 import { TileProvider, type TileProviderConfig } from './tile-provider.js';
 
-export interface RegionalLandmarkAsset {
+export interface RegionalVisualAsset {
   id: string;
   families: readonly BiomeFamily[];
-  landmarkKinds: readonly RegionalLandmarkKind[];
   sprite: BuildingSprite;
-  /** Solid offsets relative to the sprite's bottom-centre anchor. The route
-   * threshold itself should remain absent when an asset depicts an entrance. */
+  /** Solid offsets relative to the sprite's bottom-centre anchor. Open
+   * thresholds remain absent when an asset depicts an entrance or gate. */
   collision: ReadonlyArray<readonly [number, number]>;
 }
 
-export interface RegionalLandmarkPlacement {
+export interface RegionalLandmarkAsset extends RegionalVisualAsset {
+  landmarkKinds: readonly RegionalLandmarkKind[];
+}
+
+export interface RegionalAmbientAsset extends RegionalVisualAsset {
+  /** Eligible distance band from the regional route graph. A maximum of 999
+   * means unbounded, including terrain outside any cached route influence. */
+  routeDistance: readonly [number, number];
+}
+
+export interface RegionalAssetPlacement {
   assetId: string;
   families: readonly BiomeFamily[];
   siteX: number;
@@ -36,12 +46,15 @@ export interface RegionalLandmarkPlacement {
   anchorY: number;
 }
 
+export type RegionalLandmarkPlacement = RegionalAssetPlacement;
+
 export interface RegionalWorldBiomeSampler {
   sample(worldX: number, worldY: number): BiomeWorldSample;
 }
 
 export interface RegionalWorldRouteSampler {
   sample(worldX: number, worldY: number): RegionalRouteSample;
+  getLandmarkSites?(minX: number, minY: number, maxX: number, maxY: number): RegionalLandmarkSite[];
 }
 
 export interface RegionalWorldTileProviderConfig extends TileProviderConfig {
@@ -49,12 +62,17 @@ export interface RegionalWorldTileProviderConfig extends TileProviderConfig {
   routes: RegionalWorldRouteSampler;
   compositor: RegionalMaterialCompositor;
   landmarks: readonly RegionalLandmarkAsset[];
+  ambient?: readonly RegionalAmbientAsset[];
   blockSize?: number;
   maxCachedBlocks?: number;
+  ambientCellSize?: number;
+  ambientDensity?: number;
+  ambientLandmarkClearance?: number;
 }
 
 interface Placement {
-  asset: RegionalLandmarkAsset;
+  asset: RegionalVisualAsset;
+  kind: 'landmark' | 'ambient';
   siteX: number;
   siteY: number;
   anchorX: number;
@@ -67,6 +85,9 @@ interface CachedBlock {
   placements: Placement[];
   accessedAt: number;
 }
+
+const VISIBLE_TILE_CACHE = new WeakMap<BuildingTileData, boolean>();
+const LANDMARK_ANCHOR_REACH = 7;
 
 /**
  * Regional production-provider seam.
@@ -83,8 +104,16 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly routes: RegionalWorldRouteSampler;
   private readonly compositor: RegionalMaterialCompositor;
   private readonly landmarks: readonly RegionalLandmarkAsset[];
+  private readonly ambient: readonly RegionalAmbientAsset[];
   private readonly blockSize: number;
   private readonly maxCachedBlocks: number;
+  private readonly ambientCellSize: number;
+  private readonly ambientDensity: number;
+  private readonly ambientLandmarkClearance: number;
+  private readonly placementMinOffsetX: number;
+  private readonly placementMaxOffsetX: number;
+  private readonly placementMinOffsetY: number;
+  private readonly placementMaxOffsetY: number;
   private readonly blockCache = new Map<string, CachedBlock>();
   private accessClock = 0;
 
@@ -95,8 +124,12 @@ export class RegionalWorldTileProvider extends TileProvider {
     this.routes = config.routes;
     this.compositor = config.compositor;
     this.landmarks = config.landmarks;
+    this.ambient = config.ambient ?? [];
     this.blockSize = Math.max(16, config.blockSize ?? 32);
     this.maxCachedBlocks = Math.max(9, config.maxCachedBlocks ?? 64);
+    this.ambientCellSize = Math.max(3, config.ambientCellSize ?? 4);
+    this.ambientDensity = Math.max(0, Math.min(1, config.ambientDensity ?? 0.86));
+    this.ambientLandmarkClearance = Math.max(4, config.ambientLandmarkClearance ?? 9);
     for (const asset of this.landmarks) {
       if (asset.families.length === 0 || asset.landmarkKinds.length === 0) {
         throw new Error(`Regional landmark has no semantic compatibility: ${asset.id}`);
@@ -105,6 +138,33 @@ export class RegionalWorldTileProvider extends TileProvider {
         throw new Error(`Regional landmark has no collision evidence: ${asset.id}`);
       }
     }
+    for (const asset of this.ambient) {
+      if (asset.families.length === 0 || asset.collision.length === 0 ||
+          asset.routeDistance[0] < 0 || asset.routeDistance[1] < asset.routeDistance[0]) {
+        throw new Error(`Regional ambient asset has invalid semantics: ${asset.id}`);
+      }
+    }
+    const placementAssets: readonly RegionalVisualAsset[] = [...this.landmarks, ...this.ambient];
+    const extentX = placementAssets.flatMap((asset) => {
+      const reach = this.landmarks.includes(asset as RegionalLandmarkAsset) ? LANDMARK_ANCHOR_REACH : 0;
+      return [
+        -Math.floor(asset.sprite.width / 2) - reach,
+        asset.sprite.width - 1 - Math.floor(asset.sprite.width / 2) + reach,
+        ...asset.collision.flatMap(([offsetX]) => [offsetX - reach, offsetX + reach]),
+      ];
+    });
+    const extentY = placementAssets.flatMap((asset) => {
+      const reach = this.landmarks.includes(asset as RegionalLandmarkAsset) ? LANDMARK_ANCHOR_REACH : 0;
+      return [
+        -(asset.sprite.height - 1) - reach,
+        reach,
+        ...asset.collision.flatMap(([, offsetY]) => [offsetY - reach, offsetY + reach]),
+      ];
+    });
+    this.placementMinOffsetX = Math.min(0, ...extentX);
+    this.placementMaxOffsetX = Math.max(0, ...extentX);
+    this.placementMinOffsetY = Math.min(0, ...extentY);
+    this.placementMaxOffsetY = Math.max(0, ...extentY);
   }
 
   override getTile(tileX: number, tileY: number): Tile {
@@ -137,8 +197,11 @@ export class RegionalWorldTileProvider extends TileProvider {
 
   getRegionalStats(): {
     landmarkAssets: number;
+    ambientAssets: number;
     cachedBlocks: number;
     cachedPlacements: number;
+    cachedLandmarkPlacements: number;
+    cachedAmbientPlacements: number;
     cachedOverlayTiles: number;
     cachedSolidTiles: number;
     blockSize: number;
@@ -146,9 +209,18 @@ export class RegionalWorldTileProvider extends TileProvider {
   } {
     return {
       landmarkAssets: this.landmarks.length,
+      ambientAssets: this.ambient.length,
       cachedBlocks: this.blockCache.size,
       cachedPlacements: [...this.blockCache.values()].reduce(
         (total, block) => total + block.placements.length,
+        0,
+      ),
+      cachedLandmarkPlacements: [...this.blockCache.values()].reduce(
+        (total, block) => total + block.placements.filter((placement) => placement.kind === 'landmark').length,
+        0,
+      ),
+      cachedAmbientPlacements: [...this.blockCache.values()].reduce(
+        (total, block) => total + block.placements.filter((placement) => placement.kind === 'ambient').length,
         0,
       ),
       cachedOverlayTiles: [...this.blockCache.values()].reduce(
@@ -179,6 +251,37 @@ export class RegionalWorldTileProvider extends TileProvider {
     } : null;
   }
 
+  getAmbientPlacementsInBounds(
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number,
+  ): RegionalAssetPlacement[] {
+    const placements: RegionalAssetPlacement[] = [];
+    const firstBlockX = floorDiv(Math.floor(minX), this.blockSize);
+    const lastBlockX = floorDiv(Math.floor(maxX), this.blockSize);
+    const firstBlockY = floorDiv(Math.floor(minY), this.blockSize);
+    const lastBlockY = floorDiv(Math.floor(maxY), this.blockSize);
+    for (let blockY = firstBlockY; blockY <= lastBlockY; blockY++) {
+      for (let blockX = firstBlockX; blockX <= lastBlockX; blockX++) {
+        for (const placement of this.getBlock(blockX, blockY).placements) {
+          if (placement.kind !== 'ambient' || placement.anchorX < minX || placement.anchorX > maxX ||
+              placement.anchorY < minY || placement.anchorY > maxY) continue;
+          placements.push({
+            assetId: placement.asset.id,
+            families: placement.asset.families,
+            siteX: placement.siteX,
+            siteY: placement.siteY,
+            anchorX: placement.anchorX,
+            anchorY: placement.anchorY,
+          });
+        }
+      }
+    }
+    return placements.sort((a, b) => a.anchorY - b.anchorY || a.anchorX - b.anchorX ||
+      a.assetId.localeCompare(b.assetId));
+  }
+
   override destroy(): void {
     this.blockCache.clear();
     this.compositor.clear();
@@ -186,12 +289,14 @@ export class RegionalWorldTileProvider extends TileProvider {
   }
 
   private blocksNear(worldX: number, worldY: number): CachedBlock[] {
-    const blockX = floorDiv(worldX, this.blockSize);
-    const blockY = floorDiv(worldY, this.blockSize);
     const blocks: CachedBlock[] = [];
-    for (let offsetY = -1; offsetY <= 1; offsetY++) {
-      for (let offsetX = -1; offsetX <= 1; offsetX++) {
-        blocks.push(this.getBlock(blockX + offsetX, blockY + offsetY));
+    const firstBlockX = floorDiv(worldX - this.placementMaxOffsetX, this.blockSize);
+    const lastBlockX = floorDiv(worldX - this.placementMinOffsetX, this.blockSize);
+    const firstBlockY = floorDiv(worldY - this.placementMaxOffsetY, this.blockSize);
+    const lastBlockY = floorDiv(worldY - this.placementMinOffsetY, this.blockSize);
+    for (let blockY = firstBlockY; blockY <= lastBlockY; blockY++) {
+      for (let blockX = firstBlockX; blockX <= lastBlockX; blockX++) {
+        blocks.push(this.getBlock(blockX, blockY));
       }
     }
     return blocks;
@@ -220,12 +325,26 @@ export class RegionalWorldTileProvider extends TileProvider {
     const originX = blockX * this.blockSize;
     const originY = blockY * this.blockSize;
     const placements: Placement[] = [];
-    for (let y = originY; y < originY + this.blockSize; y++) {
-      for (let x = originX; x < originX + this.blockSize; x++) {
-        const placement = this.createPlacement(x, y);
+    const landmarkSites = this.routes.getLandmarkSites?.(
+      originX,
+      originY,
+      originX + this.blockSize - 1,
+      originY + this.blockSize - 1,
+    );
+    if (landmarkSites) {
+      for (const site of landmarkSites) {
+        const placement = this.createPlacement(site.x, site.y);
         if (placement) placements.push(placement);
       }
+    } else {
+      for (let y = originY; y < originY + this.blockSize; y++) {
+        for (let x = originX; x < originX + this.blockSize; x++) {
+          const placement = this.createPlacement(x, y);
+          if (placement) placements.push(placement);
+        }
+      }
     }
+    placements.push(...this.buildAmbientPlacements(originX, originY));
 
     const overlays = new Map<string, BuildingTileData>();
     const solid = new Set<string>();
@@ -235,7 +354,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       for (let tileY = 0; tileY < placement.asset.sprite.height; tileY++) {
         for (let tileX = 0; tileX < placement.asset.sprite.width; tileX++) {
           const tile = placement.asset.sprite.tiles[tileY]?.[tileX];
-          if (!tile) continue;
+          if (!tile || !hasVisiblePixels(tile)) continue;
           const x = placement.anchorX + tileX - offsetX;
           const y = placement.anchorY + tileY - offsetY;
           const key = positionKey(x, y);
@@ -257,7 +376,89 @@ export class RegionalWorldTileProvider extends TileProvider {
     const asset = this.selectAsset(siteX, siteY, biome, route.landmarkKind);
     if (!asset) return null;
     const anchor = this.findConstrainedAnchor(siteX, siteY, route, asset);
-    return anchor ? { asset, siteX, siteY, ...anchor } : null;
+    return anchor ? { asset, kind: 'landmark', siteX, siteY, ...anchor } : null;
+  }
+
+  private buildAmbientPlacements(originX: number, originY: number): Placement[] {
+    if (this.ambient.length === 0 || this.ambientDensity <= 0) return [];
+    const placements: Placement[] = [];
+    const firstCellX = floorDiv(originX, this.ambientCellSize) - 1;
+    const lastCellX = floorDiv(originX + this.blockSize - 1, this.ambientCellSize) + 1;
+    const firstCellY = floorDiv(originY, this.ambientCellSize) - 1;
+    const lastCellY = floorDiv(originY + this.blockSize - 1, this.ambientCellSize) + 1;
+    for (let cellY = firstCellY; cellY <= lastCellY; cellY++) {
+      for (let cellX = firstCellX; cellX <= lastCellX; cellX++) {
+        const candidate = this.ambientCandidate(cellX, cellY);
+        if (candidate.x < originX || candidate.x >= originX + this.blockSize ||
+            candidate.y < originY || candidate.y >= originY + this.blockSize ||
+            !this.isAmbientPriorityMaximum(cellX, cellY) ||
+            this.hashUnit(cellX, cellY, 0x4d17) > this.ambientDensity) continue;
+        const route = this.routes.sample(candidate.x, candidate.y);
+        if (route.landmarkDistance < this.ambientLandmarkClearance) continue;
+        const biome = this.field.sample(candidate.x, candidate.y);
+        const asset = this.selectAmbientAsset(candidate.x, candidate.y, biome, route);
+        if (!asset || !this.assetFits(candidate.x, candidate.y, asset)) continue;
+        placements.push({
+          asset,
+          kind: 'ambient',
+          siteX: candidate.x,
+          siteY: candidate.y,
+          anchorX: candidate.x,
+          anchorY: candidate.y,
+        });
+      }
+    }
+    return placements;
+  }
+
+  private ambientCandidate(cellX: number, cellY: number): { x: number; y: number } {
+    const inset = 0.12;
+    const span = 1 - inset * 2;
+    return {
+      x: Math.floor((cellX + inset + this.hashUnit(cellX, cellY, 0x2d91) * span) * this.ambientCellSize),
+      y: Math.floor((cellY + inset + this.hashUnit(cellX, cellY, 0x6b35) * span) * this.ambientCellSize),
+    };
+  }
+
+  private isAmbientPriorityMaximum(cellX: number, cellY: number): boolean {
+    const priority = this.hashUnit(cellX, cellY, 0x7f21);
+    for (let offsetY = -2; offsetY <= 2; offsetY++) {
+      for (let offsetX = -2; offsetX <= 2; offsetX++) {
+        if ((offsetX === 0 && offsetY === 0) || Math.abs(offsetX) + Math.abs(offsetY) > 2) continue;
+        const neighbour = this.hashUnit(cellX + offsetX, cellY + offsetY, 0x7f21);
+        if (neighbour > priority || (neighbour === priority &&
+            (offsetY < 0 || (offsetY === 0 && offsetX < 0)))) return false;
+      }
+    }
+    return true;
+  }
+
+  private selectAmbientAsset(
+    worldX: number,
+    worldY: number,
+    biome: BiomeWorldSample,
+    route: RegionalRouteSample,
+  ): RegionalAmbientAsset | null {
+    const eligible: Array<{ asset: RegionalAmbientAsset; compatibility: number }> = [];
+    for (const asset of this.ambient) {
+      const [minimumRouteDistance, maximumRouteDistance] = asset.routeDistance;
+      if (route.distance < minimumRouteDistance ||
+          (maximumRouteDistance < 999 && route.distance > maximumRouteDistance)) continue;
+      const compatibility = Math.max(...asset.families.map((family) => (
+        biome.weights[BIOME_FAMILIES.indexOf(family)] ?? 0
+      )));
+      eligible.push({ asset, compatibility });
+    }
+    if (eligible.length === 0) return null;
+    const strongest = Math.max(...eligible.map((candidate) => candidate.compatibility));
+    const variants = eligible
+      .filter((candidate) => Math.abs(candidate.compatibility - strongest) < 1e-7)
+      .map((candidate) => candidate.asset)
+      .sort((a, b) => a.id.localeCompare(b.id));
+    const cellX = floorDiv(worldX, this.ambientCellSize);
+    const cellY = floorDiv(worldY, this.ambientCellSize);
+    const variantIndex = positiveMod(cellX * 3 + cellY * 5 + this.seed32, variants.length);
+    return variants[variantIndex] ?? null;
   }
 
   private selectAsset(
@@ -305,7 +506,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     return null;
   }
 
-  private assetFits(anchorX: number, anchorY: number, asset: RegionalLandmarkAsset): boolean {
+  private assetFits(anchorX: number, anchorY: number, asset: RegionalVisualAsset): boolean {
     if (this.field.sample(anchorX, anchorY).isWater) return false;
     for (const [offsetX, offsetY] of asset.collision) {
       const x = anchorX + offsetX;
@@ -328,6 +529,18 @@ function positionKey(x: number, y: number): string {
 
 function floorDiv(value: number, divisor: number): number {
   return Math.floor(value / divisor);
+}
+
+function positiveMod(value: number, divisor: number): number {
+  return ((value % divisor) + divisor) % divisor;
+}
+
+function hasVisiblePixels(tile: BuildingTileData): boolean {
+  const cached = VISIBLE_TILE_CACHE.get(tile);
+  if (cached !== undefined) return cached;
+  const visible = tile.pixels.some((row) => row.some((pixel) => pixel !== null));
+  VISIBLE_TILE_CACHE.set(tile, visible);
+  return visible;
 }
 
 function stringHash(value: string): number {

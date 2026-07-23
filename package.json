@@ -21,6 +21,7 @@
     "assets:derive-biomes": "node tools/render-sim/derive-biome-materials.mjs",
     "assets:derive-routes": "node tools/render-sim/derive-route-materials.mjs",
     "assets:derive-landmarks": "node tools/render-sim/derive-regional-landmarks.mjs",
+    "assets:derive-ambient": "node tools/render-sim/derive-regional-ambient.mjs",
     "research:regional-materials": "node tools/render-sim/regional-material-lab.mjs",
     "research:regional-landmarks": "node tools/render-sim/regional-landmark-lab.mjs",
     "research:regional-routes": "node tools/render-sim/regional-route-lab.mjs",
