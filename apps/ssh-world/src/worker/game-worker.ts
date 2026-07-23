@@ -308,6 +308,7 @@ let worldSeed: bigint = 0n;
 let providerConfig: ProviderConfig = { provider: 'openai', model: 'gpt-image-1-mini' };
 let canalTownKit: LoadedCanalTownKit | null = null;
 const workerSessions: Map<string, WorkerSession> = new Map();
+let shuttingDown = false;
 
 function send(message: WorkerToMainMessage): void {
   if (process.send) {
@@ -325,6 +326,35 @@ function sendSessionUserId(sessionId: string, userId: string): void {
 
 function sendSessionEnded(sessionId: string): void {
   send({ type: 'session_ended', sessionId });
+}
+
+async function shutdownWorker(reason: 'ipc' | 'SIGTERM'): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[Worker] Shutdown requested (${reason})`);
+
+  for (const session of workerSessions.values()) {
+    await session.destroy();
+  }
+  workerSessions.clear();
+
+  if (gameServer) {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await gameServer.stop();
+        lastError = undefined;
+        break;
+      } catch (error) {
+        lastError = error;
+        console.error(`[Worker] NPC checkpoint attempt ${attempt}/3 failed:`, error);
+        await new Promise((resolve) => setTimeout(resolve, attempt * 250));
+      }
+    }
+    if (lastError) throw lastError;
+  }
+
+  process.exit(0);
 }
 
 process.on('message', async (msg: MainToWorkerMessage) => {
@@ -571,18 +601,7 @@ process.on('message', async (msg: MainToWorkerMessage) => {
       }
 
       case 'shutdown': {
-        console.log('[Worker] Shutdown requested');
-
-        // Destroy all sessions
-        for (const session of workerSessions.values()) {
-          await session.destroy();
-        }
-        workerSessions.clear();
-
-        if (gameServer) {
-          await gameServer.stop();
-        }
-        process.exit(0);
+        await shutdownWorker('ipc');
         break;
       }
     }
@@ -607,6 +626,16 @@ process.on('unhandledRejection', (reason) => {
   send({
     type: 'error',
     message: reason instanceof Error ? reason.message : 'Unhandled rejection',
+  });
+});
+
+// systemd's default KillMode signals the parent and worker together. The
+// worker therefore owns its final durable checkpoint instead of depending on
+// a parent IPC request that may never arrive.
+process.on('SIGTERM', () => {
+  void shutdownWorker('SIGTERM').catch((error) => {
+    console.error('[Worker] Graceful SIGTERM checkpoint failed:', error);
+    process.exit(1);
   });
 });
 

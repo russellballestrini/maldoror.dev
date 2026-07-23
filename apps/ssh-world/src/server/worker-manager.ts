@@ -93,6 +93,7 @@ export class WorkerManager {
   // Track worker sessions for hot-reload re-registration
   private workerSessions: Map<string, WorkerSessionConfig> = new Map();
   private restartTimer: NodeJS.Timeout | null = null;
+  private stopping = false;
 
   constructor(config: WorkerManagerConfig) {
     this.config = config;
@@ -102,6 +103,7 @@ export class WorkerManager {
    * Start the worker process
    */
   async start(): Promise<void> {
+    this.stopping = false;
     await this.spawnWorker();
   }
 
@@ -109,23 +111,18 @@ export class WorkerManager {
    * Stop the worker process
    */
   async stop(): Promise<void> {
+    this.stopping = true;
     if (this.restartTimer) {
       clearTimeout(this.restartTimer);
       this.restartTimer = null;
     }
     const worker = this.worker;
     if (worker) {
-      try {
-        await this.flushNPCState();
-      } catch (error) {
-        console.error('[WorkerManager] Final NPC checkpoint failed:', error);
-      }
-
       const exited = new Promise<void>((resolve) => worker.once('exit', () => resolve()));
       this.sendToWorker({ type: 'shutdown' });
       await Promise.race([
         exited,
-        new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+        new Promise<void>((resolve) => setTimeout(resolve, 5000)),
       ]);
 
       if (worker.connected) worker.kill('SIGTERM');
@@ -769,7 +766,7 @@ export class WorkerManager {
         // Recover only an active runtime worker here. A startup failure rejects
         // above so systemd restarts the entire service instead of leaving the
         // main process waiting on an orphaned promise.
-        if (wasCurrentWorker && this.reloadState === 'running' && code !== 0) {
+        if (wasCurrentWorker && !this.stopping && this.reloadState === 'running' && code !== 0) {
           console.log('[WorkerManager] Unexpected worker exit, restarting...');
           this.scheduleUnexpectedRestart();
         }
