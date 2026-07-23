@@ -38,7 +38,8 @@ const PERF_OPTIMIZATIONS: PerfOptimizations = {
   foveated: true,       // Zone-based update rates (peripheral at 4Hz, core at 60Hz)
   enablePerfStats: false, // Set to true to log perf stats every 10s
 };
-import { TileProvider, createPlaceholderSprite } from '@maldoror/world';
+import { TileProvider, DistrictTileProvider, createPlaceholderSprite } from '@maldoror/world';
+import type { PixelGrid } from '@maldoror/protocol';
 import type { Direction, AnimationFrame, PlayerVisualState, Sprite } from '@maldoror/protocol';
 import type { DirectionalBuildingSprite } from '@maldoror/ai';
 import { getBuildingTilePositions } from '@maldoror/protocol';
@@ -100,6 +101,7 @@ export class WorkerSession {
   private rows: number;
   private term?: string;
   private renderMode: 'normal' | 'halfblock' | 'braille' | 'octant';
+  private districtMode: boolean = false;
   private gameServer: GameServer;
   private worldSeed: bigint;
   private providerConfig: ProviderConfig;
@@ -314,12 +316,40 @@ export class WorkerSession {
     }
     boot?.markPreviousDone();
 
-    // Initialize tile provider
+    // Initialize tile provider. If MALDOROR_DISTRICT points at a district PNG,
+    // the world IS that dense mockup-style canal town (DistrictTileProvider):
+    // the player walks around a painting-quality scene rendered in octant.
     boot?.updateStep('Generating world chunks...', 'loading');
-    this.tileProvider = new TileProvider({
-      worldSeed: this.worldSeed,
-      chunkCacheSize: 64,
-    });
+    const districtPath = process.env.MALDOROR_DISTRICT;
+    if (districtPath) {
+      const dtp = new DistrictTileProvider({ worldSeed: this.worldSeed, chunkCacheSize: 64 });
+      try {
+        const { loadDistrict } = await import('../game/district-loader.js');
+        const d = await loadDistrict(districtPath, 32);
+        const edgeWater = {
+          id: 'district:edge', name: 'edge', walkable: false,
+          pixels: DistrictTileProvider.solidGrid(32, 30, 110, 120),
+          resolutions: {} as Record<string, PixelGrid>,
+        };
+        dtp.loadDistrict(d.tiles, d.widthTiles, d.heightTiles, edgeWater);
+        this.tileProvider = dtp;
+        this.districtMode = true;
+        console.log(`[District] Loaded ${d.tiles.size} tiles (${d.widthTiles}x${d.heightTiles}) from ${districtPath}`);
+        // Spawn near the district center on walkable ground
+        if (!dtp.isWalkable(this.playerX, this.playerY)) {
+          const cx = Math.floor(d.widthTiles / 2), cy = Math.floor(d.heightTiles / 2);
+          this.playerX = cx; this.playerY = cy;
+        }
+      } catch (e) {
+        console.error('[District] load failed, falling back to procedural world:', e);
+        this.tileProvider = new TileProvider({ worldSeed: this.worldSeed, chunkCacheSize: 64 });
+      }
+    } else {
+      this.tileProvider = new TileProvider({
+        worldSeed: this.worldSeed,
+        chunkCacheSize: 64,
+      });
+    }
     this.tileProvider.setLocalPlayerId(this.userId!);
 
     // Spawn safety: new players default to (0,0), which for many world seeds is
@@ -389,6 +419,11 @@ export class WorkerSession {
         rightSidebarCols: chatWidth,
       },
     });
+    // District mode: zoom out so the player sees a wide swathe of the town
+    // (each district tile is a scene-slice; at full zoom you'd see one tile).
+    if (this.districtMode) {
+      this.renderer.setZoomLevel(20);
+    }
     boot?.markPreviousDone();
 
     // Initialize component manager

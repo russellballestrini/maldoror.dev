@@ -38,6 +38,7 @@ export {
   type TileProviderConfig,
   type BuildingData,
 } from './tiles/tile-provider.js';
+export { DistrictTileProvider } from './tiles/district-tile-provider.js';
 
 // Procedural tile generation
 export {
