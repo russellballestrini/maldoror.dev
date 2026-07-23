@@ -3,6 +3,10 @@
 *Set 2026-07-23, from the vision interview. This is the goal. Everything is
 judged against it.*
 
+> **Implementing this? Read `docs/BUILD-BRIEF.md`** — the comprehensive
+> engineering handoff: architecture, codebase map, exact build/deploy/verify
+> commands, pitfalls already discovered, and the step-by-step first milestone.
+
 ---
 
 ## The one line

@@ -188,3 +188,10 @@ The project also supports Railway deployment with the included `Dockerfile` and 
 | `pnpm docker:up` | Start local PostgreSQL |
 | `pnpm docker:down` | Stop local PostgreSQL |
 | `./deploy/deploy.sh` | Deploy to production |
+
+## Vision & build
+
+- **`DOSSIER.md`** — the north star (what maldoror is).
+- **`docs/BUILD-BRIEF.md`** — comprehensive engineering handoff (architecture, codebase map, build/deploy/verify, pitfalls, first milestone).
+- **`docs/RENDERING.md`** / **`docs/RENDERING-CODEC.md`** — fidelity + transport internals.
+- **https://maldoror.dev/gallery** — the visual iteration record (TARGET vs NOW).
