@@ -22,6 +22,40 @@ headless simulator (<code>tools/render-sim</code>) — the same pipeline the SSH
 <section><h2>🎯 TARGET (mockup)</h2>
 <div class="grid"><figure><a href="/gallery/TARGET.png"><img loading="lazy" src="/gallery/TARGET.png" alt="target mockup"></a>
 <figcaption>The goal: cozy canal-town at full fidelity in Ghostty. Phase A = style-matched assets in cell mode; Phase B = kitty graphics protocol.</figcaption></figure></div></section>
+<section><h2>008-district-approach-correction</h2><pre class="notes"># 008-district-approach-correction
+
+2026-07-23T08:11:00.662Z
+
+Iteration 8 — COURSE CORRECTION. The right approach (this actually looks like TARGET).
+
+HONEST NOTE: iterations 6-7 (tile-scatter: blocky rectangular water + props on a coarse grid) did NOT look like the mockup — too sparse, blocky, no cohesion. The mockup is DENSE and COMPOSED. So: let the image model COMPOSE a dense cohesive canal district in the mockup style (via images.edit from the mockup), then octant-render THAT.
+
+Result: district1_octant / district2_octant / district3_octant = generated dense districts rendered through the REAL octant cell pipeline. They sit in the same league as TARGET — organic winding canals, packed buildings, lush trees/foliage, bridges, boats, lily pads, drop shadows. Octant fidelity was never the problem; the composition was.
+
+ARCHITECTURE (this is the path + the 'infinite' mechanism): generate dense district images in-style -> octant-render as the backdrop -> derive a walkability mask -> player composites on top -> camera-locked 'rooms' with scroll transitions between districts (exactly the codec spec's 'camera locking as visual grammar'). Infinite world = infinite generated districts. See RENDERING-DISTRICTS.md.
+
+Compare COMPARISON.png (top). Next: walkability mask + player composite + make one district playable.
+</pre><div class="grid"><figure><a href="/gallery/008-district-approach-correction/district1_octant.png"><img loading="lazy" src="/gallery/008-district-approach-correction/district1_octant.png" alt="district1_octant.png"></a><figcaption>district1_octant.png</figcaption></figure>
+<figure><a href="/gallery/008-district-approach-correction/district1_source.png"><img loading="lazy" src="/gallery/008-district-approach-correction/district1_source.png" alt="district1_source.png"></a><figcaption>district1_source.png</figcaption></figure>
+<figure><a href="/gallery/008-district-approach-correction/district2_octant.png"><img loading="lazy" src="/gallery/008-district-approach-correction/district2_octant.png" alt="district2_octant.png"></a><figcaption>district2_octant.png</figcaption></figure>
+<figure><a href="/gallery/008-district-approach-correction/district3_octant.png"><img loading="lazy" src="/gallery/008-district-approach-correction/district3_octant.png" alt="district3_octant.png"></a><figcaption>district3_octant.png</figcaption></figure>
+<figure><a href="/gallery/008-district-approach-correction/showcase_braille_z102.png"><img loading="lazy" src="/gallery/008-district-approach-correction/showcase_braille_z102.png" alt="showcase_braille_z102.png"></a><figcaption>showcase_braille_z102.png</figcaption></figure>
+<figure><a href="/gallery/008-district-approach-correction/showcase_fullres_kitty-mode-preview.png"><img loading="lazy" src="/gallery/008-district-approach-correction/showcase_fullres_kitty-mode-preview.png" alt="showcase_fullres_kitty-mode-preview.png"></a><figcaption>showcase_fullres_kitty-mode-preview.png</figcaption></figure>
+<figure><a href="/gallery/008-district-approach-correction/showcase_halfblock_z51.png"><img loading="lazy" src="/gallery/008-district-approach-correction/showcase_halfblock_z51.png" alt="showcase_halfblock_z51.png"></a><figcaption>showcase_halfblock_z51.png</figcaption></figure>
+<figure><a href="/gallery/008-district-approach-correction/showcase_halfblock_z88.png"><img loading="lazy" src="/gallery/008-district-approach-correction/showcase_halfblock_z88.png" alt="showcase_halfblock_z88.png"></a><figcaption>showcase_halfblock_z88.png</figcaption></figure>
+<figure><a href="/gallery/008-district-approach-correction/showcase_octant_z102.png"><img loading="lazy" src="/gallery/008-district-approach-correction/showcase_octant_z102.png" alt="showcase_octant_z102.png"></a><figcaption>showcase_octant_z102.png</figcaption></figure>
+<figure><a href="/gallery/008-district-approach-correction/showcase_octant_z51.png"><img loading="lazy" src="/gallery/008-district-approach-correction/showcase_octant_z51.png" alt="showcase_octant_z51.png"></a><figcaption>showcase_octant_z51.png</figcaption></figure>
+<figure><a href="/gallery/008-district-approach-correction/showcase_octant_z88.png"><img loading="lazy" src="/gallery/008-district-approach-correction/showcase_octant_z88.png" alt="showcase_octant_z88.png"></a><figcaption>showcase_octant_z88.png</figcaption></figure>
+<figure><a href="/gallery/008-district-approach-correction/sim_braille_z102.png"><img loading="lazy" src="/gallery/008-district-approach-correction/sim_braille_z102.png" alt="sim_braille_z102.png"></a><figcaption>sim_braille_z102.png</figcaption></figure>
+<figure><a href="/gallery/008-district-approach-correction/sim_braille_z51.png"><img loading="lazy" src="/gallery/008-district-approach-correction/sim_braille_z51.png" alt="sim_braille_z51.png"></a><figcaption>sim_braille_z51.png</figcaption></figure>
+<figure><a href="/gallery/008-district-approach-correction/sim_halfblock_z26.png"><img loading="lazy" src="/gallery/008-district-approach-correction/sim_halfblock_z26.png" alt="sim_halfblock_z26.png"></a><figcaption>sim_halfblock_z26.png</figcaption></figure>
+<figure><a href="/gallery/008-district-approach-correction/sim_halfblock_z51.png"><img loading="lazy" src="/gallery/008-district-approach-correction/sim_halfblock_z51.png" alt="sim_halfblock_z51.png"></a><figcaption>sim_halfblock_z51.png</figcaption></figure>
+<figure><a href="/gallery/008-district-approach-correction/sim_halfblock_z88.png"><img loading="lazy" src="/gallery/008-district-approach-correction/sim_halfblock_z88.png" alt="sim_halfblock_z88.png"></a><figcaption>sim_halfblock_z88.png</figcaption></figure>
+<figure><a href="/gallery/008-district-approach-correction/town_fullres.png"><img loading="lazy" src="/gallery/008-district-approach-correction/town_fullres.png" alt="town_fullres.png"></a><figcaption>town_fullres.png</figcaption></figure>
+<figure><a href="/gallery/008-district-approach-correction/town_halfblock_wide.png"><img loading="lazy" src="/gallery/008-district-approach-correction/town_halfblock_wide.png" alt="town_halfblock_wide.png"></a><figcaption>town_halfblock_wide.png</figcaption></figure>
+<figure><a href="/gallery/008-district-approach-correction/town_octant_mid.png"><img loading="lazy" src="/gallery/008-district-approach-correction/town_octant_mid.png" alt="town_octant_mid.png"></a><figcaption>town_octant_mid.png</figcaption></figure>
+<figure><a href="/gallery/008-district-approach-correction/town_octant_wide.png"><img loading="lazy" src="/gallery/008-district-approach-correction/town_octant_wide.png" alt="town_octant_wide.png"></a><figcaption>town_octant_wide.png</figcaption></figure>
+<figure><a href="/gallery/008-district-approach-correction/water_animation_strip.png"><img loading="lazy" src="/gallery/008-district-approach-correction/water_animation_strip.png" alt="water_animation_strip.png"></a><figcaption>water_animation_strip.png</figcaption></figure></div></section>
 <section><h2>007-dense-town</h2><pre class="notes"># 007-dense-town
 
 2026-07-23T08:01:23.258Z
