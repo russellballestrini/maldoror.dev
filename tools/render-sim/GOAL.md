@@ -24,7 +24,10 @@ change
 ```
 
 Preview rasterizers help iteration but cannot pass the live gate. Only
-`faithful-render.mjs` replaying the real SSH bytes proves what Ghostty receives.
+`faithful-render.mjs` replaying the real SSH bytes proves the terminal state
+Ghostty receives. Its block geometry and colours are exact; its local
+monospace font is an explicit glyph-metrics approximation. Physical Ghostty
+acceptance remains separate.
 
 ## Gates
 
@@ -35,9 +38,9 @@ Preview rasterizers help iteration but cannot pass the live gate. Only
   quay/dock, foliage, furniture, planters, water details and boats.
 - **G3 — live world:** ✅ `CanalTownTileProvider` is the production default;
   infinite signed-coordinate blocks; deterministic density; explicit collision.
-- **G4 — fidelity:** ✅ area-resampled truecolour octants with error-minimizing
-  two-colour fitting; honest 160x46 live screenshot passes the engineering
-  visual review against TARGET.
+- **G4 — fidelity:** 🔄 area-resampled truecolour octants with error-minimizing
+  two-colour fitting are live; one 160x46 arrival frame is direction evidence,
+  but the multi-coordinate/multi-zoom atlas and physical review remain open.
 - **G5 — motion:** ✅ 200ms sub-tile actor interpolation, dead-zone follow
   camera, cell-quantized scrolling, 180ms zoom, discrete source LOD.
 - **G6 — terminal codec:** ✅ retained framebuffer, DECSTBM/DECSLRM,
@@ -51,7 +54,7 @@ Preview rasterizers help iteration but cannot pass the live gate. Only
 
 ## Current proof
 
-- Honest live frame:
+- Faithful automated live frame:
   `out/live-canal-town-accepted-faithful.png`
 - Raw idle capture:
   `out/live-idle-primed-v2.bin`

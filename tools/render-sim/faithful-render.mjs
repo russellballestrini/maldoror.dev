@@ -4,9 +4,10 @@
  * preview rasterizers (octant-image.mjs etc.); they flatter the output. This
  * replays the real bytes the game emits through a mini terminal emulator (a
  * persistent cell grid handling the subset of ANSI the game uses), then draws
- * each cell the way Ghostty geometrically fills it (2 colours/cell; octant =
- * crisp 2×4 sub-fills; ▀ = top half). Use a REALISTIC window size (e.g. 160×45),
- * not 300 cols.
+ * each cell with exact geometric fills for block graphics and an installed
+ * monospace font for ordinary text. The ANSI state and cell colours are exact;
+ * text glyph metrics are an approximation until a physical Ghostty capture is
+ * taken. Use a REALISTIC window size (e.g. 160×45), not 300 cols.
  *
  * Capture first (python pty, MUST set TIOCSWINSZ + a ghostty TERM):
  *   ... capture the ssh stream to a .bin at COLSxROWS ...
@@ -180,14 +181,16 @@ while (i < s.length) {
 const CW = 9, CH = 18, W = COLS * CW, H = ROWS * CH;
 const img = Buffer.alloc(W * H * 3);
 const DEF = { r: 15, g: 15, b: 20 };
+const DEFAULT_FG = { r: 229, g: 229, b: 229 };
 const fill = (x0, y0, w, h, c) => { for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) { const k = (y * W + x) * 3; img[k] = c.r; img[k + 1] = c.g; img[k + 2] = c.b; } };
+const textCells = [];
 for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
   const cel = grid[y][x], px = x * CW, py = y * CH;
   const cbg = cel.bgIndex != null ? palette[cel.bgIndex] : (cel.bg ?? DEF);
-  const cfg = cel.fgIndex != null ? palette[cel.fgIndex] : (cel.fg ?? cbg);
+  const cfg = cel.fgIndex != null ? palette[cel.fgIndex] : (cel.fg ?? DEFAULT_FG);
   fill(px, py, CW, CH, cbg);
   const code = cel.ch.codePointAt(0);
-  if (cel.ch === '▀') fill(px, py, CW, CH / 2, cel.fg ?? DEF);
+  if (cel.ch === '▀') fill(px, py, CW, CH / 2, cfg);
   else if (OCTMAP.has(code)) { const pat = OCTMAP.get(code);
     for (let r = 0; r < 4; r++) for (let c2 = 0; c2 < 2; c2++) if (pat & (1 << (r * 2 + c2))) {
       // Ghostty cells are commonly odd-sized in device pixels. Integer cell
@@ -198,6 +201,33 @@ for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
       fill(px + x0, py + y0, x1 - x0, y1 - y0, cfg);
     } }
   else if (code >= 0x2580 && code <= 0x259F) fill(px, py, CW, CH, cfg);
+  else if (cel.ch !== ' ' && code >= 0x20 && code !== 0x7F) textCells.push({ x, y, ch: cel.ch, colour: cfg });
 }
-await sharp(img, { raw: { width: W, height: H, channels: 3 } }).png().toFile(out);
-console.log(`wrote ${out} (${W}x${H}, ${COLS}x${ROWS} cells @ ${CW}x${CH}px) — this is the HONEST look`);
+
+const escapeXml = (value) => value
+  .replaceAll('&', '&amp;')
+  .replaceAll('<', '&lt;')
+  .replaceAll('>', '&gt;')
+  .replaceAll('"', '&quot;')
+  .replaceAll("'", '&apos;');
+const rgb = ({ r, g, b }) => `rgb(${r},${g},${b})`;
+const textSvg = textCells.length === 0 ? null : Buffer.from(`
+  <svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+    <style>
+      text {
+        font-family: "DejaVu Sans Mono", monospace;
+        font-size: 15px;
+        font-weight: 400;
+        text-anchor: middle;
+      }
+    </style>
+    ${textCells.map(({ x, y, ch, colour }) =>
+      `<text x="${x * CW + CW / 2}" y="${y * CH + 14.5}" fill="${rgb(colour)}">${escapeXml(ch)}</text>`
+    ).join('\n')}
+  </svg>
+`);
+
+let rendered = sharp(img, { raw: { width: W, height: H, channels: 3 } });
+if (textSvg) rendered = rendered.composite([{ input: textSvg, top: 0, left: 0 }]);
+await rendered.png().toFile(out);
+console.log(`wrote ${out} (${W}x${H}, ${COLS}x${ROWS} cells @ ${CW}x${CH}px; ${textCells.length} text glyphs) — exact cell replay, approximate Ghostty font metrics`);

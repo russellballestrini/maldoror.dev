@@ -141,11 +141,13 @@ translations. After the live session populated its renderer caches, the service
 cgroup was approximately 733 MiB current/peak with zero swap, inside its 1.6
 GiB envelope.
 
-The raw stream and honest screenshot are retained under
+The raw stream and faithful automated screenshot are retained under
 `/mnt/donto-data/donto-resources/maldoror/rendering-research/track-4-world-composition/arrival-v3df6d44/`.
 The screenshot was produced by replaying the actual SSH byte stream through
 `faithful-render.mjs`, including palette changes, margins, scroll operations,
-REP, DCH, and ICH. This is direction evidence, not physical operator acceptance.
+REP, DCH, ICH, and ordinary text overlays. Block geometry and cell colours are
+exact; the installed DejaVu Sans Mono font approximates Ghostty glyph metrics.
+This is direction evidence, not physical operator acceptance.
 
 ## 7. Verification loop
 

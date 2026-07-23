@@ -16,7 +16,9 @@ const OUT = path.join(HERE, 'out');
 const cameraX = Number(process.argv[2] ?? 12);
 const cameraY = Number(process.argv[3] ?? 6);
 const requestedTileSize = Number(process.argv[4] ?? 12);
-const WORLD_SEED = 0x4d414c444f524f52n;
+// Production's persisted world seed. An explicit override keeps historical or
+// alternate-world studies reproducible without pretending they match live.
+const WORLD_SEED = BigInt(process.env.MALDOROR_WORLD_SEED ?? '8801799478018485');
 fs.mkdirSync(OUT, { recursive: true });
 process.chdir(APP);
 process.env.SPRITES_DIR = path.join(REPO, 'sprites');
@@ -123,6 +125,7 @@ await sharp(rgb, { raw: { width, height, channels: 3 } }).png().toFile(output);
 console.log(JSON.stringify({
   output,
   viewport: { cols: COLS, rows: ROWS, tileSize: TILE_SIZE },
+  worldSeed: WORLD_SEED.toString(),
   terrainAssets: kit.terrainTiles.length,
   kit: world.getCanalTownStats(),
   rssMB: Math.round(process.memoryUsage().rss / 1024 / 1024),

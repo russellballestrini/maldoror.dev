@@ -91,8 +91,10 @@ Unit tests cover:
 - startup camera priming.
 
 `tools/render-sim/faithful-render.mjs` replays the ANSI subset the codec emits,
-including margins, SU/SD, DCH/ICH, REP, synchronized output, and OSC-4. This is
-the visual oracle for real captures.
+including margins, SU/SD, DCH/ICH, REP, synchronized output, OSC-4, and ordinary
+text cells. Geometric block fills and colours are exact; its installed
+monospace font is an explicit approximation of Ghostty glyph metrics. This is
+the automated visual oracle for real captures, not physical-client acceptance.
 
 Measured at 160x46:
 

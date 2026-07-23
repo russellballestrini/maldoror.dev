@@ -233,12 +233,14 @@ full build+tsup+push+restart.
      --cols 160 --rows 46 --keys d --settle 6
    curl -s http://127.0.0.1:3105/stats | jq
    ```
-4. **Faithful look** — the ONLY honest way to judge fidelity: capture the ssh
+4. **Faithful look** — the strongest automated way to judge fidelity: capture the ssh
    stream to a `.bin` (python pty, 160×46, ghostty TERM), then
    `node tools/render-sim/faithful-render.mjs <cap.bin> 160 46` → replays the
-   real bytes the way Ghostty paints them. Judge from THIS, never the preview
-   rasterizers (`octant-image.mjs` etc. flatter the output — they fooled the
-   prior agent into "fidelity solved" when it wasn't).
+   real bytes and terminal-cell state. Block geometry and colours are exact;
+   ordinary glyphs use the box's DejaVu Sans Mono and therefore approximate
+   Ghostty's font metrics. Judge from THIS, never the preview rasterizers
+   (`octant-image.mjs` etc. flatter the output), and reserve final acceptance
+   for the physical Ghostty gate.
 
 ---
 
