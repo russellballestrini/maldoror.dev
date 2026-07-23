@@ -40,4 +40,53 @@ describe('ViewportRenderer building alpha', () => {
       Array(4).fill({ r: 188, g: 188, b: 188 }),
     );
   });
+
+  it('renders transferred packed terrain and overlay pixels exactly like object grids', () => {
+    const terrain: Tile = {
+      id: 'packed-black',
+      name: 'packed black',
+      pixels: [],
+      packedPixels: {
+        width: 2,
+        height: 2,
+        data: new Uint8Array([
+          0, 0, 0, 255, 0, 0, 0, 255,
+          0, 0, 0, 255, 0, 0, 0, 255,
+        ]),
+      },
+      walkable: true,
+    };
+    const overlay: BuildingTileData = {
+      pixels: [],
+      resolutions: {},
+      packedPixels: {
+        width: 2,
+        height: 2,
+        data: new Uint8Array([
+          255, 255, 255, 128, 255, 255, 255, 128,
+          255, 255, 255, 128, 255, 255, 255, 128,
+        ]),
+      },
+    };
+    const world: WorldDataProvider = {
+      getTile: () => terrain,
+      getBuildingTileAt: () => overlay,
+      getPlayers: () => [],
+      getPlayerSprite: () => null,
+      getLocalPlayerId: () => 'local',
+    };
+    const renderer = new ViewportRenderer({
+      widthTiles: 1,
+      heightTiles: 1,
+      pixelWidth: 2,
+      pixelHeight: 2,
+      tileRenderSize: 2,
+      dataResolution: 2,
+    });
+    renderer.setCamera(0, 0);
+
+    expect(renderer.renderToBuffer(world, 0).buffer.flat()).toEqual(
+      Array(4).fill({ r: 188, g: 188, b: 188 }),
+    );
+  });
 });

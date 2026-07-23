@@ -7,6 +7,7 @@ import type {
   Direction,
   BuildingDirection
 } from '@maldoror/protocol';
+import type { PackedPixelGrid, PixelGrid as ProtocolPixelGrid } from '@maldoror/protocol';
 import { materialPhase } from './palette-cycle.js';
 import { resamplePixelGrid } from './pixel-resampler.js';
 import { TILE_SIZE, RESOLUTIONS } from '@maldoror/protocol';
@@ -84,6 +85,37 @@ export const MOVEMENT_REMAP: Record<CameraRotation, Record<Direction, Direction>
   270: { up: 'right', down: 'left',  left: 'up',    right: 'down'  },
 };
 
+function unpackPackedPixelGrid(packed: PackedPixelGrid): ProtocolPixelGrid {
+  const cached = PACKED_PIXEL_CACHE.get(packed);
+  if (cached) return cached;
+  if (!Number.isInteger(packed.width) || !Number.isInteger(packed.height) ||
+      packed.width < 1 || packed.height < 1 || packed.data.length !== packed.width * packed.height * 4) {
+    throw new Error('Packed pixel grid dimensions do not match its RGBA plane');
+  }
+  const grid: ProtocolPixelGrid = [];
+  for (let y = 0; y < packed.height; y++) {
+    const row = [];
+    for (let x = 0; x < packed.width; x++) {
+      const offset = (y * packed.width + x) * 4;
+      const alpha = packed.data[offset + 3]!;
+      if (alpha === 0) {
+        row.push(null);
+        continue;
+      }
+      const pixel: RGB = {
+        r: packed.data[offset]!,
+        g: packed.data[offset + 1]!,
+        b: packed.data[offset + 2]!,
+      };
+      if (alpha < 255) pixel.a = alpha;
+      row.push(pixel);
+    }
+    grid.push(row);
+  }
+  PACKED_PIXEL_CACHE.set(packed, grid);
+  return grid;
+}
+
 /**
  * Camera rotation to building direction mapping
  * When camera rotates, we show the building from a different direction
@@ -101,6 +133,7 @@ const CAMERA_TO_BUILDING_DIRECTION: Record<CameraRotation, BuildingDirection> = 
 // octant reconstruction. This modest semantic LOD preserves recognition while
 // keeping feet and collision on the authoritative world tile.
 const ENTITY_RENDER_SCALE = 1.25;
+const PACKED_PIXEL_CACHE = new WeakMap<PackedPixelGrid, ProtocolPixelGrid>();
 
 /**
  * Rotate a point around the origin by camera angle
@@ -476,7 +509,9 @@ export class ViewportRenderer {
         if (tile) {
           // Get the right frame for animated tiles, using pre-computed resolution if available
           let tilePixels: PixelGrid;
-          if (tile.animated && tile.animationFrames) {
+          if (tile.packedPixels) {
+            tilePixels = unpackPackedPixelGrid(tile.packedPixels);
+          } else if (tile.animated && tile.animationFrames) {
             const frameIndex = Math.floor(tick / 15) % tile.animationFrames.length;
             // Try animation resolutions first
             if (tile.animationResolutions?.[resKey]) {
@@ -494,7 +529,10 @@ export class ViewportRenderer {
             ? `tile:${tile.id}:${Math.floor(tick / 15) % (tile.animationFrames?.length ?? 1)}`
             : `tile:${tile.id}`;
           const scaledPixels = this.scaleFrame(tilePixels, this.tileRenderSize, this.tileRenderSize, frameId);
-          const scaledMaterialMask = tile.materialMask
+          const usePackedMaterialMask = tile.packedMaterialMask && tile.packedPixels &&
+            tile.packedPixels.width === this.tileRenderSize &&
+            tile.packedPixels.height === this.tileRenderSize;
+          const scaledMaterialMask = !usePackedMaterialMask && tile.materialMask
             ? this.scaleMaterialMask(
                 tile.materialMask,
                 this.tileRenderSize,
@@ -533,8 +571,11 @@ export class ViewportRenderer {
                 // merely a material flag. Screen-space phase fields repaint
                 // the entire canal when the camera scrolls; world anchoring
                 // lets the terminal codec shift those indexed cells intact.
-                const isWater = scaledMaterialMask
-                  ? ((scaledMaterialMask[py]?.[px] ?? 0) & 1) === 1
+                const materialOwnership = usePackedMaterialMask
+                  ? tile.packedMaterialMask?.[py * this.tileRenderSize + px] ?? 0
+                  : scaledMaterialMask?.[py]?.[px] ?? 0;
+                const isWater = usePackedMaterialMask || scaledMaterialMask
+                  ? (materialOwnership & 1) === 1
                   : tile.material === 'water';
                 materialGrid[bufferY]![bufferX] = isWater
                   ? materialPhase(
@@ -643,7 +684,9 @@ export class ViewportRenderer {
         if (!buildingTile) continue;
 
         // Get the appropriate resolution
-        const tilePixels = buildingTile.resolutions?.[resKey] ?? buildingTile.pixels;
+        const tilePixels = buildingTile.packedPixels
+          ? unpackPackedPixelGrid(buildingTile.packedPixels)
+          : buildingTile.resolutions?.[resKey] ?? buildingTile.pixels;
 
         // Scale to exact tile render size if needed (with caching by position)
         const frameId = `building:${worldTileX},${worldTileY}:${buildingDirection}`;

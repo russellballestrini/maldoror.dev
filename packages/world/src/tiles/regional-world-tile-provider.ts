@@ -66,12 +66,76 @@ export type RegionalLandmarkPlacement = RegionalAssetPlacement;
 
 export interface RegionalWorldBiomeSampler {
   sample(worldX: number, worldY: number): BiomeWorldSample;
+  prewarm?(minX: number, minY: number, maxX: number, maxY: number): void;
 }
 
 export interface RegionalWorldRouteSampler {
   sample(worldX: number, worldY: number): RegionalRouteSample;
+  prewarm?(minX: number, minY: number, maxX: number, maxY: number): void;
   getLandmarkSites?(minX: number, minY: number, maxX: number, maxY: number): RegionalLandmarkSite[];
 }
+
+export interface RegionalPrewarmResult {
+  biomeBoundsPrimed: boolean;
+  routeBoundsPrimed: boolean;
+  terrainTilesPrimed: number;
+  providerBlocksPrimed: number;
+  resolution: number;
+}
+
+export interface RegionalPreparedTerrainTile {
+  x: number;
+  y: number;
+  tile: Tile;
+}
+
+export interface RegionalPreparedOverlayTile {
+  x: number;
+  y: number;
+  tile: BuildingTileData;
+}
+
+/**
+ * Structured-clone-safe output from an off-thread regional generator.
+ *
+ * Every coordinate in `bounds` has exactly one terrain entry. Missing overlay
+ * and solid entries are authoritative negative results inside the rectangle,
+ * so importing a package never falls through to cold procedural generation.
+ */
+export interface RegionalPreparedViewport {
+  version: 1;
+  worldSeed: string;
+  bounds: {
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+  };
+  resolution: number;
+  terrain: RegionalPreparedTerrainTile[];
+  overlays: RegionalPreparedOverlayTile[];
+  solid: Array<readonly [number, number]>;
+}
+
+/** Transferable counterpart of RegionalPreparedViewport. Terrain and overlay
+ * rasters are tile-major RGBA; material and collision ownership are compact
+ * byte planes. Only five ArrayBuffers cross the worker boundary. */
+export interface RegionalPackedPreparedViewport {
+  version: 2;
+  worldSeed: string;
+  bounds: RegionalPreparedViewport['bounds'];
+  resolution: number;
+  terrainRgba: Uint8Array;
+  terrainMaterial: Uint8Array;
+  terrainWalkable: Uint8Array;
+  overlayCoordinates: Int32Array;
+  overlayRgba: Uint8Array;
+  solid: Uint8Array;
+}
+
+export type RegionalPreparedViewportPayload =
+  | RegionalPreparedViewport
+  | RegionalPackedPreparedViewport;
 
 export interface RegionalWorldTileProviderConfig extends TileProviderConfig {
   field: RegionalWorldBiomeSampler;
@@ -89,6 +153,7 @@ export interface RegionalWorldTileProviderConfig extends TileProviderConfig {
   routeContactDensity?: number;
   routeContactLandmarkClearance?: number;
   maxCachedRouteContactCells?: number;
+  maxPreparedViewports?: number;
 }
 
 interface Placement {
@@ -109,8 +174,18 @@ interface CachedBlock {
   accessedAt: number;
 }
 
+interface ImportedPreparedViewport {
+  key: string;
+  bounds: RegionalPreparedViewport['bounds'];
+  resolution: number;
+  terrain: Map<string, Tile>;
+  overlays: Map<string, BuildingTileData>;
+  solid: Set<string>;
+}
+
 const VISIBLE_TILE_CACHE = new WeakMap<BuildingTileData, boolean>();
 const LANDMARK_ANCHOR_REACH = 7;
+const MAX_PREPARED_VIEWPORT_AREA = 8192;
 
 /**
  * Regional production-provider seam.
@@ -122,6 +197,7 @@ const LANDMARK_ANCHOR_REACH = 7;
  * derived raster placement and cannot alter the underlying world.
  */
 export class RegionalWorldTileProvider extends TileProvider {
+  private readonly worldSeedString: string;
   private readonly seed32: number;
   private readonly field: RegionalWorldBiomeSampler;
   private readonly routes: RegionalWorldRouteSampler;
@@ -138,16 +214,19 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly routeContactDensity: number;
   private readonly routeContactLandmarkClearance: number;
   private readonly maxCachedRouteContactCells: number;
+  private readonly maxPreparedViewports: number;
   private readonly placementMinOffsetX: number;
   private readonly placementMaxOffsetX: number;
   private readonly placementMinOffsetY: number;
   private readonly placementMaxOffsetY: number;
   private readonly blockCache = new Map<string, CachedBlock>();
   private readonly routeContactPlacementCache = new Map<string, Placement | null>();
+  private readonly preparedViewports = new Map<string, ImportedPreparedViewport>();
   private accessClock = 0;
 
   constructor(config: RegionalWorldTileProviderConfig) {
     super(config);
+    this.worldSeedString = config.worldSeed.toString();
     this.seed32 = Number(BigInt.asUintN(32, config.worldSeed));
     this.field = config.field;
     this.routes = config.routes;
@@ -164,6 +243,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     this.routeContactDensity = Math.max(0, Math.min(1, config.routeContactDensity ?? 0.55));
     this.routeContactLandmarkClearance = Math.max(4, config.routeContactLandmarkClearance ?? 10);
     this.maxCachedRouteContactCells = Math.max(64, config.maxCachedRouteContactCells ?? 4096);
+    this.maxPreparedViewports = Math.max(1, Math.min(16, config.maxPreparedViewports ?? 4));
     for (const asset of this.landmarks) {
       if (asset.families.length === 0 || asset.landmarkKinds.length === 0) {
         throw new Error(`Regional landmark has no semantic compatibility: ${asset.id}`);
@@ -220,7 +300,270 @@ export class RegionalWorldTileProvider extends TileProvider {
   }
 
   getTileAtResolution(tileX: number, tileY: number, resolution: number): Tile {
+    const prepared = this.findPreparedViewport(tileX, tileY, Math.round(resolution));
+    if (prepared) return prepared.terrain.get(positionKey(tileX, tileY))!;
     return this.compositor.getTileAtResolution(tileX, tileY, resolution);
+  }
+
+  /** Synchronously materialize one bounded predicted viewport. This is the
+   * cache-import target for an off-critical-path scheduler, not permission to
+   * call cold generation from an input handler. Timings must account for this
+   * preparation separately from the subsequent frame. */
+  prewarm(
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number,
+    resolution: number,
+  ): RegionalPrewarmResult {
+    const tileMinX = Math.floor(Math.min(minX, maxX));
+    const tileMaxX = Math.floor(Math.max(minX, maxX));
+    const tileMinY = Math.floor(Math.min(minY, maxY));
+    const tileMaxY = Math.floor(Math.max(minY, maxY));
+    this.field.prewarm?.(tileMinX - 1, tileMinY - 1, tileMaxX + 1, tileMaxY + 1);
+    this.routes.prewarm?.(tileMinX - 12, tileMinY - 12, tileMaxX + 12, tileMaxY + 12);
+
+    const firstBlockX = floorDiv(tileMinX - this.placementMaxOffsetX, this.blockSize);
+    const lastBlockX = floorDiv(tileMaxX - this.placementMinOffsetX, this.blockSize);
+    const firstBlockY = floorDiv(tileMinY - this.placementMaxOffsetY, this.blockSize);
+    const lastBlockY = floorDiv(tileMaxY - this.placementMinOffsetY, this.blockSize);
+    let providerBlocksPrimed = 0;
+    for (let blockY = firstBlockY; blockY <= lastBlockY; blockY++) {
+      for (let blockX = firstBlockX; blockX <= lastBlockX; blockX++) {
+        this.getBlock(blockX, blockY);
+        providerBlocksPrimed++;
+      }
+    }
+
+    let terrainTilesPrimed = 0;
+    for (let tileY = tileMinY; tileY <= tileMaxY; tileY++) {
+      for (let tileX = tileMinX; tileX <= tileMaxX; tileX++) {
+        this.compositor.getTileAtResolution(tileX, tileY, resolution);
+        terrainTilesPrimed++;
+      }
+    }
+    return {
+      biomeBoundsPrimed: this.field.prewarm !== undefined,
+      routeBoundsPrimed: this.routes.prewarm !== undefined,
+      terrainTilesPrimed,
+      providerBlocksPrimed,
+      resolution,
+    };
+  }
+
+  /** Materialize a complete bounded cache package suitable for structured
+   * cloning from a worker. This method is deliberately synchronous and belongs
+   * on the generator side of the boundary. */
+  prepareViewport(
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number,
+    resolution: number,
+  ): RegionalPreparedViewport {
+    const bounds = normalizedPreparedBounds(minX, minY, maxX, maxY);
+    validatePreparedArea(bounds);
+    const normalizedResolution = Math.max(1, Math.round(resolution));
+    this.prewarm(
+      bounds.minX,
+      bounds.minY,
+      bounds.maxX,
+      bounds.maxY,
+      normalizedResolution,
+    );
+    const terrain: RegionalPreparedTerrainTile[] = [];
+    const overlays: RegionalPreparedOverlayTile[] = [];
+    const solid: Array<readonly [number, number]> = [];
+    for (let y = bounds.minY; y <= bounds.maxY; y++) {
+      for (let x = bounds.minX; x <= bounds.maxX; x++) {
+        terrain.push({ x, y, tile: this.compositor.getTileAtResolution(x, y, normalizedResolution) });
+        const overlay = this.getBuildingTileAt(x, y);
+        if (overlay) overlays.push({ x, y, tile: overlay });
+        if (this.isBuildingAt(x, y)) solid.push([x, y]);
+      }
+    }
+    return {
+      version: 1,
+      worldSeed: this.worldSeedString,
+      bounds,
+      resolution: normalizedResolution,
+      terrain,
+      overlays,
+      solid,
+    };
+  }
+
+  /** Import a worker-produced rectangle with bounded package-level LRU. The
+   * validation cost is proportional only to the viewport and is reported by
+   * the traversal lab separately from rendering. */
+  importPreparedViewport(payload: RegionalPreparedViewportPayload): void {
+    if (payload.version === 2) {
+      this.importPackedPreparedViewport(payload);
+      return;
+    }
+    if (payload.worldSeed !== this.worldSeedString) {
+      throw new Error(`Regional viewport seed mismatch: ${payload.worldSeed} != ${this.worldSeedString}`);
+    }
+    const bounds = normalizedPreparedBounds(
+      payload.bounds.minX,
+      payload.bounds.minY,
+      payload.bounds.maxX,
+      payload.bounds.maxY,
+    );
+    if (bounds.minX !== payload.bounds.minX || bounds.minY !== payload.bounds.minY ||
+        bounds.maxX !== payload.bounds.maxX || bounds.maxY !== payload.bounds.maxY) {
+      throw new Error('Regional viewport bounds must be normalized integers');
+    }
+    validatePreparedArea(bounds);
+    if (!Number.isInteger(payload.resolution) || payload.resolution < 1) {
+      throw new Error(`Regional viewport resolution must be a positive integer: ${payload.resolution}`);
+    }
+    const expectedTerrain = preparedArea(bounds);
+    if (payload.terrain.length !== expectedTerrain) {
+      throw new Error(`Regional viewport terrain coverage mismatch: ${payload.terrain.length}/${expectedTerrain}`);
+    }
+    const terrain = new Map<string, Tile>();
+    for (const entry of payload.terrain) {
+      validatePreparedCoordinate(entry.x, entry.y, bounds, 'terrain');
+      const key = positionKey(entry.x, entry.y);
+      if (terrain.has(key)) throw new Error(`Duplicate regional viewport terrain coordinate: ${key}`);
+      terrain.set(key, entry.tile);
+    }
+    const overlays = new Map<string, BuildingTileData>();
+    for (const entry of payload.overlays) {
+      validatePreparedCoordinate(entry.x, entry.y, bounds, 'overlay');
+      const key = positionKey(entry.x, entry.y);
+      if (overlays.has(key)) throw new Error(`Duplicate regional viewport overlay coordinate: ${key}`);
+      overlays.set(key, entry.tile);
+    }
+    const solid = new Set<string>();
+    for (const [x, y] of payload.solid) {
+      validatePreparedCoordinate(x, y, bounds, 'solid');
+      solid.add(positionKey(x, y));
+    }
+    const key = `${bounds.minX},${bounds.minY},${bounds.maxX},${bounds.maxY}@${payload.resolution}`;
+    this.installPreparedViewport({
+      key,
+      bounds,
+      resolution: payload.resolution,
+      terrain,
+      overlays,
+      solid,
+    });
+  }
+
+  private installPreparedViewport(viewport: ImportedPreparedViewport): void {
+    this.preparedViewports.delete(viewport.key);
+    this.preparedViewports.set(viewport.key, viewport);
+    while (this.preparedViewports.size > this.maxPreparedViewports) {
+      const oldest = this.preparedViewports.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.preparedViewports.delete(oldest);
+    }
+  }
+
+  private importPackedPreparedViewport(payload: RegionalPackedPreparedViewport): void {
+    if (payload.worldSeed !== this.worldSeedString) {
+      throw new Error(`Regional viewport seed mismatch: ${payload.worldSeed} != ${this.worldSeedString}`);
+    }
+    const bounds = normalizedPreparedBounds(
+      payload.bounds.minX,
+      payload.bounds.minY,
+      payload.bounds.maxX,
+      payload.bounds.maxY,
+    );
+    if (bounds.minX !== payload.bounds.minX || bounds.minY !== payload.bounds.minY ||
+        bounds.maxX !== payload.bounds.maxX || bounds.maxY !== payload.bounds.maxY) {
+      throw new Error('Regional viewport bounds must be normalized integers');
+    }
+    validatePreparedArea(bounds);
+    if (!Number.isInteger(payload.resolution) || payload.resolution < 1 || payload.resolution > 256) {
+      throw new Error(`Regional viewport resolution must be an integer in 1..256: ${payload.resolution}`);
+    }
+    const area = preparedArea(bounds);
+    const pixelsPerTile = payload.resolution * payload.resolution;
+    const bytesPerTile = pixelsPerTile * 4;
+    if (payload.terrainRgba.length !== area * bytesPerTile ||
+        payload.terrainMaterial.length !== area * pixelsPerTile ||
+        payload.terrainWalkable.length !== area || payload.solid.length !== area) {
+      throw new Error('Packed regional viewport terrain plane dimensions do not match bounds');
+    }
+    if (payload.overlayCoordinates.length % 2 !== 0 ||
+        payload.overlayRgba.length !== payload.overlayCoordinates.length / 2 * bytesPerTile) {
+      throw new Error('Packed regional viewport overlay plane dimensions do not match coordinates');
+    }
+    const terrain = new Map<string, Tile>();
+    for (let index = 0; index < area; index++) {
+      const x = bounds.minX + index % (bounds.maxX - bounds.minX + 1);
+      const y = bounds.minY + Math.floor(index / (bounds.maxX - bounds.minX + 1));
+      terrain.set(positionKey(x, y), {
+        id: `regional-prepared:${x},${y}@${payload.resolution}`,
+        name: 'Transferred regional material',
+        pixels: [],
+        packedPixels: {
+          width: payload.resolution,
+          height: payload.resolution,
+          data: payload.terrainRgba.subarray(index * bytesPerTile, (index + 1) * bytesPerTile),
+        },
+        packedMaterialMask: payload.terrainMaterial.subarray(
+          index * pixelsPerTile,
+          (index + 1) * pixelsPerTile,
+        ),
+        walkable: payload.terrainWalkable[index] === 1,
+      });
+    }
+    const overlays = new Map<string, BuildingTileData>();
+    for (let index = 0; index < payload.overlayCoordinates.length / 2; index++) {
+      const x = payload.overlayCoordinates[index * 2]!;
+      const y = payload.overlayCoordinates[index * 2 + 1]!;
+      validatePreparedCoordinate(x, y, bounds, 'overlay');
+      const key = positionKey(x, y);
+      if (overlays.has(key)) throw new Error(`Duplicate regional viewport overlay coordinate: ${key}`);
+      overlays.set(key, {
+        pixels: [],
+        resolutions: {},
+        packedPixels: {
+          width: payload.resolution,
+          height: payload.resolution,
+          data: payload.overlayRgba.subarray(index * bytesPerTile, (index + 1) * bytesPerTile),
+        },
+      });
+    }
+    const solid = new Set<string>();
+    for (let index = 0; index < payload.solid.length; index++) {
+      if (payload.solid[index] !== 1) continue;
+      const x = bounds.minX + index % (bounds.maxX - bounds.minX + 1);
+      const y = bounds.minY + Math.floor(index / (bounds.maxX - bounds.minX + 1));
+      solid.add(positionKey(x, y));
+    }
+    const key = `${bounds.minX},${bounds.minY},${bounds.maxX},${bounds.maxY}@${payload.resolution}`;
+    this.installPreparedViewport({
+      key,
+      bounds,
+      resolution: payload.resolution,
+      terrain,
+      overlays,
+      solid,
+    });
+  }
+
+  /** Constant-bounded coverage query for the predictive scheduler. Coverage
+   * must come from one complete package; composing holes across rectangles
+   * would make a negative overlay result ambiguous. */
+  hasPreparedViewportCoverage(
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number,
+    resolution: number,
+  ): boolean {
+    const bounds = normalizedPreparedBounds(minX, minY, maxX, maxY);
+    const normalizedResolution = Math.max(1, Math.round(resolution));
+    return [...this.preparedViewports.values()].some((viewport) => (
+      viewport.resolution === normalizedResolution &&
+      viewport.bounds.minX <= bounds.minX && viewport.bounds.maxX >= bounds.maxX &&
+      viewport.bounds.minY <= bounds.minY && viewport.bounds.maxY >= bounds.maxY
+    ));
   }
 
   override getBuildingTileAt(
@@ -230,6 +573,8 @@ export class RegionalWorldTileProvider extends TileProvider {
   ): BuildingTileData | null {
     const authored = super.getBuildingTileAt(worldX, worldY, direction);
     if (authored) return authored;
+    const prepared = this.findPreparedViewport(worldX, worldY);
+    if (prepared) return prepared.overlays.get(positionKey(worldX, worldY)) ?? null;
     for (const block of this.blocksNear(worldX, worldY)) {
       const tile = block.overlays.get(positionKey(worldX, worldY));
       if (tile) return tile;
@@ -239,6 +584,8 @@ export class RegionalWorldTileProvider extends TileProvider {
 
   override isBuildingAt(worldX: number, worldY: number): boolean {
     if (super.isBuildingAt(worldX, worldY)) return true;
+    const prepared = this.findPreparedViewport(worldX, worldY);
+    if (prepared) return prepared.solid.has(positionKey(worldX, worldY));
     return this.blocksNear(worldX, worldY)
       .some((block) => block.solid.has(positionKey(worldX, worldY)));
   }
@@ -258,6 +605,8 @@ export class RegionalWorldTileProvider extends TileProvider {
     blockSize: number;
     maxCachedBlocks: number;
     maxCachedRouteContactCells: number;
+    preparedViewports: number;
+    preparedTerrainTiles: number;
   } {
     return {
       landmarkAssets: this.landmarks.length,
@@ -292,6 +641,11 @@ export class RegionalWorldTileProvider extends TileProvider {
       blockSize: this.blockSize,
       maxCachedBlocks: this.maxCachedBlocks,
       maxCachedRouteContactCells: this.maxCachedRouteContactCells,
+      preparedViewports: this.preparedViewports.size,
+      preparedTerrainTiles: [...this.preparedViewports.values()].reduce(
+        (total, viewport) => total + viewport.terrain.size,
+        0,
+      ),
     };
   }
 
@@ -379,8 +733,27 @@ export class RegionalWorldTileProvider extends TileProvider {
   override destroy(): void {
     this.blockCache.clear();
     this.routeContactPlacementCache.clear();
+    this.preparedViewports.clear();
     this.compositor.clear();
     super.destroy();
+  }
+
+  private findPreparedViewport(
+    worldX: number,
+    worldY: number,
+    resolution?: number,
+  ): ImportedPreparedViewport | null {
+    const tileX = Math.floor(worldX);
+    const tileY = Math.floor(worldY);
+    const candidates = [...this.preparedViewports.values()];
+    for (let index = candidates.length - 1; index >= 0; index--) {
+      const viewport = candidates[index]!;
+      if (resolution !== undefined && viewport.resolution !== resolution) continue;
+      if (tileX < viewport.bounds.minX || tileX > viewport.bounds.maxX ||
+          tileY < viewport.bounds.minY || tileY > viewport.bounds.maxY) continue;
+      return viewport;
+    }
+    return null;
   }
 
   private blocksNear(worldX: number, worldY: number): CachedBlock[] {
@@ -802,6 +1175,43 @@ export class RegionalWorldTileProvider extends TileProvider {
 
 function positionKey(x: number, y: number): string {
   return `${x},${y}`;
+}
+
+function normalizedPreparedBounds(
+  minX: number,
+  minY: number,
+  maxX: number,
+  maxY: number,
+): RegionalPreparedViewport['bounds'] {
+  return {
+    minX: Math.floor(Math.min(minX, maxX)),
+    minY: Math.floor(Math.min(minY, maxY)),
+    maxX: Math.floor(Math.max(minX, maxX)),
+    maxY: Math.floor(Math.max(minY, maxY)),
+  };
+}
+
+function preparedArea(bounds: RegionalPreparedViewport['bounds']): number {
+  return (bounds.maxX - bounds.minX + 1) * (bounds.maxY - bounds.minY + 1);
+}
+
+function validatePreparedArea(bounds: RegionalPreparedViewport['bounds']): void {
+  const area = preparedArea(bounds);
+  if (!Number.isSafeInteger(area) || area < 1 || area > MAX_PREPARED_VIEWPORT_AREA) {
+    throw new Error(`Regional viewport area must be in 1..${MAX_PREPARED_VIEWPORT_AREA}: ${area}`);
+  }
+}
+
+function validatePreparedCoordinate(
+  x: number,
+  y: number,
+  bounds: RegionalPreparedViewport['bounds'],
+  kind: string,
+): void {
+  if (!Number.isInteger(x) || !Number.isInteger(y) ||
+      x < bounds.minX || x > bounds.maxX || y < bounds.minY || y > bounds.maxY) {
+    throw new Error(`Regional viewport ${kind} coordinate outside bounds: ${x},${y}`);
+  }
 }
 
 function floorDiv(value: number, divisor: number): number {

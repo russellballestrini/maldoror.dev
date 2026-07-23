@@ -98,9 +98,13 @@ function makeWorld(
   maxCachedBlocks = 32,
   sampleRoute: (x: number, y: number) => RegionalRouteSample = routeSample,
 ): RegionalWorldTileProvider {
-  const field = { sample: (x: number) => biomeSample(nearestFamily(x)) };
+  const field = {
+    sample: (x: number) => biomeSample(nearestFamily(x)),
+    prewarm: () => undefined,
+  };
   const routes = {
     sample: sampleRoute,
+    prewarm: () => undefined,
     getLandmarkSites: (minX: number, minY: number, maxX: number, maxY: number): RegionalLandmarkSite[] =>
       SITES.filter(([x]) => x >= minX && x <= maxX && 0 >= minY && 0 <= maxY)
         .map(([x, _family, landmarkKind]) => ({
@@ -289,5 +293,52 @@ describe('RegionalWorldTileProvider', () => {
     const world = makeWorld(32);
     world.getBuildingTileAt(12, 12);
     expect(world.getRegionalStats().cachedBlocks).toBe(1);
+  });
+
+  it('primes one bounded viewport without conflating preparation with rendering', () => {
+    const world = makeWorld(32, 32);
+    const result = world.prewarm(-4, -3, 4, 3, 4);
+    expect(result).toMatchObject({
+      biomeBoundsPrimed: true,
+      routeBoundsPrimed: true,
+      terrainTilesPrimed: 63,
+      resolution: 4,
+    });
+    expect(result.providerBlocksPrimed).toBeGreaterThan(0);
+    expect(world.getRegionalStats().cachedBlocks).toBeGreaterThan(0);
+    expect(world.getTileAtResolution(0, 0, 4).pixels).toHaveLength(4);
+  });
+
+  it('exports and imports exact bounded viewport results without cold fallback', () => {
+    const source = makeWorld(32, 32);
+    const prepared = source.prepareViewport(-4, -3, 4, 3, 4);
+    const target = makeWorld(32, 32);
+    target.importPreparedViewport(structuredClone(prepared));
+
+    expect(target.getRegionalStats()).toMatchObject({
+      cachedBlocks: 0,
+      preparedViewports: 1,
+      preparedTerrainTiles: 63,
+    });
+    expect(target.hasPreparedViewportCoverage(-4, -3, 4, 3, 4)).toBe(true);
+    expect(target.hasPreparedViewportCoverage(-5, -3, 4, 3, 4)).toBe(false);
+    expect(target.hasPreparedViewportCoverage(-4, -3, 4, 3, 8)).toBe(false);
+    for (let y = -3; y <= 3; y++) {
+      for (let x = -4; x <= 4; x++) {
+        expect(target.getTileAtResolution(x, y, 4)).toEqual(source.getTileAtResolution(x, y, 4));
+        expect(target.getBuildingTileAt(x, y)).toEqual(source.getBuildingTileAt(x, y));
+        expect(target.isBuildingAt(x, y)).toBe(source.isBuildingAt(x, y));
+      }
+    }
+    expect(target.getRegionalStats().cachedBlocks).toBe(0);
+  });
+
+  it('rejects cross-seed or incomplete prepared viewports', () => {
+    const source = makeWorld();
+    const prepared = source.prepareViewport(0, 0, 1, 1, 4);
+    expect(() => source.importPreparedViewport({ ...prepared, worldSeed: '43' }))
+      .toThrow(/seed mismatch/);
+    expect(() => source.importPreparedViewport({ ...prepared, terrain: prepared.terrain.slice(1) }))
+      .toThrow(/coverage mismatch/);
   });
 });

@@ -23,6 +23,15 @@ export type Pixel = RGB | null;
  */
 export type PixelGrid = Pixel[][];
 
+/** Compact RGBA raster used by off-thread world preparation. The backing
+ * Uint8Array is transferable without structured-cloning an RGB object graph;
+ * renderers may decode and memoize only tiles that actually become visible. */
+export interface PackedPixelGrid {
+  width: number;
+  height: number;
+  data: Uint8Array;
+}
+
 /** Per-pixel material bits aligned with a Tile's base PixelGrid.
  * Bit 0 marks water pixels eligible for terminal-native palette animation.
  * Kept separate from colour so blended terrain can retain exact material
@@ -94,6 +103,7 @@ export interface Tile {
   id: string;
   name: string;
   pixels: PixelGrid;  // Base resolution (256x256)
+  packedPixels?: PackedPixelGrid;
   walkable: boolean;
   /** Optional render material for terminal-native effects such as OSC-4
    * palette cycling. This is asset metadata, not inferred from pixel colors. */
@@ -101,6 +111,7 @@ export interface Tile {
   /** Optional per-pixel material ownership for multi-material tiles. When
    * present it takes precedence over the tile-wide `material` field. */
   materialMask?: MaterialMask;
+  packedMaterialMask?: Uint8Array;
   animated?: boolean;
   animationFrames?: PixelGrid[];  // For animated tiles at base resolution
   // Pre-computed resolutions (keys are sizes: "26", "51", etc.)
@@ -139,6 +150,7 @@ export interface PlayerVisualState {
 export interface BuildingTileData {
   pixels: PixelGrid;
   resolutions: Record<string, PixelGrid>;
+  packedPixels?: PackedPixelGrid;
 }
 
 /**

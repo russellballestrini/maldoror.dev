@@ -411,6 +411,14 @@ Completed foundations:
   tangent-only blue-noise thinning; faithful review rejected both floating
   unsnapped contacts and adjacent duplicate thresholds rather than publishing
   source art as runtime proof;
+- bounded regional predictive preparation now runs in an identical persistent
+  worker stack with vector lookahead, coverage hysteresis, one in-flight/latest-
+  pending scheduling, seed/version/bounds validation, and a four-viewport LRU;
+  the rejected RGB-object transfer is retained because it hid a 1.237-second
+  event-loop stall, while the selected transferable-plane path yields zero
+  uncovered frames and exact checkpoints over 180 frames at 160x46 with render
+  p50/p95/p99 4.09/8.32/27.74 ms, event-loop p99 5.21 ms, import p95 4.84 ms,
+  and 633.61 MiB peak RSS;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–018 expose selected and rejected research candidates without
@@ -418,10 +426,11 @@ Completed foundations:
 
 Still open and therefore goal-blocking:
 
-- the regional field/compositor/routes are not the live provider; the 25.1x
-  cold-path improvement is not permission to block input for 2.02 seconds, and
-  predictive background prewarming plus p50/p95/p99 traversal evidence remain
-  unbuilt;
+- the regional field/compositor/routes are not the live provider; predictive
+  cache transport is now a measured research seam, but the 4.62-second initial
+  origin corridor must move into service readiness and authoritative movement/
+  camera/zoom integration, production SSH latency, the 5/10/20-presence ladder,
+  30-minute run, cgroup behavior, and physical Ghostty remain unproven;
 - the first six-family landmark silhouettes are sparse prototypes, not a
   complete world layer; the first directional route contacts still need
   material-matched connector blending, deep parcel/building-group composition,

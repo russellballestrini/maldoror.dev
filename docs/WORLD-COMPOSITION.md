@@ -178,6 +178,35 @@ group, service yard, garden program, or ownership/schedule layer grows behind
 the threshold yet. Those are explicit next constraints, not reasons to hide the
 faithful failures or deploy the regional provider early.
 
+## Predictive regional cache transport
+
+Cold regional composition remains intentionally expensive: it solves physical
+biomes and routes, composes semantic material LOD, and resolves every sparse
+vertical layer. It is now prohibited from the input path by an explicit worker
+boundary. A persistent worker owns an identical seed/manifests/configuration
+stack and prepares velocity-projected rectangles. A coverage-aware scheduler
+permits one request in flight, coalesces ordinary motion inside the current
+corridor, and retains only the newest uncovered pending prediction.
+
+The first structured-clone implementation is rejected. Although its imported
+frames were exact and fast, deserializing RGB object graphs stalled the main
+event loop for 1.237 seconds. The selected V2 package transfers six typed
+planes: terrain RGBA/material/walkability, sparse overlay coordinates/RGBA, and
+collision. Packages are seed-, version-, bounds-, resolution-, and length-
+validated into a four-rectangle LRU. The renderer lazily memoizes only packed
+tiles that become visible, keeping arrival work bounded.
+
+The retained 180-frame, 15 Hz, 160x46 lab has zero coverage misses and exact
+checkpoint hashes. Render p50/p95/p99 is 4.09/8.32/27.74 ms; event-loop delay is
+1.09/1.22/5.21 ms with a 34.47 ms maximum; import p95 is 4.84 ms; peak RSS is
+633.61 MiB. A separate 32-coordinate cold stress fixture records demand p99 at
+1.635 seconds versus worker-primed render p99 at 42.28 ms. Raw measurements and
+the rejected design live in mounted Track 5 `FINDINGS.md`.
+
+These are research measurements, not Gate-D completion. The exact origin must
+be ready before accepting logins, the scheduler still needs live movement/zoom
+integration, and SSH/load/30-minute/physical-Ghostty proofs remain open.
+
 ## Non-periodic asset placement
 
 Procedural anchors come from a world-space priority field. A candidate survives

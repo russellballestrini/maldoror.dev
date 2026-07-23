@@ -104,5 +104,8 @@ one repeated exemplar motif.
 
 This decision reduced the retained 80 x 44-world-tile overview lab from 50.79
 seconds to 2.02 seconds cold while preserving the faithful ANSI composition.
-The selected architecture still requires predictive background prewarming and
-production p50/p95/p99 evidence before live cutover.
+Predictive background preparation is now proven in a bounded research harness:
+the selected transferable-plane worker path retains exact hashes and reports
+160x46 render p50/p95/p99 of 4.09/8.32/27.74 ms with zero uncovered frames.
+That is not live-cutover approval; production SSH, load, long-run, zoom/weather,
+and physical-Ghostty evidence remain required.

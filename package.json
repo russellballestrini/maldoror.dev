@@ -26,6 +26,8 @@
     "research:regional-materials": "node tools/render-sim/regional-material-lab.mjs",
     "research:regional-landmarks": "node tools/render-sim/regional-landmark-lab.mjs",
     "research:regional-routes": "node tools/render-sim/regional-route-lab.mjs",
+    "research:regional-traversal": "node tools/render-sim/regional-traversal-lab.mjs",
+    "research:regional-predictive-traversal": "node tools/render-sim/regional-predictive-traversal-lab.mjs",
     "clean": "turbo run clean && rm -rf node_modules",
     "db:generate": "pnpm --filter @maldoror/db generate",
     "db:migrate": "pnpm --filter @maldoror/db migrate",

@@ -84,4 +84,41 @@ describe('ViewportRenderer material masks', () => {
     expect(new Set(requestedResolutions)).toEqual(new Set([2]));
     expect(fallbackCalls).toBe(0);
   });
+
+  it('preserves packed material ownership without reconstructing mask rows', () => {
+    const tile: Tile = {
+      id: 'packed-material-transition',
+      name: 'packed material transition',
+      pixels: [],
+      packedPixels: {
+        width: 2,
+        height: 2,
+        data: new Uint8Array([
+          20, 90, 130, 255, 190, 170, 130, 255,
+          190, 170, 130, 255, 190, 170, 130, 255,
+        ]),
+      },
+      packedMaterialMask: new Uint8Array([1, 0, 0, 0]),
+      walkable: true,
+    };
+    const world: WorldDataProvider = {
+      getTile: () => tile,
+      getPlayers: () => [],
+      getPlayerSprite: () => null,
+      getLocalPlayerId: () => 'local',
+    };
+    const renderer = new ViewportRenderer({
+      widthTiles: 1,
+      heightTiles: 1,
+      pixelWidth: 2,
+      pixelHeight: 2,
+      tileRenderSize: 2,
+      dataResolution: 2,
+    });
+    renderer.setCamera(0, 0);
+
+    const materialGrid = renderer.renderToBuffer(world, 0).materialGrid!;
+    expect(materialGrid.flatMap((row) => [...row]).filter((value) => value > 0)).toHaveLength(1);
+    expect(materialGrid[0]![0]).toBeGreaterThan(0);
+  });
 });
