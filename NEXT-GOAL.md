@@ -371,6 +371,50 @@ research area, linked from this file:
 9. production deployment commit and rollback procedure;
 10. explicit physical-Ghostty operator acceptance.
 
+## Execution ledger — 2026-07-23 (not completion)
+
+Completed foundations:
+
+- fresh human login writes and renders exact `(0,0)`; active-session hot reload
+  preserves position instead of invoking login semantics;
+- canonical NPC body/motor/cognitive state now checkpoints and resumes instead
+  of respawning decorative walkers;
+- the V6 continuous regional field deterministically composes all six required
+  place families with exact cache/block invariance;
+- six source materials and four route/crossing materials were generated through
+  the built-in Codex/ChatGPT subscription path with prompt, source, hash,
+  semantic manifest, and repeatable keyed derivation retained;
+- the V4 regional route field replaces the rejected grid with sparse Gabriel
+  topology, terrain-cost curves, three route tiers, and explicit ford/bridge/
+  non-walkable-ferry consequences;
+- route-aware linear-light composition, physical water ownership, tangent-
+  aligned timber bridges, and a separately authored overview material LOD pass
+  focused tests and faithful octant review;
+- rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
+  root-ring experiments remain in the mounted research record; public gallery
+  iterations 012–014 expose the selected research candidates without claiming
+  they are live.
+
+Still open and therefore goal-blocking:
+
+- the regional field/compositor/routes are not the live provider; their cold
+  path remains far outside the interactive budget (the retained overview lab
+  took 49.75 seconds);
+- six-family silhouettes, architecture, landmarks, routeside contacts, parcel
+  composition, authoritative traversal, and cave/highland/coast interactions
+  are not production-complete;
+- the complete Phase-0 diagnostic comparison and operator direction approval
+  have not passed;
+- schedules, needs, relationships, memories, environmental systems, persistent
+  consequences, multi-human encounters, and the 60-minute living-world proof
+  have not passed;
+- the 24-coordinate multi-zoom/time/weather atlas, deterministic traversal,
+  load ladder, 30-minute terminal run, production deployment, and physical
+  Ghostty acceptance all remain open.
+
+This ledger records real progress and the remaining distance. It does not
+relax, subdivide, or supersede any proof gate above.
+
 ## Completion sentence
 
 This goal is complete only when it is truthful to say:
