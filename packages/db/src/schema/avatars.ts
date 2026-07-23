@@ -10,7 +10,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { users } from './users';
-import type { SpriteGrid } from '@maldoror/protocol';
+import type { Sprite } from '@maldoror/protocol';
 
 /**
  * Avatars table - AI-generated character sprites
@@ -19,7 +19,7 @@ export const avatars = pgTable('avatars', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id').notNull().unique().references(() => users.id, { onDelete: 'cascade' }),
   prompt: text('prompt').notNull(),
-  spriteJson: jsonb('sprite_json').$type<SpriteGrid>(),
+  spriteJson: jsonb('sprite_json').$type<Sprite>(),
   generationStatus: varchar('generation_status', { length: 32 }).notNull().default('pending'),
   generationError: text('generation_error'),
   modelUsed: varchar('model_used', { length: 64 }),

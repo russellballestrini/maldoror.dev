@@ -231,3 +231,55 @@ export function generatePlaceholderSprite(): SpriteGrid {
     },
   };
 }
+
+/**
+ * Generate a protocol-native pixel placeholder for the current renderer.
+ *
+ * The older `generatePlaceholderSprite` intentionally remains available for
+ * callers that still consume the legacy 7x12 character schema. Persisted
+ * avatars use this RGB/null representation so their database type and runtime
+ * renderer agree even when the image provider fails.
+ */
+export function generatePixelPlaceholderSprite(): Sprite {
+  const createFrame = (): PixelGrid => {
+    const frame: PixelGrid = Array.from({ length: 24 }, () =>
+      Array.from({ length: 16 }, () => null),
+    );
+
+    const paint = (x: number, y: number, r: number, g: number, b: number): void => {
+      const row = frame[y];
+      if (row && x >= 0 && x < row.length) row[x] = { r, g, b };
+    };
+
+    // Small, high-contrast neutral figure that survives terminal reduction.
+    for (let y = 4; y <= 8; y++) {
+      for (let x = 6; x <= 9; x++) paint(x, y, 188, 184, 176);
+    }
+    for (let y = 9; y <= 16; y++) {
+      for (let x = 5; x <= 10; x++) paint(x, y, 116, 112, 124);
+    }
+    for (let y = 17; y <= 22; y++) {
+      paint(6, y, 76, 73, 82);
+      paint(7, y, 76, 73, 82);
+      paint(9, y, 76, 73, 82);
+      paint(10, y, 76, 73, 82);
+    }
+    paint(6, 6, 40, 38, 44);
+    paint(9, 6, 40, 38, 44);
+    return frame;
+  };
+
+  const frames = (): [PixelGrid, PixelGrid, PixelGrid, PixelGrid] =>
+    [createFrame(), createFrame(), createFrame(), createFrame()];
+
+  return {
+    width: 16,
+    height: 24,
+    frames: {
+      up: frames(),
+      down: frames(),
+      left: frames(),
+      right: frames(),
+    },
+  };
+}

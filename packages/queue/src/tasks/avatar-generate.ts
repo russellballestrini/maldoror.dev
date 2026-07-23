@@ -1,7 +1,11 @@
 import type { Task } from 'graphile-worker';
 import { db, schema } from '@maldoror/db';
 import { eq } from 'drizzle-orm';
-import { generateAvatar, generatePlaceholderSprite, type AIProvider } from '@maldoror/ai';
+import {
+  generatePixelPlaceholderSprite,
+  generatePixelSprite,
+  type AIProvider,
+} from '@maldoror/ai';
 
 /**
  * Avatar generation task payload
@@ -35,7 +39,7 @@ export const avatarGenerate: Task = async (payload, helpers) => {
       : process.env.OPENAI_API_KEY;
 
     // Generate avatar
-    const result = await generateAvatar({
+    const result = await generatePixelSprite({
       description: prompt,
       vibe: vibe as 'bleak' | 'surreal' | 'aristocratic' | 'feral' | 'ethereal' | undefined,
       providerConfig: {
@@ -68,7 +72,7 @@ export const avatarGenerate: Task = async (payload, helpers) => {
         attempts: result.attempts,
       });
 
-      const placeholder = generatePlaceholderSprite();
+      const placeholder = generatePixelPlaceholderSprite();
       await db
         .update(schema.avatars)
         .set({
