@@ -29,10 +29,10 @@ system Caddy for TLS). So here:
   worker-startup timeout is raised well above the 180s default). SSH host key at
   `apps/ssh-world/keys/host.key` (gitignored).
 
-> ⚠️ **Build gotcha:** `turbo build` (any `--filter`) rebuilds `@maldoror/db` with plain
-> `tsc`, whose ESM output imports `./client` without a `.js` extension → runtime
-> `ERR_MODULE_NOT_FOUND`. You MUST re-run the tsup bundle after any turbo build (redeploy.sh
-> does). For an app-only code change, `cd apps/ssh-world && npx tsc` avoids touching db.
+> **Build invariant:** `@maldoror/db` owns its tsup ESM bundle in the package's canonical
+> `build` script. `turbo build` and filtered deploy builds therefore produce the same
+> importable database artifact; no operator-only repair step is required. `redeploy.sh`
+> also stamps the current Git hash before building so the running service is traceable.
 - **Web:** none on the box. `maldoror.dev` is **Cloudflare-proxied → Vercel** (existing
   setup), so the box never sees its traffic. The stats endpoint stays on `127.0.0.1:3105`
   (and `0.0.0.0:3105`); to publish it, point a **grey/DNS-only** subdomain
@@ -53,7 +53,7 @@ sudo cp deploy/box/maldoror.slice /etc/systemd/system/
 sudo cp deploy/box/maldoror-ssh-world.service /etc/systemd/system/
 sudo systemctl daemon-reload
 
-# 3. build + schema + host key  (see redeploy.sh — it does install/build/tsup/push)
+# 3. build + schema + host key  (see redeploy.sh — it does install/build/push)
 cd apps/ssh-world && mkdir -p keys && ssh-keygen -t ed25519 -f keys/host.key -N "" -q && cd ../..
 
 # 4. start
