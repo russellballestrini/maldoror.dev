@@ -66,3 +66,5 @@ tools/render-sim/terrain-debug/
 apps/ssh-world/data/terrain/
 apps/ssh-world/npcs/
 apps/ssh-world/debug-sprites/
+tools/render-sim/buildings-canal/
+tools/render-sim/props-canal/
