@@ -19,6 +19,32 @@ headless simulator (<code>tools/render-sim</code>) — the same pipeline the SSH
 <section><h2>🎯 TARGET (mockup)</h2>
 <div class="grid"><figure><a href="/gallery/TARGET.png"><img loading="lazy" src="/gallery/TARGET.png" alt="target mockup"></a>
 <figcaption>The goal: cozy canal-town at full fidelity in Ghostty. Phase A = style-matched assets in cell mode; Phase B = kitty graphics protocol.</figcaption></figure></div></section>
+<section><h2>005-codec-palette-water</h2><pre class="notes"># 005-codec-palette-water
+
+2026-07-23T07:49:54.331Z
+
+Iteration 5 — TERMINAL CODEC begins: OSC-4 palette-cycled water (the plan of record is docs/RENDERING-CODEC.md).
+
+Per the architecture spec (terminal-native video codec): animated materials render with a SPATIAL phase field using indexed palette colors; the framebuffer cells NEVER change; each tick rotates the 8 water-palette RGBs via ONE OSC-4 packet, so the glint travels across ALL water for a few hundred bytes.
+
+water_animation_strip.png = 8 palette ticks (top->bottom). Watch the diagonal wave bands sweep. MEASURED: 141 bytes/tick animates 4,480 water cells; truecolor repaint of the same region = ~98,560 bytes/frame => 699x more. Zero cells rewritten.
+
+Module packages/render/src/pixel/palette-cycle.ts (materialPhase, waterPalette, osc4Packet/osc104Restore) — reusable by the codec. Colors matched to the mockup's teal canals.
+
+This is codec component #7 (palette animation). Next: retained terminal_view buffer + scroll-region motion compensation (DECSTBM/DECSLRM + SU/SD/DCH/ICH) so camera motion becomes a terminal COPY, and dirty-rect entity repair. Fidelity layer (octant, iter 4) + this transport layer compose.
+</pre><div class="grid"><figure><a href="/gallery/005-codec-palette-water/showcase_braille_z102.png"><img loading="lazy" src="/gallery/005-codec-palette-water/showcase_braille_z102.png" alt="showcase_braille_z102.png"></a><figcaption>showcase_braille_z102.png</figcaption></figure>
+<figure><a href="/gallery/005-codec-palette-water/showcase_fullres_kitty-mode-preview.png"><img loading="lazy" src="/gallery/005-codec-palette-water/showcase_fullres_kitty-mode-preview.png" alt="showcase_fullres_kitty-mode-preview.png"></a><figcaption>showcase_fullres_kitty-mode-preview.png</figcaption></figure>
+<figure><a href="/gallery/005-codec-palette-water/showcase_halfblock_z51.png"><img loading="lazy" src="/gallery/005-codec-palette-water/showcase_halfblock_z51.png" alt="showcase_halfblock_z51.png"></a><figcaption>showcase_halfblock_z51.png</figcaption></figure>
+<figure><a href="/gallery/005-codec-palette-water/showcase_halfblock_z88.png"><img loading="lazy" src="/gallery/005-codec-palette-water/showcase_halfblock_z88.png" alt="showcase_halfblock_z88.png"></a><figcaption>showcase_halfblock_z88.png</figcaption></figure>
+<figure><a href="/gallery/005-codec-palette-water/showcase_octant_z102.png"><img loading="lazy" src="/gallery/005-codec-palette-water/showcase_octant_z102.png" alt="showcase_octant_z102.png"></a><figcaption>showcase_octant_z102.png</figcaption></figure>
+<figure><a href="/gallery/005-codec-palette-water/showcase_octant_z51.png"><img loading="lazy" src="/gallery/005-codec-palette-water/showcase_octant_z51.png" alt="showcase_octant_z51.png"></a><figcaption>showcase_octant_z51.png</figcaption></figure>
+<figure><a href="/gallery/005-codec-palette-water/showcase_octant_z88.png"><img loading="lazy" src="/gallery/005-codec-palette-water/showcase_octant_z88.png" alt="showcase_octant_z88.png"></a><figcaption>showcase_octant_z88.png</figcaption></figure>
+<figure><a href="/gallery/005-codec-palette-water/sim_braille_z102.png"><img loading="lazy" src="/gallery/005-codec-palette-water/sim_braille_z102.png" alt="sim_braille_z102.png"></a><figcaption>sim_braille_z102.png</figcaption></figure>
+<figure><a href="/gallery/005-codec-palette-water/sim_braille_z51.png"><img loading="lazy" src="/gallery/005-codec-palette-water/sim_braille_z51.png" alt="sim_braille_z51.png"></a><figcaption>sim_braille_z51.png</figcaption></figure>
+<figure><a href="/gallery/005-codec-palette-water/sim_halfblock_z26.png"><img loading="lazy" src="/gallery/005-codec-palette-water/sim_halfblock_z26.png" alt="sim_halfblock_z26.png"></a><figcaption>sim_halfblock_z26.png</figcaption></figure>
+<figure><a href="/gallery/005-codec-palette-water/sim_halfblock_z51.png"><img loading="lazy" src="/gallery/005-codec-palette-water/sim_halfblock_z51.png" alt="sim_halfblock_z51.png"></a><figcaption>sim_halfblock_z51.png</figcaption></figure>
+<figure><a href="/gallery/005-codec-palette-water/sim_halfblock_z88.png"><img loading="lazy" src="/gallery/005-codec-palette-water/sim_halfblock_z88.png" alt="sim_halfblock_z88.png"></a><figcaption>sim_halfblock_z88.png</figcaption></figure>
+<figure><a href="/gallery/005-codec-palette-water/water_animation_strip.png"><img loading="lazy" src="/gallery/005-codec-palette-water/water_animation_strip.png" alt="water_animation_strip.png"></a><figcaption>water_animation_strip.png</figcaption></figure></div></section>
 <section><h2>004-octant-solid-mosaics</h2><pre class="notes"># 004-octant-solid-mosaics
 
 2026-07-23T07:43:29.412Z
