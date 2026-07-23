@@ -22,8 +22,12 @@ export interface RegionalVisualAsset {
   id: string;
   families: readonly BiomeFamily[];
   sprite: BuildingSprite;
-  /** Solid offsets relative to the sprite's bottom-centre anchor. Open
-   * thresholds remain absent when an asset depicts an entrance or gate. */
+  /** Tile within the sprite that owns the world anchor. Sparse vertical art
+   * defaults to bottom-centre; route contacts can instead straddle an access
+   * corridor around a central anchor. */
+  spriteAnchor?: readonly [number, number];
+  /** Solid offsets relative to the sprite's declared anchor (bottom-centre by
+   * default). Open thresholds remain absent for entrances and gates. */
   collision: ReadonlyArray<readonly [number, number]>;
 }
 
@@ -37,13 +41,25 @@ export interface RegionalAmbientAsset extends RegionalVisualAsset {
   routeDistance: readonly [number, number];
 }
 
+export type RegionalRouteContactAxis = 'north-south' | 'east-west';
+
+export interface RegionalRouteContactAsset extends RegionalVisualAsset {
+  /** Axis of the narrow walkable connector through the authored threshold.
+   * The boundary mass itself is perpendicular to this axis. */
+  accessAxis: RegionalRouteContactAxis;
+  routeDistance: readonly [number, number];
+}
+
 export interface RegionalAssetPlacement {
   assetId: string;
+  kind: 'landmark' | 'ambient' | 'route-contact';
   families: readonly BiomeFamily[];
   siteX: number;
   siteY: number;
   anchorX: number;
   anchorY: number;
+  parcelId?: string;
+  accessAxis?: RegionalRouteContactAxis;
 }
 
 export type RegionalLandmarkPlacement = RegionalAssetPlacement;
@@ -63,20 +79,27 @@ export interface RegionalWorldTileProviderConfig extends TileProviderConfig {
   compositor: RegionalMaterialCompositor;
   landmarks: readonly RegionalLandmarkAsset[];
   ambient?: readonly RegionalAmbientAsset[];
+  routeContacts?: readonly RegionalRouteContactAsset[];
   blockSize?: number;
   maxCachedBlocks?: number;
   ambientCellSize?: number;
   ambientDensity?: number;
   ambientLandmarkClearance?: number;
+  routeContactCellSize?: number;
+  routeContactDensity?: number;
+  routeContactLandmarkClearance?: number;
+  maxCachedRouteContactCells?: number;
 }
 
 interface Placement {
   asset: RegionalVisualAsset;
-  kind: 'landmark' | 'ambient';
+  kind: 'landmark' | 'ambient' | 'route-contact';
   siteX: number;
   siteY: number;
   anchorX: number;
   anchorY: number;
+  parcelId?: string;
+  accessAxis?: RegionalRouteContactAxis;
 }
 
 interface CachedBlock {
@@ -105,16 +128,22 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly compositor: RegionalMaterialCompositor;
   private readonly landmarks: readonly RegionalLandmarkAsset[];
   private readonly ambient: readonly RegionalAmbientAsset[];
+  private readonly routeContacts: readonly RegionalRouteContactAsset[];
   private readonly blockSize: number;
   private readonly maxCachedBlocks: number;
   private readonly ambientCellSize: number;
   private readonly ambientDensity: number;
   private readonly ambientLandmarkClearance: number;
+  private readonly routeContactCellSize: number;
+  private readonly routeContactDensity: number;
+  private readonly routeContactLandmarkClearance: number;
+  private readonly maxCachedRouteContactCells: number;
   private readonly placementMinOffsetX: number;
   private readonly placementMaxOffsetX: number;
   private readonly placementMinOffsetY: number;
   private readonly placementMaxOffsetY: number;
   private readonly blockCache = new Map<string, CachedBlock>();
+  private readonly routeContactPlacementCache = new Map<string, Placement | null>();
   private accessClock = 0;
 
   constructor(config: RegionalWorldTileProviderConfig) {
@@ -125,11 +154,16 @@ export class RegionalWorldTileProvider extends TileProvider {
     this.compositor = config.compositor;
     this.landmarks = config.landmarks;
     this.ambient = config.ambient ?? [];
+    this.routeContacts = config.routeContacts ?? [];
     this.blockSize = Math.max(16, config.blockSize ?? 32);
     this.maxCachedBlocks = Math.max(9, config.maxCachedBlocks ?? 64);
     this.ambientCellSize = Math.max(3, config.ambientCellSize ?? 4);
     this.ambientDensity = Math.max(0, Math.min(1, config.ambientDensity ?? 0.86));
     this.ambientLandmarkClearance = Math.max(4, config.ambientLandmarkClearance ?? 9);
+    this.routeContactCellSize = Math.max(6, config.routeContactCellSize ?? 10);
+    this.routeContactDensity = Math.max(0, Math.min(1, config.routeContactDensity ?? 0.55));
+    this.routeContactLandmarkClearance = Math.max(4, config.routeContactLandmarkClearance ?? 10);
+    this.maxCachedRouteContactCells = Math.max(64, config.maxCachedRouteContactCells ?? 4096);
     for (const asset of this.landmarks) {
       if (asset.families.length === 0 || asset.landmarkKinds.length === 0) {
         throw new Error(`Regional landmark has no semantic compatibility: ${asset.id}`);
@@ -144,20 +178,34 @@ export class RegionalWorldTileProvider extends TileProvider {
         throw new Error(`Regional ambient asset has invalid semantics: ${asset.id}`);
       }
     }
-    const placementAssets: readonly RegionalVisualAsset[] = [...this.landmarks, ...this.ambient];
+    for (const asset of this.routeContacts) {
+      if (asset.families.length === 0 || asset.collision.length === 0 ||
+          !['north-south', 'east-west'].includes(asset.accessAxis) ||
+          asset.routeDistance[0] < 0 || asset.routeDistance[1] < asset.routeDistance[0]) {
+        throw new Error(`Regional route-contact asset has invalid semantics: ${asset.id}`);
+      }
+      validateSpriteAnchor(asset);
+    }
+    const placementAssets: readonly RegionalVisualAsset[] = [
+      ...this.landmarks,
+      ...this.ambient,
+      ...this.routeContacts,
+    ];
     const extentX = placementAssets.flatMap((asset) => {
       const reach = this.landmarks.includes(asset as RegionalLandmarkAsset) ? LANDMARK_ANCHOR_REACH : 0;
+      const [spriteAnchorX] = getSpriteAnchor(asset);
       return [
-        -Math.floor(asset.sprite.width / 2) - reach,
-        asset.sprite.width - 1 - Math.floor(asset.sprite.width / 2) + reach,
+        -spriteAnchorX - reach,
+        asset.sprite.width - 1 - spriteAnchorX + reach,
         ...asset.collision.flatMap(([offsetX]) => [offsetX - reach, offsetX + reach]),
       ];
     });
     const extentY = placementAssets.flatMap((asset) => {
       const reach = this.landmarks.includes(asset as RegionalLandmarkAsset) ? LANDMARK_ANCHOR_REACH : 0;
+      const [, spriteAnchorY] = getSpriteAnchor(asset);
       return [
-        -(asset.sprite.height - 1) - reach,
-        reach,
+        -spriteAnchorY - reach,
+        asset.sprite.height - 1 - spriteAnchorY + reach,
         ...asset.collision.flatMap(([, offsetY]) => [offsetY - reach, offsetY + reach]),
       ];
     });
@@ -198,18 +246,23 @@ export class RegionalWorldTileProvider extends TileProvider {
   getRegionalStats(): {
     landmarkAssets: number;
     ambientAssets: number;
+    routeContactAssets: number;
     cachedBlocks: number;
     cachedPlacements: number;
     cachedLandmarkPlacements: number;
     cachedAmbientPlacements: number;
+    cachedRouteContactPlacements: number;
+    cachedRouteContactCells: number;
     cachedOverlayTiles: number;
     cachedSolidTiles: number;
     blockSize: number;
     maxCachedBlocks: number;
+    maxCachedRouteContactCells: number;
   } {
     return {
       landmarkAssets: this.landmarks.length,
       ambientAssets: this.ambient.length,
+      routeContactAssets: this.routeContacts.length,
       cachedBlocks: this.blockCache.size,
       cachedPlacements: [...this.blockCache.values()].reduce(
         (total, block) => total + block.placements.length,
@@ -223,6 +276,11 @@ export class RegionalWorldTileProvider extends TileProvider {
         (total, block) => total + block.placements.filter((placement) => placement.kind === 'ambient').length,
         0,
       ),
+      cachedRouteContactPlacements: [...this.blockCache.values()].reduce(
+        (total, block) => total + block.placements.filter((placement) => placement.kind === 'route-contact').length,
+        0,
+      ),
+      cachedRouteContactCells: this.routeContactPlacementCache.size,
       cachedOverlayTiles: [...this.blockCache.values()].reduce(
         (total, block) => total + block.overlays.size,
         0,
@@ -233,6 +291,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       ),
       blockSize: this.blockSize,
       maxCachedBlocks: this.maxCachedBlocks,
+      maxCachedRouteContactCells: this.maxCachedRouteContactCells,
     };
   }
 
@@ -243,6 +302,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     const placement = this.createPlacement(Math.floor(siteX), Math.floor(siteY));
     return placement ? {
       assetId: placement.asset.id,
+      kind: 'landmark',
       families: placement.asset.families,
       siteX: placement.siteX,
       siteY: placement.siteY,
@@ -269,6 +329,7 @@ export class RegionalWorldTileProvider extends TileProvider {
               placement.anchorY < minY || placement.anchorY > maxY) continue;
           placements.push({
             assetId: placement.asset.id,
+            kind: 'ambient',
             families: placement.asset.families,
             siteX: placement.siteX,
             siteY: placement.siteY,
@@ -282,8 +343,42 @@ export class RegionalWorldTileProvider extends TileProvider {
       a.assetId.localeCompare(b.assetId));
   }
 
+  getRouteContactPlacementsInBounds(
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number,
+  ): RegionalAssetPlacement[] {
+    const placements: RegionalAssetPlacement[] = [];
+    const firstCellX = floorDiv(Math.floor(minX), this.routeContactCellSize) - 1;
+    const lastCellX = floorDiv(Math.floor(maxX), this.routeContactCellSize) + 1;
+    const firstCellY = floorDiv(Math.floor(minY), this.routeContactCellSize) - 1;
+    const lastCellY = floorDiv(Math.floor(maxY), this.routeContactCellSize) + 1;
+    for (let cellY = firstCellY; cellY <= lastCellY; cellY++) {
+      for (let cellX = firstCellX; cellX <= lastCellX; cellX++) {
+        const placement = this.getRouteContactPlacement(cellX, cellY);
+        if (!placement || placement.anchorX < minX || placement.anchorX > maxX ||
+            placement.anchorY < minY || placement.anchorY > maxY) continue;
+        placements.push({
+          assetId: placement.asset.id,
+          kind: 'route-contact',
+          families: placement.asset.families,
+          siteX: placement.siteX,
+          siteY: placement.siteY,
+          anchorX: placement.anchorX,
+          anchorY: placement.anchorY,
+          parcelId: placement.parcelId,
+          accessAxis: placement.accessAxis,
+        });
+      }
+    }
+    return placements.sort((a, b) => a.anchorY - b.anchorY || a.anchorX - b.anchorX ||
+      a.assetId.localeCompare(b.assetId));
+  }
+
   override destroy(): void {
     this.blockCache.clear();
+    this.routeContactPlacementCache.clear();
     this.compositor.clear();
     super.destroy();
   }
@@ -345,12 +440,12 @@ export class RegionalWorldTileProvider extends TileProvider {
       }
     }
     placements.push(...this.buildAmbientPlacements(originX, originY));
+    placements.push(...this.buildRouteContactPlacements(originX, originY));
 
     const overlays = new Map<string, BuildingTileData>();
     const solid = new Set<string>();
     for (const placement of placements) {
-      const offsetX = Math.floor(placement.asset.sprite.width / 2);
-      const offsetY = placement.asset.sprite.height - 1;
+      const [offsetX, offsetY] = getSpriteAnchor(placement.asset);
       for (let tileY = 0; tileY < placement.asset.sprite.height; tileY++) {
         for (let tileX = 0; tileX < placement.asset.sprite.width; tileX++) {
           const tile = placement.asset.sprite.tiles[tileY]?.[tileX];
@@ -411,6 +506,163 @@ export class RegionalWorldTileProvider extends TileProvider {
     return placements;
   }
 
+  /** Route contacts are sparse parcel seeds, not generic prop scatter. A
+   * coordinate-stable jittered candidate owns each coarse cell; the nearest
+   * route tangent selects the authored orthogonal access axis while the biome
+   * field selects family identity. The connector itself remains collision-free
+   * and collision is declared only on the two parcel-edge masses. */
+  private buildRouteContactPlacements(originX: number, originY: number): Placement[] {
+    if (this.routeContacts.length === 0 || this.routeContactDensity <= 0) return [];
+    const placements: Placement[] = [];
+    const firstCellX = floorDiv(originX, this.routeContactCellSize);
+    const lastCellX = floorDiv(originX + this.blockSize - 1, this.routeContactCellSize);
+    const firstCellY = floorDiv(originY, this.routeContactCellSize);
+    const lastCellY = floorDiv(originY + this.blockSize - 1, this.routeContactCellSize);
+    for (let cellY = firstCellY; cellY <= lastCellY; cellY++) {
+      for (let cellX = firstCellX; cellX <= lastCellX; cellX++) {
+        const placement = this.getRouteContactPlacement(cellX, cellY);
+        if (!placement || placement.anchorX < originX || placement.anchorX >= originX + this.blockSize ||
+            placement.anchorY < originY || placement.anchorY >= originY + this.blockSize) continue;
+        placements.push(placement);
+      }
+    }
+    return placements;
+  }
+
+  private getRouteContactPlacement(cellX: number, cellY: number): Placement | null {
+    const key = `${cellX},${cellY}`;
+    if (this.routeContactPlacementCache.has(key)) {
+      const cached = this.routeContactPlacementCache.get(key) ?? null;
+      this.routeContactPlacementCache.delete(key);
+      this.routeContactPlacementCache.set(key, cached);
+      return cached;
+    }
+    const placement = this.computeRouteContactPlacement(cellX, cellY);
+    this.routeContactPlacementCache.set(key, placement);
+    while (this.routeContactPlacementCache.size > this.maxCachedRouteContactCells) {
+      const oldest = this.routeContactPlacementCache.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.routeContactPlacementCache.delete(oldest);
+    }
+    return placement;
+  }
+
+  private computeRouteContactPlacement(cellX: number, cellY: number): Placement | null {
+    if (this.hashUnit(cellX, cellY, 0x35a9) > this.routeContactDensity) return null;
+    const candidate = this.routeContactCandidate(cellX, cellY);
+    const route = this.routes.sample(candidate.x, candidate.y);
+    if (!Number.isFinite(route.distance) ||
+        route.landmarkDistance < this.routeContactLandmarkClearance) return null;
+    if (!this.routeContacts.some((asset) => route.distance >= asset.routeDistance[0] &&
+        route.distance <= asset.routeDistance[1])) return null;
+    const contact = this.resolveNearestRouteContact(candidate.x, candidate.y, route);
+    if (!contact) return null;
+    const accessAxis: RegionalRouteContactAxis =
+      Math.abs(contact.directionX) >= Math.abs(contact.directionY) ? 'north-south' : 'east-west';
+    if (!this.isRouteContactPriorityMaximum(cellX, cellY, accessAxis)) return null;
+    const sideSalt = this.hashUnit(cellX, cellY, 0x5ab3) < 0.5 ? -1 : 1;
+    const anchorX = accessAxis === 'north-south'
+      ? contact.routeX
+      : contact.routeX + (Math.sign(candidate.x - contact.routeX) || sideSalt) * 3;
+    const anchorY = accessAxis === 'north-south'
+      ? contact.routeY + (Math.sign(candidate.y - contact.routeY) || sideSalt) * 3
+      : contact.routeY;
+    const anchorRoute = this.routes.sample(anchorX, anchorY);
+    const biome = this.field.sample(anchorX, anchorY);
+    const asset = this.selectRouteContactAsset(anchorX, anchorY, biome, anchorRoute, accessAxis);
+    if (!asset || !this.assetFits(anchorX, anchorY, asset)) return null;
+    return {
+      asset,
+      kind: 'route-contact',
+      siteX: contact.routeX,
+      siteY: contact.routeY,
+      anchorX,
+      anchorY,
+      parcelId: `parcel:${cellX}:${cellY}`,
+      accessAxis,
+    };
+  }
+
+  private isRouteContactPriorityMaximum(
+    cellX: number,
+    cellY: number,
+    accessAxis: RegionalRouteContactAxis,
+  ): boolean {
+    const priority = this.hashUnit(cellX, cellY, 0x4f9d);
+    const neighbours = accessAxis === 'north-south'
+      ? [[-1, 0], [1, 0]] as const
+      : [[0, -1], [0, 1]] as const;
+    for (const [offsetX, offsetY] of neighbours) {
+      const neighbour = this.hashUnit(cellX + offsetX, cellY + offsetY, 0x4f9d);
+      if (neighbour > priority || (neighbour === priority &&
+          (offsetY < 0 || (offsetY === 0 && offsetX < 0)))) return false;
+    }
+    return true;
+  }
+
+  private resolveNearestRouteContact(
+    worldX: number,
+    worldY: number,
+    route: RegionalRouteSample,
+  ): { routeX: number; routeY: number; directionX: number; directionY: number } | null {
+    if (route.isRoute && Math.hypot(route.directionX, route.directionY) >= 0.25) {
+      return {
+        routeX: worldX,
+        routeY: worldY,
+        directionX: route.directionX,
+        directionY: route.directionY,
+      };
+    }
+    const searchRadius = Math.min(12, Math.max(1, Math.ceil(route.distance) + 1));
+    for (let radius = 1; radius <= searchRadius; radius++) {
+      const contacts: Array<{
+        routeX: number;
+        routeY: number;
+        directionX: number;
+        directionY: number;
+        distanceSquared: number;
+      }> = [];
+      for (let offsetY = -radius; offsetY <= radius; offsetY++) {
+        for (let offsetX = -radius; offsetX <= radius; offsetX++) {
+          if (Math.max(Math.abs(offsetX), Math.abs(offsetY)) !== radius) continue;
+          const nearby = this.routes.sample(worldX + offsetX, worldY + offsetY);
+          const tangentLength = Math.hypot(nearby.directionX, nearby.directionY);
+          if (!nearby.isRoute || tangentLength < 0.25) continue;
+          const distanceSquared = offsetX * offsetX + offsetY * offsetY;
+          contacts.push({
+            routeX: worldX + offsetX,
+            routeY: worldY + offsetY,
+            directionX: nearby.directionX,
+            directionY: nearby.directionY,
+            distanceSquared,
+          });
+        }
+      }
+      const nearest = contacts.sort((a, b) => a.distanceSquared - b.distanceSquared ||
+        a.routeY - b.routeY || a.routeX - b.routeX)[0];
+      if (nearest) {
+        return {
+          routeX: nearest.routeX,
+          routeY: nearest.routeY,
+          directionX: nearest.directionX,
+          directionY: nearest.directionY,
+        };
+      }
+    }
+    return null;
+  }
+
+  private routeContactCandidate(cellX: number, cellY: number): { x: number; y: number } {
+    const inset = 0.1;
+    const span = 1 - inset * 2;
+    return {
+      x: Math.floor((cellX + inset + this.hashUnit(cellX, cellY, 0x13c7) * span) *
+        this.routeContactCellSize),
+      y: Math.floor((cellY + inset + this.hashUnit(cellX, cellY, 0x6de1) * span) *
+        this.routeContactCellSize),
+    };
+  }
+
   private ambientCandidate(cellX: number, cellY: number): { x: number; y: number } {
     const inset = 0.12;
     const span = 1 - inset * 2;
@@ -459,6 +711,31 @@ export class RegionalWorldTileProvider extends TileProvider {
     const cellY = floorDiv(worldY, this.ambientCellSize);
     const variantIndex = positiveMod(cellX * 3 + cellY * 5 + this.seed32, variants.length);
     return variants[variantIndex] ?? null;
+  }
+
+  private selectRouteContactAsset(
+    worldX: number,
+    worldY: number,
+    biome: BiomeWorldSample,
+    route: RegionalRouteSample,
+    accessAxis: RegionalRouteContactAxis,
+  ): RegionalRouteContactAsset | null {
+    let selected: RegionalRouteContactAsset | null = null;
+    let selectedScore = Number.NEGATIVE_INFINITY;
+    for (const asset of this.routeContacts) {
+      if (asset.accessAxis !== accessAxis || route.distance < asset.routeDistance[0] ||
+          route.distance > asset.routeDistance[1]) continue;
+      const compatibility = Math.max(...asset.families.map((family) => (
+        biome.weights[BIOME_FAMILIES.indexOf(family)] ?? 0
+      )));
+      const variation = this.hashUnit(worldX, worldY, stringHash(asset.id)) * 0.025;
+      const score = compatibility + variation;
+      if (score > selectedScore) {
+        selected = asset;
+        selectedScore = score;
+      }
+    }
+    return selected;
   }
 
   private selectAsset(
@@ -550,6 +827,18 @@ function stringHash(value: string): number {
     hash = Math.imul(hash, 16777619);
   }
   return hash >>> 0;
+}
+
+function getSpriteAnchor(asset: RegionalVisualAsset): readonly [number, number] {
+  return asset.spriteAnchor ?? [Math.floor(asset.sprite.width / 2), asset.sprite.height - 1];
+}
+
+function validateSpriteAnchor(asset: RegionalVisualAsset): void {
+  const [anchorX, anchorY] = getSpriteAnchor(asset);
+  if (!Number.isInteger(anchorX) || !Number.isInteger(anchorY) ||
+      anchorX < 0 || anchorX >= asset.sprite.width || anchorY < 0 || anchorY >= asset.sprite.height) {
+    throw new Error(`Regional visual asset has invalid sprite anchor: ${asset.id}`);
+  }
 }
 
 function compositeTiles(beneath: BuildingTileData, above: BuildingTileData): BuildingTileData {

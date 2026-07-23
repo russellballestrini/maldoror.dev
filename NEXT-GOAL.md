@@ -403,10 +403,18 @@ Completed foundations:
   retained evidence rejects painted path aprons and adjacent duplicate masses,
   while exact manifest-derived source-block lookup reduces the first identical
   atlas frame from 2.46 to 1.21 seconds without clipping boundary sprites;
+- paired built-in-subscription route-contact atlases now add separately
+  authored north-south and east-west parcel thresholds for all six families;
+  exact prompt/source/hash/derivation/collision/central-anchor semantics are
+  retained, a failed pseudo-rotation remains in the research record, and the
+  selected provider projects candidates onto the nearest route contact before
+  tangent-only blue-noise thinning; faithful review rejected both floating
+  unsnapped contacts and adjacent duplicate thresholds rather than publishing
+  source art as runtime proof;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
-  iterations 012–014 expose the selected research candidates without claiming
-  they are live.
+  iterations 012–018 expose selected and rejected research candidates without
+  claiming they are live.
 
 Still open and therefore goal-blocking:
 
@@ -415,8 +423,9 @@ Still open and therefore goal-blocking:
   predictive background prewarming plus p50/p95/p99 traversal evidence remain
   unbuilt;
 - the first six-family landmark silhouettes are sparse prototypes, not a
-  complete world layer; the first 12 ambient masses still need directional
-  routeside contacts, parcel composition, far greater travel-scale entropy,
+  complete world layer; the first directional route contacts still need
+  material-matched connector blending, deep parcel/building-group composition,
+  far greater travel-scale entropy,
   authoritative traversal, stronger landmark framing, and cave/highland/coast
   interactions before the family layer is production-complete;
 - the complete Phase-0 diagnostic comparison and operator direction approval

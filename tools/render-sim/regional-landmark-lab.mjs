@@ -8,6 +8,7 @@ import {
   loadRegionalBiomeMaterialKit,
   loadRegionalLandmarkKit,
   loadRegionalRouteMaterialKit,
+  loadRegionalRouteContactKit,
 } from '../../apps/ssh-world/dist/game/biome-assets.js';
 import {
   BiomeWorldField,
@@ -49,14 +50,15 @@ const routes = new RegionalRouteField(WORLD_SEED, field, {
   maxCachedPaths: 512,
   pathStep: 4,
 });
-const [biomeKit, routeKit, landmarkKit, ambientKit] = await Promise.all([
+const [biomeKit, routeKit, landmarkKit, ambientKit, routeContactKit] = await Promise.all([
   loadRegionalBiomeMaterialKit(path.join(ROOT, 'assets/biomes/manifest.json')),
   loadRegionalRouteMaterialKit(path.join(ROOT, 'assets/routes/manifest.json')),
   loadRegionalLandmarkKit(path.join(ROOT, 'assets/biomes/landmarks-manifest.json')),
   loadRegionalAmbientKit(path.join(ROOT, 'assets/biomes/ambient-manifest.json')),
+  loadRegionalRouteContactKit(path.join(ROOT, 'assets/biomes/route-contacts-manifest.json')),
 ]);
-if (landmarkKit.blockSize !== ambientKit.blockSize) {
-  throw new Error(`Regional asset block-size mismatch: ${landmarkKit.blockSize} vs ${ambientKit.blockSize}`);
+if (new Set([landmarkKit.blockSize, ambientKit.blockSize, routeContactKit.blockSize]).size !== 1) {
+  throw new Error('Regional landmark, ambient, and route-contact block sizes disagree');
 }
 const compositor = new RegionalMaterialCompositor({
   worldSeed: WORLD_SEED,
@@ -76,11 +78,15 @@ const world = new RegionalWorldTileProvider({
   compositor,
   landmarks: landmarkKit.assets,
   ambient: ambientKit.assets,
+  routeContacts: routeContactKit.assets,
   blockSize: landmarkKit.blockSize,
   maxCachedBlocks: 64,
   ambientCellSize: ambientKit.cellSize,
   ambientDensity: ambientKit.density,
   ambientLandmarkClearance: ambientKit.landmarkClearance,
+  routeContactCellSize: routeContactKit.cellSize,
+  routeContactDensity: routeContactKit.density,
+  routeContactLandmarkClearance: routeContactKit.landmarkClearance,
 });
 
 function locateLandmarkFamilies() {
@@ -103,9 +109,13 @@ function locateLandmarkFamilies() {
   return found;
 }
 
-if (process.env.MALDOROR_REGIONAL_LANDMARK_ATLAS === '1' &&
-    process.env.MALDOROR_REGIONAL_AMBIENT_ATLAS === '1') {
-  throw new Error('Choose either landmark or ambient atlas mode');
+const ATLAS_MODES = [
+  process.env.MALDOROR_REGIONAL_LANDMARK_ATLAS,
+  process.env.MALDOROR_REGIONAL_AMBIENT_ATLAS,
+  process.env.MALDOROR_REGIONAL_CONTACT_ATLAS,
+].filter((value) => value === '1').length;
+if (ATLAS_MODES > 1) {
+  throw new Error('Choose one regional atlas mode');
 }
 
 if (process.env.MALDOROR_REGIONAL_LANDMARK_ATLAS === '1') {
@@ -151,6 +161,43 @@ if (process.env.MALDOROR_REGIONAL_AMBIENT_ATLAS === '1') {
       assetId: placement.assetId,
       anchor: [placement.anchorX, placement.anchorY],
       nearestLandmark: [landmark.site.x, landmark.site.y],
+    };
+  });
+}
+
+if (process.env.MALDOROR_REGIONAL_CONTACT_ATLAS === '1') {
+  const wanted = new Set(routeContactKit.assets.map((asset) => asset.id));
+  const found = new Map();
+  let previousRadius = 0;
+  for (const radius of [128, 256, 384, 512, 768]) {
+    const strips = [
+      [-radius, -radius, radius, -previousRadius - 1],
+      [-radius, previousRadius + 1, radius, radius],
+      [-radius, -previousRadius, -previousRadius - 1, previousRadius],
+      [previousRadius + 1, -previousRadius, radius, previousRadius],
+    ];
+    for (const bounds of strips) {
+      if (bounds[0] > bounds[2] || bounds[1] > bounds[3]) continue;
+      for (const placement of world.getRouteContactPlacementsInBounds(...bounds)) {
+        if (wanted.has(placement.assetId) && !found.has(placement.assetId)) {
+          found.set(placement.assetId, placement);
+        }
+      }
+    }
+    if (found.size === wanted.size) break;
+    previousRadius = radius;
+  }
+  const missing = [...wanted].filter((id) => !found.has(id));
+  if (missing.length > 0) throw new Error(`Could not locate regional route contacts: ${missing.join(', ')}`);
+  FRAMES = routeContactKit.assets.map((asset) => {
+    const placement = found.get(asset.id);
+    return {
+      name: `${asset.families[0]}-route-contact-${asset.accessAxis}-walking`,
+      centre: [placement.anchorX, placement.anchorY],
+      displayTileSize: 16,
+      assetId: asset.id,
+      parcelId: placement.parcelId,
+      accessAxis: placement.accessAxis,
     };
   });
 }
@@ -234,6 +281,8 @@ const metrics = {
   landmarkAssets: landmarkKit.assets.length,
   ambientManifest: path.relative(ROOT, ambientKit.manifestPath),
   ambientAssets: ambientKit.assets.length,
+  routeContactManifest: path.relative(ROOT, routeContactKit.manifestPath),
+  routeContactAssets: routeContactKit.assets.length,
   frames: [],
 };
 for (const frame of FRAMES) {
@@ -252,6 +301,12 @@ for (const frame of FRAMES) {
     compositorStats: compositor.getStats(),
     providerStats: world.getRegionalStats(),
     visibleAmbient: world.getAmbientPlacementsInBounds(
+      frame.centre[0] - Math.ceil(WIDTH / frame.displayTileSize / 2),
+      frame.centre[1] - Math.ceil(HEIGHT / frame.displayTileSize / 2),
+      frame.centre[0] + Math.ceil(WIDTH / frame.displayTileSize / 2),
+      frame.centre[1] + Math.ceil(HEIGHT / frame.displayTileSize / 2),
+    ),
+    visibleRouteContacts: world.getRouteContactPlacementsInBounds(
       frame.centre[0] - Math.ceil(WIDTH / frame.displayTileSize / 2),
       frame.centre[1] - Math.ceil(HEIGHT / frame.displayTileSize / 2),
       frame.centre[0] + Math.ceil(WIDTH / frame.displayTileSize / 2),

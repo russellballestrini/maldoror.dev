@@ -6,6 +6,8 @@ import {
   type BiomeFamily,
   type RegionalAmbientAsset,
   type RegionalLandmarkAsset,
+  type RegionalRouteContactAsset,
+  type RegionalRouteContactAxis,
   type RegionalLandmarkKind,
   type RegionalCrossingKind,
   type RegionalRouteKind,
@@ -42,6 +44,16 @@ export interface RegionalAmbientKit {
   density: number;
   landmarkClearance: number;
   assets: RegionalAmbientAsset[];
+}
+
+export interface RegionalRouteContactKit {
+  manifestPath: string;
+  sourceTileSize: number;
+  blockSize: number;
+  cellSize: number;
+  density: number;
+  landmarkClearance: number;
+  assets: RegionalRouteContactAsset[];
 }
 
 interface BaseMaterialEntry {
@@ -81,9 +93,15 @@ interface AmbientEntry {
   collision: Array<[number, number]>;
 }
 
+interface RouteContactEntry extends AmbientEntry {
+  accessAxis: RegionalRouteContactAxis;
+  anchorTile: [number, number];
+}
+
 const ROUTE_KINDS: readonly RegionalRouteKind[] = ['trail', 'local-road', 'arterial'];
 const CROSSING_KINDS: readonly RegionalCrossingKind[] = ['ford', 'bridge', 'ferry'];
 const LANDMARK_KINDS: readonly RegionalLandmarkKind[] = ['arrival', 'settlement', 'ruin', 'waystation'];
+const ROUTE_CONTACT_AXES: readonly RegionalRouteContactAxis[] = ['north-south', 'east-west'];
 
 /** Load the authored six-family manifest without inferring semantics from file
  * names or pixels. Source masters are cropped into repeatable variants once at
@@ -260,6 +278,68 @@ export async function loadRegionalAmbientKit(manifestPath: string): Promise<Regi
   };
 }
 
+/** Load paired, genuinely authored route-contact axes. Orientation is manifest
+ * semantics rather than pixel inspection; a central sprite anchor lets the
+ * threshold straddle its access corridor without abusing bottom-centre
+ * building placement. */
+export async function loadRegionalRouteContactKit(manifestPath: string): Promise<RegionalRouteContactKit> {
+  const absoluteManifest = path.resolve(manifestPath);
+  const manifestDirectory = path.dirname(absoluteManifest);
+  const raw = JSON.parse(await fs.promises.readFile(absoluteManifest, 'utf8')) as unknown;
+  if (!isRecord(raw) || raw.version !== 1 || !Number.isInteger(raw.sourceTileSize) ||
+      !Number.isInteger(raw.blockSize) || !Number.isInteger(raw.cellSize) ||
+      typeof raw.density !== 'number' || typeof raw.landmarkClearance !== 'number' ||
+      !Array.isArray(raw.assets)) {
+    throw new Error(`Invalid regional route-contact manifest: ${absoluteManifest}`);
+  }
+  const sourceTileSize = Number(raw.sourceTileSize);
+  const blockSize = Number(raw.blockSize);
+  const cellSize = Number(raw.cellSize);
+  const density = Number(raw.density);
+  const landmarkClearance = Number(raw.landmarkClearance);
+  if (sourceTileSize < 16 || sourceTileSize > 192 || blockSize < 16 || blockSize > 128 ||
+      cellSize < 6 || cellSize > 64 || density < 0 || density > 1 ||
+      landmarkClearance < 4 || landmarkClearance > 64) {
+    throw new Error(`Regional route-contact dimensions are invalid: ${absoluteManifest}`);
+  }
+  const entries = raw.assets.map((value, index) => parseRouteContactEntry(value, index));
+  const ids = new Set(entries.map((entry) => entry.id));
+  if (ids.size !== entries.length) throw new Error('Regional route-contact manifest contains duplicate IDs');
+  for (const family of BIOME_FAMILIES) {
+    for (const accessAxis of ROUTE_CONTACT_AXES) {
+      if (!entries.some((entry) => entry.family === family && entry.accessAxis === accessAxis)) {
+        throw new Error(`Regional route-contact manifest is missing ${family}/${accessAxis}`);
+      }
+    }
+  }
+  const assets: RegionalRouteContactAsset[] = [];
+  for (const entry of entries) {
+    assets.push({
+      id: entry.id,
+      families: [entry.family],
+      accessAxis: entry.accessAxis,
+      routeDistance: entry.routeDistance,
+      spriteAnchor: entry.anchorTile,
+      collision: entry.collision,
+      sprite: await loadRegionalSprite(
+        resolveAssetPath(manifestDirectory, entry.file),
+        sourceTileSize,
+        entry.scale,
+        entry.spriteTiles,
+      ),
+    });
+  }
+  return {
+    manifestPath: absoluteManifest,
+    sourceTileSize,
+    blockSize,
+    cellSize,
+    density,
+    landmarkClearance,
+    assets,
+  };
+}
+
 function parseEntry(value: unknown, index: number): MaterialEntry {
   if (!isRecord(value) ||
       !BIOME_FAMILIES.includes(value.family as BiomeFamily) ||
@@ -351,6 +431,23 @@ function parseAmbientEntry(value: unknown, index: number): AmbientEntry {
     scale: value.scale,
     spriteTiles: value.spriteTiles as [number, number],
     collision: value.collision as Array<[number, number]>,
+  };
+}
+
+function parseRouteContactEntry(value: unknown, index: number): RouteContactEntry {
+  const ambient = parseAmbientEntry(value, index);
+  if (!isRecord(value) || !ROUTE_CONTACT_AXES.includes(value.accessAxis as RegionalRouteContactAxis) ||
+      !isTileDimensions(value.anchorTile)) {
+    throw new Error(`Invalid regional route-contact entry at index ${index}`);
+  }
+  const anchorTile = value.anchorTile as [number, number];
+  if (anchorTile[0] >= ambient.spriteTiles[0] || anchorTile[1] >= ambient.spriteTiles[1]) {
+    throw new Error(`Regional route-contact anchor is outside its sprite at index ${index}`);
+  }
+  return {
+    ...ambient,
+    accessAxis: value.accessAxis as RegionalRouteContactAxis,
+    anchorTile,
   };
 }
 

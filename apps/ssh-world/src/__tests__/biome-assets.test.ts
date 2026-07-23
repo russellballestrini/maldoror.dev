@@ -6,6 +6,7 @@ import {
   loadRegionalBiomeMaterialKit,
   loadRegionalLandmarkKit,
   loadRegionalRouteMaterialKit,
+  loadRegionalRouteContactKit,
 } from '../game/biome-assets.js';
 
 describe('regional biome material manifest', () => {
@@ -65,6 +66,31 @@ describe('regional biome material manifest', () => {
       expect(asset.sprite.width).toBe(5);
       expect(asset.sprite.height).toBe(4);
       expect(asset.routeDistance[0]).toBeGreaterThanOrEqual(2);
+      const pixels = asset.sprite.tiles.flatMap((row) => row.flatMap((tile) => tile.pixels.flat()));
+      expect(pixels.some((pixel) => pixel === null)).toBe(true);
+      expect(pixels.some((pixel) => pixel !== null && pixel.a !== undefined && pixel.a < 255)).toBe(true);
+    }
+  });
+
+  it('loads paired authored route-contact axes for every biome family', async () => {
+    const kit = await loadRegionalRouteContactKit(
+      path.resolve('assets/biomes/route-contacts-manifest.json'),
+    );
+    expect(kit.sourceTileSize).toBe(48);
+    expect(kit.blockSize).toBe(32);
+    expect(kit.cellSize).toBe(10);
+    expect(kit.density).toBe(1);
+    expect(kit.assets).toHaveLength(12);
+    for (const family of BIOME_FAMILIES) {
+      const familyAssets = kit.assets.filter((asset) => asset.families.includes(family));
+      expect(new Set(familyAssets.map((asset) => asset.accessAxis)))
+        .toEqual(new Set(['north-south', 'east-west']));
+    }
+    for (const asset of kit.assets) {
+      expect(asset.sprite.width).toBe(6);
+      expect(asset.sprite.height).toBe(6);
+      expect(asset.spriteAnchor).toEqual([3, 3]);
+      expect(asset.collision).not.toContainEqual([0, 0]);
       const pixels = asset.sprite.tiles.flatMap((row) => row.flatMap((tile) => tile.pixels.flat()));
       expect(pixels.some((pixel) => pixel === null)).toBe(true);
       expect(pixels.some((pixel) => pixel !== null && pixel.a !== undefined && pixel.a < 255)).toBe(true);

@@ -83,6 +83,8 @@ export {
   type RegionalAssetPlacement,
   type RegionalLandmarkAsset,
   type RegionalLandmarkPlacement,
+  type RegionalRouteContactAsset,
+  type RegionalRouteContactAxis,
   type RegionalVisualAsset,
   type RegionalWorldBiomeSampler,
   type RegionalWorldRouteSampler,

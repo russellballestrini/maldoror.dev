@@ -1,0 +1,805 @@
+{
+  "version": 1,
+  "sourceTileSize": 48,
+  "blockSize": 32,
+  "cellSize": 10,
+  "density": 1,
+  "landmarkClearance": 10,
+  "sources": [
+    {
+      "file": "generated/regional-route-contacts-ns-v1-source.png",
+      "sha256": "1f973c1723770d3158e62011c697a6d87c92230c9aefa7607569a24f210f757a",
+      "accessAxis": "north-south",
+      "generation": "built-in Codex/ChatGPT image generation; no metered API"
+    },
+    {
+      "file": "generated/regional-route-contacts-ew-v1-source.png",
+      "sha256": "a88d32d52df7bf240afd0807d2be3e19bad13811071d575d6e5e7f9b3578443d",
+      "accessAxis": "east-west",
+      "generation": "built-in Codex/ChatGPT image generation; no metered API"
+    }
+  ],
+  "derivation": "pnpm assets:derive-route-contacts",
+  "assets": [
+    {
+      "id": "canal-town-route-contact-north-south-v1",
+      "file": "route-contacts/canal-town-route-contact-north-south-v1.png",
+      "family": "canal-town",
+      "accessAxis": "north-south",
+      "routeDistance": [
+        2,
+        6
+      ],
+      "scale": 0.96,
+      "spriteTiles": [
+        6,
+        6
+      ],
+      "anchorTile": [
+        3,
+        3
+      ],
+      "collision": [
+        [
+          -2,
+          -1
+        ],
+        [
+          -2,
+          0
+        ],
+        [
+          -2,
+          1
+        ],
+        [
+          -1,
+          -1
+        ],
+        [
+          -1,
+          0
+        ],
+        [
+          -1,
+          1
+        ],
+        [
+          1,
+          -1
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          -1
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          2,
+          1
+        ]
+      ]
+    },
+    {
+      "id": "canal-town-route-contact-east-west-v1",
+      "file": "route-contacts/canal-town-route-contact-east-west-v1.png",
+      "family": "canal-town",
+      "accessAxis": "east-west",
+      "routeDistance": [
+        2,
+        6
+      ],
+      "scale": 0.96,
+      "spriteTiles": [
+        6,
+        6
+      ],
+      "anchorTile": [
+        3,
+        3
+      ],
+      "collision": [
+        [
+          -2,
+          -2
+        ],
+        [
+          -1,
+          -2
+        ],
+        [
+          0,
+          -2
+        ],
+        [
+          1,
+          -2
+        ],
+        [
+          2,
+          -2
+        ],
+        [
+          -2,
+          1
+        ],
+        [
+          -1,
+          1
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          1
+        ]
+      ]
+    },
+    {
+      "id": "forest-route-contact-north-south-v1",
+      "file": "route-contacts/forest-route-contact-north-south-v1.png",
+      "family": "forest",
+      "accessAxis": "north-south",
+      "routeDistance": [
+        2,
+        6
+      ],
+      "scale": 0.96,
+      "spriteTiles": [
+        6,
+        6
+      ],
+      "anchorTile": [
+        3,
+        3
+      ],
+      "collision": [
+        [
+          -2,
+          -1
+        ],
+        [
+          -2,
+          0
+        ],
+        [
+          -2,
+          1
+        ],
+        [
+          -1,
+          -1
+        ],
+        [
+          -1,
+          0
+        ],
+        [
+          -1,
+          1
+        ],
+        [
+          1,
+          -1
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          -1
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          2,
+          1
+        ]
+      ]
+    },
+    {
+      "id": "forest-route-contact-east-west-v1",
+      "file": "route-contacts/forest-route-contact-east-west-v1.png",
+      "family": "forest",
+      "accessAxis": "east-west",
+      "routeDistance": [
+        2,
+        6
+      ],
+      "scale": 0.96,
+      "spriteTiles": [
+        6,
+        6
+      ],
+      "anchorTile": [
+        3,
+        3
+      ],
+      "collision": [
+        [
+          -2,
+          -2
+        ],
+        [
+          -1,
+          -2
+        ],
+        [
+          0,
+          -2
+        ],
+        [
+          1,
+          -2
+        ],
+        [
+          2,
+          -2
+        ],
+        [
+          -2,
+          1
+        ],
+        [
+          -1,
+          1
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          1
+        ]
+      ]
+    },
+    {
+      "id": "coast-route-contact-north-south-v1",
+      "file": "route-contacts/coast-route-contact-north-south-v1.png",
+      "family": "coast",
+      "accessAxis": "north-south",
+      "routeDistance": [
+        2,
+        6
+      ],
+      "scale": 0.96,
+      "spriteTiles": [
+        6,
+        6
+      ],
+      "anchorTile": [
+        3,
+        3
+      ],
+      "collision": [
+        [
+          -2,
+          -1
+        ],
+        [
+          -2,
+          0
+        ],
+        [
+          -2,
+          1
+        ],
+        [
+          -1,
+          -1
+        ],
+        [
+          -1,
+          0
+        ],
+        [
+          -1,
+          1
+        ],
+        [
+          1,
+          -1
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          -1
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          2,
+          1
+        ]
+      ]
+    },
+    {
+      "id": "coast-route-contact-east-west-v1",
+      "file": "route-contacts/coast-route-contact-east-west-v1.png",
+      "family": "coast",
+      "accessAxis": "east-west",
+      "routeDistance": [
+        2,
+        6
+      ],
+      "scale": 0.96,
+      "spriteTiles": [
+        6,
+        6
+      ],
+      "anchorTile": [
+        3,
+        3
+      ],
+      "collision": [
+        [
+          -2,
+          -2
+        ],
+        [
+          -1,
+          -2
+        ],
+        [
+          0,
+          -2
+        ],
+        [
+          1,
+          -2
+        ],
+        [
+          2,
+          -2
+        ],
+        [
+          -2,
+          1
+        ],
+        [
+          -1,
+          1
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          1
+        ]
+      ]
+    },
+    {
+      "id": "rural-route-contact-north-south-v1",
+      "file": "route-contacts/rural-route-contact-north-south-v1.png",
+      "family": "rural",
+      "accessAxis": "north-south",
+      "routeDistance": [
+        2,
+        6
+      ],
+      "scale": 0.96,
+      "spriteTiles": [
+        6,
+        6
+      ],
+      "anchorTile": [
+        3,
+        3
+      ],
+      "collision": [
+        [
+          -2,
+          -1
+        ],
+        [
+          -2,
+          0
+        ],
+        [
+          -2,
+          1
+        ],
+        [
+          -1,
+          -1
+        ],
+        [
+          -1,
+          0
+        ],
+        [
+          -1,
+          1
+        ],
+        [
+          1,
+          -1
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          -1
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          2,
+          1
+        ]
+      ]
+    },
+    {
+      "id": "rural-route-contact-east-west-v1",
+      "file": "route-contacts/rural-route-contact-east-west-v1.png",
+      "family": "rural",
+      "accessAxis": "east-west",
+      "routeDistance": [
+        2,
+        6
+      ],
+      "scale": 0.96,
+      "spriteTiles": [
+        6,
+        6
+      ],
+      "anchorTile": [
+        3,
+        3
+      ],
+      "collision": [
+        [
+          -2,
+          -2
+        ],
+        [
+          -1,
+          -2
+        ],
+        [
+          0,
+          -2
+        ],
+        [
+          1,
+          -2
+        ],
+        [
+          2,
+          -2
+        ],
+        [
+          -2,
+          1
+        ],
+        [
+          -1,
+          1
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          1
+        ]
+      ]
+    },
+    {
+      "id": "mountain-route-contact-north-south-v1",
+      "file": "route-contacts/mountain-route-contact-north-south-v1.png",
+      "family": "mountain",
+      "accessAxis": "north-south",
+      "routeDistance": [
+        2,
+        6
+      ],
+      "scale": 0.96,
+      "spriteTiles": [
+        6,
+        6
+      ],
+      "anchorTile": [
+        3,
+        3
+      ],
+      "collision": [
+        [
+          -2,
+          -1
+        ],
+        [
+          -2,
+          0
+        ],
+        [
+          -2,
+          1
+        ],
+        [
+          -1,
+          -1
+        ],
+        [
+          -1,
+          0
+        ],
+        [
+          -1,
+          1
+        ],
+        [
+          1,
+          -1
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          -1
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          2,
+          1
+        ]
+      ]
+    },
+    {
+      "id": "mountain-route-contact-east-west-v1",
+      "file": "route-contacts/mountain-route-contact-east-west-v1.png",
+      "family": "mountain",
+      "accessAxis": "east-west",
+      "routeDistance": [
+        2,
+        6
+      ],
+      "scale": 0.96,
+      "spriteTiles": [
+        6,
+        6
+      ],
+      "anchorTile": [
+        3,
+        3
+      ],
+      "collision": [
+        [
+          -2,
+          -2
+        ],
+        [
+          -1,
+          -2
+        ],
+        [
+          0,
+          -2
+        ],
+        [
+          1,
+          -2
+        ],
+        [
+          2,
+          -2
+        ],
+        [
+          -2,
+          1
+        ],
+        [
+          -1,
+          1
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          1
+        ]
+      ]
+    },
+    {
+      "id": "ruins-route-contact-north-south-v1",
+      "file": "route-contacts/ruins-route-contact-north-south-v1.png",
+      "family": "ruins",
+      "accessAxis": "north-south",
+      "routeDistance": [
+        2,
+        6
+      ],
+      "scale": 0.96,
+      "spriteTiles": [
+        6,
+        6
+      ],
+      "anchorTile": [
+        3,
+        3
+      ],
+      "collision": [
+        [
+          -2,
+          -1
+        ],
+        [
+          -2,
+          0
+        ],
+        [
+          -2,
+          1
+        ],
+        [
+          -1,
+          -1
+        ],
+        [
+          -1,
+          0
+        ],
+        [
+          -1,
+          1
+        ],
+        [
+          1,
+          -1
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          -1
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          2,
+          1
+        ]
+      ]
+    },
+    {
+      "id": "ruins-route-contact-east-west-v1",
+      "file": "route-contacts/ruins-route-contact-east-west-v1.png",
+      "family": "ruins",
+      "accessAxis": "east-west",
+      "routeDistance": [
+        2,
+        6
+      ],
+      "scale": 0.96,
+      "spriteTiles": [
+        6,
+        6
+      ],
+      "anchorTile": [
+        3,
+        3
+      ],
+      "collision": [
+        [
+          -2,
+          -2
+        ],
+        [
+          -1,
+          -2
+        ],
+        [
+          0,
+          -2
+        ],
+        [
+          1,
+          -2
+        ],
+        [
+          2,
+          -2
+        ],
+        [
+          -2,
+          1
+        ],
+        [
+          -1,
+          1
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          1
+        ]
+      ]
+    }
+  ]
+}

@@ -152,6 +152,32 @@ first six-family mass hierarchy but not live readiness: directional route
 contacts, parcel grammar, greater travel-scale entropy, predictive prewarming,
 and traversal tail measurements remain open.
 
+The first route-facing parcel seam is now explicit. Two separately authored
+contact axes exist for every family; a central sprite anchor lets their
+collision masses straddle an open connector instead of inheriting the old
+bottom-centre building assumption. A coarse jittered cell supplies a parcel
+identity, but its visual anchor is projected back to the exact nearest route
+tile and placed three tiles along the quantized route normal. The manifest axis
+is selected from the route tangent, and collision deliberately omits the
+connector centre.
+
+An early implementation failed faithful review because it oriented the art but
+left the jittered anchor floating beside the road. A second exposed adjacent
+duplicate thresholds. The retained process snaps to the shared route contact
+and applies coordinate-stable priority only along the resolved tangent; cells
+on unrelated off-route terrain cannot suppress a valid frontage. Off-route
+samples do not themselves own route tangents, so the provider performs a
+bounded nearest-route lookup only after the candidate has passed a route-
+distance band. Exact placement/null decisions are cached in a bounded LRU and
+shared by proof, raster, collision, and future population queries.
+
+This is still a research seam rather than complete parcel generation. The
+painted connector in some V1 sprites does not always match the procedural route
+surface, contacts are cardinal rather than diagonal, and no deep lot, building
+group, service yard, garden program, or ownership/schedule layer grows behind
+the threshold yet. Those are explicit next constraints, not reasons to hide the
+faithful failures or deploy the regional provider early.
+
 ## Non-periodic asset placement
 
 Procedural anchors come from a world-space priority field. A candidate survives

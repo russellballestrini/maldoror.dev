@@ -16,6 +16,7 @@ import {
   RegionalWorldTileProvider,
   type RegionalAmbientAsset,
   type RegionalLandmarkAsset,
+  type RegionalRouteContactAsset,
 } from '../tiles/regional-world-tile-provider.js';
 
 const COLOURS: Record<BiomeFamily, RGB> = {
@@ -85,17 +86,21 @@ function routeSample(x: number, y: number): RegionalRouteSample {
     crossingKind: null,
     routeKind: y === 0 ? 'local-road' : null,
     routeId: y === 0 ? 'test-route' : null,
-    directionX: 1,
+    directionX: y === 0 ? 1 : 0,
     directionY: 0,
     landmarkKind: site?.[2] ?? null,
     landmarkDistance: site ? 0 : Number.POSITIVE_INFINITY,
   };
 }
 
-function makeWorld(blockSize = 32, maxCachedBlocks = 32): RegionalWorldTileProvider {
+function makeWorld(
+  blockSize = 32,
+  maxCachedBlocks = 32,
+  sampleRoute: (x: number, y: number) => RegionalRouteSample = routeSample,
+): RegionalWorldTileProvider {
   const field = { sample: (x: number) => biomeSample(nearestFamily(x)) };
   const routes = {
-    sample: routeSample,
+    sample: sampleRoute,
     getLandmarkSites: (minX: number, minY: number, maxX: number, maxY: number): RegionalLandmarkSite[] =>
       SITES.filter(([x]) => x >= minX && x <= maxX && 0 >= minY && 0 <= maxY)
         .map(([x, _family, landmarkKind]) => ({
@@ -139,6 +144,19 @@ function makeWorld(blockSize = 32, maxCachedBlocks = 32): RegionalWorldTileProvi
     sprite: sprite(COLOURS[family]),
     collision: [[0, 0]] as const,
   })));
+  const routeContacts: RegionalRouteContactAsset[] = BIOME_FAMILIES.flatMap((family) => (
+    ['north-south', 'east-west'] as const
+  ).map((accessAxis) => ({
+    id: `route-contact:${family}:${accessAxis}`,
+    families: [family],
+    accessAxis,
+    routeDistance: [2, 6] as const,
+    sprite: sprite(COLOURS[family]),
+    spriteAnchor: [1, 1] as const,
+    collision: accessAxis === 'north-south'
+      ? [[-1, 0], [1, 0]] as const
+      : [[0, -1], [0, 1]] as const,
+  })));
   return new RegionalWorldTileProvider({
     worldSeed: 42n,
     field,
@@ -146,11 +164,15 @@ function makeWorld(blockSize = 32, maxCachedBlocks = 32): RegionalWorldTileProvi
     compositor,
     landmarks,
     ambient,
+    routeContacts,
     blockSize,
     maxCachedBlocks,
     ambientCellSize: 4,
     ambientDensity: 1,
     ambientLandmarkClearance: 4,
+    routeContactCellSize: 10,
+    routeContactDensity: 1,
+    routeContactLandmarkClearance: 4,
   });
 }
 
@@ -182,6 +204,48 @@ describe('RegionalWorldTileProvider', () => {
     }
     expect(world.getTileAtResolution(0, 0, 4).pixels).toHaveLength(4);
     expect(world.getRegionalStats().ambientAssets).toBe(BIOME_FAMILIES.length * 2);
+    expect(world.getRegionalStats().routeContactAssets).toBe(BIOME_FAMILIES.length * 2);
+  });
+
+  it('selects authored contact axes from route tangents and keeps the connector open', () => {
+    const horizontal = makeWorld();
+    const horizontalContacts = horizontal.getRouteContactPlacementsInBounds(-24, -16, 224, 16);
+    expect(horizontalContacts.length).toBeGreaterThan(4);
+    expect(new Set(horizontalContacts.map((placement) => placement.accessAxis)))
+      .toEqual(new Set(['north-south']));
+    expect(new Set(horizontalContacts.flatMap((placement) => placement.families)))
+      .toEqual(new Set(BIOME_FAMILIES));
+    for (const placement of horizontalContacts) {
+      expect(placement.assetId).toContain(':north-south');
+      expect(placement.parcelId).toMatch(/^parcel:-?\d+:-?\d+$/);
+      expect(placement.anchorX).toBe(placement.siteX);
+      expect(Math.abs(placement.anchorY - placement.siteY)).toBe(3);
+      expect(horizontal.isBuildingAt(placement.anchorX, placement.anchorY)).toBe(false);
+      expect(horizontal.getTile(placement.siteX, placement.siteY).walkable).toBe(true);
+    }
+
+    const vertical = makeWorld(32, 32, (x, y) => ({
+      ...routeSample(x, y),
+      distance: Math.abs(x),
+      isRoute: x === 0,
+      isWalkableRoute: x === 0,
+      routeKind: x === 0 ? 'local-road' : null,
+      routeId: x === 0 ? 'vertical-route' : null,
+      directionX: 0,
+      directionY: x === 0 ? 1 : 0,
+      landmarkKind: null,
+      landmarkDistance: Number.POSITIVE_INFINITY,
+    }));
+    const verticalContacts = vertical.getRouteContactPlacementsInBounds(-8, -160, 8, 160);
+    expect(verticalContacts.length).toBeGreaterThan(1);
+    expect(new Set(verticalContacts.map((placement) => placement.accessAxis)))
+      .toEqual(new Set(['east-west']));
+    expect(verticalContacts.every((placement) => placement.assetId.includes(':east-west'))).toBe(true);
+    for (const placement of verticalContacts) {
+      expect(placement.anchorY).toBe(placement.siteY);
+      expect(Math.abs(placement.anchorX - placement.siteX)).toBe(3);
+      expect(vertical.isBuildingAt(placement.anchorX, placement.anchorY)).toBe(false);
+    }
   });
 
   it('places coordinate-stable ambient masses across all family regions', () => {
