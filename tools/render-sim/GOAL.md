@@ -1,3 +1,15 @@
+# GOAL → see /DOSSIER.md (north star, set from the 2026-07-23 vision interview)
+
+**Maldoror = an infinite, freely-zoomable, buttery-smooth, entirely AI-generated
+LIVING world (canal-towns, forests, waterways, ruins) explored together over SSH,
+in high-fidelity octant ANSI, Ghostty-first.** Non-negotiables: looks like
+TARGET.png (dense/lush/organic) · buttery smooth · pure ANSI (no image protocols)
+· Ghostty-first. World model = RICH AI tileset + dense procedural placement
+(seamless infinite + known collision). FIRST MILESTONE = "one gorgeous walkable
+block, buttery smooth" (DOSSIER.md).
+
+---
+
 # RENDER GOAL — match the TARGET mockup
 
 **The goal:** the live game, played over SSH in Ghostty, is visually
