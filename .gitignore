@@ -59,3 +59,10 @@ debug-buildings/
 apps/ssh-world/debug-sprites/
 apps/ssh-world/debug-buildings/
 apps/ssh-world/sprites/
+
+# render-sim working artifacts (gallery/ IS committed - it's the public record)
+tools/render-sim/out/
+tools/render-sim/terrain-debug/
+apps/ssh-world/data/terrain/
+apps/ssh-world/npcs/
+apps/ssh-world/debug-sprites/

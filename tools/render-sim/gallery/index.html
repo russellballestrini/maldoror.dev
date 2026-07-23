@@ -1,0 +1,56 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>maldoror — render gallery</title>
+<style>
+  :root { color-scheme: dark; }
+  body { background:#0d0d12; color:#cfcfe0; font-family:ui-monospace,monospace; margin:2rem auto; max-width:1200px; padding:0 1rem; }
+  h1 { color:#c864ff; letter-spacing:.1em; }
+  h2 { color:#e0a0ff; border-bottom:1px solid #333; padding-bottom:.3rem; margin-top:3rem; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:1rem; }
+  figure { margin:0; background:#16161f; border:1px solid #2a2a3a; border-radius:6px; padding:.5rem; }
+  img { width:100%; height:auto; image-rendering:pixelated; display:block; }
+  figcaption { font-size:.75rem; color:#8888a0; padding-top:.4rem; }
+  .notes { background:#14141c; border-left:3px solid #c864ff; padding:.8rem; white-space:pre-wrap; font-size:.85rem; color:#a8a8c0; }
+</style>
+<h1>MALDOROR — render engine gallery</h1>
+<p>Ongoing visual iterations of the terminal render engine. Each section is one iteration of the
+headless simulator (<code>tools/render-sim</code>) — the same pipeline the SSH game renders with.</p>
+<section><h2>001-ai-terrain-clean-sprites</h2><pre class="notes"># 001-ai-terrain-clean-sprites
+
+2026-07-23T06:22:54.629Z
+
+Iteration 1 — AI TERRAIN + SPRITE DESPECKLE.
+
+Changes since baseline:
+- Generated 20 AI terrain tiles with gpt-image-1-mini (5 base: grass/dirt/sand/water/stone + 15 grass_to_dirt autotile transitions), pixelated to the 10-step resolution pyramid, persisted to data/terrain PNGs + terrain_tiles DB (what the live worker loads at boot). Flat solid-color world -> textured earth, grass tufts, rippled sand.
+- Sprite fringe FIXED: the baked-in dark alpha halo (generation-era threshold 32) is now stripped at load: 2-pass dark-boundary erosion + isolated-speck cleanup on the 256px base before the renderer's downscale (sprite-hygiene.ts, wired into player + NPC loaders; generation threshold raised 32->96 for future assets).
+- Sim now mirrors the live zoom-based quantization (4/5-bit + Bayer dithering).
+
+Known issues to iterate:
+- grass_to_dirt TRANSITION tiles don't match the base grass art style (generated without a reference image) -> visible style seam. Next: regenerate transitions via images.edit with the base tile as reference.
+- Water transitions (grass_to_water) still generating.
+- Water is static; fallback water was animated. Consider animated AI water frames.
+- Bayer dithering gives dirt a subtle woven look at close zoom; try 5-bit or blue-noise.
+</pre><div class="grid"><figure><a href="/gallery/001-ai-terrain-clean-sprites/sim_braille_z102.png"><img loading="lazy" src="/gallery/001-ai-terrain-clean-sprites/sim_braille_z102.png" alt="sim_braille_z102.png"></a><figcaption>sim_braille_z102.png</figcaption></figure>
+<figure><a href="/gallery/001-ai-terrain-clean-sprites/sim_braille_z51.png"><img loading="lazy" src="/gallery/001-ai-terrain-clean-sprites/sim_braille_z51.png" alt="sim_braille_z51.png"></a><figcaption>sim_braille_z51.png</figcaption></figure>
+<figure><a href="/gallery/001-ai-terrain-clean-sprites/sim_halfblock_z26.png"><img loading="lazy" src="/gallery/001-ai-terrain-clean-sprites/sim_halfblock_z26.png" alt="sim_halfblock_z26.png"></a><figcaption>sim_halfblock_z26.png</figcaption></figure>
+<figure><a href="/gallery/001-ai-terrain-clean-sprites/sim_halfblock_z51.png"><img loading="lazy" src="/gallery/001-ai-terrain-clean-sprites/sim_halfblock_z51.png" alt="sim_halfblock_z51.png"></a><figcaption>sim_halfblock_z51.png</figcaption></figure>
+<figure><a href="/gallery/001-ai-terrain-clean-sprites/sim_halfblock_z88.png"><img loading="lazy" src="/gallery/001-ai-terrain-clean-sprites/sim_halfblock_z88.png" alt="sim_halfblock_z88.png"></a><figcaption>sim_halfblock_z88.png</figcaption></figure></div></section>
+<section><h2>000-baseline</h2><pre class="notes"># 000-baseline
+
+2026-07-23T06:14:24.271Z
+
+Iteration 0 — BASELINE of the current engine (halfblock + braille modes, zoom 26/51/88/102px tiles).
+
+Findings:
+- Terrain renders as FLAT solid-color rectangles: the procedural texture generator in packages/world base-tiles.ts is disabled ('DISABLED FOR PERF TESTING'), and the AI terrain_tiles DB table is empty on this install.
+- Dark speckle fringe around all sprites: alpha threshold 32 lets anti-aliased edge pixels through as near-black dots; existing sprite PNGs have the fringe baked in (needs load-time despeckle).
+- Sprites themselves (gpt-image generated, pixelated to a 10-step resolution pyramid) read beautifully, even in halfblock.
+- Braille mode doubles detail; flat-cell optimization (this session) removed dot-noise on flat areas.
+Next: AI terrain generation (in progress), sprite despeckle, then visual iteration.
+</pre><div class="grid"><figure><a href="/gallery/000-baseline/sim_braille_z102.png"><img loading="lazy" src="/gallery/000-baseline/sim_braille_z102.png" alt="sim_braille_z102.png"></a><figcaption>sim_braille_z102.png</figcaption></figure>
+<figure><a href="/gallery/000-baseline/sim_braille_z51.png"><img loading="lazy" src="/gallery/000-baseline/sim_braille_z51.png" alt="sim_braille_z51.png"></a><figcaption>sim_braille_z51.png</figcaption></figure>
+<figure><a href="/gallery/000-baseline/sim_halfblock_z26.png"><img loading="lazy" src="/gallery/000-baseline/sim_halfblock_z26.png" alt="sim_halfblock_z26.png"></a><figcaption>sim_halfblock_z26.png</figcaption></figure>
+<figure><a href="/gallery/000-baseline/sim_halfblock_z51.png"><img loading="lazy" src="/gallery/000-baseline/sim_halfblock_z51.png" alt="sim_halfblock_z51.png"></a><figcaption>sim_halfblock_z51.png</figcaption></figure>
+<figure><a href="/gallery/000-baseline/sim_halfblock_z88.png"><img loading="lazy" src="/gallery/000-baseline/sim_halfblock_z88.png" alt="sim_halfblock_z88.png"></a><figcaption>sim_halfblock_z88.png</figcaption></figure></div></section>

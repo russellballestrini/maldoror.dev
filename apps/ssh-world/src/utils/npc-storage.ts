@@ -11,6 +11,7 @@ import {
   loadPngAsPixelGrid,
   deleteNPCPngs,
 } from './png-storage.js';
+import { despeckleSpriteFrame } from './sprite-hygiene.js';
 
 const DIRECTIONS = ['up', 'down', 'left', 'right'] as const;
 
@@ -232,7 +233,8 @@ export async function loadNPCSpriteFromDisk(npcId: string): Promise<Sprite | nul
     for (let frameNum = 0; frameNum < 4; frameNum++) {
       const pixels = await loadNPCFrame(npcId, direction, frameNum, 256);
       if (pixels) {
-        sprite.frames[direction][frameNum] = pixels;
+        // Strip baked-in dark alpha fringe (see sprite-hygiene.ts)
+        sprite.frames[direction][frameNum] = despeckleSpriteFrame(pixels);
       }
     }
   }

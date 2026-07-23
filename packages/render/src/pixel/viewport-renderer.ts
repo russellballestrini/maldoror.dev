@@ -127,6 +127,9 @@ export class ViewportRenderer {
   private scaledFrameCacheOrder: string[] = []; // LRU order tracking
   private readonly MAX_CACHE_SIZE = 500; // Max cached frames to prevent memory explosion
   private lastCacheClearSize: number = 0;
+  // Performance: Reused frame buffer — allocating W*H pixel rows every frame
+  // was a major GC pressure source. Recreated only when dimensions change.
+  private frameBuffer: PixelGrid | null = null;
 
   constructor(config: ViewportConfig) {
     this.config = config;
@@ -336,8 +339,17 @@ export class ViewportRenderer {
     const pixelWidth = this.config.pixelWidth ?? (this.config.widthTiles * this.tileRenderSize);
     const pixelHeight = this.config.pixelHeight ?? (this.config.heightTiles * this.tileRenderSize);
 
-    // Create the pixel buffer
-    const buffer = createEmptyGrid(pixelWidth, pixelHeight);
+    // Reuse the frame buffer across frames (clear-in-place instead of realloc)
+    // NOTE: callers consume the buffer synchronously (pixels -> cells) before
+    // the next renderToBuffer call, so in-place reuse is safe.
+    if (!this.frameBuffer ||
+        this.frameBuffer.length !== pixelHeight ||
+        (this.frameBuffer[0]?.length ?? 0) !== pixelWidth) {
+      this.frameBuffer = createEmptyGrid(pixelWidth, pixelHeight);
+    } else {
+      for (const row of this.frameBuffer) row.fill(null);
+    }
+    const buffer = this.frameBuffer;
 
     // Get viewport origin in world pixels
     const origin = this.getViewportOrigin();
@@ -392,6 +404,30 @@ export class ViewportRenderer {
   }
 
   /**
+   * Compute the EXACT world-tile bounds visible in the viewport.
+   *
+   * Camera rotation is restricted to 90° increments, so the visible world
+   * region is always an axis-aligned rectangle: for 0°/180° it spans
+   * (±bufW/2, ±bufH/2) around the camera; for 90°/270° width/height swap.
+   * The old code scanned a SQUARE of radius max(bufW,bufH)/tileSize + 2 on
+   * both axes — 4-10x more tiles than visible at low zoom levels.
+   */
+  private getVisibleTileBounds(bufW: number, bufH: number): {
+    startTileX: number; startTileY: number; endTileX: number; endTileY: number;
+  } {
+    const swap = this.cameraRotation === 90 || this.cameraRotation === 270;
+    const worldHalfX = (swap ? bufH : bufW) / 2;
+    const worldHalfY = (swap ? bufW : bufH) / 2;
+    const ts = this.tileRenderSize;
+    return {
+      startTileX: Math.floor((this.cameraCenterX - worldHalfX) / ts) - 1,
+      endTileX: Math.floor((this.cameraCenterX + worldHalfX) / ts) + 1,
+      startTileY: Math.floor((this.cameraCenterY - worldHalfY) / ts) - 1,
+      endTileY: Math.floor((this.cameraCenterY + worldHalfY) / ts) + 1,
+    };
+  }
+
+  /**
    * Render tiles to buffer with sub-pixel camera positioning and camera rotation
    */
   private renderTiles(buffer: PixelGrid, world: WorldDataProvider, tick: number, _origin: { x: number; y: number }): void {
@@ -402,15 +438,9 @@ export class ViewportRenderer {
     const screenCenterX = buffer[0]!.length / 2;
     const screenCenterY = buffer.length / 2;
 
-    // Calculate the world bounds we need to sample (larger area to cover rotated viewport)
-    const viewportRadius = Math.max(buffer[0]!.length, buffer.length) / this.tileRenderSize + 2;
-    const cameraTileX = Math.floor(this.cameraCenterX / this.tileRenderSize);
-    const cameraTileY = Math.floor(this.cameraCenterY / this.tileRenderSize);
-
-    const startTileX = cameraTileX - Math.ceil(viewportRadius);
-    const startTileY = cameraTileY - Math.ceil(viewportRadius);
-    const endTileX = cameraTileX + Math.ceil(viewportRadius);
-    const endTileY = cameraTileY + Math.ceil(viewportRadius);
+    // Exact visible tile range (rotation-aware, axis-aligned)
+    const { startTileX, startTileY, endTileX, endTileY } =
+      this.getVisibleTileBounds(buffer[0]!.length, buffer.length);
 
     for (let worldTileY = startTileY; worldTileY <= endTileY; worldTileY++) {
       for (let worldTileX = startTileX; worldTileX <= endTileX; worldTileX++) {
@@ -485,15 +515,9 @@ export class ViewportRenderer {
     const screenCenterX = buffer[0]!.length / 2;
     const screenCenterY = buffer.length / 2;
 
-    // Calculate the world bounds we need to sample (larger area to cover rotated viewport)
-    const viewportRadius = Math.max(buffer[0]!.length, buffer.length) / this.tileRenderSize + 2;
-    const cameraTileX = Math.floor(this.cameraCenterX / this.tileRenderSize);
-    const cameraTileY = Math.floor(this.cameraCenterY / this.tileRenderSize);
-
-    const startTileX = cameraTileX - Math.ceil(viewportRadius);
-    const startTileY = cameraTileY - Math.ceil(viewportRadius);
-    const endTileX = cameraTileX + Math.ceil(viewportRadius);
-    const endTileY = cameraTileY + Math.ceil(viewportRadius);
+    // Exact visible tile range (rotation-aware, axis-aligned)
+    const { startTileX, startTileY, endTileX, endTileY } =
+      this.getVisibleTileBounds(buffer[0]!.length, buffer.length);
 
     for (let worldTileY = startTileY; worldTileY <= endTileY; worldTileY++) {
       for (let worldTileX = startTileX; worldTileX <= endTileX; worldTileX++) {
@@ -555,15 +579,9 @@ export class ViewportRenderer {
     const screenCenterX = buffer[0]!.length / 2;
     const screenCenterY = buffer.length / 2;
 
-    // Calculate the world bounds we need to sample (larger area to cover rotated viewport)
-    const viewportRadius = Math.max(buffer[0]!.length, buffer.length) / this.tileRenderSize + 2;
-    const cameraTileX = Math.floor(this.cameraCenterX / this.tileRenderSize);
-    const cameraTileY = Math.floor(this.cameraCenterY / this.tileRenderSize);
-
-    const startTileX = cameraTileX - Math.ceil(viewportRadius);
-    const startTileY = cameraTileY - Math.ceil(viewportRadius);
-    const endTileX = cameraTileX + Math.ceil(viewportRadius);
-    const endTileY = cameraTileY + Math.ceil(viewportRadius);
+    // Exact visible tile range (rotation-aware, axis-aligned)
+    const { startTileX, startTileY, endTileX, endTileY } =
+      this.getVisibleTileBounds(buffer[0]!.length, buffer.length);
 
     for (let worldTileY = startTileY; worldTileY <= endTileY; worldTileY++) {
       for (let worldTileX = startTileX; worldTileX <= endTileX; worldTileX++) {
@@ -710,18 +728,18 @@ export class ViewportRenderer {
     const screenCenterX = buffer[0]!.length / 2;
     const screenCenterY = buffer.length / 2;
 
-    // Combine players and NPCs into a single array for proper Y-sorting
-    const entities: (PlayerVisualState | NPCVisualState)[] = [...players, ...npcs];
-
-    // Sort by Y position for proper layering (lower Y drawn first)
-    // When camera is rotated, we need to sort by the rotated Y position
-    const sortedEntities = entities.sort((a, b) => {
-      const aWorld = { x: a.x * this.tileRenderSize, y: a.y * this.tileRenderSize };
-      const bWorld = { x: b.x * this.tileRenderSize, y: b.y * this.tileRenderSize };
-      const aScreen = this.worldToScreen(aWorld.x, aWorld.y, this.cameraCenterX, this.cameraCenterY);
-      const bScreen = this.worldToScreen(bWorld.x, bWorld.y, this.cameraCenterX, this.cameraCenterY);
-      return aScreen.y - bScreen.y;
-    });
+    // Combine players and NPCs, precompute each entity's SCREEN Y once, then
+    // sort numerically (the old comparator recomputed the rotation transform
+    // for both operands on every comparison — O(n log n) transforms per frame)
+    const sortable = [...players, ...npcs].map(e => ({
+      e,
+      sy: this.worldToScreen(
+        e.x * this.tileRenderSize, e.y * this.tileRenderSize,
+        this.cameraCenterX, this.cameraCenterY
+      ).y,
+    }));
+    sortable.sort((a, b) => a.sy - b.sy);
+    const sortedEntities = sortable.map(s => s.e);
 
     for (const entity of sortedEntities) {
       const isPlayerEntity = this.isPlayer(entity);

@@ -10,6 +10,7 @@ import {
   loadPngAsPixelGrid,
   deleteSpritePngs,
 } from './png-storage.js';
+import { despeckleSpriteFrame } from './sprite-hygiene.js';
 
 const DIRECTIONS = ['up', 'down', 'left', 'right'] as const;
 type Direction = typeof DIRECTIONS[number];
@@ -163,7 +164,9 @@ export async function loadSpriteFromDisk(userId: string): Promise<Sprite | null>
     const pixels = await loadSpriteFrame(userId, record.direction, record.frameNum, 256);
     if (pixels) {
       const dir = record.direction as Direction;
-      sprite.frames[dir][record.frameNum] = pixels;
+      // Strip the baked-in dark alpha fringe (see sprite-hygiene.ts) so the
+      // renderer's downscaling doesn't scatter black speckles around sprites
+      sprite.frames[dir][record.frameNum] = despeckleSpriteFrame(pixels);
     }
   }
 

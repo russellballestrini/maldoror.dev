@@ -28,7 +28,7 @@ function imageToPixelGrid(
   data: Buffer,
   width: number,
   height: number,
-  alphaThreshold = 32
+  alphaThreshold = 96
 ): PixelGrid {
   const grid: PixelGrid = [];
 

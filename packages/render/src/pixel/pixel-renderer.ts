@@ -1,4 +1,5 @@
 import type { RGB, Pixel, PixelGrid } from '@maldoror/protocol';
+import { sgrCode, sgrPairKey } from './ansi-cache.js';
 
 /**
  * ANSI escape codes for pixel rendering
@@ -159,16 +160,16 @@ export function renderHalfBlockRow(topRow: Pixel[], bottomRow: Pixel[]): string 
     const fg = topPixel ?? DEFAULT_BG;
     const bg = bottomPixel ?? DEFAULT_BG;
 
-    // Set foreground color (top pixel) if changed
-    if (lastFg === null || lastFg.r !== fg.r || lastFg.g !== fg.g || lastFg.b !== fg.b) {
-      output += fgColor(fg);
-      lastFg = fg;
-    }
+    const fgChanged = lastFg === null || lastFg.r !== fg.r || lastFg.g !== fg.g || lastFg.b !== fg.b;
+    const bgChanged = lastBg === null || lastBg.r !== bg.r || lastBg.g !== bg.g || lastBg.b !== bg.b;
 
-    // Set background color (bottom pixel) if changed
-    if (lastBg === null || lastBg.r !== bg.r || lastBg.g !== bg.g || lastBg.b !== bg.b) {
-      output += bgColor(bg);
-      lastBg = bg;
+    // Emit color change as ONE merged SGR when both change (saves ~5 bytes
+    // per boundary), single cached code otherwise. This is the hot emitter
+    // for the production (renderToString) halfblock path.
+    if (fgChanged || bgChanged) {
+      output += sgrCode(fgChanged ? fg : null, bgChanged ? bg : null);
+      if (fgChanged) lastFg = fg;
+      if (bgChanged) lastBg = bg;
     }
 
     output += HALF_BLOCK_TOP;
@@ -204,25 +205,6 @@ function pixelBrightness(pixel: Pixel): number {
 }
 
 /**
- * Average multiple pixels into one color
- */
-function averagePixels(pixels: Pixel[]): RGB {
-  const valid = pixels.filter((p): p is RGB => p !== null);
-  if (valid.length === 0) return { r: 20, g: 20, b: 25 };
-
-  const sum = valid.reduce(
-    (acc, p) => ({ r: acc.r + p.r, g: acc.g + p.g, b: acc.b + p.b }),
-    { r: 0, g: 0, b: 0 }
-  );
-
-  return {
-    r: Math.round(sum.r / valid.length),
-    g: Math.round(sum.g / valid.length),
-    b: Math.round(sum.b / valid.length),
-  };
-}
-
-/**
  * Apply brightness multiplier to an RGB color
  * Clamps result to [0, 255] range
  */
@@ -234,9 +216,21 @@ function applyBrightness(color: RGB, brightness: number): RGB {
   };
 }
 
+// Scratch buffer for renderBrailleChar (single-threaded; avoids 8 object
+// allocations + a sort per cell per frame — the old implementation was the
+// hottest allocation site in braille mode).
+const BR_SCRATCH = new Int16Array(8);
+
 /**
  * Render a 2x4 pixel block as a single Braille character
  * Returns the character and the foreground/background colors to use
+ *
+ * Allocation-free. Threshold = (min+max)/2 contrast split rather than the
+ * old median split: the median forced ~half the dots on even in flat areas,
+ * producing dot-noise on solid terrain. Flat cells (low brightness range)
+ * are rendered as a SOLID full-dot cell with fg=bg=average — smooth fills
+ * instead of speckle.
+ *
  * @param block - 4 rows × 2 cols of pixels
  * @param cellBrightness - Optional brightness multiplier (0.7-1.2 typical, default 1.0)
  */
@@ -244,54 +238,79 @@ function renderBrailleChar(
   block: Pixel[][],  // 4 rows × 2 cols
   cellBrightness: number = 1.0
 ): { char: string; fg: RGB; bg: RGB } {
-  // Collect all pixels and their brightness
-  const allPixels: { pixel: Pixel; brightness: number; row: number; col: number }[] = [];
-
+  // Pass 1: brightness per dot; track min/max over non-null pixels
+  let minB = 999, maxB = -1;
   for (let row = 0; row < 4; row++) {
+    const r = block[row];
     for (let col = 0; col < 2; col++) {
-      const pixel = block[row]?.[col] ?? null;
-      allPixels.push({
-        pixel,
-        brightness: pixelBrightness(pixel),
-        row,
-        col,
-      });
+      const pixel = r?.[col] ?? null;
+      const b = pixel === null ? -1 : pixelBrightness(pixel);
+      BR_SCRATCH[row * 2 + col] = b;
+      if (b >= 0) {
+        if (b < minB) minB = b;
+        if (b > maxB) maxB = b;
+      }
     }
   }
 
-  // Find median brightness to threshold
-  const brightnesses = allPixels.map(p => p.brightness).sort((a, b) => a - b);
-  const medianBrightness = brightnesses[4] ?? 128;  // Middle of 8 values
+  // All-transparent cell: default background, no dots
+  if (maxB < 0) {
+    let c: RGB = DEFAULT_BG;
+    if (cellBrightness !== 1.0) c = applyBrightness(c, cellBrightness);
+    return { char: String.fromCharCode(BRAILLE_BASE), fg: c, bg: c };
+  }
 
-  // Split into foreground (bright) and background (dark) pixels
-  const fgPixels: Pixel[] = [];
-  const bgPixels: Pixel[] = [];
+  // Flat cell (low contrast): render solid — all dots on, fg=bg=average.
+  // Avoids dot-noise on uniform terrain and compresses better (identical
+  // neighbouring cells dedupe in the diff/CRLE layers).
+  if (maxB - minB <= 10) {
+    let sr = 0, sg = 0, sb = 0, n = 0;
+    for (let row = 0; row < 4; row++) {
+      const r = block[row];
+      for (let col = 0; col < 2; col++) {
+        const pixel = r?.[col] ?? null;
+        if (pixel !== null) { sr += pixel.r; sg += pixel.g; sb += pixel.b; n++; }
+      }
+    }
+    let avg: RGB = { r: Math.round(sr / n), g: Math.round(sg / n), b: Math.round(sb / n) };
+    if (cellBrightness !== 1.0) avg = applyBrightness(avg, cellBrightness);
+    return { char: String.fromCharCode(BRAILLE_BASE + 0xFF), fg: avg, bg: avg };
+  }
+
+  // Contrast split at the midpoint of the brightness range
+  const threshold = (minB + maxB) / 2;
+
+  // Pass 2: build dot code + accumulate color sums for fg (on) / bg (off)
   let brailleCode = 0;
-
-  for (const p of allPixels) {
-    if (p.brightness >= medianBrightness && p.pixel !== null) {
-      fgPixels.push(p.pixel);
-      // Set the corresponding Braille dot
-      brailleCode |= BRAILLE_DOTS[p.row]![p.col]!;
-    } else {
-      bgPixels.push(p.pixel);
+  let fr = 0, fgG = 0, fb = 0, fn = 0;
+  let br = 0, bgG = 0, bb = 0, bn = 0;
+  for (let row = 0; row < 4; row++) {
+    const r = block[row];
+    for (let col = 0; col < 2; col++) {
+      const pixel = r?.[col] ?? null;
+      const b = BR_SCRATCH[row * 2 + col]!;
+      if (pixel !== null && b >= threshold) {
+        brailleCode |= BRAILLE_DOTS[row]![col]!;
+        fr += pixel.r; fgG += pixel.g; fb += pixel.b; fn++;
+      } else if (pixel !== null) {
+        br += pixel.r; bgG += pixel.g; bb += pixel.b; bn++;
+      }
     }
   }
 
-  // Calculate average colors for fg and bg
-  let fg = averagePixels(fgPixels);
-  let bg = averagePixels(bgPixels);
+  let fg: RGB = fn > 0
+    ? { r: Math.round(fr / fn), g: Math.round(fgG / fn), b: Math.round(fb / fn) }
+    : DEFAULT_BG;
+  let bg: RGB = bn > 0
+    ? { r: Math.round(br / bn), g: Math.round(bgG / bn), b: Math.round(bb / bn) }
+    : DEFAULT_BG;
 
-  // Apply cell-level brightness if not default
   if (cellBrightness !== 1.0) {
     fg = applyBrightness(fg, cellBrightness);
     bg = applyBrightness(bg, cellBrightness);
   }
 
-  // Generate Braille character
-  const char = String.fromCharCode(BRAILLE_BASE + brailleCode);
-
-  return { char, fg, bg };
+  return { char: String.fromCharCode(BRAILLE_BASE + brailleCode), fg, bg };
 }
 
 /**
@@ -695,31 +714,20 @@ export function renderBrailleGridCells(grid: PixelGrid, brightnessGrid?: Brightn
 // ============================================
 
 /**
- * Color key for grouping cells by color
- */
-function colorKey(fg: RGB | null, bg: RGB | null): string {
-  const fgStr = fg ? `${fg.r},${fg.g},${fg.b}` : 'null';
-  const bgStr = bg ? `${bg.r},${bg.g},${bg.b}` : 'null';
-  return `${fgStr}|${bgStr}`;
-}
-
-/**
- * Cell position for CRLE rendering
- */
-interface CRLECell {
-  x: number;
-  y: number;
-  char: string;
-}
-
-/**
- * Color group for CRLE rendering
+ * Color group for CRLE rendering.
+ * Positions/chars are parallel arrays in ROW-MAJOR insertion order — the
+ * frame scan is row-major, so each group's cells arrive already sorted by
+ * (y, x); no per-group sort is needed. `pos` packs y * rowStride + x.
  */
 interface CRLEColorGroup {
   fgColor: RGB | null;
   bgColor: RGB | null;
-  cells: CRLECell[];
+  pos: number[];
+  chars: string[];
 }
+
+/** Row stride for packed cell positions (> any realistic terminal width). */
+const CRLE_ROW_STRIDE = 4096;
 
 /**
  * CRLE render result with stats
@@ -750,8 +758,9 @@ export function renderCRLE(
   headerRows: number,
   renderMode: 'normal' | 'halfblock' | 'braille' = 'halfblock'
 ): CRLERenderResult {
-  // Group changed cells by color
-  const colorGroups = new Map<string, CRLEColorGroup>();
+  // Group changed cells by color (integer pair keys — string keys per cell
+  // were the hottest allocation in the whole frame pipeline)
+  const colorGroups = new Map<number, CRLEColorGroup>();
   let totalChangedCells = 0;
 
   for (let y = 0; y < cells.length; y++) {
@@ -759,6 +768,10 @@ export function renderCRLE(
     const prevRow = previousCells[y];
     if (!row) continue;
 
+    // Cheap row-level skip: identical row references can't differ
+    if (row === prevRow) continue;
+
+    const rowBase = y * CRLE_ROW_STRIDE;
     for (let x = 0; x < row.length; x++) {
       const cell = row[x];
       const prevCell = prevRow?.[x];
@@ -767,19 +780,21 @@ export function renderCRLE(
       if (!cell || cellsEqual(cell, prevCell)) continue;
 
       totalChangedCells++;
-      const key = colorKey(cell.fgColor, cell.bgColor);
+      const key = sgrPairKey(cell.fgColor, cell.bgColor);
 
       let group = colorGroups.get(key);
       if (!group) {
         group = {
           fgColor: cell.fgColor,
           bgColor: cell.bgColor,
-          cells: [],
+          pos: [],
+          chars: [],
         };
         colorGroups.set(key, group);
       }
 
-      group.cells.push({ x, y, char: cell.char });
+      group.pos.push(rowBase + x);
+      group.chars.push(cell.char);
     }
   }
 
@@ -798,51 +813,46 @@ export function renderCRLE(
 
   // Sort groups by cell count (render larger groups first for better perceived performance)
   const sortedGroups = Array.from(colorGroups.values()).sort(
-    (a, b) => b.cells.length - a.cells.length
+    (a, b) => b.pos.length - a.pos.length
   );
 
   for (const group of sortedGroups) {
-    // Set colors once for this group
-    if (group.fgColor) {
-      chunks.push(fgColor(group.fgColor));
-    }
-    if (group.bgColor) {
-      chunks.push(bgColor(group.bgColor));
-    }
+    // Set both colors once for this group in ONE merged SGR sequence, then
+    // append the group's cells into one string. Cells are already in
+    // row-major order (see grouping loop) — no sort needed.
+    let s = sgrCode(group.fgColor, group.bgColor);
 
-    // Sort cells by position for optimal cursor movement
-    // Prioritize cells that can use relative movement
-    group.cells.sort((a, b) => {
-      if (a.y !== b.y) return a.y - b.y;
-      return a.x - b.x;
-    });
-
+    const pos = group.pos;
+    const groupChars = group.chars;
     let lastX = -2;
     let lastY = -1;
 
-    for (const cell of group.cells) {
-      // Calculate terminal position
-      const termCol = renderMode === 'normal' ? cell.x * 2 + 1 : cell.x + 1;
-      const termRow = cell.y + headerRows + 1;
+    for (let i = 0; i < pos.length; i++) {
+      const p = pos[i]!;
+      const cy = (p / CRLE_ROW_STRIDE) | 0;
+      const cx = p - cy * CRLE_ROW_STRIDE;
 
       // Use relative movement if possible (cursor right), otherwise absolute
-      if (lastY === cell.y && lastX === cell.x - 1) {
+      if (lastY === cy && lastX === cx - 1) {
         // Contiguous - no cursor movement needed
-      } else if (lastY === cell.y && cell.x > lastX && cell.x - lastX <= 3) {
+      } else if (lastY === cy && cx > lastX && cx - lastX <= 3) {
         // Same row, small gap - use cursor forward (shorter than absolute)
-        const spaces = renderMode === 'normal' ? (cell.x - lastX - 1) * 2 : cell.x - lastX - 1;
+        const spaces = renderMode === 'normal' ? (cx - lastX - 1) * 2 : cx - lastX - 1;
         if (spaces > 0) {
-          chunks.push(`${ESC}[${spaces}C`);
+          s += `${ESC}[${spaces}C`;
         }
       } else {
         // Jump to absolute position
-        chunks.push(`${ESC}[${termRow};${termCol}H`);
+        const termCol = renderMode === 'normal' ? cx * 2 + 1 : cx + 1;
+        s += `${ESC}[${cy + headerRows + 1};${termCol}H`;
       }
 
-      chunks.push(cell.char);
-      lastX = cell.x;
-      lastY = cell.y;
+      s += groupChars[i]!;
+      lastX = cx;
+      lastY = cy;
     }
+
+    chunks.push(s);
   }
 
   chunks.push(`${ESC}[0m`);  // Reset at end

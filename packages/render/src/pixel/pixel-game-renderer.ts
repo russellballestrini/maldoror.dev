@@ -12,13 +12,20 @@ import {
   renderBrailleGridCells,
   cellsEqual,
   colorsEqual,
-  fgColor,
-  bgColor,
   renderCRLE,
   type CellGrid,
 } from './pixel-renderer.js';
 import { perfStats } from './perf-stats.js';
+import { sgrCode } from './ansi-cache.js';
 import { BG_PRIMARY, BG_TERTIARY, fg, bg, ACCENT_CYAN, ACCENT_GOLD, TEXT_SECONDARY, BORDER_DIM, RESET } from '../brand.js';
+
+// Synchronized output (DEC private mode 2026). Supported by kitty, WezTerm,
+// Ghostty, Alacritty, foot, iTerm2, Windows Terminal, contour; terminals that
+// don't support it silently ignore the sequences. Wrapping each frame batch
+// makes the terminal apply the whole update atomically — eliminates tearing
+// and mid-frame flicker at zero cost.
+const SYNC_BEGIN = '\x1b[?2026h';
+const SYNC_END = '\x1b[?2026l';
 
 // Re-export for convenience
 export type { CameraMode } from './viewport-renderer.js';
@@ -158,6 +165,8 @@ export class PixelGameRenderer {
   private statsBarCache: string = '';
   private statsBarLastRender: number = 0;
   private readonly STATS_BAR_TTL_MS = 1000;  // 1Hz update
+  // Idle bandwidth throttle: last time the stats bar was written on a skipped frame
+  private lastIdleStatsWrite: number = 0;
   // Performance optimizations
   private useCRLE: boolean = true;  // CRLE enabled by default
   private useFoveated: boolean = false;  // Foveated rendering disabled by default
@@ -616,11 +625,16 @@ export class PixelGameRenderer {
     // Skip expensive rendering if nothing changed
     if (!cameraChanged && !this.forceRedraw && this.previousCells.length > 0) {
       this.framesSkipped++;
-      // Just update the stats bar (first line) to show we're still alive
-      const statsBar = this.renderStatsBar();
-      const output = `${ESC}[1;1H${statsBar}${ESC}[0m`;
-      this.lastFrameBytes = Buffer.byteLength(output, 'utf8');
-      this.stream.write(output);
+      // Refresh the stats bar at most 1Hz while idle — rewriting it every
+      // tick (15Hz) wasted ~2KB/s per idle session for a bar that only
+      // changes once a second anyway.
+      if (now - this.lastIdleStatsWrite >= this.STATS_BAR_TTL_MS) {
+        this.lastIdleStatsWrite = now;
+        const statsBar = this.renderStatsBar();
+        const output = `${ESC}[1;1H${statsBar}${ESC}[0m`;
+        this.lastFrameBytes = Buffer.byteLength(output, 'utf8');
+        this.stream.write(output);
+      }
       this.lastRenderTime = Date.now() - renderStart;
       return;
     }
@@ -875,6 +889,10 @@ export class PixelGameRenderer {
       this.previousCells.length !== viewportCells.length ||
       overlayCountChanged;
 
+    // Begin synchronized update — the terminal buffers everything until
+    // SYNC_END and applies it atomically (no tearing on big diffs)
+    chunks.push(SYNC_BEGIN);
+
     // Always write stats bar (it changes every frame with FPS/bytes counter)
     chunks.push(`${ESC}[1;1H${statsBar}${ESC}[0m`);
 
@@ -919,6 +937,9 @@ export class PixelGameRenderer {
       chunks.push(`${ESC}[${terminalRow};${startCol}H${overlayBg}${overlayFg} ${overlay.text} ${ESC}[0m`);
     }
 
+    // End synchronized update
+    chunks.push(SYNC_END);
+
     const output = chunks.join('');
     if (output) {
       this.lastFrameBytes = Buffer.byteLength(output, 'utf8');
@@ -950,16 +971,13 @@ export class PixelGameRenderer {
         const cell = row[x];
         if (!cell) continue;
 
-        // Emit foreground color if changed
-        if (cell.fgColor && (!lastFg || !colorsEqual(cell.fgColor, lastFg))) {
-          chunks.push(fgColor(cell.fgColor));
-          lastFg = cell.fgColor;
-        }
-
-        // Emit background color if changed
-        if (cell.bgColor && (!lastBg || !colorsEqual(cell.bgColor, lastBg))) {
-          chunks.push(bgColor(cell.bgColor));
-          lastBg = cell.bgColor;
+        // Emit color changes — merged into ONE SGR sequence when both change
+        const fgChanged = cell.fgColor && (!lastFg || !colorsEqual(cell.fgColor, lastFg));
+        const bgChanged = cell.bgColor && (!lastBg || !colorsEqual(cell.bgColor, lastBg));
+        if (fgChanged || bgChanged) {
+          chunks.push(sgrCode(fgChanged ? cell.fgColor : null, bgChanged ? cell.bgColor : null));
+          if (fgChanged) lastFg = cell.fgColor;
+          if (bgChanged) lastBg = cell.bgColor;
         }
 
         chunks.push(cell.char);
@@ -1029,16 +1047,13 @@ export class PixelGameRenderer {
           contiguousRuns++;
         }
 
-        // Emit foreground color if changed
-        if (cell.fgColor && (!lastFg || !colorsEqual(cell.fgColor, lastFg))) {
-          chunks.push(fgColor(cell.fgColor));
-          lastFg = cell.fgColor;
-        }
-
-        // Emit background color if changed
-        if (cell.bgColor && (!lastBg || !colorsEqual(cell.bgColor, lastBg))) {
-          chunks.push(bgColor(cell.bgColor));
-          lastBg = cell.bgColor;
+        // Emit color changes — merged into ONE SGR sequence when both change
+        const fgChanged = cell.fgColor && (!lastFg || !colorsEqual(cell.fgColor, lastFg));
+        const bgChanged = cell.bgColor && (!lastBg || !colorsEqual(cell.bgColor, lastBg));
+        if (fgChanged || bgChanged) {
+          chunks.push(sgrCode(fgChanged ? cell.fgColor : null, bgChanged ? cell.bgColor : null));
+          if (fgChanged) lastFg = cell.fgColor;
+          if (bgChanged) lastBg = cell.bgColor;
         }
 
         chunks.push(cell.char);
@@ -1306,6 +1321,13 @@ export class PixelGameRenderer {
     }
 
     this.previousOutput = [...lines];
+
+    // Wrap the frame in synchronized-output markers (DEC 2026): supporting
+    // terminals (Ghostty, kitty, WezTerm, foot, Alacritty, iTerm2, ...) apply
+    // the whole update atomically — no tearing; others ignore the markers.
+    if (output) {
+      output = SYNC_BEGIN + output + SYNC_END;
+    }
     return output;
   }
 
