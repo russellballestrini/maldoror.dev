@@ -89,6 +89,22 @@ All route geometry is a pure function of world seed and coordinate. Derived
 site, path, and route-block caches are independently bounded, and tests prove
 sample equality across cache block sizes and traversal order.
 
+Route surfaces are a separate authored semantic manifest: worn stone for
+arterials, packed earth for local roads, forest floor for trails, and timber
+for bridges. `RegionalMaterialCompositor` masks those materials over the same
+route answers; bridge coverage clears water ownership and is walkable, while a
+ferry retains water ownership and remains non-walkable. Bridge texture axes use
+the route tangent instead of a fixed screen direction.
+
+The compositor authors a distinct 26 px overview resolution whose material
+frequency is raised before terminal downsampling. Shrinking the detail texture
+directly exposed generated root loops as repeated regional “donuts”; retaining
+that failed faithful frame led to semantic material LOD rather than another
+seam metric. The current faithful minimum-live-zoom candidate removes the root
+period and measures a tile-boundary/interior-change ratio of 0.982. It remains
+research-only because cold composition is not yet fast enough for traversal and
+family silhouettes have not been placed.
+
 ## Non-periodic asset placement
 
 Procedural anchors come from a world-space priority field. A candidate survives

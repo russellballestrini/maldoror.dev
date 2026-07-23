@@ -5,15 +5,27 @@ import {
   type BiomeWeights,
   type BiomeWorldSample,
 } from '../biomes/biome-world-field.js';
+import type {
+  RegionalCrossingKind,
+  RegionalRouteKind,
+  RegionalRouteSample,
+} from '../routes/regional-route-field.js';
 
 export interface BiomeSampler {
   sample(worldX: number, worldY: number): BiomeWorldSample;
+}
+
+export interface RegionalRouteSampler {
+  sample(worldX: number, worldY: number): RegionalRouteSample;
 }
 
 export interface RegionalMaterialCompositorConfig {
   worldSeed: bigint;
   field: BiomeSampler;
   materials: Readonly<Record<BiomeFamily, readonly Tile[]>>;
+  routes?: RegionalRouteSampler;
+  routeMaterials?: Readonly<Record<RegionalRouteKind, readonly Tile[]>>;
+  crossingMaterials?: Readonly<Partial<Record<RegionalCrossingKind, readonly Tile[]>>>;
   maxCachedTiles?: number;
   variantPeriodTiles?: number;
   /** World-tile span of one complete source texture. Values above one prevent
@@ -31,6 +43,9 @@ const FOREST = 1;
 const COAST = 2;
 const RURAL = 3;
 const MOUNTAIN = 4;
+const ROUTE_KINDS: readonly RegionalRouteKind[] = ['trail', 'local-road', 'arterial'];
+const OVERVIEW_RESOLUTION = 26;
+const OVERVIEW_TEXTURE_SCALE_TILES = 2;
 
 /**
  * Continuous six-family material reconstruction in linear light.
@@ -44,7 +59,10 @@ const MOUNTAIN = 4;
 export class RegionalMaterialCompositor {
   private readonly seed32: number;
   private readonly field: BiomeSampler;
+  private readonly routes?: RegionalRouteSampler;
   private readonly materials: Readonly<Record<BiomeFamily, readonly PreparedTexture[]>>;
+  private readonly routeMaterials?: Readonly<Record<RegionalRouteKind, readonly PreparedTexture[]>>;
+  private readonly crossingMaterials?: Readonly<Partial<Record<RegionalCrossingKind, readonly PreparedTexture[]>>>;
   private readonly maxCachedTiles: number;
   private readonly variantPeriodTiles: number;
   private readonly textureScaleTiles: number;
@@ -54,6 +72,7 @@ export class RegionalMaterialCompositor {
   constructor(config: RegionalMaterialCompositorConfig) {
     this.seed32 = Number(BigInt.asUintN(32, config.worldSeed));
     this.field = config.field;
+    this.routes = config.routes;
     this.maxCachedTiles = Math.max(8, config.maxCachedTiles ?? 128);
     this.variantPeriodTiles = Math.max(2, config.variantPeriodTiles ?? 5);
     this.textureScaleTiles = Math.max(2, config.textureScaleTiles ?? 7);
@@ -62,8 +81,28 @@ export class RegionalMaterialCompositor {
       if (sources.length === 0) throw new Error(`Regional material family is empty: ${family}`);
       return [family, sources.map(prepareTexture)];
     })) as unknown as Readonly<Record<BiomeFamily, readonly PreparedTexture[]>>;
-    this.sourceSize = Math.min(...BIOME_FAMILIES.flatMap((family) =>
-      this.materials[family].flatMap((texture) => [texture.width, texture.height])));
+    if (Boolean(config.routes) !== Boolean(config.routeMaterials)) {
+      throw new Error('Regional routes and route materials must be configured together');
+    }
+    if (config.routeMaterials) {
+      this.routeMaterials = Object.fromEntries(ROUTE_KINDS.map((kind) => {
+        const sources = config.routeMaterials![kind];
+        if (sources.length === 0) throw new Error(`Regional route material kind is empty: ${kind}`);
+        return [kind, sources.map(prepareTexture)];
+      })) as unknown as Readonly<Record<RegionalRouteKind, readonly PreparedTexture[]>>;
+    }
+    if (config.crossingMaterials) {
+      this.crossingMaterials = Object.fromEntries(Object.entries(config.crossingMaterials).map(([kind, sources]) => [
+        kind,
+        sources?.map(prepareTexture),
+      ])) as Readonly<Partial<Record<RegionalCrossingKind, readonly PreparedTexture[]>>>;
+    }
+    const prepared = [
+      ...BIOME_FAMILIES.flatMap((family) => this.materials[family]),
+      ...ROUTE_KINDS.flatMap((kind) => this.routeMaterials?.[kind] ?? []),
+      ...Object.values(this.crossingMaterials ?? {}).flatMap((textures) => textures ?? []),
+    ];
+    this.sourceSize = Math.min(...prepared.flatMap((texture) => [texture.width, texture.height]));
     if (this.sourceSize === 0) throw new Error('Regional material textures cannot be empty');
   }
 
@@ -94,13 +133,55 @@ export class RegionalMaterialCompositor {
   }
 
   private composeTile(tileX: number, tileY: number): Tile {
-    const size = this.sourceSize;
     const samples = [
       this.field.sample(tileX, tileY),
       this.field.sample(tileX + 1, tileY),
       this.field.sample(tileX, tileY + 1),
       this.field.sample(tileX + 1, tileY + 1),
     ] as const;
+    const routeSamples = this.routes ? [
+      this.routes.sample(tileX, tileY),
+      this.routes.sample(tileX + 1, tileY),
+      this.routes.sample(tileX, tileY + 1),
+      this.routes.sample(tileX + 1, tileY + 1),
+    ] as const : null;
+    const composed = this.composeGrid(
+      tileX,
+      tileY,
+      this.sourceSize,
+      this.textureScaleTiles,
+      samples,
+      routeSamples,
+    );
+    const resolutions: Record<string, PixelGrid> = { [String(this.sourceSize)]: composed.pixels };
+    if (this.sourceSize > OVERVIEW_RESOLUTION) {
+      resolutions[String(OVERVIEW_RESOLUTION)] = this.composeGrid(
+        tileX,
+        tileY,
+        OVERVIEW_RESOLUTION,
+        OVERVIEW_TEXTURE_SCALE_TILES,
+        samples,
+        routeSamples,
+      ).pixels;
+    }
+    return {
+      id: `regional-material:${tileX},${tileY}`,
+      name: 'Continuous regional biome material',
+      pixels: composed.pixels,
+      materialMask: composed.materialMask,
+      walkable: !samples[0].isWater || Boolean(routeSamples?.[0].isWalkableRoute),
+      resolutions,
+    };
+  }
+
+  private composeGrid(
+    tileX: number,
+    tileY: number,
+    size: number,
+    textureScaleTiles: number,
+    samples: readonly [BiomeWorldSample, BiomeWorldSample, BiomeWorldSample, BiomeWorldSample],
+    routeSamples: readonly [RegionalRouteSample, RegionalRouteSample, RegionalRouteSample, RegionalRouteSample] | null,
+  ): { pixels: PixelGrid; materialMask: MaterialMask } {
     const pixels: PixelGrid = [];
     const materialMask: MaterialMask = [];
     const textureSamples = Array.from({ length: BIOME_FAMILIES.length }, () => new Float64Array(3));
@@ -126,6 +207,7 @@ export class RegionalMaterialCompositor {
             worldX,
             worldY,
             0x93d7 + familyIndex * 0x1f123,
+            textureScaleTiles,
             textureSamples[familyIndex]!,
           );
         }
@@ -137,11 +219,46 @@ export class RegionalMaterialCompositor {
         const second = textureSamples[ecology[1]]!;
         const town = textureSamples[0]!;
         const ruins = textureSamples[5]!;
-        const linear = [0, 1, 2].map((channel) => {
+        let linear = [0, 1, 2].map((channel) => {
           const ecological = lerp(first[channel]!, second[channel]!, ecologicalMix);
           const withTown = lerp(ecological, town[channel]!, canalOverlay);
           return lerp(withTown, ruins[channel]!, ruinsOverlay * (0.88 - canalOverlay * 0.2));
         });
+        const routeLayer = routeSamples
+          ? selectRouteLayer(routeSamples, smoothU, smoothV)
+          : null;
+        if (routeLayer && routeLayer.sample.crossingKind !== 'ferry' && this.routeMaterials) {
+          const crossingTextures = routeLayer.sample.crossingKind
+            ? this.crossingMaterials?.[routeLayer.sample.crossingKind]
+            : undefined;
+          const routeTextures = crossingTextures ?? this.routeMaterials[routeLayer.sample.routeKind!];
+          const routeTexture = new Float64Array(3);
+          let textureX = worldX;
+          let textureY = worldY;
+          if (routeLayer.sample.crossingKind === 'bridge') {
+            const directionLength = Math.hypot(
+              routeLayer.sample.directionX,
+              routeLayer.sample.directionY,
+            );
+            if (directionLength > 0.1) {
+              const tangentX = routeLayer.sample.directionX / directionLength;
+              const tangentY = routeLayer.sample.directionY / directionLength;
+              textureX = worldX * -tangentY + worldY * tangentX;
+              textureY = worldX * tangentX + worldY * tangentY;
+            }
+          }
+          this.sampleTextureField(
+            routeTextures,
+            textureX,
+            textureY,
+            0x4d71,
+            textureScaleTiles,
+            routeTexture,
+          );
+          const crossingOpacity = routeLayer.sample.crossingKind === 'ford' ? 0.48 : 1;
+          const opacity = routeLayer.opacity * crossingOpacity;
+          linear = linear.map((value, channel) => lerp(value, routeTexture[channel]!, opacity));
+        }
         row.push({
           r: linearToSrgb(linear[0]!),
           g: linearToSrgb(linear[1]!),
@@ -155,19 +272,13 @@ export class RegionalMaterialCompositor {
           smoothU,
           smoothV,
         );
-        if (waterCoverage >= 0.5) materialRow[x] = 1;
+        const bridgeCoverage = routeLayer?.sample.crossingKind === 'bridge' ? routeLayer.opacity : 0;
+        if (waterCoverage >= 0.5 && bridgeCoverage < 0.5) materialRow[x] = 1;
       }
       pixels.push(row);
       materialMask.push(materialRow);
     }
-    return {
-      id: `regional-material:${tileX},${tileY}`,
-      name: 'Continuous regional biome material',
-      pixels,
-      materialMask,
-      walkable: !samples[0].isWater,
-      resolutions: { [String(size)]: pixels },
-    };
+    return { pixels, materialMask };
   }
 
   private sampleTextureField(
@@ -175,6 +286,7 @@ export class RegionalMaterialCompositor {
     worldX: number,
     worldY: number,
     salt: number,
+    textureScaleTiles: number,
     out: Float64Array,
   ): void {
     out.fill(0);
@@ -193,11 +305,11 @@ export class RegionalMaterialCompositor {
         const phaseX = (hash >>> 8) % texture.width;
         const phaseY = (hash >>> 17) % texture.height;
         const sampleX = mirrorIndex(
-          Math.floor(worldX * texture.width / this.textureScaleTiles + phaseX),
+          Math.floor(worldX * texture.width / textureScaleTiles + phaseX),
           texture.width,
         );
         const sampleY = mirrorIndex(
-          Math.floor(worldY * texture.height / this.textureScaleTiles + phaseY),
+          Math.floor(worldY * texture.height / textureScaleTiles + phaseY),
           texture.height,
         );
         const index = (sampleY * texture.width + sampleX) * 3;
@@ -234,6 +346,35 @@ function interpolateWeights(
 function strongestEcologicalPair(weights: BiomeWeights): [number, number] {
   const ranked = [FOREST, COAST, RURAL, MOUNTAIN].sort((a, b) => weights[b]! - weights[a]!);
   return [ranked[0]!, ranked[1]!];
+}
+
+function selectRouteLayer(
+  samples: readonly [RegionalRouteSample, RegionalRouteSample, RegionalRouteSample, RegionalRouteSample],
+  u: number,
+  v: number,
+): { sample: RegionalRouteSample; opacity: number } | null {
+  const cornerWeights = [
+    (1 - u) * (1 - v),
+    u * (1 - v),
+    (1 - u) * v,
+    u * v,
+  ];
+  let coverage = 0;
+  let selectedIndex = -1;
+  let selectedWeight = -1;
+  for (let index = 0; index < samples.length; index++) {
+    if (!samples[index]!.isRoute) continue;
+    coverage += cornerWeights[index]!;
+    if (cornerWeights[index]! > selectedWeight) {
+      selectedIndex = index;
+      selectedWeight = cornerWeights[index]!;
+    }
+  }
+  if (selectedIndex < 0) return null;
+  return {
+    sample: samples[selectedIndex]!,
+    opacity: smoothstep(0.02, 0.42, coverage),
+  };
 }
 
 function prepareTexture(tile: Tile): PreparedTexture {

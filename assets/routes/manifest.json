@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "sourceTileSize": 96,
+  "generation": {
+    "date": "2026-07-23",
+    "mode": "Codex built-in image generation on ChatGPT subscription",
+    "meteredApiSpend": false,
+    "source": "generated/regional-route-materials-atlas-v1-source.png",
+    "prompt": "generated/regional-route-materials-atlas-v1-source.md",
+    "sha256": "f99405753d1276f0482608537b4bd3feb438b413d477a869a9de52cc736a0819"
+  },
+  "routeMaterialMasters": [
+    {
+      "routeKind": "arterial",
+      "id": "regional-route-arterial-stone",
+      "file": "materials/arterial-stone-master-v1.png",
+      "variants": 4,
+      "walkable": true
+    },
+    {
+      "routeKind": "local-road",
+      "id": "regional-route-local-earth",
+      "file": "materials/local-earth-master-v1.png",
+      "variants": 4,
+      "walkable": true
+    },
+    {
+      "routeKind": "trail",
+      "id": "regional-route-trail-floor",
+      "file": "materials/trail-floor-master-v1.png",
+      "variants": 4,
+      "walkable": true,
+      "material": "foliage"
+    }
+  ],
+  "crossingMaterialMasters": [
+    {
+      "crossingKind": "bridge",
+      "id": "regional-route-bridge-timber",
+      "file": "materials/bridge-timber-master-v1.png",
+      "variants": 4,
+      "walkable": true
+    }
+  ]
+}

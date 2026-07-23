@@ -12,6 +12,8 @@ export interface RegionalRouteSample {
   crossingKind: RegionalCrossingKind | null;
   routeKind: RegionalRouteKind | null;
   routeId: string | null;
+  directionX: number;
+  directionY: number;
   landmarkKind: RegionalLandmarkKind | null;
   landmarkDistance: number;
 }
@@ -67,6 +69,8 @@ interface CachedRouteBlock {
   kind: Uint8Array;
   crossing: Uint8Array;
   routeIds: Array<string | null>;
+  directionX: Float32Array;
+  directionY: Float32Array;
   landmarkDistance: Float32Array;
   landmarkKind: Uint8Array;
   accessedAt: number;
@@ -152,6 +156,8 @@ export class RegionalRouteField {
       crossingKind,
       routeKind: kind,
       routeId: block.routeIds[index]!,
+      directionX: block.directionX[index]!,
+      directionY: block.directionY[index]!,
       landmarkKind: LANDMARK_BY_CODE[block.landmarkKind[index]!] ?? null,
       landmarkDistance: block.landmarkDistance[index]!,
     };
@@ -217,6 +223,8 @@ export class RegionalRouteField {
     const kind = new Uint8Array(size);
     const crossing = new Uint8Array(size);
     const routeIds = new Array<string | null>(size).fill(null);
+    const directionX = new Float32Array(size);
+    const directionY = new Float32Array(size);
     const landmarkDistance = new Float32Array(size);
     landmarkDistance.fill(Number.POSITIVE_INFINITY);
     const landmarkKind = new Uint8Array(size);
@@ -245,7 +253,17 @@ export class RegionalRouteField {
         originX + this.blockSize + edge.width,
         originY + this.blockSize + edge.width,
       )) continue;
-      this.rasterizePath(path, originX, originY, distance, kind, crossing, routeIds);
+      this.rasterizePath(
+        path,
+        originX,
+        originY,
+        distance,
+        kind,
+        crossing,
+        routeIds,
+        directionX,
+        directionY,
+      );
     }
     for (const site of sites) {
       if (site.x < originX - 4 || site.x > originX + this.blockSize + 4 ||
@@ -272,6 +290,8 @@ export class RegionalRouteField {
       kind,
       crossing,
       routeIds,
+      directionX,
+      directionY,
       landmarkDistance,
       landmarkKind,
       accessedAt: ++this.accessClock,
@@ -286,11 +306,16 @@ export class RegionalRouteField {
     kind: Uint8Array,
     crossing: Uint8Array,
     routeIds: Array<string | null>,
+    directionX: Float32Array,
+    directionY: Float32Array,
   ): void {
     const routeCode = routeKindCode(path.edge.kind);
     for (let pointIndex = 1; pointIndex < path.points.length; pointIndex++) {
       const start = path.points[pointIndex - 1]!;
       const end = path.points[pointIndex]!;
+      const segmentLength = Math.max(1e-9, Math.hypot(end.x - start.x, end.y - start.y));
+      const tangentX = (end.x - start.x) / segmentLength;
+      const tangentY = (end.y - start.y) / segmentLength;
       const reach = path.edge.width + 1;
       const minX = Math.max(0, Math.floor(Math.min(start.x, end.x) - reach - originX));
       const maxX = Math.min(this.blockSize - 1, Math.ceil(Math.max(start.x, end.x) + reach - originX));
@@ -308,6 +333,8 @@ export class RegionalRouteField {
           if (value <= path.edge.width) {
             kind[index] = routeCode;
             routeIds[index] = path.edge.id;
+            directionX[index] = tangentX;
+            directionY[index] = tangentY;
             if (start.isWater || end.isWater || this.physicalSample(worldX, worldY).isWater) {
               crossing[index] = Math.max(1, start.crossingCode, end.crossingCode);
             }
