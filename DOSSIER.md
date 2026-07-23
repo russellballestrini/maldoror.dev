@@ -49,13 +49,26 @@ world that looks like the mockup and feels alive.
 A terminal is a grid of colored character cells. Getting a AAA world through
 that pipe is three composed problems:
 
-### Layer 1 — FIDELITY (how a cell looks). ✅ mostly built
-- **Octants** (Unicode 16, 2×4 *solid* mosaics) = braille resolution with solid
-  fills. Ghostty renders them natively (connects across cells). This is the
-  fidelity ceiling for text, and it's genuinely good. LIVE + auto-detected.
-- Truecolor + Bayer-dithered quantization for banding-free gradients.
-- **Proven**: octant-rendering a dense generated scene lands in the mockup's
-  league (gallery). So fidelity is *not* the blocker — density/motion are.
+### Layer 1 — FIDELITY (how a cell looks). ⚠️ NOT solved — real quality bugs
+- **Octants** (Unicode 16, 2×4 *solid* mosaics) render + auto-detect LIVE, and
+  the *ceiling* is good: a clean whole-image octant downscale of a dense scene
+  looks close to the mockup at 160 cols.
+- **BUT the shipped rendering is muddy/noisy** (verified by faithfully replaying
+  the live game's ANSI at 160×45 — NOT by the idealized preview rasterizer that
+  fooled me earlier). Three concrete, fixable bugs:
+  1. **Nearest-neighbour downscale** (`ViewportRenderer.scaleFrame`) — art is
+     sliced into 32px tiles then NN-shrunk to ~8px per tile → aliasing/mud.
+     **Fix: box/area averaging when downscaling.** #1 fidelity win.
+  2. **Octant contrast-split → vertical streaking** on smooth gradients (rain-
+     like noise). Improve the fg/bg subpixel selection / dither the pattern.
+  3. **Aggressive 4-bit Bayer quantization** adds noise — unneeded in Ghostty
+     (truecolor). Drop or lighten it Ghostty-side.
+- **AND nothing good ships by default**: the live world is flat procedural grass
+  at 100% zoom → a giant blurry player sprite fills the screen. The pretty
+  district renders were tool outputs, never the game. (District-mode
+  `MALDOROR_DISTRICT` now shows the town live but with the bugs above.)
+- Honest verification = faithfully replay captured ANSI (see BUILD-BRIEF §4),
+  never the preview rasterizer.
 
 ### Layer 2 — THE WORLD (what fills the cells). ⏳ the pivot
 The chosen model: **a rich AI-generated tileset + dense procedural placement.**

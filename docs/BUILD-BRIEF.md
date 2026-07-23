@@ -32,7 +32,26 @@ collision). **No image protocols** (no kitty graphics / sixel). First milestone 
  world state ──▶ [L2 WORLD] tiles+entities ──▶ [L1 FIDELITY] pixels→octant cells ──▶ [L3 TRANSPORT] minimal ANSI ──▶ SSH ──▶ Ghostty
 ```
 
-### L1 — FIDELITY (pixels → terminal cells). ✅ built, reuse.
+### L1 — FIDELITY (pixels → terminal cells). ⚠️ works but has real quality bugs.
+
+**Honest status (verified by faithfully replaying the live game's ANSI at 160×45
+— see §4; NOT the idealized preview rasterizers, which flatter the output):**
+the octant *ceiling* is good, but the shipped rendering is **muddy + vertically
+streaked**, and by default the live world is flat procedural grass at 100% zoom
+= a giant blurry player sprite (nothing mockup-quality ships). Three concrete,
+fixable rendering bugs — fixing these is real fidelity work:
+1. **Nearest-neighbour downscale** in `ViewportRenderer.scaleFrame`
+   (`scaleFrameUncached`) — a 32px tile NN-shrunk to ~8px throws away 15/16
+   pixels → aliasing/mud. **Fix: box/area-average downsampling.** #1 win, and
+   what the DOSSIER's "improve the scaling" means.
+2. **Octant contrast-split → vertical streaking** on smooth gradients
+   (`renderOctantChar` in `pixel-renderer.ts`): the (min+max)/2 threshold makes
+   vertical fg/bg patterns. Improve subpixel fg/bg selection or dither the
+   pattern; widen the flat-cell solid path.
+3. **Aggressive 4-bit Bayer quantization** (`quantizeGridDithered`, applied at
+   zoom>70) adds noise — unneeded in Ghostty (truecolor). Drop/lighten it.
+
+Below is what already exists to reuse.
 - `packages/render/src/pixel/pixel-renderer.ts` — the cell renderers:
   - `renderOctantGridCells(grid, brightness?)` / `renderOctantGrid(grid)` — the
     high-fidelity mode. 2×4 SOLID mosaics. Uses `octant-chars.ts`.
@@ -212,6 +231,12 @@ full build+tsup+push+restart.
    # read fd; drive WASD; count bytes / check octant glyphs (U+1CD00..U+1CEBF)
    ```
    Stats: `curl -s http://127.0.0.1:3105/stats | jq`.
+4. **Faithful look** — the ONLY honest way to judge fidelity: capture the ssh
+   stream to a `.bin` (python pty, 160×45, ghostty TERM), then
+   `node tools/render-sim/faithful-render.mjs <cap.bin> 160 45` → replays the
+   real bytes the way Ghostty paints them. Judge from THIS, never the preview
+   rasterizers (`octant-image.mjs` etc. flatter the output — they fooled the
+   prior agent into "fidelity solved" when it wasn't).
 
 ---
 
