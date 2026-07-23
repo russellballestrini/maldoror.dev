@@ -24,6 +24,8 @@ const assets: CanalTownAsset[] = [
   { id: 'house-a', roles: ['building'], sprite: sprite({ r: 200, g: 100, b: 50 }), collision: [[0, 0]] },
   { id: 'house-b', roles: ['building'], sprite: sprite({ r: 80, g: 120, b: 200 }), collision: [[0, 0]] },
   { id: 'bridge', roles: ['bridge'], sprite: sprite({ r: 220, g: 220, b: 190 }), collision: [] },
+  { id: 'street-small', roles: ['street-small'], sprite: sprite({ r: 120, g: 90, b: 60 }), collision: [[0, 0]] },
+  { id: 'street-large', roles: ['street-large'], sprite: sprite({ r: 190, g: 150, b: 90 }), collision: [[0, 0]] },
 ];
 
 function provider(seed = 42n): CanalTownTileProvider {
@@ -89,6 +91,21 @@ describe('CanalTownTileProvider', () => {
     for (let x = -16; x <= 16; x++) {
       expect(world.getTile(x, 0)?.walkable, `terrain at ${x},0`).toBe(true);
       expect(world.isBuildingAt(x, 0), `overlay collision at ${x},0`).toBe(false);
+    }
+  });
+
+  it('composes social rooms on the causeway while preserving the arrival cross', () => {
+    const world = provider();
+
+    expect(world.isBuildingAt(-8, 1)).toBe(true);
+    expect(world.isBuildingAt(8, 1)).toBe(true);
+    for (let x = -3; x <= 3; x++) {
+      expect(world.getTile(x, 0)?.walkable, `terrain at ${x},0`).toBe(true);
+      expect(world.isBuildingAt(x, 0), `arrival cross at ${x},0`).toBe(false);
+    }
+    for (let y = -2; y <= 2; y++) {
+      expect(world.getTile(0, y)?.walkable, `terrain at 0,${y}`).toBe(true);
+      expect(world.isBuildingAt(0, y), `arrival cross at 0,${y}`).toBe(false);
     }
   });
 

@@ -60,6 +60,15 @@ interface Placement {
   anchorY: number;
 }
 
+interface PlacementPolicy {
+  /** The origin causeway is protected from ambient decoration, but authored
+   * street rooms may put furniture around its perimeter. */
+  allowPlaza?: boolean;
+  /** A facade may visually cross a semantic bank when its collision footprint
+   * remains on dry ground. */
+  allowFacadeOverhang?: boolean;
+}
+
 interface CachedBlock {
   overlays: Map<string, BuildingTileData>;
   solid: Set<string>;
@@ -262,7 +271,7 @@ export class CanalTownTileProvider extends TileProvider {
       role: CanalPlacementRole,
       localX: number,
       localY: number,
-      authoredOverhang = false,
+      policy: PlacementPolicy = {},
     ): void => {
       const pool = this.rolePools.get(role);
       if (!pool || pool.length === 0) return;
@@ -271,7 +280,7 @@ export class CanalTownTileProvider extends TileProvider {
       const start = nextRandom() % pool.length;
       for (let offset = 0; offset < pool.length; offset++) {
         const asset = pool[(start + offset) % pool.length]!;
-        if (!this.assetFits(role, asset, anchorX, anchorY, authoredOverhang)) continue;
+        if (!this.assetFits(role, asset, anchorX, anchorY, policy)) continue;
         placements.push({ asset, anchorX, anchorY });
         return;
       }
@@ -281,19 +290,32 @@ export class CanalTownTileProvider extends TileProvider {
       fallbackRole: CanalPlacementRole,
       localX: number,
       localY: number,
-      authoredOverhang = false,
+      policy: PlacementPolicy = {},
     ): void => {
       const asset = this.assetsById.get(assetId);
       const anchorX = originX + localX;
       const anchorY = originY + localY;
       if (asset?.roles.includes(fallbackRole) &&
-          this.assetFits(fallbackRole, asset, anchorX, anchorY, authoredOverhang)) {
+          this.assetFits(fallbackRole, asset, anchorX, anchorY, policy)) {
         placements.push({ asset, anchorX, anchorY });
         return;
       }
       // Minimal test kits and downstream manifests can still render a valid
       // landmark from semantic roles without inheriting production IDs.
-      place(fallbackRole, localX, localY, authoredOverhang);
+      place(fallbackRole, localX, localY, policy);
+    };
+    const placeStreetRoom = (
+      primaryAssetId: string,
+      centreX: number,
+    ): void => {
+      const side = Math.sign(centreX) || 1;
+      const furniturePolicy = { allowPlaza: true } satisfies PlacementPolicy;
+      // One landmark and two offset thresholds make a small social room while
+      // preserving both the central arrival court and the through-route. The
+      // same semantic grammar works on either side without mirrored stamping.
+      placeLandmark(primaryAssetId, 'street-large', centreX, 1, furniturePolicy);
+      place('street-small', centreX - side * 3, -1, furniturePolicy);
+      place('street-small', centreX + side * 2, -1, furniturePolicy);
     };
 
     // Candidate anchors come from a world-space priority field. Keeping only a
@@ -373,9 +395,20 @@ export class CanalTownTileProvider extends TileProvider {
       // The y=0 cross street remains a genuine portal through both walls.
       const wallY = [-7, -3, 5, 9] as const;
       for (let index = 0; index < wallY.length; index++) {
-        placeLandmark(leftWall[index]!, 'building', -12, wallY[index]!, true);
-        placeLandmark(rightWall[index]!, 'building', 12, wallY[index]!, true);
+        placeLandmark(leftWall[index]!, 'building', -12, wallY[index]!, {
+          allowFacadeOverhang: true,
+        });
+        placeLandmark(rightWall[index]!, 'building', 12, wallY[index]!, {
+          allowFacadeOverhang: true,
+        });
       }
+
+      // The causeway is a sequence of inhabitable rooms, not one empty beige
+      // strip. A produce stall anchors the western threshold; a fountain and
+      // seating anchor the eastern threshold. Their collision stays on the
+      // outer thirds, leaving the exact spawn and a three-tile cross clear.
+      placeStreetRoom('market-stall', -8);
+      placeStreetRoom('fountain', 8);
 
       // Inner and outer bank contacts establish a constructed waterline. Edge
       // pieces sit below foliage/details in painter order, with water life in
@@ -432,23 +465,25 @@ export class CanalTownTileProvider extends TileProvider {
     asset: CanalTownAsset,
     anchorX: number,
     anchorY: number,
-    authoredOverhang = false,
+    policy: PlacementPolicy = {},
   ): boolean {
     const anchor = this.worldField.sample(anchorX, anchorY);
     if (role === 'bridge' || role === 'bridge-vertical') return anchor.isBridge;
     if (role === 'water' || role === 'water-detail') return anchor.isWater && !anchor.isBridge;
-    if (anchor.isWater || anchor.isBridge || anchor.isPlaza) return false;
+    const isStreetFurniture = role === 'street-small' || role === 'street-large';
+    const allowPlaza = Boolean(policy.allowPlaza && isStreetFurniture);
+    if (anchor.isWater || anchor.isBridge || (anchor.isPlaza && !allowPlaza)) return false;
 
     for (const [dx, dy] of asset.collision) {
       const sample = this.worldField.sample(anchorX + dx, anchorY + dy);
-      if (sample.isWater || sample.isBridge || sample.isPlaza) return false;
-      if (role === 'building' && !authoredOverhang && sample.routeDistance < 1.8) return false;
+      if (sample.isWater || sample.isBridge || (sample.isPlaza && !allowPlaza)) return false;
+      if (role === 'building' && !policy.allowFacadeOverhang && sample.routeDistance < 1.8) return false;
     }
 
     // Collision masks are intentionally independent, but opaque lower façade
     // tiles still need semantic ground beneath them. Test the bottom two sprite
     // rows so a tower cannot balance on a one-cell island or hang over water.
-    if (role === 'building' && !authoredOverhang) {
+    if (role === 'building' && !policy.allowFacadeOverhang) {
       const offsetX = Math.floor(asset.sprite.width / 2);
       const offsetY = asset.sprite.height - 1;
       for (let tileY = Math.max(0, asset.sprite.height - 2); tileY < asset.sprite.height; tileY++) {

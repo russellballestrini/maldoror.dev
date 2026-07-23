@@ -24,6 +24,14 @@ constructed banks, facade walls, lamps, planting, docks, and water detail frame
 the crossing. Deliberate street portals keep the causeway open through both
 facade walls. This exception does not introduce a repeating district stamp.
 
+The causeway is composed as three connected rooms rather than one empty strip.
+A produce-stall threshold and a fountain/seating threshold occupy its outer
+thirds; the exact spawn court and a three-tile-wide crossing remain clear. The
+room helper uses semantic street roles for its supporting furniture, while the
+two different primary landmarks prevent a mirrored asset stamp. Plaza
+placement is an explicit authored policy and cannot leak into ambient parcel
+generation.
+
 ## Non-periodic asset placement
 
 Procedural anchors come from a world-space priority field. A candidate survives
