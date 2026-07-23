@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "sourceTileSize": 48,
+  "blockSize": 32,
+  "source": {
+    "file": "generated/regional-landmark-atlas-v2-source.png",
+    "sha256": "42e194ac430bc262c69393954fcd59781f48b9bf6562ecdc6f127247c146d332",
+    "generation": "built-in Codex/ChatGPT image generation; no metered API",
+    "derivation": "pnpm assets:derive-landmarks"
+  },
+  "assets": [
+    {
+      "id": "canal-town-waterfront-cluster-v2",
+      "file": "landmarks/canal-town-waterfront-cluster-v2.png",
+      "family": "canal-town",
+      "landmarkKinds": ["arrival", "settlement"],
+      "scale": 0.95,
+      "spriteTiles": [6, 5],
+      "collision": [[-2, 0], [-1, 0], [1, 0], [2, 0], [-2, -1], [2, -1]]
+    },
+    {
+      "id": "forest-canopy-cluster-v2",
+      "file": "landmarks/forest-canopy-cluster-v2.png",
+      "family": "forest",
+      "landmarkKinds": ["waystation"],
+      "scale": 0.95,
+      "spriteTiles": [6, 5],
+      "collision": [[-2, 0], [-1, 0], [1, 0], [2, 0], [-1, -1], [1, -1]]
+    },
+    {
+      "id": "coast-marsh-beacon-cluster-v2",
+      "file": "landmarks/coast-marsh-beacon-cluster-v2.png",
+      "family": "coast",
+      "landmarkKinds": ["waystation"],
+      "scale": 0.95,
+      "spriteTiles": [6, 5],
+      "collision": [[-2, 0], [-1, 0], [1, 0], [2, 0], [2, -1]]
+    },
+    {
+      "id": "rural-orchard-farmstead-cluster-v2",
+      "file": "landmarks/rural-orchard-farmstead-cluster-v2.png",
+      "family": "rural",
+      "landmarkKinds": ["settlement", "waystation"],
+      "scale": 0.95,
+      "spriteTiles": [6, 5],
+      "collision": [[-2, 0], [-1, 0], [1, 0], [2, 0], [-2, -1], [2, -1]]
+    },
+    {
+      "id": "mountain-cave-outcrop-cluster-v2",
+      "file": "landmarks/mountain-cave-outcrop-cluster-v2.png",
+      "family": "mountain",
+      "landmarkKinds": ["waystation"],
+      "scale": 0.95,
+      "spriteTiles": [6, 5],
+      "collision": [[-2, 0], [-1, 0], [1, 0], [2, 0], [-2, -1], [2, -1]]
+    },
+    {
+      "id": "ruins-overgrown-arch-cluster-v2",
+      "file": "landmarks/ruins-overgrown-arch-cluster-v2.png",
+      "family": "ruins",
+      "landmarkKinds": ["ruin"],
+      "scale": 0.95,
+      "spriteTiles": [6, 5],
+      "collision": [[-2, 0], [-1, 0], [1, 0], [2, 0], [-2, -1], [2, -1]]
+    }
+  ]
+}

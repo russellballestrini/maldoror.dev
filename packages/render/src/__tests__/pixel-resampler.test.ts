@@ -15,7 +15,15 @@ describe('resamplePixelGrid', () => {
       [{ r: 240, g: 120, b: 60 }, null],
       [null, null],
     ], 1, 1);
-    expect(result).toEqual([[{ r: 240, g: 120, b: 60 }]]);
+    expect(result).toEqual([[{ r: 240, g: 120, b: 60, a: 64 }]]);
+  });
+
+  it('preserves authored partial alpha while resampling coverage', () => {
+    const result = resamplePixelGrid([
+      [{ r: 220, g: 80, b: 40, a: 128 }, null],
+      [null, null],
+    ], 1, 1);
+    expect(result).toEqual([[{ r: 220, g: 80, b: 40, a: 32 }]]);
   });
 
   it('uses transparency-aware interpolation when enlarging', () => {

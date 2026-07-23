@@ -7,6 +7,9 @@ export interface RGB {
   r: number; // 0-255
   g: number; // 0-255
   b: number; // 0-255
+  /** Optional straight alpha for authored overlays. Omitted means fully
+   * opaque. Terrain and final viewport pixels remain ordinary RGB. */
+  a?: number; // 0-255
 }
 
 /**

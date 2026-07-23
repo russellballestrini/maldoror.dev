@@ -14,6 +14,13 @@ describe('RegionalRouteField', () => {
     expect(origin.routeKind).toBe('arterial');
     expect(origin.landmarkKind).toBe('arrival');
     expect(origin.landmarkDistance).toBe(0);
+    expect(routes.getLandmarkSites(-1, -1, 1, 1)).toContainEqual({
+      id: 'site:arrival',
+      x: 0,
+      y: 0,
+      priority: 0,
+      landmarkKind: 'arrival',
+    });
   });
 
   it('is exact across cache block sizes and traversal order', () => {

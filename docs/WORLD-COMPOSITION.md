@@ -56,10 +56,11 @@ The output carries a per-pixel water ownership mask and uses a bounded tile
 cache.
 
 The current production canal provider has not yet been replaced by the
-regional compositor. The port and real-material octant lab establish the
-semantic and material layers first; route agreement, family-specific assets,
-semantic LOD, collision, predictive cold-block streaming, and full faithful
-atlas proof are required before a live switch.
+regional compositor. The port and real-material octant labs now establish the
+semantic/material layers, route agreement, semantic LOD, and first sparse
+family-specific landmark/collision seam. Predictive cold-block streaming,
+dense local parcel composition, interactions, and full faithful atlas proof
+are still required before a live switch.
 
 ## Regional route hierarchy
 
@@ -105,7 +106,32 @@ another seam metric. The faithful minimum-live-zoom candidate removes the root
 period and measures a tile-boundary/interior-change ratio of 0.999. Demand-
 driven composition reduced the retained 80 x 44-world-tile cold lab from 50.79
 seconds to 2.02 seconds. It remains research-only because background prewarming,
-interactive tail evidence, and family silhouettes are not complete.
+interactive tail evidence, and complete family composition are not complete.
+
+## Regional landmark composition
+
+`RegionalWorldTileProvider` is the production seam that combines the regional
+material compositor with sparse vertical silhouettes. It does not scatter
+assets independently. `RegionalRouteField.getLandmarkSites()` exposes the
+coordinate-stable global composition goals; route semantic compatibility plus
+continuous family weights choose an asset, and terrain/water/route-clearance
+constraints choose its final anchor. The provider uses the same resolved
+placement for overlay and collision, inspects neighbouring cache blocks, and
+keeps the route threshold open.
+
+The V2 semantic landmark manifest contains one deliberately sparse prototype
+for each of canal-town, forest, coast, rural, mountain, and ruins. Each source,
+prompt/edit, hash, derivation command, tile bounds, compatible site kinds, and
+collision offsets is explicit. Asset colour or filename is never inspected to
+invent gameplay meaning.
+
+Authored overlay alpha survives loading and coverage-aware resampling. The
+viewport composites partial coverage in linear light over the continuous
+terrain, which removes the hard keyed contour without a fake binary contact
+shadow. The six-family faithful atlas is retained under the mounted Track-4
+research tree. It is a candidate milestone only: ambient silhouettes,
+route-contact layers, parcels, family-scale interactions, and interactive
+prewarming remain open before this provider can replace the live canal world.
 
 ## Non-periodic asset placement
 

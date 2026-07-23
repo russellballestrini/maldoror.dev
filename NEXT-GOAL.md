@@ -392,6 +392,12 @@ Completed foundations:
   mip pyramids pass focused tests and faithful octant review; the identical
   retained overview improved from 50.79 seconds to 2.02 seconds cold without
   restoring the rejected root-ring or tile-seam failures;
+- a built-in-subscription V2 landmark atlas now supplies one provenance-traced
+  vertical silhouette for each family; real route sites, family compatibility,
+  terrain-constrained anchors, shared overlay/collision placement, soft-alpha
+  reconstruction, and linear-light terrain contact pass focused tests and a
+  faithful six-coordinate walking atlas; the V1 ground-apron version remains
+  retained as a rejected sticker-island experiment;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–014 expose the selected research candidates without claiming
@@ -403,9 +409,10 @@ Still open and therefore goal-blocking:
   cold-path improvement is not permission to block input for 2.02 seconds, and
   predictive background prewarming plus p50/p95/p99 traversal evidence remain
   unbuilt;
-- six-family silhouettes, architecture, landmarks, routeside contacts, parcel
-  composition, authoritative traversal, and cave/highland/coast interactions
-  are not production-complete;
+- the first six-family landmark silhouettes are sparse prototypes, not a
+  complete world layer; ambient architecture, routeside contacts, parcel
+  composition, authoritative traversal, stronger mountain framing, and cave/
+  highland/coast interactions are not production-complete;
 - the complete Phase-0 diagnostic comparison and operator direction approval
   have not passed;
 - schedules, needs, relationships, memories, environmental systems, persistent

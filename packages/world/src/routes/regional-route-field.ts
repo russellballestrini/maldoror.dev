@@ -33,6 +33,16 @@ export interface RegionalRouteFieldConfig {
   pathMargin?: number;
 }
 
+/** Coordinate-stable composition goal exposed to world population, landmark,
+ * and research systems without forcing them to rediscover sites from rasters. */
+export interface RegionalLandmarkSite {
+  id: string;
+  x: number;
+  y: number;
+  priority: number;
+  landmarkKind: RegionalLandmarkKind;
+}
+
 interface RouteSite {
   id: string;
   cellX: number;
@@ -171,6 +181,24 @@ export class RegionalRouteField {
     for (let blockY = firstBlockY; blockY <= lastBlockY; blockY++) {
       for (let blockX = firstBlockX; blockX <= lastBlockX; blockX++) this.getBlock(blockX, blockY);
     }
+  }
+
+  getLandmarkSites(minX: number, minY: number, maxX: number, maxY: number): RegionalLandmarkSite[] {
+    const sites = this.collectSites(minX, minY, maxX, maxY);
+    const unique = new Map<string, RegionalLandmarkSite>();
+    for (const site of sites) {
+      if (site.x < minX || site.x > maxX || site.y < minY || site.y > maxY) continue;
+      unique.set(site.id, {
+        id: site.id,
+        x: site.x,
+        y: site.y,
+        priority: site.priority,
+        landmarkKind: site.landmarkKind === 'arrival'
+          ? 'arrival'
+          : landmarkKindForBiome(this.biomes.sample(site.x, site.y)),
+      });
+    }
+    return [...unique.values()].sort((a, b) => a.id.localeCompare(b.id));
   }
 
   getStats(): {

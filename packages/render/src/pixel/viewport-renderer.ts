@@ -604,8 +604,13 @@ export class ViewportRenderer {
 
             const pixel = tileRow[px];
             if (pixel) {
-              // Only overwrite if pixel is not transparent
-              buffer[bufferY]![bufferX] = pixel;
+              // Authored overlay alpha is composited in linear light. This
+              // preserves soft silhouette coverage without the dark fringe
+              // produced by sRGB interpolation or a binary cutout.
+              buffer[bufferY]![bufferX] = alphaOverLinear(
+                buffer[bufferY]![bufferX] ?? null,
+                pixel,
+              );
               materialGrid[bufferY]![bufferX] = 0;
             }
           }
@@ -669,8 +674,11 @@ export class ViewportRenderer {
 
             const pixel = tileRow[px];
             if (pixel) {
-              // Only overwrite if pixel is not transparent
-              buffer[bufferY]![bufferX] = pixel;
+              // Preserve authored edge coverage over the underlying material.
+              buffer[bufferY]![bufferX] = alphaOverLinear(
+                buffer[bufferY]![bufferX] ?? null,
+                pixel,
+              );
               materialGrid[bufferY]![bufferX] = 0;
             }
           }
@@ -1076,4 +1084,32 @@ export class ViewportRenderer {
       height: this.config.pixelHeight ?? (this.config.heightTiles * this.tileRenderSize),
     };
   }
+}
+
+function alphaOverLinear(beneath: RGB | null, above: RGB): RGB {
+  const alpha = Math.max(0, Math.min(255, above.a ?? 255)) / 255;
+  if (alpha >= 1 || beneath === null) return { r: above.r, g: above.g, b: above.b };
+  if (alpha <= 0) return beneath;
+  return {
+    r: linearToSrgbByte(lerp(srgbByteToLinear(beneath.r), srgbByteToLinear(above.r), alpha)),
+    g: linearToSrgbByte(lerp(srgbByteToLinear(beneath.g), srgbByteToLinear(above.g), alpha)),
+    b: linearToSrgbByte(lerp(srgbByteToLinear(beneath.b), srgbByteToLinear(above.b), alpha)),
+  };
+}
+
+function srgbByteToLinear(value: number): number {
+  const channel = Math.max(0, Math.min(255, value)) / 255;
+  return channel <= 0.04045 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4);
+}
+
+function linearToSrgbByte(value: number): number {
+  const channel = Math.max(0, Math.min(1, value));
+  const srgb = channel <= 0.0031308
+    ? channel * 12.92
+    : 1.055 * Math.pow(channel, 1 / 2.4) - 0.055;
+  return Math.round(srgb * 255);
+}
+
+function lerp(a: number, b: number, amount: number): number {
+  return a + (b - a) * amount;
 }

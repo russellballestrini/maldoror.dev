@@ -1,9 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { PixelGrid, Tile } from '@maldoror/protocol';
+import type { BuildingSprite, BuildingTile, Pixel, PixelGrid, Tile } from '@maldoror/protocol';
 import {
   BIOME_FAMILIES,
   type BiomeFamily,
+  type RegionalLandmarkAsset,
+  type RegionalLandmarkKind,
   type RegionalCrossingKind,
   type RegionalRouteKind,
 } from '@maldoror/world';
@@ -24,6 +26,13 @@ export interface RegionalRouteMaterialKit {
   crossingMaterials: Partial<Record<RegionalCrossingKind, Tile[]>>;
 }
 
+export interface RegionalLandmarkKit {
+  manifestPath: string;
+  sourceTileSize: number;
+  blockSize: number;
+  assets: RegionalLandmarkAsset[];
+}
+
 interface BaseMaterialEntry {
   id: string;
   file: string;
@@ -41,8 +50,19 @@ interface RouteMaterialEntry extends BaseMaterialEntry {
   crossingKind?: RegionalCrossingKind;
 }
 
+interface LandmarkEntry {
+  id: string;
+  file: string;
+  family: BiomeFamily;
+  landmarkKinds: RegionalLandmarkKind[];
+  scale: number;
+  spriteTiles: [number, number];
+  collision: Array<[number, number]>;
+}
+
 const ROUTE_KINDS: readonly RegionalRouteKind[] = ['trail', 'local-road', 'arterial'];
 const CROSSING_KINDS: readonly RegionalCrossingKind[] = ['ford', 'bridge', 'ferry'];
+const LANDMARK_KINDS: readonly RegionalLandmarkKind[] = ['arrival', 'settlement', 'ruin', 'waystation'];
 
 /** Load the authored six-family manifest without inferring semantics from file
  * names or pixels. Source masters are cropped into repeatable variants once at
@@ -123,6 +143,47 @@ export async function loadRegionalRouteMaterialKit(manifestPath: string): Promis
   return { manifestPath: absoluteManifest, sourceTileSize, tiles, routeMaterials, crossingMaterials };
 }
 
+/** Load the bounded landmark research kit from explicit family, route-site,
+ * collision, and sprite-layout semantics. Alpha is consumed from derived PNGs;
+ * filenames and colour values never decide world placement. */
+export async function loadRegionalLandmarkKit(manifestPath: string): Promise<RegionalLandmarkKit> {
+  const absoluteManifest = path.resolve(manifestPath);
+  const manifestDirectory = path.dirname(absoluteManifest);
+  const raw = JSON.parse(await fs.promises.readFile(absoluteManifest, 'utf8')) as unknown;
+  if (!isRecord(raw) || raw.version !== 1 || !Number.isInteger(raw.sourceTileSize) ||
+      !Number.isInteger(raw.blockSize) || !Array.isArray(raw.assets)) {
+    throw new Error(`Invalid regional landmark manifest: ${absoluteManifest}`);
+  }
+  const sourceTileSize = Number(raw.sourceTileSize);
+  const blockSize = Number(raw.blockSize);
+  if (sourceTileSize < 16 || sourceTileSize > 192 || blockSize < 16 || blockSize > 128) {
+    throw new Error(`Regional landmark dimensions are invalid: tile=${sourceTileSize} block=${blockSize}`);
+  }
+  const entries = raw.assets.map((value, index) => parseLandmarkEntry(value, index));
+  const ids = new Set(entries.map((entry) => entry.id));
+  if (ids.size !== entries.length) throw new Error('Regional landmark manifest contains duplicate IDs');
+  const families = new Set(entries.map((entry) => entry.family));
+  for (const family of BIOME_FAMILIES) {
+    if (!families.has(family)) throw new Error(`Regional landmark manifest is missing family: ${family}`);
+  }
+  const assets: RegionalLandmarkAsset[] = [];
+  for (const entry of entries) {
+    assets.push({
+      id: entry.id,
+      families: [entry.family],
+      landmarkKinds: entry.landmarkKinds,
+      collision: entry.collision,
+      sprite: await loadLandmarkSprite(
+        resolveAssetPath(manifestDirectory, entry.file),
+        sourceTileSize,
+        entry.scale,
+        entry.spriteTiles,
+      ),
+    });
+  }
+  return { manifestPath: absoluteManifest, sourceTileSize, blockSize, assets };
+}
+
 function parseEntry(value: unknown, index: number): MaterialEntry {
   if (!isRecord(value) ||
       !BIOME_FAMILIES.includes(value.family as BiomeFamily) ||
@@ -167,6 +228,30 @@ function parseRouteEntry(value: unknown, index: number, role: 'route' | 'crossin
     variants: Number(value.variants),
     walkable: value.walkable,
     material: material as Tile['material'],
+  };
+}
+
+function parseLandmarkEntry(value: unknown, index: number): LandmarkEntry {
+  if (!isRecord(value) ||
+      typeof value.id !== 'string' || value.id.length === 0 ||
+      typeof value.file !== 'string' || value.file.length === 0 ||
+      !BIOME_FAMILIES.includes(value.family as BiomeFamily) ||
+      !Array.isArray(value.landmarkKinds) || value.landmarkKinds.length === 0 ||
+      !value.landmarkKinds.every((kind) => LANDMARK_KINDS.includes(kind as RegionalLandmarkKind)) ||
+      !isTileDimensions(value.spriteTiles) ||
+      !Array.isArray(value.collision) || value.collision.length === 0 ||
+      !value.collision.every(isCollisionOffset) ||
+      typeof value.scale !== 'number' || value.scale < 0.2 || value.scale > 1) {
+    throw new Error(`Invalid regional landmark entry at index ${index}`);
+  }
+  return {
+    id: value.id,
+    file: value.file,
+    family: value.family as BiomeFamily,
+    landmarkKinds: value.landmarkKinds as RegionalLandmarkKind[],
+    scale: value.scale,
+    spriteTiles: value.spriteTiles as [number, number],
+    collision: value.collision as Array<[number, number]>,
   };
 }
 
@@ -228,6 +313,74 @@ async function loadTerrainMasterVariants(
     });
   }
   return variants;
+}
+
+async function loadLandmarkSprite(
+  imagePath: string,
+  tileSize: number,
+  scale: number,
+  spriteTiles: [number, number],
+): Promise<BuildingSprite> {
+  const [tilesWide, tilesHigh] = spriteTiles;
+  const canvasWidth = tileSize * tilesWide;
+  const canvasHeight = tileSize * tilesHigh;
+  const { data, info } = await sharp(imagePath)
+    .resize({
+      width: Math.max(tileSize, Math.round(canvasWidth * scale)),
+      height: Math.max(tileSize, Math.round(canvasHeight * scale)),
+      fit: 'inside',
+      kernel: sharp.kernel.lanczos3,
+    })
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const offsetX = Math.floor((canvasWidth - info.width) / 2);
+  const offsetY = canvasHeight - info.height;
+  const tiles: BuildingTile[][] = [];
+  for (let tileY = 0; tileY < tilesHigh; tileY++) {
+    const row: BuildingTile[] = [];
+    for (let tileX = 0; tileX < tilesWide; tileX++) {
+      const pixels: PixelGrid = [];
+      for (let y = 0; y < tileSize; y++) {
+        const pixelRow: Pixel[] = [];
+        for (let x = 0; x < tileSize; x++) {
+          const sourceX = tileX * tileSize + x - offsetX;
+          const sourceY = tileY * tileSize + y - offsetY;
+          if (sourceX < 0 || sourceY < 0 || sourceX >= info.width || sourceY >= info.height) {
+            pixelRow.push(null);
+            continue;
+          }
+          const sourceIndex = (sourceY * info.width + sourceX) * info.channels;
+          const alpha = data[sourceIndex + 3] ?? 0;
+          if (alpha < 4) {
+            pixelRow.push(null);
+          } else {
+            const pixel: Pixel = {
+              r: data[sourceIndex]!,
+              g: data[sourceIndex + 1]!,
+              b: data[sourceIndex + 2]!,
+            };
+            if (alpha < 255) pixel.a = alpha;
+            pixelRow.push(pixel);
+          }
+        }
+        pixels.push(pixelRow);
+      }
+      row.push({ pixels, resolutions: { [String(tileSize)]: pixels } });
+    }
+    tiles.push(row);
+  }
+  return { width: tilesWide, height: tilesHigh, tiles };
+}
+
+function isCollisionOffset(value: unknown): value is [number, number] {
+  return Array.isArray(value) && value.length === 2 &&
+    value.every((part) => Number.isInteger(part) && Number(part) >= -4 && Number(part) <= 4);
+}
+
+function isTileDimensions(value: unknown): value is [number, number] {
+  return Array.isArray(value) && value.length === 2 &&
+    value.every((part) => Number.isInteger(part) && Number(part) >= 1 && Number(part) <= 8);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

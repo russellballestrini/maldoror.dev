@@ -40,13 +40,16 @@ function areaResample(
           const weight = overlapX * overlapY;
           const pixel = grid[sy]?.[sx] ?? null;
           if (!pixel || weight === 0) continue;
-          red += pixel.r * weight;
-          green += pixel.g * weight;
-          blue += pixel.b * weight;
-          opaqueWeight += weight;
+          const alphaWeight = weight * pixelAlpha(pixel);
+          red += pixel.r * alphaWeight;
+          green += pixel.g * alphaWeight;
+          blue += pixel.b * alphaWeight;
+          opaqueWeight += alphaWeight;
         }
       }
-      row.push(opaqueWeight / totalWeight < 0.12 ? null : rgb(red, green, blue, opaqueWeight));
+      row.push(opaqueWeight / totalWeight < 0.02
+        ? null
+        : rgba(red, green, blue, opaqueWeight, totalWeight));
     }
     result.push(row);
   }
@@ -81,22 +84,30 @@ function bilinearResample(
       let red = 0, green = 0, blue = 0, opaqueWeight = 0;
       for (const [pixel, weight] of samples) {
         if (!pixel || weight === 0) continue;
-        red += pixel.r * weight;
-        green += pixel.g * weight;
-        blue += pixel.b * weight;
-        opaqueWeight += weight;
+        const alphaWeight = weight * pixelAlpha(pixel);
+        red += pixel.r * alphaWeight;
+        green += pixel.g * alphaWeight;
+        blue += pixel.b * alphaWeight;
+        opaqueWeight += alphaWeight;
       }
-      row.push(opaqueWeight < 0.12 ? null : rgb(red, green, blue, opaqueWeight));
+      row.push(opaqueWeight < 0.02 ? null : rgba(red, green, blue, opaqueWeight, 1));
     }
     result.push(row);
   }
   return result;
 }
 
-function rgb(red: number, green: number, blue: number, weight: number): RGB {
-  return {
+function pixelAlpha(pixel: RGB): number {
+  return Math.max(0, Math.min(255, pixel.a ?? 255)) / 255;
+}
+
+function rgba(red: number, green: number, blue: number, weight: number, totalWeight: number): RGB {
+  const result: RGB = {
     r: Math.round(red / weight),
     g: Math.round(green / weight),
     b: Math.round(blue / weight),
   };
+  const alpha = Math.round(255 * weight / totalWeight);
+  if (alpha < 255) result.a = alpha;
+  return result;
 }

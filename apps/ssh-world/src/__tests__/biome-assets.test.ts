@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { BIOME_FAMILIES } from '@maldoror/world';
 import {
   loadRegionalBiomeMaterialKit,
+  loadRegionalLandmarkKit,
   loadRegionalRouteMaterialKit,
 } from '../game/biome-assets.js';
 
@@ -32,5 +33,22 @@ describe('regional biome material manifest', () => {
     }
     expect(kit.crossingMaterials.bridge).toHaveLength(4);
     expect(kit.crossingMaterials.ferry).toBeUndefined();
+  });
+
+  it('loads six alpha-keyed landmark clusters with explicit collision thresholds', async () => {
+    const kit = await loadRegionalLandmarkKit(path.resolve('assets/biomes/landmarks-manifest.json'));
+    expect(kit.sourceTileSize).toBe(48);
+    expect(kit.blockSize).toBe(32);
+    expect(kit.assets).toHaveLength(6);
+    expect(new Set(kit.assets.flatMap((asset) => asset.families))).toEqual(new Set(BIOME_FAMILIES));
+    for (const asset of kit.assets) {
+      expect(asset.sprite.width).toBe(6);
+      expect(asset.sprite.height).toBe(5);
+      expect(asset.collision).not.toContainEqual([0, 0]);
+      const pixels = asset.sprite.tiles.flatMap((row) => row.flatMap((tile) => tile.pixels.flat()));
+      expect(pixels.some((pixel) => pixel === null)).toBe(true);
+      expect(pixels.some((pixel) => pixel !== null)).toBe(true);
+      expect(pixels.some((pixel) => pixel !== null && pixel.a !== undefined && pixel.a > 0 && pixel.a < 255)).toBe(true);
+    }
   });
 });

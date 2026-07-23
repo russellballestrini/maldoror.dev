@@ -14,6 +14,7 @@ export {
   RegionalRouteField,
   type RegionalCrossingKind,
   type RegionalLandmarkKind,
+  type RegionalLandmarkSite,
   type RegionalRouteBiomeSampler,
   type RegionalRouteFieldConfig,
   type RegionalRouteKind,
@@ -76,6 +77,14 @@ export {
   type RegionalRouteSampler,
   type RegionalMaterialCompositorConfig,
 } from './tiles/regional-material-compositor.js';
+export {
+  RegionalWorldTileProvider,
+  type RegionalLandmarkAsset,
+  type RegionalLandmarkPlacement,
+  type RegionalWorldBiomeSampler,
+  type RegionalWorldRouteSampler,
+  type RegionalWorldTileProviderConfig,
+} from './tiles/regional-world-tile-provider.js';
 export {
   CornerCodedTileSet,
   type CornerCodedTileSetConfig,
