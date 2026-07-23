@@ -24,7 +24,15 @@ system Caddy for TLS). So here:
   `node dist/index.js` from `apps/ssh-world`, reads `/etc/donto/maldoror.env`.
 - **Env:** `/etc/donto/maldoror.env` (root:ajax 640) — `DATABASE_URL`, `SSH_PORT=2222`,
   `STATS_PORT=3105`, `AI_PROVIDER=openai`, `AI_MODEL=gpt-4o`, `OPENAI_API_KEY`, capped
-  `NODE_OPTIONS`. SSH host key at `apps/ssh-world/keys/host.key` (gitignored).
+  `NODE_OPTIONS`, `WORKER_STARTUP_TIMEOUT_MS=300000` (the box's sdb is often I/O-saturated
+  by other tenants; the forked game-worker loads its module graph off disk slowly, so the
+  worker-startup timeout is raised well above the 180s default). SSH host key at
+  `apps/ssh-world/keys/host.key` (gitignored).
+
+> ⚠️ **Build gotcha:** `turbo build` (any `--filter`) rebuilds `@maldoror/db` with plain
+> `tsc`, whose ESM output imports `./client` without a `.js` extension → runtime
+> `ERR_MODULE_NOT_FOUND`. You MUST re-run the tsup bundle after any turbo build (redeploy.sh
+> does). For an app-only code change, `cd apps/ssh-world && npx tsc` avoids touching db.
 - **Web:** none on the box. `maldoror.dev` is **Cloudflare-proxied → Vercel** (existing
   setup), so the box never sees its traffic. The stats endpoint stays on `127.0.0.1:3105`
   (and `0.0.0.0:3105`); to publish it, point a **grey/DNS-only** subdomain
