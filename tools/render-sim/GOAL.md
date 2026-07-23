@@ -51,13 +51,29 @@ TARGET → next. No change ships without being seen.
   A screenshot of the REAL game in Ghostty, side-by-side with TARGET in the
   gallery, and the operator (Thomas) signs off that it hits the bar.
 
+## THE APPROACH (course-corrected, iter 8-9)
+
+Tile-scatter (atomic props on a coarse grid + rectangular water) was too sparse
+and blocky to look like the mockup. The mockup is DENSE and COMPOSED. So:
+
+**Generate a dense cohesive canal DISTRICT image in the mockup style (images.edit
+from the mockup) → octant-render it as the backdrop → derive a walkability layer
+→ composite/move the player on walkable ground → camera-locked "room" (the codec
+spec's visual grammar), scroll transitions between districts.**
+
+Infinite world = infinite generated districts. Proven (iter 9): a generated
+district + player, octant-rendered, is a real game screen in the mockup's league
+(gallery COMPARISON.png). Tools: `tools/gen-district.mjs`, `octant-image.mjs`,
+`octant-scene.mjs`.
+
 ## Current status
 
 | Gate | Status |
 |---|---|
-| G0 | ✅ done |
-| G1 | in progress — curb continuity + intersection tone + water variants |
-| G2 | next |
-| G3 | pending |
-| G4 | designed (docs/RENDERING.md §4.2), pending build |
-| G5 | pending |
+| G0 loop | ✅ |
+| G4 octant fidelity | ✅ LIVE |
+| LOOK matches TARGET | ✅ proven (octant districts, iter 8-9) |
+| Walkability / collision | ⚠️ color heuristic over-includes roofs — needs vision-segmentation OR layered ground/object generation (NEXT) |
+| District-scene mode in LIVE game | pending (backdrop + player + camera-lock + transitions) |
+| HUD (hearts/coins), water animation (palette) | pending |
+| G6 sign-off | pending — user verifies in Ghostty |
