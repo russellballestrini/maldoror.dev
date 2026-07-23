@@ -51,6 +51,11 @@ export {
   type CanalMaterialCompositorConfig,
   type WaterClassifier,
 } from './tiles/canal-material-compositor.js';
+export {
+  CornerCodedTileSet,
+  type CornerCodedTileSetConfig,
+  type CornerTileAddress,
+} from './tiles/corner-coded-tile-set.js';
 
 // Procedural tile generation
 export {

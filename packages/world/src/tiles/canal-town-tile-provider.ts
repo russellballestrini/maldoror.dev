@@ -8,6 +8,7 @@ import type {
 import { getTileById } from './base-tiles.js';
 import { TileProvider, type TileProviderConfig } from './tile-provider.js';
 import type { CanalMaterialCompositor } from './canal-material-compositor.js';
+import type { CornerCodedTileSet } from './corner-coded-tile-set.js';
 
 export type CanalPlacementRole =
   | 'building'
@@ -44,6 +45,11 @@ export interface CanalTownTileProviderConfig extends TileProviderConfig {
   blockSize?: number;
   blockCacheSize?: number;
   materialCompositor?: CanalMaterialCompositor;
+  cornerTerrain?: {
+    paving?: CornerCodedTileSet;
+    water?: CornerCodedTileSet;
+    garden?: CornerCodedTileSet;
+  };
 }
 
 interface Placement {
@@ -74,6 +80,7 @@ export class CanalTownTileProvider extends TileProvider {
   private readonly terrain: CanalTownTerrainConfig;
   private readonly bridgeDeckTiles: Tile[];
   private readonly materialCompositor?: CanalMaterialCompositor;
+  private readonly cornerTerrain: CanalTownTileProviderConfig['cornerTerrain'];
   private readonly rolePools = new Map<CanalPlacementRole, CanalTownAsset[]>();
   private readonly blockCache = new Map<string, CachedBlock>();
 
@@ -84,6 +91,7 @@ export class CanalTownTileProvider extends TileProvider {
     this.maxCachedBlocks = Math.max(16, config.blockCacheSize ?? 128);
     this.terrain = config.terrain;
     this.materialCompositor = config.materialCompositor;
+    this.cornerTerrain = config.cornerTerrain;
     this.bridgeDeckTiles = config.terrain.water.flatMap((id) => {
       const tile = getTileById(id);
       return tile ? [{ ...tile, id: `${tile.id}__bridge-deck`, walkable: true }] : [];
@@ -129,7 +137,9 @@ export class CanalTownTileProvider extends TileProvider {
     if (transition) return transition;
 
     if (verticalWater || horizontalWater) {
-      return this.pickTerrain(this.terrain.water, tileX, tileY, 'water') ?? super.getTile(tileX, tileY);
+      return this.cornerTerrain?.water?.getTile(tileX, tileY) ??
+        this.pickTerrain(this.terrain.water, tileX, tileY, 'water') ??
+        super.getTile(tileX, tileY);
     }
 
     const curbKey = this.curbKey(lx, ly, tileY, horizontalStart, horizontalEnd);
@@ -143,7 +153,9 @@ export class CanalTownTileProvider extends TileProvider {
 
     // Keep paths visually continuous; greenery comes from layered, shadowed
     // assets rather than rectangular grass patches cut into the plaza.
-    return this.pickTerrain(this.terrain.paving, tileX, tileY, 'paving') ?? super.getTile(tileX, tileY);
+    return this.cornerTerrain?.paving?.getTile(tileX, tileY) ??
+      this.pickTerrain(this.terrain.paving, tileX, tileY, 'paving') ??
+      super.getTile(tileX, tileY);
   }
 
   override getBuildingTileAt(

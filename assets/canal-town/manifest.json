@@ -9,6 +9,16 @@
     { "id": "canal-garden", "file": "terrain/garden-master.png", "variants": 4, "walkable": true, "material": "foliage" },
     { "id": "canal-curb", "file": "terrain/curb-master.png", "variants": 4, "walkable": true }
   ],
+  "cornerAtlases": [
+    {
+      "material": "paving",
+      "file": "terrain/paving-corner-atlas-v1.png",
+      "tileSize": 96,
+      "cornerColours": 2,
+      "combinations": 16,
+      "variants": 8
+    }
+  ],
   "terrain": {
     "water": ["canal-water", "canal-water__v2", "canal-water__v3", "canal-water__v4"],
     "paving": ["canal-paving", "canal-paving__v2", "canal-paving__v3", "canal-paving__v4"],

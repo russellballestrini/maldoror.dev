@@ -13,6 +13,8 @@ export interface CanalMaterialCompositorConfig {
   /** Half-width of the distinct edge-material band. */
   edgeBandWidth?: number;
   edgeStrength?: number;
+  /** Add a land-side stone band, wet contact line, joints, and reflections. */
+  constructedEdgeDetail?: boolean;
 }
 
 export type WaterClassifier = (tileX: number, tileY: number) => boolean;
@@ -47,6 +49,7 @@ export class CanalMaterialCompositor {
   private readonly materialTransitionWidth: number;
   private readonly edgeBandWidth: number;
   private readonly edgeStrength: number;
+  private readonly constructedEdgeDetail: boolean;
   private readonly cache = new Map<string, CachedTransition>();
 
   constructor(config: CanalMaterialCompositorConfig) {
@@ -62,6 +65,7 @@ export class CanalMaterialCompositor {
     this.materialTransitionWidth = clamp(config.materialTransitionWidth ?? 0.09, 0.02, 0.4);
     this.edgeBandWidth = clamp(config.edgeBandWidth ?? 0.085, 0.015, 0.3);
     this.edgeStrength = clamp01(config.edgeStrength ?? 0.94);
+    this.constructedEdgeDetail = config.constructedEdgeDetail ?? true;
   }
 
   /** Return null for a uniform neighbourhood so flat interiors keep using the
@@ -159,13 +163,16 @@ export class CanalMaterialCompositor {
           0.5 + this.materialTransitionWidth / 2,
           field,
         );
+        const signedDistance = field - 0.5;
         const edgeCoverage = this.edge.length === 0
           ? 0
           : this.edgeStrength * (1 - smoothstep(
               this.edgeBandWidth * 0.24,
               this.edgeBandWidth,
-              Math.abs(field - 0.5),
-            ));
+              this.constructedEdgeDetail
+                ? Math.max(0, -signedDistance)
+                : Math.abs(signedDistance),
+            )) * (this.constructedEdgeDetail ? Number(signedDistance <= 0) : 1);
 
         this.sampleTextureField(this.water, worldX, worldY, 0x8da6b3, waterSample);
         this.sampleTextureField(this.paving, worldX, worldY, 0xd81638, pavingSample);
@@ -177,10 +184,58 @@ export class CanalMaterialCompositor {
         const baseR = pavingSample[0]! * landWeight + waterSample[0]! * waterCoverage;
         const baseG = pavingSample[1]! * landWeight + waterSample[1]! * waterCoverage;
         const baseB = pavingSample[2]! * landWeight + waterSample[2]! * waterCoverage;
+        let finalR = lerp(baseR, edgeSample[0]!, edgeCoverage);
+        let finalG = lerp(baseG, edgeSample[1]!, edgeCoverage);
+        let finalB = lerp(baseB, edgeSample[2]!, edgeCoverage);
+        if (this.constructedEdgeDetail) {
+          // The interpolated semantic field supplies a stable local tangent.
+          // Ignore the high-frequency perturbation here: joints should follow
+          // the waterfront rather than jitter with every chipped edge texel.
+          const derivativeU = lerp(corner10 - corner00, corner11 - corner01, smoothV) * 6 * u * (1 - u);
+          const derivativeV = (bottom - top) * 6 * v * (1 - v);
+          const gradientLength = Math.hypot(derivativeU, derivativeV);
+          const tangentX = gradientLength > 1e-5 ? -derivativeV / gradientLength : 1;
+          const tangentY = gradientLength > 1e-5 ? derivativeU / gradientLength : 0;
+          const tangentCoordinate = worldX * tangentX + worldY * tangentY;
+          const jointPhase = fract(
+            tangentCoordinate * 5.25 +
+            this.valueNoise(worldX * 0.31, worldY * 0.31, 0x7214a3) * 0.33,
+          );
+          const jointDistance = Math.min(jointPhase, 1 - jointPhase);
+          const joint = 1 - smoothstep(0.025, 0.09, jointDistance);
+          const landBand = Number(signedDistance <= 0) *
+            (1 - smoothstep(this.edgeBandWidth * 0.45, this.edgeBandWidth, -signedDistance));
+          const jointStrength = landBand * joint * 0.48;
+          finalR *= 1 - jointStrength;
+          finalG *= 1 - jointStrength;
+          finalB *= 1 - jointStrength;
+
+          // A light stone lip and dark wet contact line survive the aggressive
+          // 96px -> terminal-cell reduction far better than a symmetric beige
+          // crossfade. Both are continuous functions of the shared field.
+          const lip = Number(signedDistance <= 0) *
+            (1 - smoothstep(0.012, 0.034, -signedDistance)) * 0.48;
+          finalR = lerp(finalR, srgbToLinear(224), lip);
+          finalG = lerp(finalG, srgbToLinear(205), lip);
+          finalB = lerp(finalB, srgbToLinear(165), lip);
+
+          const wetContact = Number(signedDistance > 0) *
+            (1 - smoothstep(0.008, 0.043, signedDistance)) * 0.72;
+          finalR = lerp(finalR, srgbToLinear(28), wetContact);
+          finalG = lerp(finalG, srgbToLinear(73), wetContact);
+          finalB = lerp(finalB, srgbToLinear(76), wetContact);
+
+          const reflectionBand = Number(signedDistance > 0) *
+            bandPulse(signedDistance, 0.040, 0.075) *
+            (0.18 + 0.18 * Math.max(0, this.valueNoise(worldX * 3.1, worldY * 3.1, 0x19f37d)));
+          finalR = lerp(finalR, srgbToLinear(151), reflectionBand);
+          finalG = lerp(finalG, srgbToLinear(218), reflectionBand);
+          finalB = lerp(finalB, srgbToLinear(210), reflectionBand);
+        }
         row.push({
-          r: linearToSrgb(lerp(baseR, edgeSample[0]!, edgeCoverage)),
-          g: linearToSrgb(lerp(baseG, edgeSample[1]!, edgeCoverage)),
-          b: linearToSrgb(lerp(baseB, edgeSample[2]!, edgeCoverage)),
+          r: linearToSrgb(finalR),
+          g: linearToSrgb(finalG),
+          b: linearToSrgb(finalB),
         });
         if (waterCoverage >= 0.5) materialRow[x] = 1;
       }
@@ -310,6 +365,14 @@ function mirrorIndex(value: number, size: number): number {
 
 function hashUnit(hash: number): number {
   return (hash / 0xffffffff) * 2 - 1;
+}
+
+function fract(value: number): number {
+  return value - Math.floor(value);
+}
+
+function bandPulse(value: number, centre: number, halfWidth: number): number {
+  return 1 - smoothstep(halfWidth * 0.35, halfWidth, Math.abs(value - centre));
 }
 
 function smoothstep(edge0: number, edge1: number, value: number): number {

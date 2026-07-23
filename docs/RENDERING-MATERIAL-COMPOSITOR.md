@@ -48,3 +48,23 @@ directional transition detail, bridge contacts, and a single shared
 sub-cell collision/visual semantic field remain open. Evidence and rejection
 records live under
 `/mnt/donto-data/donto-resources/maldoror/rendering-research/track-1-material-blending/`.
+
+## Interior stochastic tiling addendum — 2026-07-23
+
+Uniform material interiors now have an independent, bounded strategy. The
+full-resolution exemplar is synthesized offline into a corner-coded atlas:
+
+- every world-lattice vertex receives a deterministic colour;
+- a tile family is addressed by its NW/NE/SW/SE colours, so adjacent cells
+  necessarily agree on both endpoints of their shared edge;
+- each combination has eight constraint-matched quilted cores;
+- shared two-sided aprons give neighbouring tiles consecutive texture samples,
+  avoiding the derivative ridge produced by copying one border texel twice;
+- the runtime performs one hash/address lookup and returns a shared immutable
+  tile. It does not synthesize pixels or retain visited world coordinates.
+
+The paving atlas has 16 corner combinations x 8 interiors (128 tiles, 1.6 MiB
+compressed). The production manifest owns its dimensions and the loader fails
+closed if the atlas shape is wrong or any combination is missing. Water and
+garden atlases remain research work; transition tiles still use the continuous
+material compositor above.

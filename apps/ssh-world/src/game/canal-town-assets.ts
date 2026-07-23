@@ -7,8 +7,9 @@ import type {
   CanalPlacementRole,
   CanalTownAsset,
   CanalTownTerrainConfig,
+  CornerCodedTileSet as CornerCodedTileSetType,
 } from '@maldoror/world';
-import { CanalMaterialCompositor } from '@maldoror/world';
+import { CanalMaterialCompositor, CornerCodedTileSet } from '@maldoror/world';
 
 interface ManifestAsset {
   id: string;
@@ -26,8 +27,20 @@ interface CanalTownManifest {
   blockSize: number;
   defaultAvatar: string;
   terrainMasters: ManifestTerrainMaster[];
+  cornerAtlases: ManifestCornerAtlas[];
   terrain: CanalTownTerrainConfig;
   assets: ManifestAsset[];
+}
+
+type CornerTerrainMaterial = 'paving' | 'water' | 'garden';
+
+interface ManifestCornerAtlas {
+  material: CornerTerrainMaterial;
+  file: string;
+  tileSize: number;
+  cornerColours: number;
+  combinations: number;
+  variants: number;
 }
 
 interface ManifestTerrainMaster {
@@ -46,6 +59,7 @@ export interface LoadedCanalTownKit {
   defaultAvatar: Sprite;
   manifestPath: string;
   materialCompositor: CanalMaterialCompositor;
+  cornerTerrain: Partial<Record<CornerTerrainMaterial, CornerCodedTileSetType>>;
 }
 
 const VALID_ROLES = new Set<CanalPlacementRole>([
@@ -73,6 +87,19 @@ export async function loadCanalTownKit(
   for (const entry of manifest.terrainMasters) {
     const imagePath = resolveAssetPath(manifestDir, entry.file);
     terrainTiles.push(...await loadTerrainMasterVariants(imagePath, manifest.sourceTileSize, entry));
+  }
+
+  const cornerTerrain: Partial<Record<CornerTerrainMaterial, CornerCodedTileSetType>> = {};
+  for (const entry of manifest.cornerAtlases) {
+    const imagePath = resolveAssetPath(manifestDir, entry.file);
+    const tilesByCombination = await loadCornerAtlas(imagePath, entry);
+    for (const tiles of tilesByCombination) terrainTiles.push(...tiles);
+    cornerTerrain[entry.material] = new CornerCodedTileSet({
+      worldSeed,
+      cornerColours: entry.cornerColours,
+      tilesByCombination,
+      salt: stringHash(`canal-corner-atlas:${entry.material}`),
+    });
   }
 
   const terrainById = new Map(terrainTiles.map((tile) => [tile.id, tile]));
@@ -112,6 +139,7 @@ export async function loadCanalTownKit(
     defaultAvatar,
     manifestPath,
     materialCompositor,
+    cornerTerrain,
   };
 }
 
@@ -170,6 +198,36 @@ function parseManifest(manifestPath: string): CanalTownManifest {
     };
   });
 
+  const rawCornerAtlases: unknown = raw.cornerAtlases ?? [];
+  if (!Array.isArray(rawCornerAtlases)) throw new Error('Canal-town cornerAtlases must be an array');
+  const cornerAtlases: ManifestCornerAtlas[] = rawCornerAtlases.map(
+    (value: unknown, index: number) => {
+      if (!isRecord(value) ||
+          !['paving', 'water', 'garden'].includes(String(value.material)) ||
+          typeof value.file !== 'string') {
+        throw new Error(`Invalid canal corner atlas at index ${index}`);
+      }
+      const tileSize = Number(value.tileSize);
+      const cornerColours = Number(value.cornerColours);
+      const combinations = Number(value.combinations);
+      const variants = Number(value.variants);
+      if (!Number.isInteger(tileSize) || tileSize !== Number(raw.sourceTileSize) ||
+          !Number.isInteger(cornerColours) || cornerColours < 2 || cornerColours > 8 ||
+          !Number.isInteger(combinations) || combinations !== cornerColours ** 4 ||
+          !Number.isInteger(variants) || variants < 1 || variants > 16) {
+        throw new Error(`Invalid dimensions for canal corner atlas ${value.file}`);
+      }
+      return {
+        material: value.material as CornerTerrainMaterial,
+        file: value.file,
+        tileSize,
+        cornerColours,
+        combinations,
+        variants,
+      };
+    },
+  );
+
   const assets: ManifestAsset[] = raw.assets.map((value, index) => {
     if (!isRecord(value) || typeof value.id !== 'string' || typeof value.file !== 'string') {
       throw new Error(`Invalid canal asset at index ${index}`);
@@ -218,6 +276,7 @@ function parseManifest(manifestPath: string): CanalTownManifest {
     blockSize: Number(raw.blockSize),
     defaultAvatar: raw.defaultAvatar,
     terrainMasters,
+    cornerAtlases,
     terrain,
     assets,
   };
@@ -230,6 +289,54 @@ function resolveAssetPath(manifestDir: string, relativePath: string): string {
   }
   if (!fs.existsSync(resolved)) throw new Error(`Canal asset is missing: ${resolved}`);
   return resolved;
+}
+
+async function loadCornerAtlas(
+  imagePath: string,
+  entry: ManifestCornerAtlas,
+): Promise<Tile[][]> {
+  const { data, info } = await sharp(imagePath)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const expectedWidth = entry.combinations * entry.tileSize;
+  const expectedHeight = entry.variants * entry.tileSize;
+  if (info.width !== expectedWidth || info.height !== expectedHeight) {
+    throw new Error(
+      `Corner atlas ${imagePath} is ${info.width}x${info.height}; expected ${expectedWidth}x${expectedHeight}`,
+    );
+  }
+  return Array.from({ length: entry.combinations }, (_, combination) =>
+    Array.from({ length: entry.variants }, (_, variant) => {
+      const pixels: PixelGrid = Array.from({ length: entry.tileSize }, (_, y) =>
+        Array.from({ length: entry.tileSize }, (_, x) => {
+          const sourceX = combination * entry.tileSize + x;
+          const sourceY = variant * entry.tileSize + y;
+          const index = (sourceY * info.width + sourceX) * info.channels;
+          return { r: data[index]!, g: data[index + 1]!, b: data[index + 2]! };
+        }));
+      const id = `canal-${entry.material}-corner-c${combination}-v${variant}`;
+      const material = entry.material === 'water'
+        ? 'water'
+        : entry.material === 'garden' ? 'foliage' : undefined;
+      return {
+        id,
+        name: id,
+        walkable: entry.material !== 'water',
+        material,
+        pixels,
+        resolutions: { [String(entry.tileSize)]: pixels },
+      } satisfies Tile;
+    }));
+}
+
+function stringHash(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index++) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
 }
 
 async function loadTerrainMasterVariants(

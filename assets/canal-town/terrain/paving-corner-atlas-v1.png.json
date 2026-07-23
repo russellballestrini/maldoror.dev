@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "method": "corner-coded continuous-apron Wang tiles with constraint-matched quilting cores",
+  "source": "assets/canal-town/terrain/paving-stone-master.png",
+  "profile": "v5",
+  "tileSize": 96,
+  "cornerColours": 2,
+  "combinations": 16,
+  "variants": 8,
+  "layout": "combination-columns, variant-rows",
+  "seed": 7449137
+}

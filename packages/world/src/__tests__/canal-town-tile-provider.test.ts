@@ -5,6 +5,7 @@ import {
   type CanalTownAsset,
 } from '../tiles/canal-town-tile-provider.js';
 import { CanalMaterialCompositor } from '../tiles/canal-material-compositor.js';
+import { CornerCodedTileSet } from '../tiles/corner-coded-tile-set.js';
 
 function sprite(color: RGB): BuildingSprite {
   return {
@@ -86,5 +87,24 @@ describe('CanalTownTileProvider', () => {
     expect(materialCompositor.getStats().cachedTiles).toBeGreaterThan(0);
     expect(world.getTile(0, 0)?.id).toContain('bridge-deck');
     expect(world.getTile(0, 0)?.materialMask).toBeUndefined();
+  });
+
+  it('uses the corner-coded atlas for uniform paving interiors', () => {
+    const paving = texture('corner-paving', { r: 211, g: 188, b: 145 });
+    const cornerPaving = new CornerCodedTileSet({
+      worldSeed: 42n,
+      cornerColours: 2,
+      tilesByCombination: Array.from({ length: 16 }, () => [paving]),
+    });
+    const world = new CanalTownTileProvider({
+      worldSeed: 42n,
+      assets,
+      terrain: { water: ['water'], paving: ['stone'], garden: ['grass'], curb: {} },
+      blockSize: 24,
+      cornerTerrain: { paving: cornerPaving },
+    });
+
+    expect(world.getTile(10, 4)?.id).toBe('corner-paving');
+    expect(world.getTile(4, 4)?.id).not.toBe('corner-paving');
   });
 });

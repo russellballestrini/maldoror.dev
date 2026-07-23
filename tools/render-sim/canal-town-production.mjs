@@ -16,11 +16,11 @@ const OUT = path.join(HERE, 'out');
 const cameraX = Number(process.argv[2] ?? 12);
 const cameraY = Number(process.argv[3] ?? 6);
 const requestedTileSize = Number(process.argv[4] ?? 12);
+const WORLD_SEED = 0x4d414c444f524f52n;
 fs.mkdirSync(OUT, { recursive: true });
 process.chdir(APP);
 process.env.SPRITES_DIR = path.join(REPO, 'sprites');
 
-const { loadAllTerrainTilesFromDisk } = await import(`${APP}/dist/utils/terrain-storage.js`);
 const { loadCanalTownKit } = await import(`${APP}/dist/game/canal-town-assets.js`);
 const { CanalTownTileProvider, setTerrainTiles, createPlaceholderSprite } =
   await import(`${REPO}/packages/world/dist/index.js`);
@@ -28,16 +28,16 @@ const { ViewportRenderer } = await import(`${REPO}/packages/render/dist/pixel/vi
 const { renderOctantGridCells } = await import(`${REPO}/packages/render/dist/pixel/pixel-renderer.js`);
 const { OCTANT_CHARS } = await import(`${REPO}/packages/render/dist/pixel/octant-chars.js`);
 
-const terrain = await loadAllTerrainTilesFromDisk();
-setTerrainTiles([...terrain.values()]);
-const kit = await loadCanalTownKit();
+const kit = await loadCanalTownKit(undefined, WORLD_SEED);
 setTerrainTiles(kit.terrainTiles);
 const world = new CanalTownTileProvider({
-  worldSeed: 0x4d414c444f524f52n,
+  worldSeed: WORLD_SEED,
   chunkCacheSize: 64,
   assets: kit.assets,
   terrain: kit.terrain,
   blockSize: kit.blockSize,
+  materialCompositor: kit.materialCompositor,
+  cornerTerrain: kit.cornerTerrain,
 });
 
 const playerId = 'visual-gate-player';
@@ -123,7 +123,7 @@ await sharp(rgb, { raw: { width, height, channels: 3 } }).png().toFile(output);
 console.log(JSON.stringify({
   output,
   viewport: { cols: COLS, rows: ROWS, tileSize: TILE_SIZE },
-  terrainAssets: terrain.size + kit.terrainTiles.length,
+  terrainAssets: kit.terrainTiles.length,
   kit: world.getCanalTownStats(),
   rssMB: Math.round(process.memoryUsage().rss / 1024 / 1024),
 }, null, 2));
