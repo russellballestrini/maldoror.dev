@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "sourceTileSize": 96,
+  "generation": {
+    "date": "2026-07-23",
+    "mode": "Codex built-in image generation on ChatGPT subscription",
+    "meteredApiSpend": false,
+    "source": "generated/regional-materials-atlas-v1-source.png",
+    "prompt": "generated/regional-materials-atlas-v1-source.md",
+    "sha256": "08069e992cbfaf93532f55198fbaf123b57e6a798bbcf5408ab214a3c54d92e0"
+  },
+  "materialMasters": [
+    {
+      "family": "canal-town",
+      "role": "paving",
+      "id": "regional-canal-town-paving",
+      "file": "materials/canal-town-paving-master-v1.png",
+      "variants": 4,
+      "walkable": true
+    },
+    {
+      "family": "forest",
+      "role": "ground",
+      "id": "regional-forest-floor",
+      "file": "materials/forest-floor-master-v1.png",
+      "variants": 4,
+      "walkable": true,
+      "material": "foliage"
+    },
+    {
+      "family": "coast",
+      "role": "marsh",
+      "id": "regional-coast-marsh",
+      "file": "materials/coast-marsh-master-v1.png",
+      "variants": 4,
+      "walkable": false,
+      "material": "water"
+    },
+    {
+      "family": "rural",
+      "role": "ground",
+      "id": "regional-rural-orchard",
+      "file": "materials/rural-orchard-master-v1.png",
+      "variants": 4,
+      "walkable": true,
+      "material": "foliage"
+    },
+    {
+      "family": "mountain",
+      "role": "ground",
+      "id": "regional-mountain-highland",
+      "file": "materials/mountain-highland-master-v1.png",
+      "variants": 4,
+      "walkable": true
+    },
+    {
+      "family": "ruins",
+      "role": "ground",
+      "id": "regional-ancient-ruins",
+      "file": "materials/ancient-ruins-master-v1.png",
+      "variants": 4,
+      "walkable": true,
+      "material": "foliage"
+    }
+  ]
+}

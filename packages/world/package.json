@@ -16,7 +16,8 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@maldoror/protocol": "workspace:*"
+    "@maldoror/protocol": "workspace:*",
+    "fastnoise-lite": "1.1.1"
   },
   "devDependencies": {
     "@maldoror/tsconfig": "workspace:*",

@@ -1,6 +1,14 @@
 // Noise generation
 export { SeededRandom, ValueNoise } from './noise/noise.js';
 export { CanalTownWorldField, type CanalTownWorldSample } from './tiles/canal-town-world-field.js';
+export {
+  BIOME_FAMILIES,
+  BiomeWorldField,
+  type BiomeFamily,
+  type BiomeWeights,
+  type BiomeWorldFieldConfig,
+  type BiomeWorldSample,
+} from './biomes/biome-world-field.js';
 
 // Chunk system
 export { ChunkGenerator, type GeneratedChunk } from './chunk/chunk-generator.js';
@@ -52,6 +60,11 @@ export {
   type CanalMaterialCompositorConfig,
   type WaterClassifier,
 } from './tiles/canal-material-compositor.js';
+export {
+  RegionalMaterialCompositor,
+  type BiomeSampler,
+  type RegionalMaterialCompositorConfig,
+} from './tiles/regional-material-compositor.js';
 export {
   CornerCodedTileSet,
   type CornerCodedTileSetConfig,

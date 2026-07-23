@@ -16,6 +16,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "research:biomes": "node tools/render-sim/biome-transition-lab.mjs",
+    "research:biome-atlas": "node tools/render-sim/biome-atlas.mjs",
+    "assets:derive-biomes": "node tools/render-sim/derive-biome-materials.mjs",
+    "research:regional-materials": "node tools/render-sim/regional-material-lab.mjs",
     "clean": "turbo run clean && rm -rf node_modules",
     "db:generate": "pnpm --filter @maldoror/db generate",
     "db:migrate": "pnpm --filter @maldoror/db migrate",
@@ -51,6 +55,7 @@
   "devDependencies": {
     "@maldoror/tsconfig": "workspace:*",
     "@vitest/coverage-v8": "^4.0.16",
+    "fastnoise-lite": "1.1.1",
     "turbo": "^2.3.0",
     "typescript": "^5.7.0",
     "vitest": "^4.0.16"

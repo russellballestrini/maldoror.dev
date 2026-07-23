@@ -32,6 +32,35 @@ two different primary landmarks prevent a mirrored asset stamp. Plaza
 placement is an explicit authored policy and cannot leak into ambient parcel
 generation.
 
+## Regional geography
+
+`BiomeWorldField` is the production port of the V6 regional experiment. It
+does not assign one hard biome. Elevation, slope, coast/river distance,
+temperature, and moisture produce continuous coast/forest/rural/mountain
+weights; canal-town and ruins are cultural opportunity overlays on that
+ecology. A singular smooth arrival constraint makes `(0,0)` an exact canal-town
+anchor without stamping a finite region map.
+
+The field uses OpenSimplex2S descriptors plus a deterministic basin feature
+graph. Each bounded LRU block is generated with a 12-cell halo before the
+widest two-pass radius-5 filter. Tests prove identical samples across different
+cache block sizes, including signed-coordinate boundaries. Internal caching
+therefore cannot become visible geography.
+
+`RegionalMaterialCompositor` consumes the continuous weights directly. It
+mixes the strongest two ecological materials in linear light, then applies
+town/ruin opportunity as cultural overlays. One source texture spans seven
+world tiles and coarse variant phases cross-fade in world space; mapping a
+whole master to each tile was retained as a rejected wallpaper experiment.
+The output carries a per-pixel water ownership mask and uses a bounded tile
+cache.
+
+The current production canal provider has not yet been replaced by the
+regional compositor. The port and real-material octant lab establish the
+semantic and material layers first; route agreement, family-specific assets,
+semantic LOD, collision, predictive cold-block streaming, and full faithful
+atlas proof are required before a live switch.
+
 ## Non-periodic asset placement
 
 Procedural anchors come from a world-space priority field. A candidate survives
