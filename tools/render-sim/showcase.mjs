@@ -125,15 +125,21 @@ const at = (x, y) => (y >= 0 && y < H && x >= 0 && x < W) ? L[y][x] : 'S';
 const tiles = {};
 async function T(id) { if (!(id in tiles)) tiles[id] = await loadTile(id); return tiles[id]; }
 
+function posHash(x, y) {
+  let h = x * 374761393 + y * 668265263;
+  h = (h ^ (h >> 13)) * 1274126177;
+  return Math.abs(h);
+}
+
 async function tileFor(x, y) {
   const c = at(x, y);
   if (c === 'S') return T('stone');
-  // water: pick a stone_to_water transition based on where stone neighbours are
-  // (transition tiles are stone-based with water edges — invert: we want
-  // water-based… we generated stone-center tiles, so use them on the STONE side.
-  // For water cells adjacent to stone, use plain water; the curb lives on the
-  // stone-side transition.)
-  return T('water');
+  // water with spatial variants (same mechanism as tile-provider __vN picks)
+  const variants = ['water'];
+  for (const v of [2, 3]) {
+    if (fs.existsSync(path.join(TERRAIN_DIR, `water__v${v}`, '256.png'))) variants.push(`water__v${v}`);
+  }
+  return T(variants[posHash(x * 7 + 3, y * 5 + 1) % variants.length]);
 }
 async function stoneTileFor(x, y) {
   // stone cell: if water is adjacent, use the transition with water on those edges
@@ -180,8 +186,34 @@ const npcs = npcSprites.map((s, i) => ({
   direction: ['down', 'left'][i] ?? 'down', animationFrame: 0,
 }));
 
+// ---- buildings (2x2 sliced tiles from tools/gen-buildings.mjs) -------------
+const BUILDINGS_DIR = path.join(REPO, 'tools/render-sim/buildings-canal');
+// anchor (top-left tile) placements on plaza rows
+const buildingPlacements = [
+  { id: 'shop_awning', x: 2, y: 3 },
+  { id: 'house_tall', x: 13, y: 8 },
+];
+const buildingTiles = new Map(); // "x,y" -> tile
+for (const bp of buildingPlacements) {
+  const dir = path.join(BUILDINGS_DIR, bp.id);
+  if (!fs.existsSync(dir)) continue;
+  for (let ty = 0; ty < 2; ty++) for (let tx = 0; tx < 2; tx++) {
+    const base = path.join(dir, `tile_${tx}_${ty}_256.png`);
+    if (!fs.existsSync(base)) continue;
+    const pixels = await pngToPixelGrid(base);
+    const resolutions = {};
+    for (const res of RESOLUTIONS) {
+      const f = path.join(dir, `tile_${tx}_${ty}_${res}.png`);
+      resolutions[String(res)] = fs.existsSync(f) ? await pngToPixelGrid(f) : downscale(pixels, res);
+    }
+    buildingTiles.set(`${bp.x + tx},${bp.y + ty - 1}`, { id: `${bp.id}:${tx},${ty}`, pixels, walkable: false, resolutions });
+  }
+}
+console.log(`building tiles staged: ${buildingTiles.size}`);
+
 const syncWorld = {
   getTile: (x, y) => grid[((y % H) + H) % H]?.[((x % W) + W) % W] ?? null,
+  getBuildingTileAt: (x, y, _dir) => buildingTiles.get(`${x},${y}`) ?? null,
   getPlayers: () => players,
   getNPCs: () => npcs,
   getLocalPlayerId: () => 'p',
@@ -263,6 +295,16 @@ async function shootFullres() {
       if (p) put(tx * TS + x, ty * TS + y, p);
     }
   };
+  // buildings first (under entities)
+  for (const [key, bt] of buildingTiles) {
+    const [bx, by] = key.split(',').map(Number);
+    const px = bt.resolutions?.[String(TS)];
+    if (!px || bx < 0 || by < 0 || bx >= W || by >= H) continue;
+    for (let y = 0; y < TS; y++) for (let x = 0; x < TS; x++) {
+      const p = px[y]?.[x];
+      if (p) put(bx * TS + x, by * TS + y, p);
+    }
+  }
   drawSprite(playerSprite, 9, 4);
   npcs.forEach((n, i) => drawSprite(npcSprites[i], n.x, n.y));
   const file = path.join(OUT, 'showcase_fullres_kitty-mode-preview.png');

@@ -294,7 +294,23 @@ export class TileProvider implements WorldDataProvider {
       }
     }
 
-    const baseTile = getTileById(tileId);
+    // Spatial variant selection: if `<id>__v2`, `<id>__v3`, ... are
+    // registered, deterministically pick among base + variants by position.
+    // The general mechanism for infinite generated asset variety — drop more
+    // variants into the registry and they spread through the world.
+    let effectiveTileId = tileId;
+    {
+      const variants: string[] = [tileId];
+      for (let v = 2; v <= 8; v++) {
+        if (getTileById(`${tileId}__v${v}`)) variants.push(`${tileId}__v${v}`);
+        else break;
+      }
+      if (variants.length > 1) {
+        effectiveTileId = variants[Math.abs(positionHash(tileX * 7 + 3, tileY * 5 + 1)) % variants.length]!;
+      }
+    }
+
+    const baseTile = getTileById(effectiveTileId) ?? getTileById(tileId);
     if (!baseTile) return BASE_TILES.void ?? null;
 
     // Check if we need edge blending (has different neighbor) - fallback if no AI tiles

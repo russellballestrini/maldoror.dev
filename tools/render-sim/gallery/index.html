@@ -19,6 +19,30 @@ headless simulator (<code>tools/render-sim</code>) — the same pipeline the SSH
 <section><h2>🎯 TARGET (mockup)</h2>
 <div class="grid"><figure><a href="/gallery/TARGET.png"><img loading="lazy" src="/gallery/TARGET.png" alt="target mockup"></a>
 <figcaption>The goal: cozy canal-town at full fidelity in Ghostty. Phase A = style-matched assets in cell mode; Phase B = kitty graphics protocol.</figcaption></figure></div></section>
+<section><h2>003-curbs-variants-buildings</h2><pre class="notes"># 003-curbs-variants-buildings
+
+2026-07-23T07:11:16.683Z
+
+Iteration 3 — G1 curb refinement + water variants + first BUILDINGS (G2 start).
+
+- Regenerated all 8 stone_to_water transitions with the GENERATED STONE TILE as the images.edit reference + explicit full-length-curb instructions -> continuous curb lines on both axes, stone tone now matches the base tile closely.
+- water__v2/water__v3 variants + NEW spatial-variant mechanism in TileProvider (position-hashed pick among registered &lt;id>__vN tiles — the general lever for infinite asset variety; live in the world package).
+- First two multi-tile buildings generated in mockup style (tools/gen-buildings.mjs, style-anchor reference, transparent bg, sliced 2x2 tiles x 10-res pyramid): market shop w/ striped awning + tall shuttered canal house. Placed in the showcase via the engine's own getBuildingTileAt compositing path.
+
+vs TARGET: palette/materials/furniture now clearly the same family. Remaining gaps:
+- n/s vs e/w transition stone tone drift; water variant patches slightly visible in large pools
+- buildings not yet wired into the LIVE game's buildings table (showcase only)
+- props (lamps/planters/boats), bridges, HUD (G3), kitty-graphics mode (G4)
+Goal + gates: tools/render-sim/GOAL.md
+</pre><div class="grid"><figure><a href="/gallery/003-curbs-variants-buildings/showcase_braille_z102.png"><img loading="lazy" src="/gallery/003-curbs-variants-buildings/showcase_braille_z102.png" alt="showcase_braille_z102.png"></a><figcaption>showcase_braille_z102.png</figcaption></figure>
+<figure><a href="/gallery/003-curbs-variants-buildings/showcase_fullres_kitty-mode-preview.png"><img loading="lazy" src="/gallery/003-curbs-variants-buildings/showcase_fullres_kitty-mode-preview.png" alt="showcase_fullres_kitty-mode-preview.png"></a><figcaption>showcase_fullres_kitty-mode-preview.png</figcaption></figure>
+<figure><a href="/gallery/003-curbs-variants-buildings/showcase_halfblock_z51.png"><img loading="lazy" src="/gallery/003-curbs-variants-buildings/showcase_halfblock_z51.png" alt="showcase_halfblock_z51.png"></a><figcaption>showcase_halfblock_z51.png</figcaption></figure>
+<figure><a href="/gallery/003-curbs-variants-buildings/showcase_halfblock_z88.png"><img loading="lazy" src="/gallery/003-curbs-variants-buildings/showcase_halfblock_z88.png" alt="showcase_halfblock_z88.png"></a><figcaption>showcase_halfblock_z88.png</figcaption></figure>
+<figure><a href="/gallery/003-curbs-variants-buildings/sim_braille_z102.png"><img loading="lazy" src="/gallery/003-curbs-variants-buildings/sim_braille_z102.png" alt="sim_braille_z102.png"></a><figcaption>sim_braille_z102.png</figcaption></figure>
+<figure><a href="/gallery/003-curbs-variants-buildings/sim_braille_z51.png"><img loading="lazy" src="/gallery/003-curbs-variants-buildings/sim_braille_z51.png" alt="sim_braille_z51.png"></a><figcaption>sim_braille_z51.png</figcaption></figure>
+<figure><a href="/gallery/003-curbs-variants-buildings/sim_halfblock_z26.png"><img loading="lazy" src="/gallery/003-curbs-variants-buildings/sim_halfblock_z26.png" alt="sim_halfblock_z26.png"></a><figcaption>sim_halfblock_z26.png</figcaption></figure>
+<figure><a href="/gallery/003-curbs-variants-buildings/sim_halfblock_z51.png"><img loading="lazy" src="/gallery/003-curbs-variants-buildings/sim_halfblock_z51.png" alt="sim_halfblock_z51.png"></a><figcaption>sim_halfblock_z51.png</figcaption></figure>
+<figure><a href="/gallery/003-curbs-variants-buildings/sim_halfblock_z88.png"><img loading="lazy" src="/gallery/003-curbs-variants-buildings/sim_halfblock_z88.png" alt="sim_halfblock_z88.png"></a><figcaption>sim_halfblock_z88.png</figcaption></figure></div></section>
 <section><h2>002-canal-style-showcase</h2><pre class="notes"># 002-canal-style-showcase
 
 2026-07-23T06:59:38.444Z
