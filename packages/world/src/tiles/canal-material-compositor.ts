@@ -62,8 +62,8 @@ export class CanalMaterialCompositor {
     this.edge = (config.edge ?? []).map(prepareTexture);
     this.maxCachedTiles = Math.max(8, config.maxCachedTiles ?? 96);
     this.variantPeriodTiles = Math.max(2, config.variantPeriodTiles ?? 4);
-    this.materialTransitionWidth = clamp(config.materialTransitionWidth ?? 0.09, 0.02, 0.4);
-    this.edgeBandWidth = clamp(config.edgeBandWidth ?? 0.085, 0.015, 0.3);
+    this.materialTransitionWidth = clamp(config.materialTransitionWidth ?? 0.075, 0.02, 0.4);
+    this.edgeBandWidth = clamp(config.edgeBandWidth ?? 0.13, 0.015, 0.3);
     this.edgeStrength = clamp01(config.edgeStrength ?? 0.94);
     this.constructedEdgeDetail = config.constructedEdgeDetail ?? true;
   }
@@ -214,19 +214,19 @@ export class CanalMaterialCompositor {
           // 96px -> terminal-cell reduction far better than a symmetric beige
           // crossfade. Both are continuous functions of the shared field.
           const lip = Number(signedDistance <= 0) *
-            (1 - smoothstep(0.012, 0.034, -signedDistance)) * 0.48;
+            (1 - smoothstep(0.016, 0.060, -signedDistance)) * 0.62;
           finalR = lerp(finalR, srgbToLinear(224), lip);
           finalG = lerp(finalG, srgbToLinear(205), lip);
           finalB = lerp(finalB, srgbToLinear(165), lip);
 
           const wetContact = Number(signedDistance > 0) *
-            (1 - smoothstep(0.008, 0.043, signedDistance)) * 0.72;
+            (1 - smoothstep(0.012, 0.078, signedDistance)) * 0.84;
           finalR = lerp(finalR, srgbToLinear(28), wetContact);
           finalG = lerp(finalG, srgbToLinear(73), wetContact);
           finalB = lerp(finalB, srgbToLinear(76), wetContact);
 
           const reflectionBand = Number(signedDistance > 0) *
-            bandPulse(signedDistance, 0.040, 0.075) *
+            bandPulse(signedDistance, 0.075, 0.115) *
             (0.18 + 0.18 * Math.max(0, this.valueNoise(worldX * 3.1, worldY * 3.1, 0x19f37d)));
           finalR = lerp(finalR, srgbToLinear(151), reflectionBand);
           finalG = lerp(finalG, srgbToLinear(218), reflectionBand);

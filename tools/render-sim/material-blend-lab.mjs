@@ -12,7 +12,7 @@ import sharp from 'sharp';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(__dirname, '../..');
 const PROFILE = process.argv[3] ?? 'v2';
-if (!['v1', 'v2', 'v3'].includes(PROFILE)) throw new Error(`Unknown material profile: ${PROFILE}`);
+if (!['v1', 'v2', 'v3', 'v4'].includes(PROFILE)) throw new Error(`Unknown material profile: ${PROFILE}`);
 const CANDIDATE = `candidate-${PROFILE}`;
 const OUTPUT = path.resolve(
   process.argv[2] ?? `/mnt/donto-data/donto-resources/maldoror/rendering-research/track-1-material-blending/${CANDIDATE}`,
@@ -46,7 +46,9 @@ const compositor = new CanalMaterialCompositor({
     ? { materialTransitionWidth: 0.26, edgeBandWidth: 0.19, edgeStrength: 0.82, constructedEdgeDetail: false }
     : PROFILE === 'v2'
       ? { materialTransitionWidth: 0.09, edgeBandWidth: 0.085, edgeStrength: 0.94, constructedEdgeDetail: false }
-      : { materialTransitionWidth: 0.075, edgeBandWidth: 0.12, edgeStrength: 0.98, constructedEdgeDetail: true }),
+      : PROFILE === 'v3'
+        ? { materialTransitionWidth: 0.075, edgeBandWidth: 0.12, edgeStrength: 0.98, constructedEdgeDetail: true }
+        : { materialTransitionWidth: 0.065, edgeBandWidth: 0.15, edgeStrength: 1, constructedEdgeDetail: true }),
 });
 
 // Two curved waterways make edge direction, corners, and a crossing visible.
