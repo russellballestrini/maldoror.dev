@@ -30,14 +30,24 @@ TARGET → next. No change ships without being seen.
   Hearts (top-left) + coin counter (bottom-left) overlays in the live game,
   styled like the TARGET.
 
-- **G4 — Full fidelity in Ghostty (kitty graphics protocol)**
-  A `kitty` render mode: terminal capability probe at session start; tiles +
-  sprite frames transmitted ONCE by ID, per-frame updates are placements
-  only; cell modes remain the fallback. Checkable: a real SSH session in a
-  kitty-protocol terminal shows full-resolution frames; steady-state
-  bytes/frame < 100KB.
+- **G4 — Fidelity: octant solid mosaics** ✅ *(iter 004)*
+  Unicode 16 octant (2×4 solid) render mode, auto-selected from the client's
+  TERM (Ghostty/kitty/VTE → octant; else halfblock). Image protocols (kitty
+  graphics) are REJECTED — maldoror is a *terminal* game, pure ANSI only.
+  Verified: a Ghostty client renders octant (0 braille) live.
 
-- **G5 — The match (sign-off)**
+- **G5 — Terminal-native codec** (docs/RENDERING-CODEC.md)
+  Retained cell framebuffer + motion-compensated ANSI: camera motion = scroll
+  op (DECSTBM/DECSLRM + SU/SD/DCH/ICH), actors = dirty-rect repairs, water/
+  light = OSC-4 palette cycling, cost-based emitter under a byte/latency budget.
+  - [x] palette-cycled water (141 B/tick animates all water, 699× vs repaint)
+  - [ ] retained terminal_view + scroll-region motion compensation
+  - [ ] dead-zone camera (sub-cell actor / whole-cell camera)
+  - [ ] dirty-rect entity repair + cost-based emitter + latency budget
+  Checkable: steady-state bytes/frame during camera pan < a few KiB; smooth in
+  a real Ghostty SSH session.
+
+- **G6 — The match (sign-off)**
   A screenshot of the REAL game in Ghostty, side-by-side with TARGET in the
   gallery, and the operator (Thomas) signs off that it hits the bar.
 
