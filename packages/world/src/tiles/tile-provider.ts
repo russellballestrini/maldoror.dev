@@ -16,6 +16,7 @@ const TERRAIN_TRANSITIONS: [string, string][] = [
   ['sand', 'water'],
   ['dirt', 'sand'],
   ['dirt', 'stone'],
+  ['stone', 'water'], // canal-town curbed plaza/water edges
 ];
 
 /**

@@ -16,6 +16,35 @@
 <h1>MALDOROR — render engine gallery</h1>
 <p>Ongoing visual iterations of the terminal render engine. Each section is one iteration of the
 headless simulator (<code>tools/render-sim</code>) — the same pipeline the SSH game renders with.</p>
+<section><h2>🎯 TARGET (mockup)</h2>
+<div class="grid"><figure><a href="/gallery/TARGET.png"><img loading="lazy" src="/gallery/TARGET.png" alt="target mockup"></a>
+<figcaption>The goal: cozy canal-town at full fidelity in Ghostty. Phase A = style-matched assets in cell mode; Phase B = kitty graphics protocol.</figcaption></figure></div></section>
+<section><h2>002-canal-style-showcase</h2><pre class="notes"># 002-canal-style-showcase
+
+2026-07-23T06:59:38.444Z
+
+Iteration 2 — MOCKUP-STYLE CANAL ASSETS (Phase A of the goal loop).
+
+The TARGET mockup (top of page) is now the goal. This iteration:
+- Generated 11 style-anchored tiles via images.edit with a mockup crop as the style reference: warm sandstone plaza 'stone', teal canal 'water' (lily pads), lush 'grass', + 8 stone_to_water curbed-edge autotile transitions. 43 tiles now in terrain_tiles.
+- NEW showcase scene (hand-authored canal-cross layout echoing the mockup composition) rendered 3 ways: FULLRES (= what the planned kitty-graphics-protocol mode will display in Ghostty), halfblock, braille.
+- stone&lt;->water added to the live autotiler's transition pairs; live world restarted on the new tileset.
+
+Compare showcase_fullres vs TARGET: palette + materials now match (sandstone/teal). Gaps for next iterations:
+- vertical curb continuity (transition tiles read as segmented slabs; regenerate using the generated stone BASE tile as the images.edit reference so tone + curb line match exactly)
+- buildings/bridges/props (building pipeline exists; generate in mockup style)
+- water variety (2-3 variants to break lily-pad repetition) + animated water
+- HUD (hearts/coins overlay)
+- Phase B: kitty graphics protocol renderer (transmit-once/place-by-id) = TARGET fidelity in Ghostty; cell modes stay as universal fallback.
+</pre><div class="grid"><figure><a href="/gallery/002-canal-style-showcase/showcase_braille_z102.png"><img loading="lazy" src="/gallery/002-canal-style-showcase/showcase_braille_z102.png" alt="showcase_braille_z102.png"></a><figcaption>showcase_braille_z102.png</figcaption></figure>
+<figure><a href="/gallery/002-canal-style-showcase/showcase_fullres_kitty-mode-preview.png"><img loading="lazy" src="/gallery/002-canal-style-showcase/showcase_fullres_kitty-mode-preview.png" alt="showcase_fullres_kitty-mode-preview.png"></a><figcaption>showcase_fullres_kitty-mode-preview.png</figcaption></figure>
+<figure><a href="/gallery/002-canal-style-showcase/showcase_halfblock_z51.png"><img loading="lazy" src="/gallery/002-canal-style-showcase/showcase_halfblock_z51.png" alt="showcase_halfblock_z51.png"></a><figcaption>showcase_halfblock_z51.png</figcaption></figure>
+<figure><a href="/gallery/002-canal-style-showcase/showcase_halfblock_z88.png"><img loading="lazy" src="/gallery/002-canal-style-showcase/showcase_halfblock_z88.png" alt="showcase_halfblock_z88.png"></a><figcaption>showcase_halfblock_z88.png</figcaption></figure>
+<figure><a href="/gallery/002-canal-style-showcase/sim_braille_z102.png"><img loading="lazy" src="/gallery/002-canal-style-showcase/sim_braille_z102.png" alt="sim_braille_z102.png"></a><figcaption>sim_braille_z102.png</figcaption></figure>
+<figure><a href="/gallery/002-canal-style-showcase/sim_braille_z51.png"><img loading="lazy" src="/gallery/002-canal-style-showcase/sim_braille_z51.png" alt="sim_braille_z51.png"></a><figcaption>sim_braille_z51.png</figcaption></figure>
+<figure><a href="/gallery/002-canal-style-showcase/sim_halfblock_z26.png"><img loading="lazy" src="/gallery/002-canal-style-showcase/sim_halfblock_z26.png" alt="sim_halfblock_z26.png"></a><figcaption>sim_halfblock_z26.png</figcaption></figure>
+<figure><a href="/gallery/002-canal-style-showcase/sim_halfblock_z51.png"><img loading="lazy" src="/gallery/002-canal-style-showcase/sim_halfblock_z51.png" alt="sim_halfblock_z51.png"></a><figcaption>sim_halfblock_z51.png</figcaption></figure>
+<figure><a href="/gallery/002-canal-style-showcase/sim_halfblock_z88.png"><img loading="lazy" src="/gallery/002-canal-style-showcase/sim_halfblock_z88.png" alt="sim_halfblock_z88.png"></a><figcaption>sim_halfblock_z88.png</figcaption></figure></div></section>
 <section><h2>001-ai-terrain-clean-sprites</h2><pre class="notes"># 001-ai-terrain-clean-sprites
 
 2026-07-23T06:22:54.629Z
