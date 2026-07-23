@@ -334,7 +334,7 @@ process.on('message', async (msg: MainToWorkerMessage) => {
         }
 
         if (process.env.MALDOROR_CANAL_TOWN !== '0') {
-          canalTownKit = await loadCanalTownKit();
+          canalTownKit = await loadCanalTownKit(undefined, worldSeed);
           setTerrainTiles(canalTownKit.terrainTiles);
           console.log(
             `[Worker] Loaded ${canalTownKit.assets.length} canal-town assets + ` +

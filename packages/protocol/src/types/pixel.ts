@@ -20,6 +20,12 @@ export type Pixel = RGB | null;
  */
 export type PixelGrid = Pixel[][];
 
+/** Per-pixel material bits aligned with a Tile's base PixelGrid.
+ * Bit 0 marks water pixels eligible for terminal-native palette animation.
+ * Kept separate from colour so blended terrain can retain exact material
+ * ownership without inferring semantics from RGB values. */
+export type MaterialMask = Uint8Array[];
+
 /**
  * Base tile/sprite size in pixels (highest resolution at 100% zoom)
  */
@@ -89,6 +95,9 @@ export interface Tile {
   /** Optional render material for terminal-native effects such as OSC-4
    * palette cycling. This is asset metadata, not inferred from pixel colors. */
   material?: 'water' | 'foliage' | 'specular' | 'fire';
+  /** Optional per-pixel material ownership for multi-material tiles. When
+   * present it takes precedence over the tile-wide `material` field. */
+  materialMask?: MaterialMask;
   animated?: boolean;
   animationFrames?: PixelGrid[];  // For animated tiles at base resolution
   // Pre-computed resolutions (keys are sizes: "26", "51", etc.)

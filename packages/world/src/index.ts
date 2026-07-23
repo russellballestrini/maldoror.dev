@@ -46,6 +46,11 @@ export {
   type CanalTownTerrainConfig,
   type CanalTownTileProviderConfig,
 } from './tiles/canal-town-tile-provider.js';
+export {
+  CanalMaterialCompositor,
+  type CanalMaterialCompositorConfig,
+  type WaterClassifier,
+} from './tiles/canal-material-compositor.js';
 
 // Procedural tile generation
 export {

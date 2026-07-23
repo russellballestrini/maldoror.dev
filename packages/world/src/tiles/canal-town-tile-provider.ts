@@ -7,6 +7,7 @@ import type {
 } from '@maldoror/protocol';
 import { getTileById } from './base-tiles.js';
 import { TileProvider, type TileProviderConfig } from './tile-provider.js';
+import type { CanalMaterialCompositor } from './canal-material-compositor.js';
 
 export type CanalPlacementRole =
   | 'building'
@@ -42,6 +43,7 @@ export interface CanalTownTileProviderConfig extends TileProviderConfig {
   terrain: CanalTownTerrainConfig;
   blockSize?: number;
   blockCacheSize?: number;
+  materialCompositor?: CanalMaterialCompositor;
 }
 
 interface Placement {
@@ -71,6 +73,7 @@ export class CanalTownTileProvider extends TileProvider {
   private readonly maxCachedBlocks: number;
   private readonly terrain: CanalTownTerrainConfig;
   private readonly bridgeDeckTiles: Tile[];
+  private readonly materialCompositor?: CanalMaterialCompositor;
   private readonly rolePools = new Map<CanalPlacementRole, CanalTownAsset[]>();
   private readonly blockCache = new Map<string, CachedBlock>();
 
@@ -80,6 +83,7 @@ export class CanalTownTileProvider extends TileProvider {
     this.blockSize = Math.max(14, config.blockSize ?? 16);
     this.maxCachedBlocks = Math.max(16, config.blockCacheSize ?? 128);
     this.terrain = config.terrain;
+    this.materialCompositor = config.materialCompositor;
     this.bridgeDeckTiles = config.terrain.water.flatMap((id) => {
       const tile = getTileById(id);
       return tile ? [{ ...tile, id: `${tile.id}__bridge-deck`, walkable: true }] : [];
@@ -95,19 +99,13 @@ export class CanalTownTileProvider extends TileProvider {
   }
 
   override getTile(tileX: number, tileY: number): Tile | null {
-    const lx = positiveMod(tileX, this.blockSize);
-    const ly = positiveMod(tileY, this.blockSize);
+    const terrainCell = this.terrainCellAt(tileX, tileY);
+    const { lx, ly, canalWidth, bridgeY, horizontalStart, horizontalEnd } = terrainCell;
 
     // Crossing waterways divide each neighbourhood into readable waterfront
     // islands. The 24-tile cadence is larger than a normal viewport, while the
     // paired bridges keep the infinite network traversable in both axes.
-    const canalWidth = this.canalWidthAt(tileY);
-    const bridgeY = Math.floor(this.blockSize / 2);
-    const horizontalWidth = this.horizontalCanalWidthAt(tileX);
-    const horizontalStart = bridgeY - Math.floor(horizontalWidth / 2);
-    const horizontalEnd = horizontalStart + horizontalWidth - 1;
-    const verticalWater = lx < canalWidth;
-    const horizontalWater = ly >= horizontalStart && ly <= horizontalEnd;
+    const { verticalWater, horizontalWater } = terrainCell;
     const eastWestBridge = verticalWater && ly >= bridgeY - 1 && ly <= bridgeY + 1;
     const northSouthBridge = horizontalWater && lx >= 13 && lx <= 15;
     // (0,0) is the canonical login origin. Give it a one-off, three-tile-wide
@@ -121,7 +119,16 @@ export class CanalTownTileProvider extends TileProvider {
     if (bridgeDeck) {
       const deck = this.pickBridgeDeck(tileX, tileY);
       if (deck) return deck;
-    } else if (verticalWater || horizontalWater) {
+    }
+
+    const transition = this.materialCompositor?.getTransitionTile(
+      tileX,
+      tileY,
+      (x, y) => this.terrainCellAt(x, y).underlyingWater,
+    );
+    if (transition) return transition;
+
+    if (verticalWater || horizontalWater) {
       return this.pickTerrain(this.terrain.water, tileX, tileY, 'water') ?? super.getTile(tileX, tileY);
     }
 
@@ -154,10 +161,20 @@ export class CanalTownTileProvider extends TileProvider {
     return this.getProceduralBlock(worldX, worldY).solid.has(positionKey(worldX, worldY));
   }
 
-  getCanalTownStats(): { assetCount: number; cachedBlocks: number; blockSize: number } {
+  getCanalTownStats(): {
+    assetCount: number;
+    cachedBlocks: number;
+    blockSize: number;
+    cachedMaterialTransitions: number;
+  } {
     const assets = new Set<string>();
     for (const pool of this.rolePools.values()) for (const asset of pool) assets.add(asset.id);
-    return { assetCount: assets.size, cachedBlocks: this.blockCache.size, blockSize: this.blockSize };
+    return {
+      assetCount: assets.size,
+      cachedBlocks: this.blockCache.size,
+      blockSize: this.blockSize,
+      cachedMaterialTransitions: this.materialCompositor?.getStats().cachedTiles ?? 0,
+    };
   }
 
   override destroy(): void {
@@ -188,6 +205,39 @@ export class CanalTownTileProvider extends TileProvider {
   private horizontalCanalWidthAt(worldX: number): number {
     const phase = (worldX - (this.seed32 % 31)) / 6.5;
     return Math.sin(phase) > 0.4 ? 6 : 5;
+  }
+
+  private terrainCellAt(tileX: number, tileY: number): {
+    lx: number;
+    ly: number;
+    canalWidth: number;
+    bridgeY: number;
+    horizontalStart: number;
+    horizontalEnd: number;
+    verticalWater: boolean;
+    horizontalWater: boolean;
+    underlyingWater: boolean;
+  } {
+    const lx = positiveMod(tileX, this.blockSize);
+    const ly = positiveMod(tileY, this.blockSize);
+    const canalWidth = this.canalWidthAt(tileY);
+    const bridgeY = Math.floor(this.blockSize / 2);
+    const horizontalWidth = this.horizontalCanalWidthAt(tileX);
+    const horizontalStart = bridgeY - Math.floor(horizontalWidth / 2);
+    const horizontalEnd = horizontalStart + horizontalWidth - 1;
+    const verticalWater = lx < canalWidth;
+    const horizontalWater = ly >= horizontalStart && ly <= horizontalEnd;
+    return {
+      lx,
+      ly,
+      canalWidth,
+      bridgeY,
+      horizontalStart,
+      horizontalEnd,
+      verticalWater,
+      horizontalWater,
+      underlyingWater: verticalWater || horizontalWater,
+    };
   }
 
   private pickTerrain(ids: string[], x: number, y: number, salt: string): Tile | null {

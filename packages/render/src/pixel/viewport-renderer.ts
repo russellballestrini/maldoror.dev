@@ -129,6 +129,8 @@ export class ViewportRenderer {
   // Performance: Cache scaled frames to avoid repeated scaling
   private scaledFrameCache: Map<string, PixelGrid> = new Map();
   private scaledFrameCacheOrder: string[] = []; // LRU order tracking
+  private scaledMaterialMaskCache: Map<string, Uint8Array[]> = new Map();
+  private scaledMaterialMaskCacheOrder: string[] = [];
   private readonly MAX_CACHE_SIZE = 500; // Max cached frames to prevent memory explosion
   private lastCacheClearSize: number = 0;
   // Performance: Reused frame buffer — allocating W*H pixel rows every frame
@@ -481,6 +483,14 @@ export class ViewportRenderer {
             ? `tile:${tile.id}:${Math.floor(tick / 15) % (tile.animationFrames?.length ?? 1)}`
             : `tile:${tile.id}`;
           const scaledPixels = this.scaleFrame(tilePixels, this.tileRenderSize, this.tileRenderSize, frameId);
+          const scaledMaterialMask = tile.materialMask
+            ? this.scaleMaterialMask(
+                tile.materialMask,
+                this.tileRenderSize,
+                this.tileRenderSize,
+                frameId,
+              )
+            : undefined;
 
           // Calculate screen position with rotation
           // World pixel position of tile center
@@ -512,7 +522,10 @@ export class ViewportRenderer {
                 // merely a material flag. Screen-space phase fields repaint
                 // the entire canal when the camera scrolls; world anchoring
                 // lets the terminal codec shift those indexed cells intact.
-                materialGrid[bufferY]![bufferX] = tile.material === 'water'
+                const isWater = scaledMaterialMask
+                  ? ((scaledMaterialMask[py]?.[px] ?? 0) & 1) === 1
+                  : tile.material === 'water';
+                materialGrid[bufferY]![bufferX] = isWater
                   ? materialPhase(
                       Math.floor((worldTileX * this.tileRenderSize + px) / 2),
                       Math.floor((worldTileY * this.tileRenderSize + py) / 4),
@@ -684,6 +697,8 @@ export class ViewportRenderer {
     if (this.lastCacheClearSize !== this.tileRenderSize) {
       this.scaledFrameCache.clear();
       this.scaledFrameCacheOrder = [];
+      this.scaledMaterialMaskCache.clear();
+      this.scaledMaterialMaskCacheOrder = [];
       this.lastCacheClearSize = this.tileRenderSize;
     }
 
@@ -717,6 +732,41 @@ export class ViewportRenderer {
   /** Scale a frame without caching using area/bilinear reconstruction. */
   private scaleFrameUncached(frame: PixelGrid, targetWidth: number, targetHeight: number): PixelGrid {
     return resamplePixelGrid(frame, targetWidth, targetHeight);
+  }
+
+  /** Material ownership is categorical, so nearest-neighbour scaling is
+   * deliberate even though colour uses area/bilinear reconstruction. */
+  private scaleMaterialMask(
+    mask: Uint8Array[],
+    targetWidth: number,
+    targetHeight: number,
+    frameId: string,
+  ): Uint8Array[] {
+    const sourceHeight = mask.length;
+    const sourceWidth = mask[0]?.length ?? 0;
+    if (sourceWidth === targetWidth && sourceHeight === targetHeight) return mask;
+
+    const cacheKey = `${frameId}:material:${targetWidth}x${targetHeight}`;
+    const cached = this.scaledMaterialMaskCache.get(cacheKey);
+    if (cached) return cached;
+
+    const result = Array.from({ length: targetHeight }, (_, y) => {
+      const sourceY = Math.min(sourceHeight - 1, Math.floor((y + 0.5) * sourceHeight / targetHeight));
+      const row = new Uint8Array(targetWidth);
+      for (let x = 0; x < targetWidth; x++) {
+        const sourceX = Math.min(sourceWidth - 1, Math.floor((x + 0.5) * sourceWidth / targetWidth));
+        row[x] = mask[sourceY]?.[sourceX] ?? 0;
+      }
+      return row;
+    });
+
+    while (this.scaledMaterialMaskCacheOrder.length >= this.MAX_CACHE_SIZE) {
+      const oldestKey = this.scaledMaterialMaskCacheOrder.shift();
+      if (oldestKey) this.scaledMaterialMaskCache.delete(oldestKey);
+    }
+    this.scaledMaterialMaskCache.set(cacheKey, result);
+    this.scaledMaterialMaskCacheOrder.push(cacheKey);
+    return result;
   }
 
   /**

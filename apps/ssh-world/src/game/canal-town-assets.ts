@@ -8,6 +8,7 @@ import type {
   CanalTownAsset,
   CanalTownTerrainConfig,
 } from '@maldoror/world';
+import { CanalMaterialCompositor } from '@maldoror/world';
 
 interface ManifestAsset {
   id: string;
@@ -44,6 +45,7 @@ export interface LoadedCanalTownKit {
   blockSize: number;
   defaultAvatar: Sprite;
   manifestPath: string;
+  materialCompositor: CanalMaterialCompositor;
 }
 
 const VALID_ROLES = new Set<CanalPlacementRole>([
@@ -54,7 +56,10 @@ const VALID_ROLES = new Set<CanalPlacementRole>([
 /** Load and rasterize the chosen kit once per worker. Each asset becomes one
  * shared multi-tile sprite at a single bounded source resolution; render-time scaling
  * supplies zoom levels without an object-heavy in-memory pyramid. */
-export async function loadCanalTownKit(manifestOverride?: string): Promise<LoadedCanalTownKit> {
+export async function loadCanalTownKit(
+  manifestOverride?: string,
+  worldSeed: bigint = 0n,
+): Promise<LoadedCanalTownKit> {
   const manifestPath = findManifestPath(manifestOverride);
   const manifest = parseManifest(manifestPath);
   const manifestDir = path.dirname(manifestPath);
@@ -69,6 +74,18 @@ export async function loadCanalTownKit(manifestOverride?: string): Promise<Loade
     const imagePath = resolveAssetPath(manifestDir, entry.file);
     terrainTiles.push(...await loadTerrainMasterVariants(imagePath, manifest.sourceTileSize, entry));
   }
+
+  const terrainById = new Map(terrainTiles.map((tile) => [tile.id, tile]));
+  const resolveTerrain = (ids: readonly string[]): Tile[] =>
+    ids.map((id) => terrainById.get(id)).filter((tile): tile is Tile => Boolean(tile));
+  const materialCompositor = new CanalMaterialCompositor({
+    worldSeed,
+    water: resolveTerrain(manifest.terrain.water),
+    paving: resolveTerrain(manifest.terrain.paving),
+    edge: resolveTerrain([...new Set(Object.values(manifest.terrain.curb).filter(Boolean))] as string[]),
+    maxCachedTiles: 96,
+    variantPeriodTiles: 4,
+  });
 
   for (const entry of manifest.assets) {
     const imagePath = resolveAssetPath(manifestDir, entry.file);
@@ -94,6 +111,7 @@ export async function loadCanalTownKit(manifestOverride?: string): Promise<Loade
     blockSize: manifest.blockSize,
     defaultAvatar,
     manifestPath,
+    materialCompositor,
   };
 }
 

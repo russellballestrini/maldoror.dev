@@ -4,6 +4,7 @@ import {
   CanalTownTileProvider,
   type CanalTownAsset,
 } from '../tiles/canal-town-tile-provider.js';
+import { CanalMaterialCompositor } from '../tiles/canal-material-compositor.js';
 
 function sprite(color: RGB): BuildingSprite {
   return {
@@ -32,6 +33,11 @@ function provider(seed = 42n): CanalTownTileProvider {
   });
 }
 
+function texture(id: string, color: RGB) {
+  const pixels = Array.from({ length: 8 }, () => Array(8).fill(color));
+  return { id, name: id, pixels, resolutions: { '8': pixels }, walkable: id !== 'water' };
+}
+
 describe('CanalTownTileProvider', () => {
   it('continues canals and walkable bridge decks across signed block coordinates', () => {
     const world = provider();
@@ -56,5 +62,29 @@ describe('CanalTownTileProvider', () => {
     expect(a.isBuildingAt(9, 8)).toBe(true);
     expect(a.getBuildingTileAt(3, 12)).not.toBeNull();
     expect(a.isBuildingAt(3, 12)).toBe(false);
+  });
+
+  it('uses the shared material compositor at canal boundaries without changing bridge decks', () => {
+    const materialCompositor = new CanalMaterialCompositor({
+      worldSeed: 42n,
+      water: [texture('water', { r: 15, g: 105, b: 145 })],
+      paving: [texture('paving', { r: 205, g: 185, b: 145 })],
+      edge: [texture('edge', { r: 135, g: 125, b: 105 })],
+      maxCachedTiles: 16,
+    });
+    const world = new CanalTownTileProvider({
+      worldSeed: 42n,
+      assets,
+      terrain: { water: ['water'], paving: ['stone'], garden: ['grass'], curb: {} },
+      blockSize: 24,
+      materialCompositor,
+    });
+
+    const transition = Array.from({ length: 24 }, (_, x) => world.getTile(x, 4))
+      .find((tile) => tile?.id.startsWith('canal-material-blend:'));
+    expect(transition?.materialMask).toBeDefined();
+    expect(materialCompositor.getStats().cachedTiles).toBeGreaterThan(0);
+    expect(world.getTile(0, 0)?.id).toContain('bridge-deck');
+    expect(world.getTile(0, 0)?.materialMask).toBeUndefined();
   });
 });

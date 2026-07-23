@@ -357,6 +357,7 @@ export class WorkerSession {
           assets: this.canalTownKit.assets,
           terrain: this.canalTownKit.terrain,
           blockSize: this.canalTownKit.blockSize,
+          materialCompositor: this.canalTownKit.materialCompositor,
         })
       : new TileProvider({ worldSeed: this.worldSeed, chunkCacheSize: 64 });
     // The generated canal-town is the production world. MALDOROR_DISTRICT is
