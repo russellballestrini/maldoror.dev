@@ -125,25 +125,27 @@ on the next safe full service restart after existing connections drain.
 
 ## 6. Measured production result
 
-Real `TERM=xterm-ghostty` SSH capture at 160x46, July 23:
+Real `TERM=xterm-ghostty` SSH capture at 160x46 from deployed `v3df6d44`,
+July 23:
 
 | condition | measured terminal bytes |
 |---|---:|
-| initial synchronized cell frame | 270,069 |
-| six seconds after the initial frame, idle | 16,133 |
-| idle frame distribution | 89 x 157 B palette, 2 x 1,080 B HUD |
-| five seconds after one `d` input | 16,748 |
-| extra traffic vs equivalent idle capture | 5,130 |
+| startup plus first synchronized frame | 305,971 |
+| subsequent six seconds including `ddssaa` | 6,277 |
+| bytes after movement input | 1,919 |
+| synchronized frames | 18 |
 
-The idle capture contains zero camera scroll/catch-up operations after its first
-frame. `codec-bench.mjs` independently reports a zero-byte ordinary idle delta,
-321 bytes for a 0.2-tile actor update, and 1,181/315 bytes for one-cell x/y
-camera translations.
+`codec-bench.mjs` independently reports a zero-byte ordinary idle delta, 321
+bytes for a 0.2-tile actor update, and 1,181/315 bytes for one-cell x/y camera
+translations. After the live session populated its renderer caches, the service
+cgroup was approximately 733 MiB current/peak with zero swap, inside its 1.6
+GiB envelope.
 
-The honest screenshot is
-`tools/render-sim/out/live-canal-town-accepted-faithful.png`. It was produced by
-replaying the actual SSH byte stream through `faithful-render.mjs`, including
-palette changes, margins, scroll operations, REP, DCH, and ICH.
+The raw stream and honest screenshot are retained under
+`/mnt/donto-data/donto-resources/maldoror/rendering-research/track-4-world-composition/arrival-v3df6d44/`.
+The screenshot was produced by replaying the actual SSH byte stream through
+`faithful-render.mjs`, including palette changes, margins, scroll operations,
+REP, DCH, and ICH. This is direction evidence, not physical operator acceptance.
 
 ## 7. Verification loop
 

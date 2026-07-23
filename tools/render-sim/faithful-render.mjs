@@ -189,7 +189,14 @@ for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
   const code = cel.ch.codePointAt(0);
   if (cel.ch === '▀') fill(px, py, CW, CH / 2, cel.fg ?? DEF);
   else if (OCTMAP.has(code)) { const pat = OCTMAP.get(code);
-    for (let r = 0; r < 4; r++) for (let c2 = 0; c2 < 2; c2++) if (pat & (1 << (r * 2 + c2))) fill(px + c2 * (CW / 2), py + Math.round(r * CH / 4), Math.ceil(CW / 2), Math.ceil(CH / 4), cfg); }
+    for (let r = 0; r < 4; r++) for (let c2 = 0; c2 < 2; c2++) if (pat & (1 << (r * 2 + c2))) {
+      // Ghostty cells are commonly odd-sized in device pixels. Integer cell
+      // partitions must cover each pixel exactly once; writing a Node Buffer
+      // at fractional indices silently drops half of every octant column.
+      const x0 = Math.round(c2 * CW / 2), x1 = Math.round((c2 + 1) * CW / 2);
+      const y0 = Math.round(r * CH / 4), y1 = Math.round((r + 1) * CH / 4);
+      fill(px + x0, py + y0, x1 - x0, y1 - y0, cfg);
+    } }
   else if (code >= 0x2580 && code <= 0x259F) fill(px, py, CW, CH, cfg);
 }
 await sharp(img, { raw: { width: W, height: H, channels: 3 } }).png().toFile(out);
