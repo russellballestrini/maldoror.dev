@@ -225,9 +225,19 @@ export class WorkerSession {
 
     // Handle new vs returning user
     if (!this.userId) {
-      // New user - run onboarding
+      // New user - run onboarding.
+      // Pause the (not-yet-created) input router so handleInput() forwards
+      // keystrokes to the stream, where OnboardingFlow reads them via
+      // stream.on('data'). Without this, inputPaused=false + inputRouter=null
+      // means every keystroke is silently dropped and the name prompt hangs.
+      this.inputPaused = true;
       const onboarding = new OnboardingFlow(this.stream, this.fingerprint);
-      const result = await onboarding.run();
+      let result: Awaited<ReturnType<OnboardingFlow['run']>>;
+      try {
+        result = await onboarding.run();
+      } finally {
+        this.inputPaused = false;
+      }
 
       if (!result) {
         // User quit during onboarding
