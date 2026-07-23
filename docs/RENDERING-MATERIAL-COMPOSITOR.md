@@ -68,3 +68,10 @@ compressed). The production manifest owns its dimensions and the loader fails
 closed if the atlas shape is wrong or any combination is missing. Water and
 garden atlases remain research work; transition tiles still use the continuous
 material compositor above.
+
+## Garden/paving transition addendum — 2026-07-23
+
+Garden and soil masses now use the same shared-corner reconstruction through
+`getGardenTransitionTile`. Their linear-light paving/garden blend has a
+separate cache namespace and never writes the water material mask. Water is
+resolved first, so a land-use transition cannot paint over a canal edge.

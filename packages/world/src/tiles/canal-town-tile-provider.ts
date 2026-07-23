@@ -9,6 +9,7 @@ import { getTileById } from './base-tiles.js';
 import { TileProvider, type TileProviderConfig } from './tile-provider.js';
 import type { CanalMaterialCompositor } from './canal-material-compositor.js';
 import type { CornerCodedTileSet } from './corner-coded-tile-set.js';
+import { CanalTownWorldField } from './canal-town-world-field.js';
 
 export type CanalPlacementRole =
   | 'building'
@@ -50,6 +51,7 @@ export interface CanalTownTileProviderConfig extends TileProviderConfig {
     water?: CornerCodedTileSet;
     garden?: CornerCodedTileSet;
   };
+  worldField?: CanalTownWorldField;
 }
 
 interface Placement {
@@ -68,10 +70,10 @@ interface CachedBlock {
  * Infinite canal-neighbourhood world.
  *
  * The asset manifest supplies visual vocabulary and collision footprints;
- * this class only supplies stable urban grammar. Every block has waterways,
- * quay edges, bridge crossings, dense building fronts, garden punctuation,
- * and street furniture. Signed block coordinates work identically, so there
- * is no finite painted-district boundary.
+ * this class supplies a continuous hierarchical field and constraint-aware
+ * asset groups. Blocks are cache units only: they do not stamp visual content.
+ * Signed coordinates work identically, so there is no finite painted-district
+ * boundary.
  */
 export class CanalTownTileProvider extends TileProvider {
   private readonly seed32: number;
@@ -81,6 +83,7 @@ export class CanalTownTileProvider extends TileProvider {
   private readonly bridgeDeckTiles: Tile[];
   private readonly materialCompositor?: CanalMaterialCompositor;
   private readonly cornerTerrain: CanalTownTileProviderConfig['cornerTerrain'];
+  private readonly worldField: CanalTownWorldField;
   private readonly rolePools = new Map<CanalPlacementRole, CanalTownAsset[]>();
   private readonly blockCache = new Map<string, CachedBlock>();
 
@@ -92,6 +95,7 @@ export class CanalTownTileProvider extends TileProvider {
     this.terrain = config.terrain;
     this.materialCompositor = config.materialCompositor;
     this.cornerTerrain = config.cornerTerrain;
+    this.worldField = config.worldField ?? new CanalTownWorldField(config.worldSeed);
     this.bridgeDeckTiles = config.terrain.water.flatMap((id) => {
       const tile = getTileById(id);
       return tile ? [{ ...tile, id: `${tile.id}__bridge-deck`, walkable: true }] : [];
@@ -107,23 +111,8 @@ export class CanalTownTileProvider extends TileProvider {
   }
 
   override getTile(tileX: number, tileY: number): Tile | null {
-    const terrainCell = this.terrainCellAt(tileX, tileY);
-    const { lx, ly, canalWidth, bridgeY, horizontalStart, horizontalEnd } = terrainCell;
-
-    // Crossing waterways divide each neighbourhood into readable waterfront
-    // islands. The 24-tile cadence is larger than a normal viewport, while the
-    // paired bridges keep the infinite network traversable in both axes.
-    const { verticalWater, horizontalWater } = terrainCell;
-    const eastWestBridge = verticalWater && ly >= bridgeY - 1 && ly <= bridgeY + 1;
-    const northSouthBridge = horizontalWater && lx >= 13 && lx <= 15;
-    // (0,0) is the canonical login origin. Give it a one-off, three-tile-wide
-    // arrival causeway that crosses the origin canal and reaches the east quay,
-    // so the exact reset point is intentional, walkable, and never spawn-fixed
-    // to some nearby coordinate. This is a landmark, not part of the repeating
-    // block cadence.
-    const originArrivalBridge = tileY >= -1 && tileY <= 1 &&
-      tileX >= -1 && tileX <= canalWidth;
-    const bridgeDeck = eastWestBridge || northSouthBridge || originArrivalBridge;
+    const terrainCell = this.worldField.sample(tileX, tileY);
+    const bridgeDeck = terrainCell.isBridge;
     if (bridgeDeck) {
       const deck = this.pickBridgeDeck(tileX, tileY);
       if (deck) return deck;
@@ -132,23 +121,27 @@ export class CanalTownTileProvider extends TileProvider {
     const transition = this.materialCompositor?.getTransitionTile(
       tileX,
       tileY,
-      (x, y) => this.terrainCellAt(x, y).underlyingWater,
+      (x, y) => this.worldField.sample(x, y).isWater,
     );
     if (transition) return transition;
 
-    if (verticalWater || horizontalWater) {
+    if (terrainCell.isWater) {
       return this.cornerTerrain?.water?.getTile(tileX, tileY) ??
         this.pickTerrain(this.terrain.water, tileX, tileY, 'water') ??
         super.getTile(tileX, tileY);
     }
 
-    const curbKey = this.curbKey(lx, ly, tileY, horizontalStart, horizontalEnd);
-    if (!bridgeDeck && curbKey) {
-      const curbId = this.terrain.curb[curbKey];
-      if (curbId) {
-        const curb = getTileById(curbId);
-        if (curb) return curb;
-      }
+    const gardenTransition = this.materialCompositor?.getGardenTransitionTile(
+      tileX,
+      tileY,
+      (x, y) => this.worldField.sample(x, y).isGarden,
+    );
+    if (gardenTransition) return gardenTransition;
+
+    if (terrainCell.isGarden) {
+      return this.cornerTerrain?.garden?.getTile(tileX, tileY) ??
+        this.pickTerrain(this.terrain.garden, tileX, tileY, 'garden') ??
+        super.getTile(tileX, tileY);
     }
 
     // Keep paths visually continuous; greenery comes from layered, shadowed
@@ -165,12 +158,17 @@ export class CanalTownTileProvider extends TileProvider {
   ): BuildingTileData | null {
     const authored = super.getBuildingTileAt(worldX, worldY, direction);
     if (authored) return authored;
-    return this.getProceduralBlock(worldX, worldY).overlays.get(positionKey(worldX, worldY)) ?? null;
+    for (const block of this.getProceduralBlocksNear(worldX, worldY)) {
+      const tile = block.overlays.get(positionKey(worldX, worldY));
+      if (tile) return tile;
+    }
+    return null;
   }
 
   override isBuildingAt(worldX: number, worldY: number): boolean {
     if (super.isBuildingAt(worldX, worldY)) return true;
-    return this.getProceduralBlock(worldX, worldY).solid.has(positionKey(worldX, worldY));
+    return this.getProceduralBlocksNear(worldX, worldY)
+      .some((block) => block.solid.has(positionKey(worldX, worldY)));
   }
 
   getCanalTownStats(): {
@@ -178,6 +176,8 @@ export class CanalTownTileProvider extends TileProvider {
     cachedBlocks: number;
     blockSize: number;
     cachedMaterialTransitions: number;
+    cachedOverlayTiles: number;
+    cachedSolidTiles: number;
   } {
     const assets = new Set<string>();
     for (const pool of this.rolePools.values()) for (const asset of pool) assets.add(asset.id);
@@ -186,70 +186,14 @@ export class CanalTownTileProvider extends TileProvider {
       cachedBlocks: this.blockCache.size,
       blockSize: this.blockSize,
       cachedMaterialTransitions: this.materialCompositor?.getStats().cachedTiles ?? 0,
+      cachedOverlayTiles: [...this.blockCache.values()].reduce((total, block) => total + block.overlays.size, 0),
+      cachedSolidTiles: [...this.blockCache.values()].reduce((total, block) => total + block.solid.size, 0),
     };
   }
 
   override destroy(): void {
     this.blockCache.clear();
     super.destroy();
-  }
-
-  private curbKey(
-    lx: number,
-    ly: number,
-    worldY: number,
-    horizontalStart: number,
-    horizontalEnd: number,
-  ): keyof CanalTownTerrainConfig['curb'] | null {
-    if (lx === this.canalWidthAt(worldY)) return 'w';
-    if (lx === this.blockSize - 1) return 'e';
-    if (ly === horizontalStart - 1) return 'n';
-    if (ly === horizontalEnd + 1) return 's';
-    return null;
-  }
-
-  private canalWidthAt(worldY: number): number {
-    const phase = (worldY + (this.seed32 % 29)) / 5.5;
-    const wave = Math.sin(phase) + Math.sin(phase * 0.43) * 0.55;
-    return wave > 0.55 ? 7 : wave < -0.55 ? 5 : 6;
-  }
-
-  private horizontalCanalWidthAt(worldX: number): number {
-    const phase = (worldX - (this.seed32 % 31)) / 6.5;
-    return Math.sin(phase) > 0.4 ? 6 : 5;
-  }
-
-  private terrainCellAt(tileX: number, tileY: number): {
-    lx: number;
-    ly: number;
-    canalWidth: number;
-    bridgeY: number;
-    horizontalStart: number;
-    horizontalEnd: number;
-    verticalWater: boolean;
-    horizontalWater: boolean;
-    underlyingWater: boolean;
-  } {
-    const lx = positiveMod(tileX, this.blockSize);
-    const ly = positiveMod(tileY, this.blockSize);
-    const canalWidth = this.canalWidthAt(tileY);
-    const bridgeY = Math.floor(this.blockSize / 2);
-    const horizontalWidth = this.horizontalCanalWidthAt(tileX);
-    const horizontalStart = bridgeY - Math.floor(horizontalWidth / 2);
-    const horizontalEnd = horizontalStart + horizontalWidth - 1;
-    const verticalWater = lx < canalWidth;
-    const horizontalWater = ly >= horizontalStart && ly <= horizontalEnd;
-    return {
-      lx,
-      ly,
-      canalWidth,
-      bridgeY,
-      horizontalStart,
-      horizontalEnd,
-      verticalWater,
-      horizontalWater,
-      underlyingWater: verticalWater || horizontalWater,
-    };
   }
 
   private pickTerrain(ids: string[], x: number, y: number, salt: string): Tile | null {
@@ -286,6 +230,21 @@ export class CanalTownTileProvider extends TileProvider {
     return block;
   }
 
+  private getProceduralBlocksNear(worldX: number, worldY: number): CachedBlock[] {
+    const blockX = floorDiv(worldX, this.blockSize);
+    const blockY = floorDiv(worldY, this.blockSize);
+    const blocks: CachedBlock[] = [];
+    for (let offsetY = -1; offsetY <= 1; offsetY++) {
+      for (let offsetX = -1; offsetX <= 1; offsetX++) {
+        blocks.push(this.getProceduralBlock(
+          (blockX + offsetX) * this.blockSize,
+          (blockY + offsetY) * this.blockSize,
+        ));
+      }
+    }
+    return blocks;
+  }
+
   private buildBlock(blockX: number, blockY: number): CachedBlock {
     const originX = blockX * this.blockSize;
     const originY = blockY * this.blockSize;
@@ -297,51 +256,96 @@ export class CanalTownTileProvider extends TileProvider {
       randomState ^= randomState << 5;
       return randomState >>> 0;
     };
-    const place = (role: CanalPlacementRole, localX: number, localY: number): void => {
+    const place = (
+      role: CanalPlacementRole,
+      localX: number,
+      localY: number,
+      authoredOverhang = false,
+    ): void => {
       const pool = this.rolePools.get(role);
       if (!pool || pool.length === 0) return;
-      const asset = pool[nextRandom() % pool.length]!;
-      placements.push({ asset, anchorX: originX + localX, anchorY: originY + localY });
+      const anchorX = originX + localX;
+      const anchorY = originY + localY;
+      const start = nextRandom() % pool.length;
+      for (let offset = 0; offset < pool.length; offset++) {
+        const asset = pool[(start + offset) % pool.length]!;
+        if (!this.assetFits(role, asset, anchorX, anchorY, authoredOverhang)) continue;
+        placements.push({ asset, anchorX, anchorY });
+        return;
+      }
     };
 
-    // Two dense rows frame the horizontal canal. Large façades read at terminal
-    // scale; plants and signs overlap their feet to remove the cut-out look.
-    for (const x of [9, 15, 21]) {
-      place('building', x, 8);
-      place('building', x, this.blockSize - 3);
-      place('quay-detail', x - 2, 9);
-      place('street-small', x + 2, 9);
-      place('foliage', x - 2, this.blockSize - 3);
-      place('street-small', x + 2, this.blockSize - 3);
-    }
+    // Candidate anchors come from a world-space priority field. Keeping only a
+    // local maximum in each neighbourhood is an unbounded blue-noise analogue:
+    // cache block borders cannot form arrays or duplicate anchors.
+    const spacing = 4;
+    const firstCellX = floorDiv(originX, spacing) - 1;
+    const firstCellY = floorDiv(originY, spacing) - 1;
+    const lastCellX = floorDiv(originX + this.blockSize - 1, spacing) + 1;
+    const lastCellY = floorDiv(originY + this.blockSize - 1, spacing) + 1;
+    for (let cellY = firstCellY; cellY <= lastCellY; cellY++) {
+      for (let cellX = firstCellX; cellX <= lastCellX; cellX++) {
+        const priority = this.hash(cellX, cellY, stringHash('placement-priority'));
+        let wins = true;
+        for (let neighbourY = cellY - 1; neighbourY <= cellY + 1 && wins; neighbourY++) {
+          for (let neighbourX = cellX - 1; neighbourX <= cellX + 1; neighbourX++) {
+            if (neighbourX === cellX && neighbourY === cellY) continue;
+            if (neighbourX !== cellX && neighbourY !== cellY) continue;
+            if (this.hash(neighbourX, neighbourY, stringHash('placement-priority')) > priority) {
+              wins = false;
+              break;
+            }
+          }
+        }
+        if (!wins) continue;
+        const anchorX = cellX * spacing + this.hash(cellX, cellY, stringHash('placement-x')) % spacing;
+        const anchorY = cellY * spacing + this.hash(cellX, cellY, stringHash('placement-y')) % spacing;
+        if (anchorX < originX || anchorX >= originX + this.blockSize || anchorY < originY || anchorY >= originY + this.blockSize) continue;
+        const sample = this.worldField.sample(anchorX, anchorY);
+        if (Math.hypot(anchorX, anchorY) < 5 || sample.isPlaza) continue;
 
-    const bridgeY = Math.floor(this.blockSize / 2);
-    place('bridge', 3, bridgeY);
-    if (blockX === 0 && blockY === 0) place('bridge', 3, 0);
-    place('bridge-vertical', 14, bridgeY + 5);
-    place('water', 2, 5);
-    place('water', 3, 20);
-    for (const y of [4, 8, 17, 21]) place('water-detail', 2, y);
-    for (const x of [9, 19]) place('water-detail', x, bridgeY);
-    place('edge', 3, 8);
-    place('edge', 3, 19);
-
-    // Layered vegetation hugs both quays. The central north/south bridge stays
-    // a clear walking ribbon, with small punctuation instead of an empty plaza.
-    for (const y of [5, 8, 18, 22]) {
-      place('foliage', 8, y);
-      place('foliage', this.blockSize - 2, y);
+        const localX = anchorX - originX;
+        const localY = anchorY - originY;
+        if (sample.isWater) {
+          if (!sample.isBridge && priority % 3 === 0) place('water-detail', localX, localY);
+          continue;
+        }
+        if (sample.isGarden) {
+          place('foliage', localX, localY);
+          if (priority % 4 === 0) place('quay-detail', localX + 1, localY);
+          continue;
+        }
+        if (sample.routeDistance <= 1.8) {
+          place(priority % 5 === 0 ? 'street-large' : 'street-small', localX, localY);
+        } else if (sample.waterDistance <= 7) {
+          place(priority % 4 === 0 ? 'quay-detail' : 'building', localX, localY);
+        } else if (sample.routeDistance <= 10) {
+          place(priority % 5 === 0 ? 'foliage' : 'building', localX, localY);
+        }
+      }
     }
-    for (const y of [5, 8, 18, 22]) place('quay-detail', 8, y);
-    for (const x of [10, 18, 22]) {
-      place('quay-detail', x, 9);
-      place('quay-detail', x, 17);
+    if (blockX === 0 && blockY === 0) {
+      // The exact login origin is a deliberately authored landmark within the
+      // procedural hierarchy: a bridge, four enclosing façades, planted bank
+      // contacts, and an unobstructed east/west arrival axis.
+      let upperBridgeX = 0;
+      let deepestWater = Number.POSITIVE_INFINITY;
+      for (let x = -16; x <= 16; x++) {
+        const sample = this.worldField.sample(x, -10);
+        if (sample.isBridge && sample.waterDistance < deepestWater) {
+          upperBridgeX = x;
+          deepestWater = sample.waterDistance;
+        }
+      }
+      place('bridge', upperBridgeX, -10);
+      for (const [x, y] of [[-10, -5], [10, -5], [-10, 6], [10, 6]] as const) place('building', x, y, true);
+      for (const [x, y] of [[-6, -3], [6, -3], [-6, 4], [6, 4]] as const) place('foliage', x, y);
+      for (const [x, y] of [[-5, -2], [5, -2], [-5, 3], [5, 3]] as const) place('quay-detail', x, y);
+      place('street-small', -4, -3);
+      place('street-small', 4, 3);
+      place('street-large', -7, 0);
+      place('street-large', 7, 0);
     }
-    for (const [x, y] of [[10, 6], [14, 7], [19, 6], [10, 20], [15, 19], [20, 20]] as const) {
-      place('street-small', x, y);
-    }
-    place('street-large', 11, 7);
-    place('street-large', 20, 19);
 
     const overlays = new Map<string, BuildingTileData>();
     const solid = new Set<string>();
@@ -367,6 +371,44 @@ export class CanalTownTileProvider extends TileProvider {
     return { overlays, solid, accessedAt: Date.now() };
   }
 
+  private assetFits(
+    role: CanalPlacementRole,
+    asset: CanalTownAsset,
+    anchorX: number,
+    anchorY: number,
+    authoredOverhang = false,
+  ): boolean {
+    const anchor = this.worldField.sample(anchorX, anchorY);
+    if (role === 'bridge' || role === 'bridge-vertical') return anchor.isBridge;
+    if (role === 'water' || role === 'water-detail') return anchor.isWater && !anchor.isBridge;
+    if (anchor.isWater || anchor.isBridge || anchor.isPlaza) return false;
+
+    for (const [dx, dy] of asset.collision) {
+      const sample = this.worldField.sample(anchorX + dx, anchorY + dy);
+      if (sample.isWater || sample.isBridge || sample.isPlaza) return false;
+      if (role === 'building' && sample.routeDistance < 1.8) return false;
+    }
+
+    // Collision masks are intentionally independent, but opaque lower façade
+    // tiles still need semantic ground beneath them. Test the bottom two sprite
+    // rows so a tower cannot balance on a one-cell island or hang over water.
+    if (role === 'building' && !authoredOverhang) {
+      const offsetX = Math.floor(asset.sprite.width / 2);
+      const offsetY = asset.sprite.height - 1;
+      for (let tileY = Math.max(0, asset.sprite.height - 2); tileY < asset.sprite.height; tileY++) {
+        for (let tileX = 0; tileX < asset.sprite.width; tileX++) {
+          if (!asset.sprite.tiles[tileY]?.[tileX]) continue;
+          const sample = this.worldField.sample(
+            anchorX + tileX - offsetX,
+            anchorY + tileY - offsetY,
+          );
+          if (sample.isWater || sample.isBridge || sample.isPlaza || sample.routeDistance < 1.2) return false;
+        }
+      }
+    }
+    return true;
+  }
+
   private evictBlocks(): void {
     const oldest = [...this.blockCache.entries()]
       .sort((a, b) => a[1].accessedAt - b[1].accessedAt)
@@ -385,10 +427,6 @@ export class CanalTownTileProvider extends TileProvider {
 
 function positionKey(x: number, y: number): string {
   return `${x},${y}`;
-}
-
-function positiveMod(value: number, divisor: number): number {
-  return ((value % divisor) + divisor) % divisor;
 }
 
 function floorDiv(value: number, divisor: number): number {

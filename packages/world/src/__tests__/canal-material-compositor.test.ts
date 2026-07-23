@@ -17,6 +17,7 @@ function colorDelta(a: RGB, b: RGB): number {
 describe('CanalMaterialCompositor', () => {
   const water = texture('water', { r: 15, g: 105, b: 145 }, { r: 80, g: 175, b: 195 });
   const paving = texture('paving', { r: 205, g: 185, b: 145 }, { r: 235, g: 220, b: 180 });
+  const garden = texture('garden', { r: 74, g: 118, b: 62 }, { r: 132, g: 158, b: 78 });
   const edge = texture('edge', { r: 135, g: 125, b: 105 }, { r: 175, g: 165, b: 140 });
   const classify = (x: number): boolean => x < 0;
 
@@ -59,5 +60,25 @@ describe('CanalMaterialCompositor', () => {
       compositor.getTransitionTile(0, y, classify);
     }
     expect(compositor.getStats().cachedTiles).toBeLessThanOrEqual(8);
+  });
+
+  it('blends garden masses through the same bounded world-space cache', () => {
+    const compositor = new CanalMaterialCompositor({
+      worldSeed: 11n,
+      water: [water],
+      paving: [paving],
+      garden: [garden],
+      maxCachedTiles: 8,
+    });
+    const west = compositor.getGardenTransitionTile(-1, 0, classify)!;
+    const east = compositor.getGardenTransitionTile(0, 0, classify)!;
+    expect(west.id).toContain('garden-blend');
+    expect(west.walkable).toBe(true);
+    expect(east.walkable).toBe(true);
+    const seamMean = west.pixels.reduce((total, row, y) =>
+      total + colorDelta(row.at(-1) as RGB, east.pixels[y]![0] as RGB), 0) / west.pixels.length;
+    expect(seamMean).toBeLessThan(90);
+    expect(west.materialMask).toBeUndefined();
+    expect(compositor.getStats().cachedTiles).toBe(2);
   });
 });

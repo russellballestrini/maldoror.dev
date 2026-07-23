@@ -1,5 +1,6 @@
 // Noise generation
 export { SeededRandom, ValueNoise } from './noise/noise.js';
+export { CanalTownWorldField, type CanalTownWorldSample } from './tiles/canal-town-world-field.js';
 
 // Chunk system
 export { ChunkGenerator, type GeneratedChunk } from './chunk/chunk-generator.js';

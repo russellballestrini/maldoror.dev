@@ -4,6 +4,7 @@ import {
   CanalTownTileProvider,
   type CanalTownAsset,
 } from '../tiles/canal-town-tile-provider.js';
+import { CanalTownWorldField } from '../tiles/canal-town-world-field.js';
 import { CanalMaterialCompositor } from '../tiles/canal-material-compositor.js';
 import { CornerCodedTileSet } from '../tiles/corner-coded-tile-set.js';
 
@@ -40,29 +41,55 @@ function texture(id: string, color: RGB) {
 }
 
 describe('CanalTownTileProvider', () => {
-  it('continues canals and walkable bridge decks across signed block coordinates', () => {
+  it('uses one continuous field for signed-coordinate water and bridge decks', () => {
     const world = provider();
+    const field = new CanalTownWorldField(42n);
     expect(world.getTile(0, 0)?.walkable).toBe(true);
-    expect(world.getTile(0, 0)?.id).toContain('bridge-deck');
-    expect(world.getTile(7, 0)?.walkable).toBe(true);
-    expect(world.getTile(-24, 0)?.walkable).toBe(false);
-    expect(world.getTile(1, 12)?.walkable).toBe(true);
-    expect(world.getTile(1, 12)?.id).toContain('bridge-deck');
-    expect(world.getTile(-23, 12)?.walkable).toBe(true);
-    expect(world.getTile(10, 12)?.walkable).toBe(false);
-    expect(world.getTile(14, 12)?.walkable).toBe(true);
+    expect(world.getTile(0, 0)?.id).not.toContain('water');
+
+    const waterCells: Array<readonly [number, number]> = [];
+    for (let y = -120; y <= 120; y += 12) {
+      for (let x = -24; x <= 24; x++) {
+        const sample = field.sample(x, y);
+        if (sample.isWater && !sample.isBridge) {
+          waterCells.push([x, y]);
+          break;
+        }
+      }
+    }
+    expect(waterCells.length).toBeGreaterThan(12);
+    for (const [x, y] of waterCells) expect(world.getTile(x, y)?.walkable).toBe(false);
   });
 
   it('places manifest assets deterministically with independent collision masks', () => {
     const a = provider();
     const b = provider();
-    const buildingA = a.getBuildingTileAt(9, 8);
-    const buildingB = b.getBuildingTileAt(9, 8);
+    let collisionPoint: readonly [number, number] | undefined;
+    for (let y = -72; y <= 72 && !collisionPoint; y++) {
+      for (let x = -72; x <= 72; x++) {
+        if (a.isBuildingAt(x, y)) {
+          collisionPoint = [x, y];
+          break;
+        }
+      }
+    }
+    expect(collisionPoint).toBeDefined();
+    const [x, y] = collisionPoint!;
+    const buildingA = a.getBuildingTileAt(x, y);
+    const buildingB = b.getBuildingTileAt(x, y);
 
     expect(buildingA?.pixels[0]?.[0]).toEqual(buildingB?.pixels[0]?.[0]);
-    expect(a.isBuildingAt(9, 8)).toBe(true);
-    expect(a.getBuildingTileAt(3, 12)).not.toBeNull();
-    expect(a.isBuildingAt(3, 12)).toBe(false);
+    expect(a.isBuildingAt(x, y)).toBe(true);
+    let visualOnlyPoint: readonly [number, number] | undefined;
+    for (let yy = -24; yy <= 0 && !visualOnlyPoint; yy++) {
+      for (let xx = -24; xx <= 24; xx++) {
+        if (a.getBuildingTileAt(xx, yy) && !a.isBuildingAt(xx, yy)) {
+          visualOnlyPoint = [xx, yy];
+          break;
+        }
+      }
+    }
+    expect(visualOnlyPoint).toBeDefined();
   });
 
   it('uses the shared material compositor at canal boundaries without changing bridge decks', () => {
@@ -85,7 +112,7 @@ describe('CanalTownTileProvider', () => {
       .find((tile) => tile?.id.startsWith('canal-material-blend:'));
     expect(transition?.materialMask).toBeDefined();
     expect(materialCompositor.getStats().cachedTiles).toBeGreaterThan(0);
-    expect(world.getTile(0, 0)?.id).toContain('bridge-deck');
+    expect(world.getTile(0, 0)?.walkable).toBe(true);
     expect(world.getTile(0, 0)?.materialMask).toBeUndefined();
   });
 

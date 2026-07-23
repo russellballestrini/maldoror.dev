@@ -4,6 +4,7 @@ export interface CanalMaterialCompositorConfig {
   worldSeed: bigint;
   water: readonly Tile[];
   paving: readonly Tile[];
+  garden?: readonly Tile[];
   edge?: readonly Tile[];
   maxCachedTiles?: number;
   /** Number of world tiles over which texture variants cross-fade. */
@@ -18,6 +19,7 @@ export interface CanalMaterialCompositorConfig {
 }
 
 export type WaterClassifier = (tileX: number, tileY: number) => boolean;
+export type MaterialClassifier = (tileX: number, tileY: number) => boolean;
 
 interface PreparedTexture {
   width: number;
@@ -43,6 +45,7 @@ export class CanalMaterialCompositor {
   private readonly seed32: number;
   private readonly water: PreparedTexture[];
   private readonly paving: PreparedTexture[];
+  private readonly garden: PreparedTexture[];
   private readonly edge: PreparedTexture[];
   private readonly maxCachedTiles: number;
   private readonly variantPeriodTiles: number;
@@ -59,6 +62,7 @@ export class CanalMaterialCompositor {
     this.seed32 = Number(BigInt.asUintN(32, config.worldSeed));
     this.water = config.water.map(prepareTexture);
     this.paving = config.paving.map(prepareTexture);
+    this.garden = (config.garden ?? []).map(prepareTexture);
     this.edge = (config.edge ?? []).map(prepareTexture);
     this.maxCachedTiles = Math.max(8, config.maxCachedTiles ?? 96);
     this.variantPeriodTiles = Math.max(2, config.variantPeriodTiles ?? 4);
@@ -88,7 +92,7 @@ export class CanalMaterialCompositor {
     }
     if (!crossesBoundary) return null;
 
-    const key = `${tileX},${tileY}`;
+    const key = `water:${tileX},${tileY}`;
     const cached = this.cache.get(key);
     if (cached) {
       // Map insertion order is the LRU list; touching a tile moves it to tail.
@@ -98,6 +102,44 @@ export class CanalMaterialCompositor {
     }
 
     const tile = this.composeTile(tileX, tileY, isWaterAt, centerWater);
+    this.cache.set(key, { tile });
+    while (this.cache.size > this.maxCachedTiles) {
+      const oldest = this.cache.keys().next().value as string | undefined;
+      if (!oldest) break;
+      this.cache.delete(oldest);
+    }
+    return tile;
+  }
+
+  /** Blend garden/soil masses into paving through the same shared-corner field.
+   * Water owns its boundary first; this method is only for the land hierarchy. */
+  getGardenTransitionTile(
+    tileX: number,
+    tileY: number,
+    isGardenAt: MaterialClassifier,
+  ): Tile | null {
+    if (this.garden.length === 0) return null;
+    const centerGarden = isGardenAt(tileX, tileY);
+    let crossesBoundary = false;
+    for (let dy = -1; dy <= 1 && !crossesBoundary; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        if (isGardenAt(tileX + dx, tileY + dy) !== centerGarden) {
+          crossesBoundary = true;
+          break;
+        }
+      }
+    }
+    if (!crossesBoundary) return null;
+
+    const key = `garden:${tileX},${tileY}`;
+    const cached = this.cache.get(key);
+    if (cached) {
+      this.cache.delete(key);
+      this.cache.set(key, cached);
+      return cached.tile;
+    }
+    const tile = this.composeGardenTile(tileX, tileY, isGardenAt);
     this.cache.set(key, { tile });
     while (this.cache.size > this.maxCachedTiles) {
       const oldest = this.cache.keys().next().value as string | undefined;
@@ -253,6 +295,56 @@ export class CanalMaterialCompositor {
     };
   }
 
+  private composeGardenTile(
+    tileX: number,
+    tileY: number,
+    isGardenAt: MaterialClassifier,
+  ): Tile {
+    const size = Math.min(this.garden[0]!.width, this.paving[0]!.width);
+    const pixels: PixelGrid = [];
+    const corner00 = cornerCoverage(isGardenAt, tileX, tileY);
+    const corner10 = cornerCoverage(isGardenAt, tileX + 1, tileY);
+    const corner01 = cornerCoverage(isGardenAt, tileX, tileY + 1);
+    const corner11 = cornerCoverage(isGardenAt, tileX + 1, tileY + 1);
+    const pavingSample = new Float64Array(3);
+    const gardenSample = new Float64Array(3);
+    for (let y = 0; y < size; y++) {
+      const row: RGB[] = [];
+      const v = (y + 0.5) / size;
+      const smoothV = smoothstep01(v);
+      for (let x = 0; x < size; x++) {
+        const u = (x + 0.5) / size;
+        const smoothU = smoothstep01(u);
+        const worldX = tileX + u;
+        const worldY = tileY + v;
+        const top = lerp(corner00, corner10, smoothU);
+        const bottom = lerp(corner01, corner11, smoothU);
+        const latticeCoverage = lerp(top, bottom, smoothV);
+        const boundaryInfluence = 4 * latticeCoverage * (1 - latticeCoverage);
+        const field = clamp01(latticeCoverage + (
+          this.valueNoise(worldX * 1.2, worldY * 1.2, 0x48a129) * 0.13 +
+          this.valueNoise(worldX * 4.1, worldY * 4.1, 0x7c91d3) * 0.045
+        ) * boundaryInfluence);
+        const gardenCoverage = smoothstep(0.39, 0.61, field);
+        this.sampleTextureField(this.paving, worldX, worldY, 0xd81638, pavingSample);
+        this.sampleTextureField(this.garden, worldX, worldY, 0x61d24b, gardenSample);
+        row.push({
+          r: linearToSrgb(lerp(pavingSample[0]!, gardenSample[0]!, gardenCoverage)),
+          g: linearToSrgb(lerp(pavingSample[1]!, gardenSample[1]!, gardenCoverage)),
+          b: linearToSrgb(lerp(pavingSample[2]!, gardenSample[2]!, gardenCoverage)),
+        });
+      }
+      pixels.push(row);
+    }
+    return {
+      id: `canal-garden-blend:${tileX},${tileY}`,
+      name: 'Continuous garden and paving transition',
+      pixels,
+      walkable: true,
+      resolutions: { [String(size)]: pixels },
+    };
+  }
+
   private sampleTextureField(
     textures: PreparedTexture[],
     worldX: number,
@@ -332,7 +424,7 @@ function prepareTexture(tile: Tile): PreparedTexture {
 
 /** Coverage at a material-lattice corner is the average of the four cells
  * sharing it. Adjacent tiles therefore reconstruct the exact same edge. */
-function cornerCoverage(isWaterAt: WaterClassifier, cornerX: number, cornerY: number): number {
+function cornerCoverage(isWaterAt: MaterialClassifier, cornerX: number, cornerY: number): number {
   return (
     Number(isWaterAt(cornerX - 1, cornerY - 1)) +
     Number(isWaterAt(cornerX, cornerY - 1)) +

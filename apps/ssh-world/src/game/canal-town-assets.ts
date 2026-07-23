@@ -109,6 +109,7 @@ export async function loadCanalTownKit(
     worldSeed,
     water: resolveTerrain(manifest.terrain.water),
     paving: resolveTerrain(manifest.terrain.paving),
+    garden: resolveTerrain(manifest.terrain.garden),
     edge: resolveTerrain([...new Set(Object.values(manifest.terrain.curb).filter(Boolean))] as string[]),
     maxCachedTiles: 96,
     variantPeriodTiles: 4,
