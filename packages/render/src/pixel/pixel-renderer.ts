@@ -1,6 +1,7 @@
 import type { RGB, Pixel, PixelGrid } from '@maldoror/protocol';
 import { sgrCode, sgrPairKey } from './ansi-cache.js';
 import { OCTANT_CHARS } from './octant-chars.js';
+import { fitOctant } from './octant-fitter.js';
 import { PALETTE, PHASES } from './palette-cycle.js';
 
 /**
@@ -321,6 +322,7 @@ function renderBrailleChar(
 
 // Scratch for renderOctantChar (single-threaded).
 const OCT_SCRATCH = new Int16Array(8);
+const OCT_PIXEL_SCRATCH: Pixel[] = new Array<Pixel>(8).fill(null);
 
 /**
  * Render a 2×4 pixel block as a single Unicode OCTANT character (Unicode 16
@@ -338,15 +340,23 @@ function renderOctantChar(
   cellBrightness: number = 1.0
 ): { char: string; fg: RGB; bg: RGB } {
   let minB = 999, maxB = -1;
+  let minCo = 999, maxCo = -999, minCg = 999, maxCg = -999;
   for (let row = 0; row < 4; row++) {
     const r = block[row];
     for (let col = 0; col < 2; col++) {
       const pixel = r?.[col] ?? null;
+      OCT_PIXEL_SCRATCH[row * 2 + col] = pixel;
       const b = pixel === null ? -1 : pixelBrightness(pixel);
       OCT_SCRATCH[row * 2 + col] = b;
       if (b >= 0) {
         if (b < minB) minB = b;
         if (b > maxB) maxB = b;
+        const co = pixel!.r - pixel!.b;
+        const cg = pixel!.g - (pixel!.r + pixel!.b) / 2;
+        if (co < minCo) minCo = co;
+        if (co > maxCo) maxCo = co;
+        if (cg < minCg) minCg = cg;
+        if (cg > maxCg) maxCg = cg;
       }
     }
   }
@@ -356,6 +366,23 @@ function renderOctantChar(
     let c: RGB = DEFAULT_BG;
     if (cellBrightness !== 1.0) c = applyBrightness(c, cellBrightness);
     return { char: OCTANT_CHARS[0]!, fg: c, bg: c };
+  }
+
+  // A luminance-only split can collapse strongly different hues that happen
+  // to share brightness into one muddy solid cell. Pay the Oklab clustering
+  // cost only for that bounded ambiguity band; ordinary terrain stays on the
+  // fast production path. This gate was selected by the fixed 160x46 fitting
+  // lab, not tuned against names or asset-specific colours.
+  const chromaSpan = Math.max(maxCo - minCo, maxCg - minCg);
+  if (maxB - minB <= 20 && chromaSpan >= 30) {
+    const fit = fitOctant(OCT_PIXEL_SCRATCH, 'oklab-kmeans', DEFAULT_BG, false);
+    let fg = fit.fg;
+    let bg = fit.bg;
+    if (cellBrightness !== 1.0) {
+      fg = applyBrightness(fg, cellBrightness);
+      bg = applyBrightness(bg, cellBrightness);
+    }
+    return { char: OCTANT_CHARS[fit.pattern]!, fg, bg };
   }
 
   // Flat cell → solid full block (pattern 255), fg=bg=average
