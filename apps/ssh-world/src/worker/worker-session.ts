@@ -57,6 +57,7 @@ import { saveBuildingToDisk, loadAllBuildingDirections } from '../utils/building
 import { VirtualStream } from './virtual-stream.js';
 import type { SessionState } from './game-worker.js';
 import type { LoadedCanalTownKit } from '../game/canal-town-assets.js';
+import { LOGIN_ORIGIN } from '../game/login-origin.js';
 
 /**
  * Choose the terminal render mode. Octant (Unicode 16 solid 2×4 mosaics) is
@@ -308,7 +309,9 @@ export class WorkerSession {
       boot.updateStep('Loading player state...', 'loading');
     }
 
-    // Load player state - use restored state if available
+    // A worker hot reload preserves the already-running session. Every actual
+    // SSH login, including a returning user, begins at the canonical origin and
+    // persists that reset before the player enters the world.
     if (isRestoring && this.restoredState) {
       this.playerX = this.restoredState.playerX;
       this.playerY = this.restoredState.playerY;
@@ -318,16 +321,25 @@ export class WorkerSession {
         where: eq(schema.playerState.userId, this.userId!),
       });
 
+      this.playerX = LOGIN_ORIGIN.x;
+      this.playerY = LOGIN_ORIGIN.y;
       if (playerState) {
-        this.playerX = playerState.x;
-        this.playerY = playerState.y;
         this.playerDirection = (playerState.direction as Direction) || 'down';
+        await db
+          .update(schema.playerState)
+          .set({
+            x: LOGIN_ORIGIN.x,
+            y: LOGIN_ORIGIN.y,
+            animationFrame: 0,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.playerState.userId, this.userId!));
       } else {
         // Create initial player state
         await db.insert(schema.playerState).values({
           userId: this.userId!,
-          x: 0,
-          y: 0,
+          x: LOGIN_ORIGIN.x,
+          y: LOGIN_ORIGIN.y,
           direction: 'down',
         });
       }
@@ -521,6 +533,7 @@ export class WorkerSession {
     // Register with game server (direct, no IPC)
     boot?.updateStep('Connecting to game server...', 'loading');
     await this.gameServer.playerConnect(this.userId!, this.sessionId, this.username);
+    this.gameServer.updatePlayerPosition(this.userId!, this.playerX, this.playerY);
 
     // Register road callbacks to receive updates from other players
     this.gameServer.onRoadPlacement(this.userId!, (x, y, placedBy) => {

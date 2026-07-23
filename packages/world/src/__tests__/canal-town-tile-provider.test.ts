@@ -35,7 +35,9 @@ function provider(seed = 42n): CanalTownTileProvider {
 describe('CanalTownTileProvider', () => {
   it('continues canals and walkable bridge decks across signed block coordinates', () => {
     const world = provider();
-    expect(world.getTile(0, 0)?.walkable).toBe(false);
+    expect(world.getTile(0, 0)?.walkable).toBe(true);
+    expect(world.getTile(0, 0)?.id).toContain('bridge-deck');
+    expect(world.getTile(7, 0)?.walkable).toBe(true);
     expect(world.getTile(-24, 0)?.walkable).toBe(false);
     expect(world.getTile(1, 12)?.walkable).toBe(true);
     expect(world.getTile(1, 12)?.id).toContain('bridge-deck');

@@ -1,7 +1,9 @@
 # MALDOROR — engineering build brief (for the implementing agent)
 
 You are picking up maldoror. **Read `/DOSSIER.md` first (the north star), then
-this.** This brief is the comprehensive, precise implementation guide: the
+[`/NEXT-GOAL.md`](../NEXT-GOAL.md), then this.** `NEXT-GOAL.md` is the governing
+definition of done; the old one-block milestone is foundation only. This brief
+is the comprehensive, precise implementation guide: the
 architecture, the codebase map, the exact APIs to reuse, the build/deploy/verify
 commands, the pitfalls already discovered (don't repeat them), and the
 step-by-step first milestone. Everything below is real and current
@@ -263,7 +265,11 @@ full build+tsup+push+restart.
 
 ---
 
-## 6. FIRST MILESTONE — "one gorgeous walkable block, buttery smooth"
+## 6. HISTORICAL FOUNDATION — "one walkable block, buttery smooth"
+
+This section records implemented mechanics; it is not a completion claim.
+`/NEXT-GOAL.md` governs acceptance and explicitly requires world-scale visual,
+biome, life, zoom, concurrency, and physical-Ghostty proof.
 
 **Definition of done:** `ssh -p 2222` in real Ghostty into ONE dense,
 mockup-quality neighborhood; walk it with **smooth scroll + smooth zoom**;

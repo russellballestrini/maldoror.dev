@@ -38,6 +38,7 @@ import type { ProviderConfig } from '@maldoror/ai';
 import { cacheRuntimeSprite, saveSpriteToDisk, loadSpriteFromDisk } from '../utils/sprite-storage.js';
 import { saveBuildingToDisk, loadAllBuildingDirections } from '../utils/building-storage.js';
 import { resourceMonitor } from '../utils/resource-monitor.js';
+import { LOGIN_ORIGIN } from '../game/login-origin.js';
 
 interface GameSessionConfig {
   stream: Duplex;
@@ -181,22 +182,32 @@ export class GameSession {
       .map(p => ({ username: p.username }));
     boot.renderHonourableMentions(onlinePlayers);
 
-    // Load player state
+    // This legacy in-process path obeys the same fresh-login invariant as the
+    // production worker path: every SSH login starts and persists at (0,0).
     boot.updateStep('Loading player state...', 'loading');
     const playerState = await db.query.playerState.findFirst({
       where: eq(schema.playerState.userId, this.userId),
     });
 
+    this.playerX = LOGIN_ORIGIN.x;
+    this.playerY = LOGIN_ORIGIN.y;
     if (playerState) {
-      this.playerX = playerState.x;
-      this.playerY = playerState.y;
       this.playerDirection = (playerState.direction as Direction) || 'down';
+      await db
+        .update(schema.playerState)
+        .set({
+          x: LOGIN_ORIGIN.x,
+          y: LOGIN_ORIGIN.y,
+          animationFrame: 0,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.playerState.userId, this.userId));
     } else {
       // Create initial player state
       await db.insert(schema.playerState).values({
         userId: this.userId,
-        x: 0,
-        y: 0,
+        x: LOGIN_ORIGIN.x,
+        y: LOGIN_ORIGIN.y,
         direction: 'down',
       });
     }
@@ -322,6 +333,7 @@ export class GameSession {
     // Register with worker manager
     boot.updateStep('Connecting to game server...', 'loading');
     await this.workerManager.playerConnect(this.userId!, this.sessionId, this.username);
+    this.workerManager.updatePlayerPosition(this.userId!, this.playerX, this.playerY);
     boot.markPreviousDone();
 
     // Register for sprite reload events

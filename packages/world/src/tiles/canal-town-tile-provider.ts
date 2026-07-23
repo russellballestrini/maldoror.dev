@@ -110,7 +110,14 @@ export class CanalTownTileProvider extends TileProvider {
     const horizontalWater = ly >= horizontalStart && ly <= horizontalEnd;
     const eastWestBridge = verticalWater && ly >= bridgeY - 1 && ly <= bridgeY + 1;
     const northSouthBridge = horizontalWater && lx >= 13 && lx <= 15;
-    const bridgeDeck = eastWestBridge || northSouthBridge;
+    // (0,0) is the canonical login origin. Give it a one-off, three-tile-wide
+    // arrival causeway that crosses the origin canal and reaches the east quay,
+    // so the exact reset point is intentional, walkable, and never spawn-fixed
+    // to some nearby coordinate. This is a landmark, not part of the repeating
+    // block cadence.
+    const originArrivalBridge = tileY >= -1 && tileY <= 1 &&
+      tileX >= -1 && tileX <= canalWidth;
+    const bridgeDeck = eastWestBridge || northSouthBridge || originArrivalBridge;
     if (bridgeDeck) {
       const deck = this.pickBridgeDeck(tileX, tileY);
       if (deck) return deck;
@@ -248,6 +255,7 @@ export class CanalTownTileProvider extends TileProvider {
 
     const bridgeY = Math.floor(this.blockSize / 2);
     place('bridge', 3, bridgeY);
+    if (blockX === 0 && blockY === 0) place('bridge', 3, 0);
     place('bridge-vertical', 14, bridgeY + 5);
     place('water', 2, 5);
     place('water', 3, 20);

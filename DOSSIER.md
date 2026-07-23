@@ -3,6 +3,11 @@
 *Set 2026-07-23, from the vision interview. This is the goal. Everything is
 judged against it.*
 
+> **The governing successor goal is now [`NEXT-GOAL.md`](NEXT-GOAL.md).** This
+> dossier remains the vision and engineering baseline, but its first milestone
+> is only foundation work. It is explicitly rejected as evidence that the
+> visual or living-world goal has been reached.
+
 > **Implementing this? Read `docs/BUILD-BRIEF.md`** — the comprehensive
 > engineering handoff: architecture, codebase map, exact build/deploy/verify
 > commands, pitfalls already discovered, and the step-by-step first milestone.
@@ -123,7 +128,12 @@ split — out of scope now.)
 
 ---
 
-## FIRST MILESTONE — "one gorgeous walkable block, buttery smooth"
+## HISTORICAL FOUNDATION — "one walkable block, buttery smooth"
+
+**This is no longer an acceptable completion target.** The implementation
+proved useful rendering and transport mechanics, but the result is nowhere
+near the target's visual density, organic composition, breadth, or aliveness.
+The successor acceptance standard is in `NEXT-GOAL.md`.
 
 The foundation everything else needs. **Definition of done:** you `ssh` into
 Ghostty and walk around **one dense, mockup-quality neighborhood** with **smooth
@@ -150,8 +160,8 @@ Then: a second biome · NPC life · other-players-present · world-over-time.
 
 ---
 
-## Status (2026-07-23)
-- ✅ **First milestone engineering gate is implemented and live:** rich modular
+## Status (2026-07-23, corrected)
+- ✅ **The first foundation's engineering mechanisms are implemented and live:** modular
   canal-town kit, infinite deterministic placement with known collision,
   area-resampled octant fidelity, smooth actor/camera/zoom, retained terminal
   codec, palette water, bounded backpressure, and production SSH integration.
@@ -162,5 +172,6 @@ Then: a second biome · NPC life · other-players-present · world-over-time.
   threshold after shared sprite-cache compaction.
 - ⏳ **Operator sign-off in a physical Ghostty window remains external.** It is
   intentionally not replaced by a flattering simulator claim.
-- ⏭ North-star continuation after sign-off: a second biome, authored far-LOD
-  art, richer NPC town life, and time/weather systems.
+- ❌ **The visual/living-world goal is not close to complete.** A single canal
+  layout and a single capture cannot satisfy it; `NEXT-GOAL.md` replaces that
+  weak stopping point with a world-scale, evidence-gated definition of done.
