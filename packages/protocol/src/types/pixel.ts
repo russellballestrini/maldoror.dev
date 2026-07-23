@@ -86,6 +86,9 @@ export interface Tile {
   name: string;
   pixels: PixelGrid;  // Base resolution (256x256)
   walkable: boolean;
+  /** Optional render material for terminal-native effects such as OSC-4
+   * palette cycling. This is asset metadata, not inferred from pixel colors. */
+  material?: 'water' | 'foliage' | 'specular' | 'fire';
   animated?: boolean;
   animationFrames?: PixelGrid[];  // For animated tiles at base resolution
   // Pre-computed resolutions (keys are sizes: "26", "51", etc.)
@@ -137,6 +140,9 @@ export type BuildingDirection = 'north' | 'east' | 'south' | 'west';
  * Used by renderers to get tile, player, and NPC data
  */
 export interface WorldDataProvider {
+  /** Monotonic visual-state revision. Renderers may skip composition while it
+   * and the camera are unchanged. */
+  getVisualRevision?(): number;
   getTile(tileX: number, tileY: number): Tile | null;
   getBuildingTileAt?(tileX: number, tileY: number, direction?: BuildingDirection): BuildingTileData | null;
   getPlayers(): PlayerVisualState[];

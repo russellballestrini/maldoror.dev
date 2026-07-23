@@ -39,6 +39,13 @@ export {
   type BuildingData,
 } from './tiles/tile-provider.js';
 export { DistrictTileProvider } from './tiles/district-tile-provider.js';
+export {
+  CanalTownTileProvider,
+  type CanalPlacementRole,
+  type CanalTownAsset,
+  type CanalTownTerrainConfig,
+  type CanalTownTileProviderConfig,
+} from './tiles/canal-town-tile-provider.js';
 
 // Procedural tile generation
 export {

@@ -29,7 +29,7 @@ export type ReloadCallback = (state: ReloadState) => void;
 export type SpriteReloadCallback = (userId: string) => void;
 export type BuildingPlacementCallback = (buildingId: string, anchorX: number, anchorY: number) => void;
 export type NPCCreatedCallback = (npc: NPCVisualState) => void;
-export type SessionOutputCallback = (sessionId: string, output: string) => void;
+export type SessionOutputCallback = (sessionId: string, output: string, keyframe: boolean) => void;
 export type SessionUserIdCallback = (sessionId: string, userId: string) => void;
 export type SessionEndedCallback = (sessionId: string) => void;
 
@@ -91,6 +91,7 @@ export class WorkerManager {
   private sessionEndedCallbacks: Map<string, SessionEndedCallback> = new Map();
   // Track worker sessions for hot-reload re-registration
   private workerSessions: Map<string, WorkerSessionConfig> = new Map();
+  private restartTimer: NodeJS.Timeout | null = null;
 
   constructor(config: WorkerManagerConfig) {
     this.config = config;
@@ -107,6 +108,10 @@ export class WorkerManager {
    * Stop the worker process
    */
   stop(): void {
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer);
+      this.restartTimer = null;
+    }
     if (this.worker) {
       this.sendToWorker({ type: 'shutdown' });
       this.worker = null;
@@ -590,6 +595,11 @@ export class WorkerManager {
     });
   }
 
+  requestSessionKeyframe(sessionId: string): void {
+    if (!this.isReady()) return;
+    this.sendToWorker({ type: 'session_keyframe', sessionId });
+  }
+
   /**
    * Register callback for session output
    */
@@ -619,52 +629,75 @@ export class WorkerManager {
 
       console.log(`[WorkerManager] Spawning worker: ${workerPath}`);
 
-      this.worker = fork(workerPath, [], {
+      const child = fork(workerPath, [], {
         stdio: ['pipe', 'inherit', 'inherit', 'ipc'],
       });
+      this.worker = child;
+      this.workerReady = false;
+      let startupComplete = false;
 
       // Timeout to allow loading terrain tiles from database. Configurable via
       // WORKER_STARTUP_TIMEOUT_MS — on an I/O-contended host the worker child
       // loads its module graph off disk slowly, so the default is generous.
       const startupTimeoutMs = parseInt(process.env.WORKER_STARTUP_TIMEOUT_MS || '180000', 10);
       const timeout = setTimeout(() => {
+        if (this.worker === child) this.worker = null;
+        child.kill('SIGTERM');
         reject(new Error(`Worker startup timeout after ${startupTimeoutMs}ms`));
       }, startupTimeoutMs);
 
       const onReady = (msg: WorkerToMainMessage) => {
         if (msg.type === 'ready') {
           clearTimeout(timeout);
+          child.off('message', onReady);
+          startupComplete = true;
           this.workerReady = true;
           console.log('[WorkerManager] Worker is ready');
           resolve();
         }
       };
 
-      this.worker.once('message', onReady);
+      child.on('message', onReady);
 
-      this.worker.on('message', (msg: WorkerToMainMessage) => {
+      child.on('message', (msg: WorkerToMainMessage) => {
         this.handleWorkerMessage(msg);
       });
 
-      this.worker.on('error', (error) => {
+      child.on('error', (error) => {
         console.error('[WorkerManager] Worker error:', error);
         clearTimeout(timeout);
-        reject(error);
+        if (!startupComplete) {
+          if (this.worker === child) this.worker = null;
+          reject(error);
+        }
       });
 
-      this.worker.on('exit', (code) => {
+      child.on('exit', (code, signal) => {
+        child.off('message', onReady);
+        clearTimeout(timeout);
         console.log(`[WorkerManager] Worker exited with code ${code}`);
-        this.workerReady = false;
+        const wasCurrentWorker = this.worker === child;
+        if (wasCurrentWorker) {
+          this.worker = null;
+          this.workerReady = false;
+        }
 
-        // If unexpected exit during normal operation, try to restart
-        if (this.reloadState === 'running' && code !== 0) {
+        if (!startupComplete) {
+          reject(new Error(`Worker exited before ready (code=${code}, signal=${signal ?? 'none'})`));
+          return;
+        }
+
+        // Recover only an active runtime worker here. A startup failure rejects
+        // above so systemd restarts the entire service instead of leaving the
+        // main process waiting on an orphaned promise.
+        if (wasCurrentWorker && this.reloadState === 'running' && code !== 0) {
           console.log('[WorkerManager] Unexpected worker exit, restarting...');
-          setTimeout(() => this.spawnWorker(), 1000);
+          this.scheduleUnexpectedRestart();
         }
       });
 
       // Initialize worker
-      this.sendToWorker({
+      child.send({
         type: 'init',
         worldSeed: this.config.worldSeed.toString(),
         tickRate: this.config.tickRate,
@@ -672,6 +705,47 @@ export class WorkerManager {
         providerConfig: this.config.providerConfig,
       });
     });
+  }
+
+  private scheduleUnexpectedRestart(delayMs: number = 1000): void {
+    if (this.restartTimer) return;
+    this.restartTimer = setTimeout(async () => {
+      this.restartTimer = null;
+      if (this.worker || this.reloadState !== 'running') return;
+
+      try {
+        await this.spawnWorker();
+        this.reregisterTrackedSessions();
+        console.log('[WorkerManager] Unexpected-exit recovery complete');
+      } catch (error) {
+        console.error('[WorkerManager] Worker restart failed:', error);
+        this.scheduleUnexpectedRestart(Math.min(delayMs * 2, 30000));
+      }
+    }, delayMs);
+  }
+
+  private reregisterTrackedSessions(): void {
+    for (const session of this.connectedSessions.values()) {
+      this.sendToWorker({
+        type: 'player_connect',
+        userId: session.userId,
+        sessionId: session.sessionId,
+        username: session.username,
+      });
+    }
+
+    for (const config of this.workerSessions.values()) {
+      this.sendToWorker({
+        type: 'create_session',
+        sessionId: config.sessionId,
+        fingerprint: config.fingerprint,
+        username: config.username,
+        userId: config.userId,
+        cols: config.cols,
+        rows: config.rows,
+        term: config.term,
+      });
+    }
   }
 
   private handleWorkerMessage(msg: WorkerToMainMessage): void {
@@ -747,7 +821,7 @@ export class WorkerManager {
       case 'session_output': {
         const callback = this.sessionOutputCallbacks.get(msg.sessionId);
         if (callback) {
-          callback(msg.sessionId, msg.output);
+          callback(msg.sessionId, msg.output, msg.keyframe);
         }
         break;
       }

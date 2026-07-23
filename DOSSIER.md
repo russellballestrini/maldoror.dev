@@ -49,44 +49,40 @@ world that looks like the mockup and feels alive.
 A terminal is a grid of colored character cells. Getting a AAA world through
 that pipe is three composed problems:
 
-### Layer 1 — FIDELITY (how a cell looks). ⚠️ NOT solved — real quality bugs
-- **Octants** (Unicode 16, 2×4 *solid* mosaics) render + auto-detect LIVE, and
-  the *ceiling* is good: a clean whole-image octant downscale of a dense scene
-  looks close to the mockup at 160 cols.
-- **BUT the shipped rendering is muddy/noisy** (verified by faithfully replaying
-  the live game's ANSI at 160×45 — NOT by the idealized preview rasterizer that
-  fooled me earlier). Three concrete, fixable bugs:
-  1. **Nearest-neighbour downscale** (`ViewportRenderer.scaleFrame`) — art is
-     sliced into 32px tiles then NN-shrunk to ~8px per tile → aliasing/mud.
-     **Fix: box/area averaging when downscaling.** #1 fidelity win.
-  2. **Octant contrast-split → vertical streaking** on smooth gradients (rain-
-     like noise). Improve the fg/bg subpixel selection / dither the pattern.
-  3. **Aggressive 4-bit Bayer quantization** adds noise — unneeded in Ghostty
-     (truecolor). Drop or lighten it Ghostty-side.
-- **AND nothing good ships by default**: the live world is flat procedural grass
-  at 100% zoom → a giant blurry player sprite fills the screen. The pretty
-  district renders were tool outputs, never the game. (District-mode
-  `MALDOROR_DISTRICT` now shows the town live but with the bugs above.)
-- Honest verification = faithfully replay captured ANSI (see BUILD-BRIEF §4),
-  never the preview rasterizer.
+### Layer 1 — FIDELITY (how a cell looks). ✅ milestone implementation live
+- **Octants** (Unicode 16, 2×4 solid mosaics) render and auto-detect live.
+- Downscaling is now **area-averaged**, with a bounded mip/resample cache; the
+  nearest-neighbour mud that destroyed small architecture is gone.
+- Octant fitting uses the two-colour cluster that minimizes reconstruction
+  error instead of the old contrast split, eliminating its vertical streaks.
+- The noisy high-zoom Bayer quantizer is no longer forced into the Ghostty
+  truecolour path.
+- Zoom animates over a short seek-safe curve and switches through the existing
+  resolution pyramid. Actor and follow-camera coordinates interpolate at
+  sub-tile precision.
+- Honest verification remains the rule: replay the **real SSH ANSI capture**
+  through `faithful-render.mjs`; preview rasterizers are not acceptance proof.
 
-### Layer 2 — THE WORLD (what fills the cells). ⏳ the pivot
-The chosen model: **a rich AI-generated tileset + dense procedural placement.**
-- Generate, ONCE per biome, a *deep* in-style tileset: many terrain/water/
-  foliage variants, full autotile transition sets, trees, bushes, flowers,
-  buildings, props, **drop shadows**. (My first attempt looked sparse only
-  because the tileset was 5 flat tiles — depth + density is the whole game.)
-- Procedurally lay out infinite dense worlds from it. This gives, for free, the
-  three things the painterly-chunk approach couldn't: **seamless infinite
-  scroll, clean tiling, and KNOWN collision per tile** (no guessing walkability
-  from paint).
-- Painterly "district" images remain a useful *reference/experiment* and maybe
-  future set-piece landmarks, but the generation model is the tileset.
+### Layer 2 — THE WORLD (what fills the cells). ✅ canal-town biome live
+The chosen model is implemented as **AI tileset + deterministic infinite
+placement**:
+- `assets/canal-town/manifest.json` owns 33 modular assets, four terrain
+  masters expanded to 16 deterministic variants, placement roles, scale, and
+  explicit collision. Source generations are retained beside derived sprites.
+- `CanalTownTileProvider` lays out an unbounded crossing canal network with
+  variable-width water, continuous quays, two-axis walkable bridges, dense
+  building rows, boats, foliage, street furniture, and water detail. Signed
+  block coordinates and bounded block caches make it seamless in every
+  direction.
+- The live worker loads the shared kit once, not once per session. Full-quality
+  persisted character/NPC PNGs remain intact while bounded shared 128px runtime
+  caches keep the 1.6 GiB service envelope safe.
+- Painterly district images remain reference/set-piece experiments; they are
+  not the production world's collision model.
 
-### Layer 3 — TRANSPORT (getting frames over SSH cheaply). ⏳ the codec
-Buttery-smooth free-scroll over SSH **requires** the terminal-native codec
-(`docs/RENDERING-CODEC.md`) — do not transmit frames, transmit the minimal
-terminal op that mutates the last frame:
+### Layer 3 — TRANSPORT (getting frames over SSH cheaply). ✅ codec v1 live
+The production renderer now treats Ghostty as a retained framebuffer
+(`docs/RENDERING-CODEC.md`):
 - Camera move = **terminal scroll op** (DECSTBM/DECSLRM + SU/SD/DCH/ICH) — a
   *copy*, not a repaint. Player-centered **dead zone**: actor moves sub-cell,
   camera steps whole-cell.
@@ -94,8 +90,14 @@ terminal op that mutates the last frame:
   stack; never erase-with-blanks).
 - Water/light/foliage = **OSC-4 palette cycling** (proven: 141 B/tick animates
   all water, 699× cheaper than repaint). Ghostty-first makes this free.
-- **Cost-based emitter** (REP/EL/relative-cursor/merged-SGR) + **latency-budgeted
-  writer** (queue depth 1) + **client-side prediction** for input feel.
+- **Cost-based dirty-run emitter** uses REP, cursor motion, merged SGR, and
+  keyframes only at true dependency boundaries.
+- **Latency-budgeted writer** in `SessionProxy` has queue depth one; dropped
+  dependent deltas force the next worker keyframe instead of corrupting state.
+- Exact live proof at 160×46: one initial 270,069-byte scene keyframe, then
+  16,133 bytes over six seconds (89 × 157-byte palette ticks and two 1,080-byte
+  HUD refreshes). A one-tile step costs 16,748 bytes in the five seconds after
+  input, including all continuing palette/HUD traffic.
 
 ### Zoom / LOD
 - **Improve the existing scaling** first: the resolution pyramid (`RESOLUTIONS`)
@@ -149,9 +151,16 @@ Then: a second biome · NPC life · other-players-present · world-over-time.
 ---
 
 ## Status (2026-07-23)
-- ✅ Octant fidelity (LIVE, auto-detected), the sim/gallery iteration loop,
-  OSC-4 palette-water proven, codec plan, mockup-style asset generation pipeline.
-- ⏭ Pivot to the **rich tileset** model; build the **motion codec**; first
-  milestone above.
-- Working notes: `docs/RENDERING.md` (fidelity), `docs/RENDERING-CODEC.md`
-  (transport), `tools/render-sim/` (loop + gallery).
+- ✅ **First milestone engineering gate is implemented and live:** rich modular
+  canal-town kit, infinite deterministic placement with known collision,
+  area-resampled octant fidelity, smooth actor/camera/zoom, retained terminal
+  codec, palette water, bounded backpressure, and production SSH integration.
+- ✅ Verified from a real 160×46 `TERM=xterm-ghostty` SSH capture, faithfully
+  replayed to `tools/render-sim/out/live-canal-town-accepted-faithful.png`.
+- ✅ Three pre-existing SSH connections survived worker hot deployment; health
+  stayed responsive and the new worker remained below the cgroup high-water
+  threshold after shared sprite-cache compaction.
+- ⏳ **Operator sign-off in a physical Ghostty window remains external.** It is
+  intentionally not replaced by a flattering simulator claim.
+- ⏭ North-star continuation after sign-off: a second biome, authored far-LOD
+  art, richer NPC town life, and time/weather systems.

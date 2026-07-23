@@ -1,0 +1,361 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import sharp from 'sharp';
+import type { BuildingSprite, BuildingTile, Pixel, PixelGrid, Sprite, Tile } from '@maldoror/protocol';
+import type {
+  CanalPlacementRole,
+  CanalTownAsset,
+  CanalTownTerrainConfig,
+} from '@maldoror/world';
+
+interface ManifestAsset {
+  id: string;
+  file: string;
+  roles: CanalPlacementRole[];
+  scale: number;
+  collision: Array<[number, number]>;
+  spriteTiles: [number, number];
+  collisionRect?: [number, number];
+}
+
+interface CanalTownManifest {
+  version: number;
+  sourceTileSize: number;
+  blockSize: number;
+  defaultAvatar: string;
+  terrainMasters: ManifestTerrainMaster[];
+  terrain: CanalTownTerrainConfig;
+  assets: ManifestAsset[];
+}
+
+interface ManifestTerrainMaster {
+  id: string;
+  file: string;
+  variants: number;
+  walkable: boolean;
+  material?: Tile['material'];
+}
+
+export interface LoadedCanalTownKit {
+  assets: CanalTownAsset[];
+  terrainTiles: Tile[];
+  terrain: CanalTownTerrainConfig;
+  blockSize: number;
+  defaultAvatar: Sprite;
+  manifestPath: string;
+}
+
+const VALID_ROLES = new Set<CanalPlacementRole>([
+  'building', 'bridge', 'bridge-vertical', 'edge', 'foliage', 'street-small', 'street-large', 'water',
+  'water-detail', 'quay-detail',
+]);
+
+/** Load and rasterize the chosen kit once per worker. Each asset becomes one
+ * shared multi-tile sprite at a single bounded source resolution; render-time scaling
+ * supplies zoom levels without an object-heavy in-memory pyramid. */
+export async function loadCanalTownKit(manifestOverride?: string): Promise<LoadedCanalTownKit> {
+  const manifestPath = findManifestPath(manifestOverride);
+  const manifest = parseManifest(manifestPath);
+  const manifestDir = path.dirname(manifestPath);
+  const assets: CanalTownAsset[] = [];
+  const terrainTiles: Tile[] = [];
+  const defaultAvatar = await loadDefaultAvatar(
+    resolveAssetPath(manifestDir, manifest.defaultAvatar),
+    manifest.sourceTileSize,
+  );
+
+  for (const entry of manifest.terrainMasters) {
+    const imagePath = resolveAssetPath(manifestDir, entry.file);
+    terrainTiles.push(...await loadTerrainMasterVariants(imagePath, manifest.sourceTileSize, entry));
+  }
+
+  for (const entry of manifest.assets) {
+    const imagePath = resolveAssetPath(manifestDir, entry.file);
+    assets.push({
+      id: entry.id,
+      roles: entry.roles,
+      collision: entry.collisionRect
+        ? rectangularCollision(entry.collisionRect[0], entry.collisionRect[1])
+        : entry.collision,
+      sprite: await loadManifestSprite(
+        imagePath,
+        manifest.sourceTileSize,
+        entry.scale,
+        entry.spriteTiles,
+      ),
+    });
+  }
+
+  return {
+    assets,
+    terrainTiles,
+    terrain: manifest.terrain,
+    blockSize: manifest.blockSize,
+    defaultAvatar,
+    manifestPath,
+  };
+}
+
+function findManifestPath(override?: string): string {
+  const candidates = [
+    override,
+    process.env.MALDOROR_CANAL_MANIFEST,
+    path.resolve(process.cwd(), 'assets/canal-town/manifest.json'),
+    path.resolve(process.cwd(), '../../assets/canal-town/manifest.json'),
+    fileURLToPath(new URL('../../../../assets/canal-town/manifest.json', import.meta.url)),
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
+  for (const candidate of candidates) {
+    const resolved = path.resolve(candidate);
+    if (fs.existsSync(resolved)) return resolved;
+  }
+  throw new Error(`Canal-town manifest not found; checked: ${candidates.join(', ')}`);
+}
+
+function parseManifest(manifestPath: string): CanalTownManifest {
+  const raw: unknown = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  if (!isRecord(raw) || raw.version !== 1) throw new Error('Unsupported canal-town manifest version');
+  if (!Number.isInteger(raw.sourceTileSize) || Number(raw.sourceTileSize) < 32 || Number(raw.sourceTileSize) > 192) {
+    throw new Error('Canal-town sourceTileSize must be an integer from 32 to 192');
+  }
+  if (!Number.isInteger(raw.blockSize) || Number(raw.blockSize) < 14) {
+    throw new Error('Canal-town blockSize must be an integer >= 14');
+  }
+  if (typeof raw.defaultAvatar !== 'string') {
+    throw new Error('Canal-town defaultAvatar must be an asset path');
+  }
+  if (!isRecord(raw.terrain) || !Array.isArray(raw.terrainMasters) || raw.terrainMasters.length === 0 ||
+      !Array.isArray(raw.assets) || raw.assets.length === 0) {
+    throw new Error('Canal-town manifest requires terrain masters and assets');
+  }
+
+  const terrainMasters: ManifestTerrainMaster[] = raw.terrainMasters.map((value, index) => {
+    if (!isRecord(value) || typeof value.id !== 'string' || typeof value.file !== 'string' ||
+        typeof value.walkable !== 'boolean') {
+      throw new Error(`Invalid canal terrain master at index ${index}`);
+    }
+    const material = value.material;
+    if (material !== undefined && !['water', 'foliage', 'specular', 'fire'].includes(String(material))) {
+      throw new Error(`Invalid material for canal terrain ${value.id}`);
+    }
+    const variants = Number(value.variants ?? 1);
+    if (!Number.isInteger(variants) || variants < 1 || variants > 9) {
+      throw new Error(`Invalid variant count for canal terrain ${value.id}`);
+    }
+    return {
+      id: value.id,
+      file: value.file,
+      variants,
+      walkable: value.walkable,
+      material: material as Tile['material'],
+    };
+  });
+
+  const assets: ManifestAsset[] = raw.assets.map((value, index) => {
+    if (!isRecord(value) || typeof value.id !== 'string' || typeof value.file !== 'string') {
+      throw new Error(`Invalid canal asset at index ${index}`);
+    }
+    if (!Array.isArray(value.roles) || value.roles.length === 0 ||
+        !value.roles.every((role) => typeof role === 'string' && VALID_ROLES.has(role as CanalPlacementRole))) {
+      throw new Error(`Invalid roles for canal asset ${value.id}`);
+    }
+    const scale = Number(value.scale);
+    if (!Number.isFinite(scale) || scale <= 0.2 || scale > 1) {
+      throw new Error(`Invalid scale for canal asset ${value.id}`);
+    }
+    if (!Array.isArray(value.collision) || !value.collision.every(isCollisionOffset)) {
+      throw new Error(`Invalid collision mask for canal asset ${value.id}`);
+    }
+    const spriteTiles = value.spriteTiles === undefined ? [3, 3] : value.spriteTiles;
+    if (!isTileDimensions(spriteTiles)) {
+      throw new Error(`Invalid spriteTiles for canal asset ${value.id}`);
+    }
+    const collisionRect = value.collisionRect;
+    if (collisionRect !== undefined && !isTileDimensions(collisionRect)) {
+      throw new Error(`Invalid collisionRect for canal asset ${value.id}`);
+    }
+    return {
+      id: value.id,
+      file: value.file,
+      roles: value.roles as CanalPlacementRole[],
+      scale,
+      collision: value.collision as Array<[number, number]>,
+      spriteTiles: spriteTiles as [number, number],
+      collisionRect: collisionRect as [number, number] | undefined,
+    };
+  });
+
+  const terrain = raw.terrain as unknown as CanalTownTerrainConfig;
+  for (const key of ['water', 'paving', 'garden'] as const) {
+    if (!Array.isArray(terrain[key]) || !terrain[key].every((id) => typeof id === 'string')) {
+      throw new Error(`Canal-town terrain.${key} must be a string array`);
+    }
+  }
+  if (!isRecord(terrain.curb)) throw new Error('Canal-town terrain.curb must be an object');
+
+  return {
+    version: 1,
+    sourceTileSize: Number(raw.sourceTileSize),
+    blockSize: Number(raw.blockSize),
+    defaultAvatar: raw.defaultAvatar,
+    terrainMasters,
+    terrain,
+    assets,
+  };
+}
+
+function resolveAssetPath(manifestDir: string, relativePath: string): string {
+  const resolved = path.resolve(manifestDir, relativePath);
+  if (!resolved.startsWith(`${manifestDir}${path.sep}`)) {
+    throw new Error(`Canal asset escapes manifest directory: ${relativePath}`);
+  }
+  if (!fs.existsSync(resolved)) throw new Error(`Canal asset is missing: ${resolved}`);
+  return resolved;
+}
+
+async function loadTerrainMasterVariants(
+  imagePath: string,
+  tileSize: number,
+  entry: ManifestTerrainMaster,
+): Promise<Tile[]> {
+  const metadata = await sharp(imagePath).metadata();
+  const sourceWidth = metadata.width ?? 0;
+  const sourceHeight = metadata.height ?? 0;
+  if (sourceWidth === 0 || sourceHeight === 0) throw new Error(`Unreadable terrain master: ${imagePath}`);
+  const columns = Math.ceil(Math.sqrt(entry.variants));
+  const rows = Math.ceil(entry.variants / columns);
+  const cropWidth = Math.floor(sourceWidth / columns);
+  const cropHeight = Math.floor(sourceHeight / rows);
+  const variants: Tile[] = [];
+  for (let index = 0; index < entry.variants; index++) {
+    const left = (index % columns) * cropWidth;
+    const top = Math.floor(index / columns) * cropHeight;
+    const { data, info } = await sharp(imagePath)
+      .extract({ left, top, width: cropWidth, height: cropHeight })
+      .resize(tileSize, tileSize, { fit: 'cover', kernel: sharp.kernel.lanczos3 })
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const pixels = rawToPixelGrid(data, info.width, info.height);
+    const id = index === 0 ? entry.id : `${entry.id}__v${index + 1}`;
+    variants.push({
+      id,
+      name: id,
+      walkable: entry.walkable,
+      material: entry.material,
+      pixels,
+      resolutions: { [String(tileSize)]: pixels },
+    });
+  }
+  return variants;
+}
+
+async function loadManifestSprite(
+  imagePath: string,
+  tileSize: number,
+  scale: number,
+  spriteTiles: [number, number],
+): Promise<BuildingSprite> {
+  const [tilesWide, tilesHigh] = spriteTiles;
+  const canvasWidth = tileSize * tilesWide;
+  const canvasHeight = tileSize * tilesHigh;
+  const { data, info } = await sharp(imagePath)
+    .resize({
+      width: Math.max(tileSize, Math.round(canvasWidth * scale)),
+      height: Math.max(tileSize, Math.round(canvasHeight * scale)),
+      fit: 'inside',
+      kernel: sharp.kernel.lanczos3,
+    })
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const offsetX = Math.floor((canvasWidth - info.width) / 2);
+  const offsetY = canvasHeight - info.height;
+
+  const tiles: BuildingTile[][] = [];
+  for (let tileY = 0; tileY < tilesHigh; tileY++) {
+    const row: BuildingTile[] = [];
+    for (let tileX = 0; tileX < tilesWide; tileX++) {
+      const pixels: PixelGrid = [];
+      for (let y = 0; y < tileSize; y++) {
+        const pixelRow: Pixel[] = [];
+        for (let x = 0; x < tileSize; x++) {
+          const sourceX = tileX * tileSize + x - offsetX;
+          const sourceY = tileY * tileSize + y - offsetY;
+          if (sourceX < 0 || sourceY < 0 || sourceX >= info.width || sourceY >= info.height) {
+            pixelRow.push(null);
+            continue;
+          }
+          const index = (sourceY * info.width + sourceX) * 4;
+          const alpha = data[index + 3] ?? 0;
+          pixelRow.push(alpha < 32 ? null : {
+            r: data[index]!,
+            g: data[index + 1]!,
+            b: data[index + 2]!,
+          });
+        }
+        pixels.push(pixelRow);
+      }
+      row.push({ pixels, resolutions: { [String(tileSize)]: pixels } });
+    }
+    tiles.push(row);
+  }
+
+  return { width: tilesWide, height: tilesHigh, tiles };
+}
+
+async function loadDefaultAvatar(imagePath: string, size: number): Promise<Sprite> {
+  const { data, info } = await sharp(imagePath)
+    .resize({ width: size, height: size, fit: 'contain', kernel: sharp.kernel.lanczos3 })
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const frame = rawToPixelGrid(data, info.width, info.height);
+  const frames: [PixelGrid, PixelGrid, PixelGrid, PixelGrid] = [frame, frame, frame, frame];
+  return {
+    width: size,
+    height: size,
+    frames: { up: frames, down: frames, left: frames, right: frames },
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isCollisionOffset(value: unknown): value is [number, number] {
+  return Array.isArray(value) && value.length === 2 &&
+    value.every((part) => Number.isInteger(part) && Number(part) >= -2 && Number(part) <= 2);
+}
+
+function isTileDimensions(value: unknown): value is [number, number] {
+  return Array.isArray(value) && value.length === 2 &&
+    value.every((part) => Number.isInteger(part) && Number(part) >= 1 && Number(part) <= 8);
+}
+
+function rectangularCollision(width: number, height: number): Array<[number, number]> {
+  const offsets: Array<[number, number]> = [];
+  const left = -Math.floor(width / 2);
+  for (let y = -height + 1; y <= 0; y++) {
+    for (let x = 0; x < width; x++) offsets.push([left + x, y]);
+  }
+  return offsets;
+}
+
+function rawToPixelGrid(data: Buffer, width: number, height: number): PixelGrid {
+  const pixels: PixelGrid = [];
+  for (let y = 0; y < height; y++) {
+    const row: Pixel[] = [];
+    for (let x = 0; x < width; x++) {
+      const index = (y * width + x) * 4;
+      row.push((data[index + 3] ?? 0) < 32 ? null : {
+        r: data[index]!,
+        g: data[index + 1]!,
+        b: data[index + 2]!,
+      });
+    }
+    pixels.push(row);
+  }
+  return pixels;
+}

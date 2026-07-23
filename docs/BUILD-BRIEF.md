@@ -32,26 +32,13 @@ collision). **No image protocols** (no kitty graphics / sixel). First milestone 
  world state ──▶ [L2 WORLD] tiles+entities ──▶ [L1 FIDELITY] pixels→octant cells ──▶ [L3 TRANSPORT] minimal ANSI ──▶ SSH ──▶ Ghostty
 ```
 
-### L1 — FIDELITY (pixels → terminal cells). ⚠️ works but has real quality bugs.
+### L1 — FIDELITY (pixels → terminal cells). ✅ milestone path live
 
-**Honest status (verified by faithfully replaying the live game's ANSI at 160×45
-— see §4; NOT the idealized preview rasterizers, which flatter the output):**
-the octant *ceiling* is good, but the shipped rendering is **muddy + vertically
-streaked**, and by default the live world is flat procedural grass at 100% zoom
-= a giant blurry player sprite (nothing mockup-quality ships). Three concrete,
-fixable rendering bugs — fixing these is real fidelity work:
-1. **Nearest-neighbour downscale** in `ViewportRenderer.scaleFrame`
-   (`scaleFrameUncached`) — a 32px tile NN-shrunk to ~8px throws away 15/16
-   pixels → aliasing/mud. **Fix: box/area-average downsampling.** #1 win, and
-   what the DOSSIER's "improve the scaling" means.
-2. **Octant contrast-split → vertical streaking** on smooth gradients
-   (`renderOctantChar` in `pixel-renderer.ts`): the (min+max)/2 threshold makes
-   vertical fg/bg patterns. Improve subpixel fg/bg selection or dither the
-   pattern; widen the flat-cell solid path.
-3. **Aggressive 4-bit Bayer quantization** (`quantizeGridDithered`, applied at
-   zoom>70) adds noise — unneeded in Ghostty (truecolor). Drop/lighten it.
-
-Below is what already exists to reuse.
+Honest 160×46 SSH replay now passes the visual gate. `ViewportRenderer` uses
+area-average resampling with a bounded cache; the octant renderer fits a
+two-colour reconstruction instead of threshold-streaking; Ghostty retains
+truecolour; and zoom follows a 180ms eased, discrete-LOD curve. The acceptance
+artifact is `tools/render-sim/out/live-canal-town-accepted-faithful.png`.
 - `packages/render/src/pixel/pixel-renderer.ts` — the cell renderers:
   - `renderOctantGridCells(grid, brightness?)` / `renderOctantGrid(grid)` — the
     high-fidelity mode. 2×4 SOLID mosaics. Uses `octant-chars.ts`.
@@ -67,17 +54,22 @@ Below is what already exists to reuse.
   block/quadrant/quarter glyphs; 4 single-corner patterns approximate to their
   quadrant. (Method in git history / RENDERING.md.)
 - `packages/render/src/pixel/pixel-game-renderer.ts` — `PixelGameRenderer`, the
-  orchestrator. **Two render paths — CRITICAL to understand (see §3).**
+  orchestrator and single production cell/codec path.
 - `packages/render/src/pixel/viewport-renderer.ts` — `ViewportRenderer`:
   composites the world into a pixel buffer (terrain→roads→buildings→Y-sorted
-  entities), camera (follow/free, 90° rotation, sub-tile precision), zoom,
-  `scaleFrame` (nearest-neighbour + LRU cache; **improve this for smooth zoom**).
+  entities), camera (follow/free, 90° rotation, sub-tile precision), zoom, and
+  area-resampled LOD selection with an LRU cache.
 - Support: `brightness-cache.ts`, `perf-stats.ts`, `prediction-cache.ts`
   (probabilistic pre-render — early codec idea), `transport/output-pump.ts`
   (SSH backpressure; **only wired in the legacy in-process path — wire it in**).
 
-### L2 — WORLD (what fills the cells). ⏭ THE PIVOT — build this.
-- Model = **rich AI tileset + dense procedural placement** (see DOSSIER §Layer 2).
+### L2 — WORLD (what fills the cells). ✅ canal-town biome live
+- Model = **rich AI tileset + dense deterministic procedural placement**.
+- `assets/canal-town/manifest.json`: 33 modular assets, four terrain masters
+  expanded to 16 variants, explicit roles/scales/collision, retained sources.
+- `canal-town-tile-provider.ts`: unbounded signed-coordinate blocks, variable
+  crossing canals, continuous curbs, two-axis bridges, dense façades, foliage,
+  props, boats, deterministic variation, and a bounded block cache.
 - Reuse: `packages/world/src/tiles/tile-provider.ts` — `TileProvider implements
   WorldDataProvider`. Owns players/NPCs/sprites/buildings/roads + `getTile(x,y)`
   (procedural noise + autotile). `getTile` returns a `Tile { pixels, walkable,
@@ -95,13 +87,14 @@ Below is what already exists to reuse.
 - Chunk system for infinite: `chunk/chunk-generator.ts`, `chunk-cache.ts`.
 - Noise: `noise/noise.ts` (ValueNoise).
 
-### L3 — TRANSPORT (frames → minimal ANSI over SSH). ⏭ build the codec.
-Full spec in `docs/RENDERING-CODEC.md`. Summary: don't transmit frames,
-transmit the minimal terminal op. Camera move = **scroll op** (DECSTBM/DECSLRM +
-SU/SD/DCH/ICH, dead-zone camera), entities = **dirty-rect repairs**, water/light
-= **OSC-4 palette cycling** (`palette-cycle.ts`, proven 141 B/tick / 699× vs
-repaint), cost-based emitter + latency-budgeted writer + client prediction.
-⚠️ With DECSLRM on, `CSI s` = set-margins, NOT save-cursor — use `ESC 7`/`ESC 8`.
+### L3 — TRANSPORT (frames → minimal ANSI over SSH). ✅ codec v1 live
+`terminal-codec.ts` owns the retained terminal framebuffer, exact DECSTBM/
+DECSLRM scroll transforms, SU/SD/DCH/ICH motion compensation, dirty cell runs,
+REP, merged SGR, synchronized output, keyframes, and byte metrics. OSC-4 cycles
+all water for 157 bytes/tick while saving/querying/restoring the user's exact
+palette. `SessionProxy` applies a 64 KiB, depth-one output budget; a dropped
+dependent delta requests a worker keyframe. With DECSLRM on, save/restore uses
+`ESC 7`/`ESC 8`, never ambiguous `CSI s`.
 
 ---
 
@@ -148,28 +141,24 @@ octant-image,octant-scene,palette-water-demo,publish-gallery}.mjs`;
 
 ---
 
-## 3. ⚠️ The render-path fork (most important architectural fact)
+## 3. The production render/transport path
 
-`PixelGameRenderer` has TWO frame paths:
-- **`render(world)`** — cell-grid diff + **CRLE** + **foveated zones** + cell
-  reuse. The sophisticated path. **NOT used by the live game.**
-- **`renderToString(world)`** — renders full ANSI lines, **line-level string
-  diff** vs previous frame, returns a string. **This is what production uses**
-  (the worker needs a string to send over IPC): `worker-session.ts` tick →
-  `this.renderer.renderToString(this.tileProvider)` → `this.stream.write`.
+The old line-diff fork is closed. Both `render()` and `renderToString()` compose
+the same structured `CellGrid` and retained `TerminalCodec`; the live worker
+uses `renderToString()` only because IPC needs a string. The codec compares the
+new camera/world revision with its retained terminal model, applies an exact
+scroll transform when profitable, and emits only exposed strips or dirty runs.
 
-Consequence: line-diff repaints any line that changed → **a camera move
-repaints ~the whole viewport** (every line changes). That's the movement-cost
-problem. **The codec (L3) must be built on/replace the cell path and produce a
-string** (or the transport must move to the cell/diff model). Unifying these is
-the single biggest transport refactor. Measure first (`tools` + the perf probe
-pattern in git history: build a fake stream, `renderToString`, count bytes idle
-vs moving).
+`PixelGameRenderer.primeCamera()` is an I-frame boundary used after the final
+zoom/layout restore. It prevents saved spawns from easing out of `(0,0)` and
+turning startup into dozens of fake motion frames. Resize, teleport, palette
+failure, or an output drop similarly requests a keyframe. Ordinary idle frames
+are only the 157-byte OSC-4 packet; the HUD refreshes at 1 Hz.
 
-Both paths already: wrap frames in **synchronized output** (`\x1b[?2026h/l`),
-use merged-SGR, throttle the idle stats bar to 1Hz. Perf of the cell path was
-optimized this session (see RENDERING.md §2: halfblock 14.5→6.5ms, braille
-57→29ms/frame).
+Backpressure lives in the main-process `SessionProxy`, where it can observe the
+actual ssh2 stream. The queue is bounded to 64 KiB and one complete pending
+frame. A dropped delta invalidates the dependency chain and sends a
+`request-keyframe` IPC message before another delta is accepted.
 
 ---
 
@@ -199,8 +188,13 @@ Sanity: `grep -q "from '\./client'" packages/db/dist/index.js && echo BROKEN`.
 
 **Deploy (live game = native systemd unit, see `deploy/box/`):**
 ```
+# Worker-only hot deploy; preserves established SSH sockets.
+kill -USR1 "$(systemctl show maldoror-ssh-world.service -p MainPID --value)"
+
+# Full restart only when main-process code must be activated and connections
+# have drained (or a maintenance interruption is explicitly acceptable).
 sudo systemctl restart maldoror-ssh-world.service
-journalctl -u maldoror-ssh-world -f          # logs
+sudo journalctl -u maldoror-ssh-world -f
 ```
 Env: `/etc/donto/maldoror.env` (root:ajax 640). Keys: `DATABASE_URL`
 (maldoror-pg docker, 127.0.0.1:5436), `SSH_PORT=2222`, `STATS_PORT=3105`,
@@ -208,7 +202,9 @@ Env: `/etc/donto/maldoror.env` (root:ajax 640). Keys: `DATABASE_URL`
 `WORKER_STARTUP_TIMEOUT_MS=300000`, `NODE_OPTIONS` (heap capped ~1.2G — the
 service is in `maldoror.slice` with **MemoryMax 1.6G — do not exceed** or it
 OOM-kills). Optional: `MALDOROR_RENDER_MODE` (force normal/halfblock/braille/
-octant), `MALDOROR_DISTRICT=<png>` (experiment: district as world).
+octant), `MALDOROR_DISTRICT=<png>` (legacy experiment: district as world;
+also set `MALDOROR_CANAL_TOWN=0`, because the generated canal-town is the
+production default and deliberately takes precedence).
 Worker boot takes ~30-90s under load (module load off sdb) — patience, not a
 hang. `.service`/`.slice` mirrored in `deploy/box/`; `deploy/box/redeploy.sh` =
 full build+tsup+push+restart.
@@ -218,22 +214,21 @@ full build+tsup+push+restart.
    `node tools/render-sim/sim.mjs` (or `showcase.mjs`/`town.mjs`/
    `octant-image.mjs <img>`). Read the PNG. **Never ship a visual change unseen.**
 2. **Publish** to the public gallery:
-   `node tools/render-sim/publish-gallery.mjs <slug> "notes"` →
+   `node tools/render-sim/publish-gallery.mjs <slug> "notes" --files=a.png,b.png` →
    **https://maldoror.dev/gallery** (Caddy `handle_path /gallery/*`). The
    `COMPARISON.png` (TARGET vs NOW) is the goal-tracking artifact.
-3. **Live probe over SSH** (octant needs a Ghostty TERM + a real window size):
-   ```python
-   import os,pty,fcntl,termios,struct,select,time
-   pid,fd=pty.fork()
-   if pid==0: os.execvp("ssh",["ssh","-tt","-p","2222","-o","StrictHostKeyChecking=no",
-     "-o","UserKnownHostsFile=/dev/null","-o","SetEnv TERM=xterm-ghostty","user@127.0.0.1"]); os._exit(1)
-   fcntl.ioctl(fd,termios.TIOCSWINSZ,struct.pack('HHHH',50,200,0,0))  # ROWS,COLS — REQUIRED (pty.fork=0x0=empty viewport)
-   # read fd; drive WASD; count bytes / check octant glyphs (U+1CD00..U+1CEBF)
+3. **Live probe over SSH** (the harness handles PTY size, cleanup and exact
+   startup/steady byte accounting):
    ```
-   Stats: `curl -s http://127.0.0.1:3105/stats | jq`.
+   python3 tools/render-sim/capture-live.py tools/render-sim/out/live.bin \
+     --cols 160 --rows 46 --settle 6
+   python3 tools/render-sim/capture-live.py tools/render-sim/out/step.bin \
+     --cols 160 --rows 46 --keys d --settle 6
+   curl -s http://127.0.0.1:3105/stats | jq
+   ```
 4. **Faithful look** — the ONLY honest way to judge fidelity: capture the ssh
-   stream to a `.bin` (python pty, 160×45, ghostty TERM), then
-   `node tools/render-sim/faithful-render.mjs <cap.bin> 160 45` → replays the
+   stream to a `.bin` (python pty, 160×46, ghostty TERM), then
+   `node tools/render-sim/faithful-render.mjs <cap.bin> 160 46` → replays the
    real bytes the way Ghostty paints them. Judge from THIS, never the preview
    rasterizers (`octant-image.mjs` etc. flatter the output — they fooled the
    prior agent into "fidelity solved" when it wasn't).
@@ -249,17 +244,18 @@ full build+tsup+push+restart.
 2. **Walkability from painterly art is unreliable** (terracotta roofs ≈ warm
    plaza → color thresholds walk on roofs). The tileset model AVOIDS this —
    collision is a known per-tile flag. Don't reintroduce paint-derived collision.
-3. **Per-tile resolution pyramid OOMs.** `PixelGrid` is `{r,g,b}` objects
+3. **Per-session resolution pyramids OOM.** `PixelGrid` is `{r,g,b}` objects
    (~40B/pixel in V8). Generating a full 26→256 pyramid per tile for a whole
    district = many GB → instant OOM (MemoryMax 1.6G). District tiles store BASE
    pixels only; the renderer's `scaleFrame` downscales on demand. (See
    `district-loader.ts` comment.) For the real tileset, share tile pixel data by
-   id (autotiles are a small fixed set, not per-cell).
+   id. Runtime player/NPC rendering selects the nearest complete 128px level
+   into shared, bounded caches; never mutate or delete the persisted 256px PNG.
 4. **`pty.fork` gives a 0×0 window** → empty viewport → "no frames". Always
    `TIOCSWINSZ`. And octant only appears with a Ghostty-ish `TERM`.
 5. **turbo build clobbers the db ESM bundle** (§4).
-6. **The live render path is `renderToString` (line-diff), not the CRLE cell
-   path** (§3). Don't optimize the wrong one.
+6. **A frame drop breaks retained deltas.** Never drop one and continue as if
+   the terminal received it; request a keyframe first.
 7. Sprites have a baked-in dark alpha fringe → despeckle at load
    (`sprite-hygiene.ts`); raise generation alpha threshold.
 8. **Image protocols are banned** — the user vetoed kitty graphics. Terminal
@@ -274,34 +270,20 @@ mockup-quality neighborhood; walk it with **smooth scroll + smooth zoom**;
 octant; comfortable frame rate; sane bandwidth. Side-by-side vs TARGET; user
 sign-off.
 
-**Build order (each step: sim-screenshot → LOOK → gallery → then wire live):**
+**Engineering gate status:**
 
-1. **Rich canal-town tileset (the make-or-break).** Generate, in the mockup
-   style (via `packages/ai` + the mockup as `images.edit` style reference — see
-   `tools/gen-*.mjs` patterns; OPENAI key in `/etc/donto/maldoror.env`):
-   - terrain: many stone-plaza + water variants; FULL autotile transition sets
-     (the 16 edge configs) for stone↔water and biome edges; grass/dirt.
-   - objects with DROP SHADOWS: trees, bushes, flower clumps, vines, planters,
-     lamp posts, market stalls, boats; buildings (multi-tile) in several styles.
-   - Register terrain via `setTerrainTile`; objects as building/overlay tiles.
-   - **DoD:** one dense hand-laid block from the tileset, octant-rendered, is
-     honestly in TARGET's league (COMPARISON.png). Iterate the tileset until it
-     is — this is where the quality lives.
-2. **Dense procedural placement** for the block: autotiled canals, buildings
-   framing water, foliage/prop borders (Poisson/weighted placement, not sparse).
-   Per-tile `walkable` from the tileset (KNOWN, not derived).
-3. **Motion codec v1** (`docs/RENDERING-CODEC.md`): scroll-region camera with a
-   dead zone (actor sub-cell, camera whole-cell), dirty-rect player repair,
-   OSC-4 water animation. Extend/replace the cell path so it yields a string for
-   the worker (§3). **Measure bytes/frame moving** (must be a few KiB, not the
-   whole viewport). Client prediction for input feel.
-4. **Smooth zoom:** study + improve `ViewportRenderer.scaleFrame` (better
-   downsampling than nearest; mip-correct), animate the tile render size across
-   zoom, and prototype **discrete-LOD art** (cheap map-view tileset via
-   gpt-image-2) with a clean threshold crossover.
-5. **Live + Ghostty-first:** wire the block into `worker-session.ts` as the
-   world; exploit Ghostty (octant + OSC-4 + sync + kitty-keyboard input); verify
-   in real Ghostty; COMPARISON vs TARGET; **sign-off**.
+1. ✅ Rich coherent canal-town kit: 33 assets + 16 terrain variants, generated
+   through Codex's built-in ChatGPT image capability and retained with sources.
+2. ✅ Dense infinite placement and explicit collision: live
+   `CanalTownTileProvider`, crossing waterways and two-axis bridges.
+3. ✅ Codec v1: retained framebuffer, exact scroll transforms, dirty repairs,
+   palette water, keyframes, and bounded output.
+4. ✅ Smooth actor/camera/zoom plus area-resampled LOD.
+5. ✅ Live worker deployment and honest real-SSH capture. Current 160×46 proof:
+   270,069-byte initial cell frame; 16,133 post-keyframe bytes over six seconds;
+   one step adds 5,130 bytes over the equivalent idle interval.
+6. ⏳ Operator sign-off in a physical Ghostty window. This is an external
+   acceptance action and must not be fabricated by the automated harness.
 
 After the milestone: 2nd biome (forest) tileset · NPC townsfolk (reuse
 `npc-*`) · other-players-present (already multiplayer) · world-over-time
@@ -309,18 +291,19 @@ After the milestone: 2nd biome (forest) tileset · NPC townsfolk (reuse
 
 ---
 
-## 7. Open technical problems + recommended approach
+## 7. Next work after milestone sign-off
 
-- **Transport codec** (biggest): unify onto a cell/dirty model that emits a
-  string; scroll-region motion compensation; latency budget. Start by MEASURING
-  the current `renderToString` bytes idle vs moving to quantify the win.
-- **LOD generation** (cost-efficient): generate a small "map/overview" tileset
-  per biome once (gpt-image-2), crossover at a zoom threshold; don't shrink
-  detail art to mush.
-- **Tileset coherence at scale**: autotiling handles edges; use a fixed,
-  richly-varied set + weighted placement + blue-noise scatter for density.
-- **Backpressure**: wire `transport/output-pump.ts` into `SessionProxy` so a
-  slow client can't balloon memory (drop-oldest + forced redraw).
+- Generate a second biome (forest/ruins) through the same manifest/role/collision
+  contract and add deterministic biome transitions.
+- Generate authored far-LOD/map art per biome instead of shrinking near-detail
+  sprites beyond their useful scale.
+- Expand NPC schedules, conversation, and visible life; preserve the compact
+  shared runtime sprite strategy.
+- Add day/night, weather, foliage, and lantern material palettes using the same
+  OSC-4 ownership/save/restore contract.
+- Load the latest main-process lifecycle hardening on the next safe full service
+  restart; the worker path is already deployed without disconnecting the three
+  established SSH clients.
 
 Judge every visual change against `tools/render-sim/gallery/TARGET.png`. Keep
 the gallery + COMPARISON updated — it's how progress is made legible.

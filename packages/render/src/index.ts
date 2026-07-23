@@ -91,3 +91,4 @@ export {
 // Transport (backpressure handling)
 export { OutputPump, type OutputPumpMetrics } from './transport/index.js';
 export * from './pixel/palette-cycle.js';
+export * from './pixel/terminal-codec.js';

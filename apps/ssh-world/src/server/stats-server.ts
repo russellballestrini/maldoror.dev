@@ -121,6 +121,7 @@ interface TransportMetrics {
   droppedFrames: number;
   drainCount: number;
   totalBytesWritten: number;
+  peakQueuedBytes: number;
 }
 
 interface StatsServerConfig {
@@ -1578,8 +1579,8 @@ export class StatsServer {
       totalDroppedFrames += m.droppedFrames;
       totalDrainEvents += m.drainCount;
       totalBytesWritten += m.totalBytesWritten;
-      if (m.queuedBytes > peakQueuedBytes) {
-        peakQueuedBytes = m.queuedBytes;
+      if (m.peakQueuedBytes > peakQueuedBytes) {
+        peakQueuedBytes = m.peakQueuedBytes;
       }
     }
 

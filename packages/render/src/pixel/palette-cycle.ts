@@ -58,10 +58,14 @@ function mix(a: RGB, b: RGB, t: number): RGB {
  * Colors matched to the mockup's teal canals.
  */
 export function waterPalette(t: number): RGB[] {
-  const deep: RGB = { r: 26, g: 122, b: 130 };
-  const mid: RGB = { r: 44, g: 164, b: 168 };
-  const bright: RGB = { r: 96, g: 210, b: 208 };
-  const glint: RGB = { r: 216, g: 250, b: 246 };
+  // These slots are used only for the light-catching half of a water cell.
+  // Keep the band close to the generated water master's own palette: cycling
+  // deep cyan through every foreground/background cell produced a harsh,
+  // synthetic checkerboard and threw away the source painting.
+  const deep: RGB = { r: 100, g: 190, b: 190 };
+  const mid: RGB = { r: 132, g: 211, b: 204 };
+  const bright: RGB = { r: 184, g: 232, b: 220 };
+  const glint: RGB = { r: 239, g: 249, b: 232 };
   const out: RGB[] = [];
   for (let p = 0; p < PHASES; p++) {
     // wave position in [0,1) sweeping with t
@@ -99,6 +103,32 @@ export function osc4Packet(base: number, colors: RGB[]): string {
   }
   s += `${ESC}\\`;
   return s;
+}
+
+/** Set arbitrary palette entries, used to restore the exact values returned by
+ * OSC-4 queries rather than assuming the terminal's factory palette. */
+export function osc4EntriesPacket(entries: ReadonlyArray<readonly [number, RGB]>): string {
+  const hx = (n: number) => n.toString(16).padStart(2, '0');
+  let packet = `${ESC}]4`;
+  for (const [index, color] of entries) {
+    packet += `;${index};rgb:${hx(color.r)}/${hx(color.g)}/${hx(color.b)}`;
+  }
+  return `${packet}${ESC}\\`;
+}
+
+/** Parse one terminal reply to `OSC 4 ; index ; ?`. Components may be 8-bit
+ * (`RR`) or 16-bit (`RRRR`) depending on the terminal. */
+export function parseOsc4ColorResponse(response: string): { index: number; color: RGB } | null {
+  const match = /^\x1b\]4;(\d+);rgb:([0-9a-f]{2,4})\/([0-9a-f]{2,4})\/([0-9a-f]{2,4})(?:\x1b\\|\x07)$/i.exec(response);
+  if (!match) return null;
+  const component = (hex: string): number => {
+    const maximum = Math.pow(16, hex.length) - 1;
+    return Math.round(Number.parseInt(hex, 16) * 255 / maximum);
+  };
+  return {
+    index: Number.parseInt(match[1]!, 10),
+    color: { r: component(match[2]!), g: component(match[3]!), b: component(match[4]!) },
+  };
 }
 
 /** OSC-104 packet restoring the given palette slots to their defaults (on exit). */

@@ -175,6 +175,7 @@ export const WATER_TILE: Tile = {
   name: 'Water',
   pixels: WATER_PIXELS,
   walkable: false,
+  material: 'water',
   animated: true,
   animationFrames: WATER_ANIMATION_FRAMES,
   resolutions: generateAllResolutions(WATER_PIXELS),

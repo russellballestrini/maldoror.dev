@@ -10,8 +10,9 @@ import type { PlayerInput, NPCVisualState, Sprite } from '@maldoror/protocol';
 import type { NPCCreateData } from '../utils/npc-storage.js';
 import type { ProviderConfig } from '@maldoror/ai';
 import { WorkerSession } from './worker-session.js';
-import { loadAllTerrainTilesFromDB } from '../utils/terrain-storage.js';
+import { loadAllTerrainTilesFromDisk } from '../utils/terrain-storage.js';
 import { setTerrainTiles } from '@maldoror/world';
+import { loadCanalTownKit, type LoadedCanalTownKit } from '../game/canal-town-assets.js';
 
 // Message types for IPC
 export interface WorkerInitMessage {
@@ -144,6 +145,11 @@ export interface SessionResizeMessage {
   rows: number;
 }
 
+export interface SessionKeyframeMessage {
+  type: 'session_keyframe';
+  sessionId: string;
+}
+
 export type MainToWorkerMessage =
   | WorkerInitMessage
   | PlayerConnectMessage
@@ -161,6 +167,7 @@ export type MainToWorkerMessage =
   | DestroySessionMessage
   | SessionInputMessage
   | SessionResizeMessage
+  | SessionKeyframeMessage
   | GetAllSessionStatesMessage
   | ShutdownMessage;
 
@@ -234,6 +241,7 @@ export interface SessionOutputMessage {
   type: 'session_output';
   sessionId: string;
   output: string;
+  keyframe: boolean;
 }
 
 export interface SessionUserIdMessage {
@@ -271,6 +279,7 @@ export type WorkerToMainMessage =
 let gameServer: GameServer | null = null;
 let worldSeed: bigint = 0n;
 let providerConfig: ProviderConfig = { provider: 'openai', model: 'gpt-image-1-mini' };
+let canalTownKit: LoadedCanalTownKit | null = null;
 const workerSessions: Map<string, WorkerSession> = new Map();
 
 function send(message: WorkerToMainMessage): void {
@@ -279,8 +288,8 @@ function send(message: WorkerToMainMessage): void {
   }
 }
 
-function sendSessionOutput(sessionId: string, output: string): void {
-  send({ type: 'session_output', sessionId, output });
+function sendSessionOutput(sessionId: string, output: string, keyframe = false): void {
+  send({ type: 'session_output', sessionId, output, keyframe });
 }
 
 function sendSessionUserId(sessionId: string, userId: string): void {
@@ -315,11 +324,23 @@ process.on('message', async (msg: MainToWorkerMessage) => {
           send({ type: 'npc_created_broadcast', npc });
         });
 
-        // Load AI terrain tiles from database
-        const terrainTiles = await loadAllTerrainTilesFromDB();
+        // Disk PNGs are the deploy artifact and can be loaded at one bounded
+        // source resolution; parsing every JSON pyramid from Postgres used most
+        // of the worker cgroup before the first player arrived.
+        const terrainTiles = await loadAllTerrainTilesFromDisk();
         if (terrainTiles.size > 0) {
           setTerrainTiles(Array.from(terrainTiles.values()));
-          console.log(`[Worker] Loaded ${terrainTiles.size} AI terrain tiles from database`);
+          console.log(`[Worker] Loaded ${terrainTiles.size} AI terrain tiles from disk`);
+        }
+
+        if (process.env.MALDOROR_CANAL_TOWN !== '0') {
+          canalTownKit = await loadCanalTownKit();
+          setTerrainTiles(canalTownKit.terrainTiles);
+          console.log(
+            `[Worker] Loaded ${canalTownKit.assets.length} canal-town assets + ` +
+            `${canalTownKit.terrainTiles.length} rasterized terrain tiles from ${canalTownKit.manifestPath} ` +
+            `(RSS ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB)`,
+          );
         }
 
         // Load NPCs from database
@@ -451,6 +472,7 @@ process.on('message', async (msg: MainToWorkerMessage) => {
           gameServer,
           worldSeed,
           providerConfig,
+          canalTownKit,
           sendOutput: sendSessionOutput,
           sendUserId: sendSessionUserId,
           sendEnded: sendSessionEnded,
@@ -491,6 +513,11 @@ process.on('message', async (msg: MainToWorkerMessage) => {
         if (session) {
           session.resize(msg.cols, msg.rows);
         }
+        break;
+      }
+
+      case 'session_keyframe': {
+        workerSessions.get(msg.sessionId)?.requestKeyframe();
         break;
       }
 

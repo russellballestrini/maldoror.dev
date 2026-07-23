@@ -1,6 +1,7 @@
 import type { RGB, Pixel, PixelGrid } from '@maldoror/protocol';
 import { sgrCode, sgrPairKey } from './ansi-cache.js';
 import { OCTANT_CHARS } from './octant-chars.js';
+import { PALETTE, PHASES } from './palette-cycle.js';
 
 /**
  * ANSI escape codes for pixel rendering
@@ -63,6 +64,8 @@ export interface TerminalCell {
   char: string;           // ' ', '  ', '▀', or braille char
   fgColor: RGB | null;    // Foreground color (for halfblock/braille)
   bgColor: RGB | null;    // Background color
+  fgIndex?: number | null; // Optional OSC-4/256-color palette slot
+  bgIndex?: number | null;
 }
 
 /**
@@ -92,7 +95,9 @@ export function cellsEqual(a: TerminalCell, b: TerminalCell | undefined): boolea
   if (!b) return false;
   return a.char === b.char &&
          colorsEqual(a.fgColor, b.fgColor) &&
-         colorsEqual(a.bgColor, b.bgColor);
+         colorsEqual(a.bgColor, b.bgColor) &&
+         (a.fgIndex ?? null) === (b.fgIndex ?? null) &&
+         (a.bgIndex ?? null) === (b.bgIndex ?? null);
 }
 
 /**
@@ -844,7 +849,11 @@ export function renderBrailleGridCells(grid: PixelGrid, brightnessGrid?: Brightn
  * Render a pixel grid to a cell grid using OCTANT mode (2×4 solid mosaics).
  * Same geometry as braille; used by the sim/showcase cell path.
  */
-export function renderOctantGridCells(grid: PixelGrid, brightnessGrid?: BrightnessGrid): CellGrid {
+export function renderOctantGridCells(
+  grid: PixelGrid,
+  brightnessGrid?: BrightnessGrid,
+  materialGrid?: Uint8Array[]
+): CellGrid {
   const result: CellGrid = [];
   const height = grid.length;
   const width = grid[0]?.length ?? 0;
@@ -862,7 +871,53 @@ export function renderOctantGridCells(grid: PixelGrid, brightnessGrid?: Brightne
       }
       const cellBrightness = brightnessGrid?.[cellY]?.[cellX] ?? 1.0;
       const { char, fg, bg } = renderOctantChar(block, cellBrightness);
-      cellRow.push({ char, fgColor: fg, bgColor: bg });
+      let waterSamples = 0;
+      const phaseCounts = new Uint8Array(PHASES);
+      if (materialGrid) {
+        for (let dy = 0; dy < 4; dy++) {
+          for (let dx = 0; dx < 2; dx++) {
+            const encodedPhase = materialGrid[y + dy]?.[x + dx] ?? 0;
+            if (encodedPhase > 0) {
+              waterSamples++;
+              const phaseIndex = encodedPhase - 1;
+              phaseCounts[phaseIndex] = (phaseCounts[phaseIndex] ?? 0) + 1;
+            }
+          }
+        }
+      }
+      if (waterSamples >= 6 && fg && bg) {
+        let phase = 0;
+        for (let p = 1; p < PHASES; p++) {
+          if (phaseCounts[p]! > phaseCounts[phase]!) phase = p;
+        }
+        const luminance = (color: RGB): number =>
+          color.r * 0.2126 + color.g * 0.7152 + color.b * 0.0722;
+        const foregroundLuminance = luminance(fg);
+        const backgroundLuminance = luminance(bg);
+        const contrast = Math.abs(foregroundLuminance - backgroundLuminance);
+
+        // Animate only a genuinely light-catching cluster. The unindexed side
+        // retains the generated master texture and supplies the dark teal body
+        // of the canal; OSC-4 moves a sparse highlight rather than repainting
+        // the whole surface as a two-colour phase field.
+        if (Math.max(foregroundLuminance, backgroundLuminance) >= 178 && contrast >= 12) {
+          cellRow.push({
+            char,
+            fgColor: fg,
+            bgColor: bg,
+            fgIndex: foregroundLuminance >= backgroundLuminance
+              ? PALETTE.WATER + phase
+              : null,
+            bgIndex: backgroundLuminance > foregroundLuminance
+              ? PALETTE.WATER + phase
+              : null,
+          });
+        } else {
+          cellRow.push({ char, fgColor: fg, bgColor: bg });
+        }
+      } else {
+        cellRow.push({ char, fgColor: fg, bgColor: bg });
+      }
       cellX++;
     }
     result.push(cellRow);

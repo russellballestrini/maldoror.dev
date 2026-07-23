@@ -1,91 +1,74 @@
-# GOAL → see /DOSSIER.md (north star, set from the 2026-07-23 vision interview)
-
-**Maldoror = an infinite, freely-zoomable, buttery-smooth, entirely AI-generated
-LIVING world (canal-towns, forests, waterways, ruins) explored together over SSH,
-in high-fidelity octant ANSI, Ghostty-first.** Non-negotiables: looks like
-TARGET.png (dense/lush/organic) · buttery smooth · pure ANSI (no image protocols)
-· Ghostty-first. World model = RICH AI tileset + dense procedural placement
-(seamless infinite + known collision). FIRST MILESTONE = "one gorgeous walkable
-block, buttery smooth" (DOSSIER.md).
-
----
-
 # RENDER GOAL — match the TARGET mockup
 
-**The goal:** the live game, played over SSH in Ghostty, is visually
-indistinguishable *in style and fidelity* from `gallery/TARGET.png`
-(the cozy pastel canal-town mockup) — backed by pipelines that can generate
-infinite terrains/buildings/props in that style, not hand-placed one-offs.
+See `/DOSSIER.md` for the north star. Maldoror is an infinite, freely zoomable,
+buttery-smooth, AI-authored living world over pure high-fidelity ANSI,
+Ghostty-first. No kitty graphics or sixel.
 
-**The loop (every iteration):** change → `sim.mjs`/`showcase.mjs` screenshot →
-LOOK → publish to <https://maldoror.dev/gallery> with notes → compare vs
-TARGET → next. No change ships without being seen.
+The visual target is `gallery/TARGET.png`: dense, lush, organic, warm and
+painterly. The implementation model is a rich modular AI tileset plus
+deterministic infinite placement with explicit collision.
+
+## Acceptance loop
+
+Every visual change follows:
+
+```
+change
+  -> production simulator
+  -> look at the PNG
+  -> deploy worker
+  -> real xterm-ghostty SSH capture
+  -> faithful ANSI replay
+  -> TARGET side-by-side
+  -> gallery
+```
+
+Preview rasterizers help iteration but cannot pass the live gate. Only
+`faithful-render.mjs` replaying the real SSH bytes proves what Ghostty receives.
 
 ## Gates
 
-- **G0 — Loop operational** ✅ *(iter 000-002)*
-  Headless sim drives the real pipeline, rasterized screenshots, public
-  gallery with TARGET pinned, live deploys verified end-to-end.
+- **G0 — loop:** ✅ simulator, live capture, faithful replay, and public gallery.
+- **G1 — coherent terrain:** ✅ paving, water, garden and curb masters; four
+  deterministic variants each; continuous crossing canal grammar.
+- **G2 — world vocabulary:** ✅ 33 assets: nine façades, two bridge axes,
+  quay/dock, foliage, furniture, planters, water details and boats.
+- **G3 — live world:** ✅ `CanalTownTileProvider` is the production default;
+  infinite signed-coordinate blocks; deterministic density; explicit collision.
+- **G4 — fidelity:** ✅ area-resampled truecolour octants with error-minimizing
+  two-colour fitting; honest 160x46 live screenshot passes the engineering
+  visual review against TARGET.
+- **G5 — motion:** ✅ 200ms sub-tile actor interpolation, dead-zone follow
+  camera, cell-quantized scrolling, 180ms zoom, discrete source LOD.
+- **G6 — terminal codec:** ✅ retained framebuffer, DECSTBM/DECSLRM,
+  SU/SD/DCH/ICH, dirty repairs, REP, merged SGR, synchronized output, keyframes,
+  exact OSC-4 palette ownership, bounded depth-one SSH output.
+- **G7 — operational:** ✅ worker hot deployment preserved three established SSH
+  connections; health remained responsive; shared runtime sprite caches brought
+  memory below the cgroup high-water threshold.
+- **G8 — physical Ghostty sign-off:** ⏳ operator action. Automated evidence
+  cannot honestly substitute for the user's physical-client acceptance.
 
-- **G1 — Style-coherent terrain**
-  All terrain visible in the showcase matches the TARGET palette/materials.
-  Checkable: curb lines continuous on BOTH axes; no tone mismatch between
-  base stone and transition tiles at intersections; ≥2 water variants so
-  repetition isn't obvious at a glance; no style-mismatched tiles on screen.
+## Current proof
 
-- **G2 — World furniture**
-  Showcase contains, in TARGET style: ≥2 multi-tile buildings (terracotta
-  roofs / awnings), ≥1 bridge across a canal, ≥3 prop types (lamp post,
-  planter, boat). Generated via repeatable scripts, not hand-drawn.
+- Honest live frame:
+  `out/live-canal-town-accepted-faithful.png`
+- Raw idle capture:
+  `out/live-idle-primed-v2.bin`
+- Raw one-step capture:
+  `out/live-one-step-primed.bin`
+- Headless production view:
+  `out/canal-town-production-octant-14-14.png`
+- Target:
+  `gallery/TARGET.png`
 
-- **G3 — HUD**
-  Hearts (top-left) + coin counter (bottom-left) overlays in the live game,
-  styled like the TARGET.
+At 160x46, the live initial cell frame is 270,069 bytes. After it, six idle
+seconds cost 16,133 bytes: 89 157-byte palette ticks and two 1,080-byte HUD
+refreshes. A one-tile step costs 16,748 bytes in the five seconds after input,
+including palette and HUD traffic. The former startup camera catch-up is gone.
 
-- **G4 — Fidelity: octant solid mosaics** ✅ *(iter 004)*
-  Unicode 16 octant (2×4 solid) render mode, auto-selected from the client's
-  TERM (Ghostty/kitty/VTE → octant; else halfblock). Image protocols (kitty
-  graphics) are REJECTED — maldoror is a *terminal* game, pure ANSI only.
-  Verified: a Ghostty client renders octant (0 braille) live.
+## After sign-off
 
-- **G5 — Terminal-native codec** (docs/RENDERING-CODEC.md)
-  Retained cell framebuffer + motion-compensated ANSI: camera motion = scroll
-  op (DECSTBM/DECSLRM + SU/SD/DCH/ICH), actors = dirty-rect repairs, water/
-  light = OSC-4 palette cycling, cost-based emitter under a byte/latency budget.
-  - [x] palette-cycled water (141 B/tick animates all water, 699× vs repaint)
-  - [ ] retained terminal_view + scroll-region motion compensation
-  - [ ] dead-zone camera (sub-cell actor / whole-cell camera)
-  - [ ] dirty-rect entity repair + cost-based emitter + latency budget
-  Checkable: steady-state bytes/frame during camera pan < a few KiB; smooth in
-  a real Ghostty SSH session.
-
-- **G6 — The match (sign-off)**
-  A screenshot of the REAL game in Ghostty, side-by-side with TARGET in the
-  gallery, and the operator (Thomas) signs off that it hits the bar.
-
-## THE APPROACH (course-corrected, iter 8-9)
-
-Tile-scatter (atomic props on a coarse grid + rectangular water) was too sparse
-and blocky to look like the mockup. The mockup is DENSE and COMPOSED. So:
-
-**Generate a dense cohesive canal DISTRICT image in the mockup style (images.edit
-from the mockup) → octant-render it as the backdrop → derive a walkability layer
-→ composite/move the player on walkable ground → camera-locked "room" (the codec
-spec's visual grammar), scroll transitions between districts.**
-
-Infinite world = infinite generated districts. Proven (iter 9): a generated
-district + player, octant-rendered, is a real game screen in the mockup's league
-(gallery COMPARISON.png). Tools: `tools/gen-district.mjs`, `octant-image.mjs`,
-`octant-scene.mjs`.
-
-## Current status
-
-| Gate | Status |
-|---|---|
-| G0 loop | ✅ |
-| G4 octant fidelity | ✅ LIVE |
-| LOOK matches TARGET | ✅ proven (octant districts, iter 8-9) |
-| Walkability / collision | ⚠️ color heuristic over-includes roofs — needs vision-segmentation OR layered ground/object generation (NEXT) |
-| District-scene mode in LIVE game | pending (backdrop + player + camera-lock + transitions) |
-| HUD (hearts/coins), water animation (palette) | pending |
-| G6 sign-off | pending — user verifies in Ghostty |
+Build a second biome through the same manifest/role/collision contract; add
+authored far-LOD map art; deepen visible NPC schedules and conversation; then
+use the palette ownership machinery for day/night, weather, foliage and light.

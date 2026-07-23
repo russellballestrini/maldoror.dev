@@ -206,13 +206,25 @@ export async function loadNPCFrame(
  * Only loads base resolution (256) - renderer handles scaling
  */
 export async function loadNPCSpriteFromDisk(npcId: string): Promise<Sprite | null> {
-  // Check if files exist by trying to load one frame
-  const testFrame = await loadNPCFrame(npcId, 'down', 0, 256);
+  const configured = Number.parseInt(process.env.MALDOROR_RUNTIME_SPRITE_RESOLUTION ?? '128', 10);
+  const target = Number.isFinite(configured) ? Math.max(26, Math.min(256, configured)) : 128;
+  const candidates = [...RESOLUTIONS].sort((a, b) =>
+    Math.abs(a - target) - Math.abs(b - target) || a - b
+  );
+  let runtimeResolution: number | null = null;
+  let testFrame: PixelGrid | null = null;
+  for (const resolution of candidates) {
+    testFrame = await loadNPCFrame(npcId, 'down', 0, resolution);
+    if (testFrame) {
+      runtimeResolution = resolution;
+      break;
+    }
+  }
   if (!testFrame) {
     return null;
   }
 
-  const width = testFrame[0]?.length ?? 256;
+  const width = testFrame[0]?.length ?? runtimeResolution ?? target;
   const height = testFrame.length;
 
   // Initialize the sprite structure
@@ -228,10 +240,10 @@ export async function loadNPCSpriteFromDisk(npcId: string): Promise<Sprite | nul
     resolutions: {},
   };
 
-  // Load all base resolution frames
+  // Load one deploy-time-selected resolution; full-quality files stay on disk.
   for (const direction of DIRECTIONS) {
     for (let frameNum = 0; frameNum < 4; frameNum++) {
-      const pixels = await loadNPCFrame(npcId, direction, frameNum, 256);
+      const pixels = await loadNPCFrame(npcId, direction, frameNum, runtimeResolution!);
       if (pixels) {
         // Strip baked-in dark alpha fringe (see sprite-hygiene.ts)
         sprite.frames[direction][frameNum] = despeckleSpriteFrame(pixels);

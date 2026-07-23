@@ -14,12 +14,31 @@ import { despeckleSpriteFrame } from './sprite-hygiene.js';
 
 const DIRECTIONS = ['up', 'down', 'left', 'right'] as const;
 type Direction = typeof DIRECTIONS[number];
+type SpriteFrameRecord = typeof schema.spriteFrames.$inferSelect;
+const MAX_RUNTIME_SPRITE_CACHE = 64;
+const runtimeSpriteCache = new Map<string, Promise<Sprite | null>>();
+
+function runtimeSpriteTarget(): number {
+  const configured = Number.parseInt(process.env.MALDOROR_RUNTIME_SPRITE_RESOLUTION ?? '128', 10);
+  return Number.isFinite(configured) ? Math.max(26, Math.min(256, configured)) : 128;
+}
+
+function touchRuntimeCache(userId: string, value: Promise<Sprite | null>): void {
+  runtimeSpriteCache.delete(userId);
+  runtimeSpriteCache.set(userId, value);
+  while (runtimeSpriteCache.size > MAX_RUNTIME_SPRITE_CACHE) {
+    const oldest = runtimeSpriteCache.keys().next().value as string | undefined;
+    if (!oldest) break;
+    runtimeSpriteCache.delete(oldest);
+  }
+}
 
 /**
  * Save a sprite to disk as individual PNG files per frame/resolution
  * Also inserts rows into the sprite_frames table
  */
 export async function saveSpriteToDisk(userId: string, sprite: Sprite): Promise<void> {
+  runtimeSpriteCache.delete(userId);
   ensureSpriteDir(userId);
 
   let totalFiles = 0;
@@ -125,26 +144,56 @@ export async function loadDirectionFrames(
 
 /**
  * Load a full sprite from disk
- * OPTIMIZED: Only loads base resolution (256) to avoid memory explosion
+ * Loads one dynamically selected runtime resolution and shares the immutable
+ * Sprite object across every session in this worker. Full-quality PNGs remain
+ * on disk; the renderer scales the bounded runtime source on demand.
  * The renderer's scaling cache handles other resolutions on-demand
  */
 export async function loadSpriteFromDisk(userId: string): Promise<Sprite | null> {
-  // Only check for base resolution frames (256)
-  const frameRecords = await db.select()
+  const cached = runtimeSpriteCache.get(userId);
+  if (cached) {
+    touchRuntimeCache(userId, cached);
+    return cached;
+  }
+
+  const pending = loadSpriteFromDiskUncached(userId);
+  touchRuntimeCache(userId, pending);
+  const sprite = await pending;
+  if (!sprite && runtimeSpriteCache.get(userId) === pending) runtimeSpriteCache.delete(userId);
+  return sprite;
+}
+
+async function loadSpriteFromDiskUncached(userId: string): Promise<Sprite | null> {
+  const frameRecords: SpriteFrameRecord[] = await db.select()
     .from(schema.spriteFrames)
-    .where(and(
-      eq(schema.spriteFrames.userId, userId),
-      eq(schema.spriteFrames.resolution, 256)
-    ));
+    .where(eq(schema.spriteFrames.userId, userId));
 
   if (frameRecords.length === 0) {
     return null;
   }
 
+  const framesByResolution = new Map<number, Set<string>>();
+  for (const record of frameRecords) {
+    const identities = framesByResolution.get(record.resolution) ?? new Set<string>();
+    identities.add(`${record.direction}:${record.frameNum}`);
+    framesByResolution.set(record.resolution, identities);
+  }
+  const fullFrameCount = DIRECTIONS.length * 4;
+  const complete = [...framesByResolution.entries()].filter(([, frames]) => frames.size >= fullFrameCount);
+  const largestPartial = Math.max(...[...framesByResolution.values()].map((frames) => frames.size), 0);
+  const candidates = complete.length > 0
+    ? complete
+    : [...framesByResolution.entries()].filter(([, frames]) => frames.size === largestPartial);
+  const target = runtimeSpriteTarget();
+  candidates.sort((a, b) => Math.abs(a[0] - target) - Math.abs(b[0] - target) || a[0] - b[0]);
+  const runtimeResolution = candidates[0]?.[0];
+  if (runtimeResolution === undefined) return null;
+  const runtimeRecords = frameRecords.filter((record) => record.resolution === runtimeResolution);
+
   // Get dimensions from any frame record
-  const firstRecord = frameRecords[0];
-  const width = firstRecord?.width ?? 256;
-  const height = firstRecord?.height ?? 256;
+  const firstRecord = runtimeRecords[0];
+  const width = firstRecord?.width ?? runtimeResolution;
+  const height = firstRecord?.height ?? runtimeResolution;
 
   // Initialize the sprite structure - only base frames, no pre-loaded resolutions
   const sprite: Sprite = {
@@ -159,9 +208,8 @@ export async function loadSpriteFromDisk(userId: string): Promise<Sprite | null>
     resolutions: {},
   };
 
-  // Load only base resolution frames (16 files instead of 160)
-  for (const record of frameRecords) {
-    const pixels = await loadSpriteFrame(userId, record.direction, record.frameNum, 256);
+  for (const record of runtimeRecords) {
+    const pixels = await loadSpriteFrame(userId, record.direction, record.frameNum, runtimeResolution);
     if (pixels) {
       const dir = record.direction as Direction;
       // Strip the baked-in dark alpha fringe (see sprite-hygiene.ts) so the
@@ -171,6 +219,30 @@ export async function loadSpriteFromDisk(userId: string): Promise<Sprite | null>
   }
 
   return sprite;
+}
+
+/** Compact a just-generated or legacy JSON sprite to one runtime frame set and
+ * prime the shared worker cache. Persistence keeps every original resolution. */
+export function cacheRuntimeSprite(userId: string, sprite: Sprite): Sprite {
+  const target = runtimeSpriteTarget();
+  const candidates = Object.entries(sprite.resolutions ?? {})
+    .map(([key, frames]) => ({ resolution: Number.parseInt(key, 10), frames }))
+    .filter((entry) => Number.isFinite(entry.resolution));
+  candidates.sort((a, b) =>
+    Math.abs(a.resolution - target) - Math.abs(b.resolution - target) ||
+    a.resolution - b.resolution
+  );
+  const selected = candidates[0];
+  const compact = selected
+    ? {
+        width: selected.frames.down[0]?.[0]?.length ?? selected.resolution,
+        height: selected.frames.down[0]?.length ?? selected.resolution,
+        frames: selected.frames,
+        resolutions: {},
+      }
+    : sprite;
+  touchRuntimeCache(userId, Promise.resolve(compact));
+  return compact;
 }
 
 /**
@@ -226,6 +298,7 @@ export async function spriteExistsOnDisk(userId: string): Promise<boolean> {
  * Delete a sprite's PNG files and database records
  */
 export async function deleteSpriteFromDisk(userId: string): Promise<void> {
+  runtimeSpriteCache.delete(userId);
   // Delete PNG files
   await deleteSpritePngs(userId);
 

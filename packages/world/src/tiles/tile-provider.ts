@@ -200,12 +200,21 @@ export class TileProvider implements WorldDataProvider {
   private buildingsByChunk: Map<string, Set<string>> = new Map(); // Spatial hash for O(1) building lookups
   private roads: Map<string, { x: number; y: number; placedBy: string | null }> = new Map(); // "x,y" -> road data
   private roadsByChunk: Map<string, Set<string>> = new Map(); // Spatial hash for O(1) road lookups
+  private visualRevision = 0;
 
   constructor(config: TileProviderConfig) {
     this.worldSeed = config.worldSeed;
     this.noise = new ValueNoise(config.worldSeed);
     this.maxChunks = config.chunkCacheSize ?? 64;
     this.maxTiles = config.chunkCacheSize ? config.chunkCacheSize * 16 : 1024; // Cache up to 1024 procedural tiles (was 256)
+  }
+
+  getVisualRevision(): number {
+    return this.visualRevision;
+  }
+
+  private markVisualChange(): void {
+    this.visualRevision++;
   }
 
   /**
@@ -413,15 +422,19 @@ export class TileProvider implements WorldDataProvider {
    * Update player visual state
    */
   updatePlayer(state: PlayerVisualState): void {
+    const previous = this.players.get(state.userId);
+    if (previous && samePlayerState(previous, state)) return;
     this.players.set(state.userId, state);
+    this.markVisualChange();
   }
 
   /**
    * Remove player and their cached sprite
    */
   removePlayer(userId: string): void {
-    this.players.delete(userId);
-    this.sprites.delete(userId);  // Also remove cached sprite to free memory
+    const playerChanged = this.players.delete(userId);
+    const spriteChanged = this.sprites.delete(userId);  // Also free cached sprite
+    if (playerChanged || spriteChanged) this.markVisualChange();
   }
 
   /**
@@ -436,6 +449,7 @@ export class TileProvider implements WorldDataProvider {
    */
   setPlayerSprite(userId: string, sprite: Sprite): void {
     this.sprites.set(userId, sprite);
+    this.markVisualChange();
   }
 
   /**
@@ -451,15 +465,19 @@ export class TileProvider implements WorldDataProvider {
    * Update NPC visual state
    */
   updateNPC(state: NPCVisualState): void {
+    const previous = this.npcs.get(state.npcId);
+    if (previous && sameNPCState(previous, state)) return;
     this.npcs.set(state.npcId, state);
+    this.markVisualChange();
   }
 
   /**
    * Remove NPC
    */
   removeNPC(npcId: string): void {
-    this.npcs.delete(npcId);
-    this.npcSprites.delete(npcId);
+    const npcChanged = this.npcs.delete(npcId);
+    const spriteChanged = this.npcSprites.delete(npcId);
+    if (npcChanged || spriteChanged) this.markVisualChange();
   }
 
   /**
@@ -474,6 +492,7 @@ export class TileProvider implements WorldDataProvider {
    */
   setNPCSprite(npcId: string, sprite: Sprite): void {
     this.npcSprites.set(npcId, sprite);
+    this.markVisualChange();
   }
 
   /**
@@ -487,6 +506,7 @@ export class TileProvider implements WorldDataProvider {
    * Clear all NPCs
    */
   clearNPCs(): void {
+    if (this.npcs.size > 0 || this.npcSprites.size > 0) this.markVisualChange();
     this.npcs.clear();
     this.npcSprites.clear();
   }
@@ -505,7 +525,10 @@ export class TileProvider implements WorldDataProvider {
    */
   setRoad(x: number, y: number, placedBy: string | null): void {
     const key = this.getRoadKey(x, y);
+    const previous = this.roads.get(key);
+    if (previous && previous.placedBy === placedBy) return;
     this.roads.set(key, { x, y, placedBy });
+    this.markVisualChange();
 
     // Register in spatial hash
     const chunkKey = this.getChunkKey(x, y);
@@ -522,7 +545,8 @@ export class TileProvider implements WorldDataProvider {
    */
   removeRoad(x: number, y: number): void {
     const key = this.getRoadKey(x, y);
-    this.roads.delete(key);
+    if (!this.roads.delete(key)) return;
+    this.markVisualChange();
 
     // Remove from spatial hash
     const chunkKey = this.getChunkKey(x, y);
@@ -571,6 +595,7 @@ export class TileProvider implements WorldDataProvider {
    * Clear all roads
    */
   clearRoads(): void {
+    if (this.roads.size > 0) this.markVisualChange();
     this.roads.clear();
     this.roadsByChunk.clear();
   }
@@ -601,6 +626,7 @@ export class TileProvider implements WorldDataProvider {
       anchorX,
       anchorY,
     });
+    this.markVisualChange();
 
     // Register in spatial hash
     this.registerBuildingInSpatialHash(buildingId, anchorX, anchorY);
@@ -614,7 +640,7 @@ export class TileProvider implements WorldDataProvider {
     if (building) {
       this.unregisterBuildingFromSpatialHash(buildingId, building.anchorX, building.anchorY);
     }
-    this.buildings.delete(buildingId);
+    if (this.buildings.delete(buildingId)) this.markVisualChange();
   }
 
   private registerBuildingInSpatialHash(buildingId: string, anchorX: number, anchorY: number): void {
@@ -968,6 +994,23 @@ function blendEdges(
   }
 
   return result;
+}
+
+function samePlayerState(a: PlayerVisualState, b: PlayerVisualState): boolean {
+  return a.username === b.username &&
+    a.x === b.x && a.y === b.y &&
+    a.direction === b.direction &&
+    a.animationFrame === b.animationFrame &&
+    a.isMoving === b.isMoving &&
+    a.spriteId === b.spriteId;
+}
+
+function sameNPCState(a: NPCVisualState, b: NPCVisualState): boolean {
+  return a.name === b.name &&
+    a.x === b.x && a.y === b.y &&
+    a.direction === b.direction &&
+    a.animationFrame === b.animationFrame &&
+    a.isMoving === b.isMoving;
 }
 
 /**

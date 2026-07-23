@@ -11,6 +11,7 @@
 import type { Duplex } from 'stream';
 import type { WorkerManager, ReloadState } from './worker-manager.js';
 import { resourceMonitor } from '../utils/resource-monitor.js';
+import { OutputPump, type OutputPumpMetrics } from '@maldoror/render';
 
 const ESC = '\x1b';
 
@@ -59,6 +60,8 @@ export class SessionProxy {
   private updateAnimationFrame: number = 0;
   private updateAnimationInterval: NodeJS.Timeout | null = null;
   private unsubscribeReload: (() => void) | null = null;
+  private outputPump: OutputPump;
+  private awaitingKeyframe = false;
 
   constructor(config: SessionProxyConfig) {
     this.stream = config.stream;
@@ -70,6 +73,17 @@ export class SessionProxy {
     this.term = config.term;
     this.workerManager = config.workerManager;
     this.sessionId = crypto.randomUUID();
+    this.outputPump = new OutputPump(this.stream, {
+      maxQueuedBytes: 64 * 1024,
+      maxQueuedFrames: 1,
+      onDrop: () => {
+        // Delta packets depend on terminal_view. If one is dropped, discard all
+        // queued deltas and resume only from an explicitly flagged I-frame.
+        this.awaitingKeyframe = true;
+        this.outputPump.clearQueued();
+        this.workerManager.requestSessionKeyframe(this.sessionId);
+      },
+    });
   }
 
   /**
@@ -117,11 +131,13 @@ export class SessionProxy {
   /**
    * Receive render output from worker and write to SSH stream
    */
-  handleOutput(output: string): void {
+  handleOutput(output: string, keyframe = false): void {
     if (this.destroyed || this.isUpdating) return;
+    if (this.awaitingKeyframe && !keyframe) return;
+    if (keyframe) this.awaitingKeyframe = false;
 
     try {
-      this.stream.write(output);
+      this.outputPump.enqueue(output);
     } catch (err) {
       console.error(`[SessionProxy] Write error for ${this.sessionId}:`, err);
     }
@@ -134,6 +150,7 @@ export class SessionProxy {
     if (this.destroyed) return;
 
     this.isUpdating = true;
+    this.outputPump.clearQueued();
     this.renderUpdateScreen();
 
     // Animate the loading spinner
@@ -156,7 +173,9 @@ export class SessionProxy {
 
     // Force full redraw by clearing screen
     if (!this.destroyed) {
-      this.stream.write(`${ESC}[2J${ESC}[H`);
+      this.outputPump.writeImmediate(`${ESC}[2J${ESC}[H`);
+      this.awaitingKeyframe = true;
+      this.workerManager.requestSessionKeyframe(this.sessionId);
     }
   }
 
@@ -221,7 +240,7 @@ export class SessionProxy {
     output += RESET;
 
     try {
-      this.stream.write(output);
+      this.outputPump.writeImmediate(output);
     } catch (err) {
       // Ignore write errors during update
     }
@@ -248,8 +267,8 @@ export class SessionProxy {
     resourceMonitor.trackConnection(this.sessionId, this.userId || undefined);
 
     // Register callback for session output from worker
-    this.workerManager.onSessionOutput(this.sessionId, (_sessionId, output) => {
-      this.handleOutput(output);
+    this.workerManager.onSessionOutput(this.sessionId, (_sessionId, output, keyframe) => {
+      this.handleOutput(output, keyframe);
     });
 
     // Register callback for userId updates (after onboarding)
@@ -304,6 +323,7 @@ export class SessionProxy {
     }
 
     resourceMonitor.untrackConnection(this.sessionId);
+    this.outputPump.destroy();
 
     // Tell worker to destroy the session
     await this.workerManager.destroyWorkerSession(this.sessionId);
@@ -314,5 +334,9 @@ export class SessionProxy {
     } catch {
       // Ignore errors on cleanup
     }
+  }
+
+  getTransportMetrics(): OutputPumpMetrics {
+    return this.outputPump.getMetrics();
   }
 }

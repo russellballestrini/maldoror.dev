@@ -10,18 +10,15 @@ export interface BuildingTile {
 }
 
 /**
- * A complete building sprite - 3x3 grid of tiles
- * Buildings are placed with the anchor at the bottom-center tile
- *
- * Layout (looking down):
- *   [0,0] [1,0] [2,0]   ← top row
- *   [0,1] [1,1] [2,1]   ← middle row
- *   [0,2] [1,2] [2,2]   ← bottom row (anchor at [1,2])
+ * A complete building sprite on a bounded tile grid.
+ * Buildings are placed with the anchor at the bottom-center tile. The original
+ * generated buildings were 3x3; rich biome kits can be wider without changing
+ * the placement contract.
  */
 export interface BuildingSprite {
-  width: 3;  // Always 3 tiles wide
-  height: 3; // Always 3 tiles tall
-  tiles: BuildingTile[][]; // [y][x] - 3x3 array, row-major
+  width: number;
+  height: number;
+  tiles: BuildingTile[][]; // [y][x], row-major
 }
 
 /**

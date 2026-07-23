@@ -6,6 +6,7 @@
  * The gallery dir is served at https://maldoror.dev/gallery via Caddy.
  *
  * Usage: node tools/render-sim/publish-gallery.mjs <slug> "<notes markdown>"
+ *   [--files=one.png,two.png]
  */
 import fs from 'fs';
 import path from 'path';
@@ -17,6 +18,7 @@ const GALLERY = path.join(__dirname, 'gallery');
 
 const slug = (process.argv[2] || 'iteration').replace(/[^a-z0-9-]/gi, '-').toLowerCase();
 const notes = process.argv[3] || '';
+const filesOption = process.argv.slice(4).find((arg) => arg.startsWith('--files='));
 
 fs.mkdirSync(GALLERY, { recursive: true });
 
@@ -28,7 +30,15 @@ const dest = path.join(GALLERY, dirname);
 fs.mkdirSync(dest, { recursive: true });
 
 // Copy screenshots
-const shots = fs.existsSync(OUT) ? fs.readdirSync(OUT).filter(f => f.endsWith('.png')) : [];
+const requested = filesOption
+  ? filesOption.slice('--files='.length).split(',').map((file) => path.basename(file.trim())).filter(Boolean)
+  : null;
+const shots = requested ?? (fs.existsSync(OUT) ? fs.readdirSync(OUT).filter(f => f.endsWith('.png')) : []);
+for (const shot of shots) {
+  if (!shot.endsWith('.png') || !fs.existsSync(path.join(OUT, shot))) {
+    throw new Error(`gallery input does not exist in ${OUT}: ${shot}`);
+  }
+}
 for (const f of shots) fs.copyFileSync(path.join(OUT, f), path.join(dest, f));
 fs.writeFileSync(path.join(dest, 'notes.md'), `# ${dirname}\n\n${new Date().toISOString()}\n\n${notes}\n`);
 console.log(`published ${dest} (${shots.length} images)`);
@@ -70,10 +80,10 @@ fs.writeFileSync(path.join(GALLERY, 'index.html'), `<!doctype html>
 headless simulator (<code>tools/render-sim</code>) — the same pipeline the SSH game renders with.</p>
 <section><h2>🎯 TARGET vs NOW</h2>
 <div class="grid"><figure style="grid-column:1/-1"><a href="/gallery/COMPARISON.png"><img loading="lazy" src="/gallery/COMPARISON.png" alt="target vs now"></a>
-<figcaption>Goal tracking: TARGET mockup vs the current town (fullres + octant). Style/assets match; gaps = density, organic canals, HUD, live-world integration.</figcaption></figure></div></section>
+<figcaption>Goal tracking: TARGET mockup vs the faithfully replayed live 160×46 SSH world.</figcaption></figure></div></section>
 <section><h2>🎯 TARGET (mockup)</h2>
 <div class="grid"><figure><a href="/gallery/TARGET.png"><img loading="lazy" src="/gallery/TARGET.png" alt="target mockup"></a>
-<figcaption>The goal: cozy canal-town at full fidelity in Ghostty. Phase A = style-matched assets in cell mode; Phase B = kitty graphics protocol.</figcaption></figure></div></section>
+<figcaption>The goal: a dense, warm, painterly canal-town rendered as pure ANSI in Ghostty.</figcaption></figure></div></section>
 ${sections}
 `);
 console.log(`index.html regenerated (${iters.length} iterations)`);

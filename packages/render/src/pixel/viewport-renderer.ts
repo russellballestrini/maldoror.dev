@@ -7,6 +7,8 @@ import type {
   Direction,
   BuildingDirection
 } from '@maldoror/protocol';
+import { materialPhase } from './palette-cycle.js';
+import { resamplePixelGrid } from './pixel-resampler.js';
 import { TILE_SIZE, RESOLUTIONS } from '@maldoror/protocol';
 import {
   createEmptyGrid,
@@ -43,6 +45,8 @@ export interface ViewportRenderResult {
   buffer: PixelGrid;
   overlays: TextOverlay[];
   brightnessGrid?: number[][];  // Cell-level brightness for lighting
+  /** 0 = truecolor/default, 1 = water palette band. */
+  materialGrid?: Uint8Array[];
 }
 
 // Re-export for convenience
@@ -130,6 +134,7 @@ export class ViewportRenderer {
   // Performance: Reused frame buffer — allocating W*H pixel rows every frame
   // was a major GC pressure source. Recreated only when dimensions change.
   private frameBuffer: PixelGrid | null = null;
+  private materialBuffer: Uint8Array[] | null = null;
 
   constructor(config: ViewportConfig) {
     this.config = config;
@@ -350,21 +355,29 @@ export class ViewportRenderer {
       for (const row of this.frameBuffer) row.fill(null);
     }
     const buffer = this.frameBuffer;
+    if (!this.materialBuffer ||
+        this.materialBuffer.length !== pixelHeight ||
+        (this.materialBuffer[0]?.length ?? 0) !== pixelWidth) {
+      this.materialBuffer = Array.from({ length: pixelHeight }, () => new Uint8Array(pixelWidth));
+    } else {
+      for (const row of this.materialBuffer) row.fill(0);
+    }
+    const materialGrid = this.materialBuffer;
 
     // Get viewport origin in world pixels
     const origin = this.getViewportOrigin();
 
     // 1. Render terrain tiles with sub-pixel offset
-    this.renderTiles(buffer, world, tick, origin);
+    this.renderTiles(buffer, materialGrid, world, tick, origin);
 
     // 2. Render road tiles on top of terrain (with transparency)
-    this.renderRoads(buffer, world, origin);
+    this.renderRoads(buffer, materialGrid, world, origin);
 
     // 3. Render building tiles on top of roads (with transparency)
-    this.renderBuildings(buffer, world, origin);
+    this.renderBuildings(buffer, materialGrid, world, origin);
 
     // 4. Render players and NPCs together (sorted by Y for proper overlap)
-    this.renderEntities(buffer, world, tick, origin);
+    this.renderEntities(buffer, materialGrid, world, tick, origin);
 
     // 5. Generate brightness grid if world supports it
     let brightnessGrid: number[][] | undefined;
@@ -400,6 +413,7 @@ export class ViewportRenderer {
       buffer,
       overlays: this.pendingOverlays,
       brightnessGrid,
+      materialGrid,
     };
   }
 
@@ -430,7 +444,7 @@ export class ViewportRenderer {
   /**
    * Render tiles to buffer with sub-pixel camera positioning and camera rotation
    */
-  private renderTiles(buffer: PixelGrid, world: WorldDataProvider, tick: number, _origin: { x: number; y: number }): void {
+  private renderTiles(buffer: PixelGrid, materialGrid: Uint8Array[], world: WorldDataProvider, tick: number, _origin: { x: number; y: number }): void {
     // Use the pre-selected data resolution
     const resKey = String(this.dataResolution);
 
@@ -494,6 +508,16 @@ export class ViewportRenderer {
               const pixel = tileRow[px];
               if (pixel) {
                 buffer[bufferY]![bufferX] = pixel;
+                // Store the palette phase in world space (1..PHASES), not
+                // merely a material flag. Screen-space phase fields repaint
+                // the entire canal when the camera scrolls; world anchoring
+                // lets the terminal codec shift those indexed cells intact.
+                materialGrid[bufferY]![bufferX] = tile.material === 'water'
+                  ? materialPhase(
+                      Math.floor((worldTileX * this.tileRenderSize + px) / 2),
+                      Math.floor((worldTileY * this.tileRenderSize + py) / 4),
+                    ) + 1
+                  : 0;
               }
             }
           }
@@ -505,7 +529,7 @@ export class ViewportRenderer {
   /**
    * Render road tiles on top of terrain (with transparency support and camera rotation)
    */
-  private renderRoads(buffer: PixelGrid, world: WorldDataProvider, _origin: { x: number; y: number }): void {
+  private renderRoads(buffer: PixelGrid, materialGrid: Uint8Array[], world: WorldDataProvider, _origin: { x: number; y: number }): void {
     // Skip if world doesn't support roads
     if (!world.getRoadTileAt) return;
 
@@ -558,6 +582,7 @@ export class ViewportRenderer {
             if (pixel) {
               // Only overwrite if pixel is not transparent
               buffer[bufferY]![bufferX] = pixel;
+              materialGrid[bufferY]![bufferX] = 0;
             }
           }
         }
@@ -568,7 +593,7 @@ export class ViewportRenderer {
   /**
    * Render building tiles on top of terrain (with transparency support and camera rotation)
    */
-  private renderBuildings(buffer: PixelGrid, world: WorldDataProvider, _origin: { x: number; y: number }): void {
+  private renderBuildings(buffer: PixelGrid, materialGrid: Uint8Array[], world: WorldDataProvider, _origin: { x: number; y: number }): void {
     // Skip if world doesn't support buildings
     if (!world.getBuildingTileAt) return;
 
@@ -622,6 +647,7 @@ export class ViewportRenderer {
             if (pixel) {
               // Only overwrite if pixel is not transparent
               buffer[bufferY]![bufferX] = pixel;
+              materialGrid[bufferY]![bufferX] = 0;
             }
           }
         }
@@ -688,24 +714,9 @@ export class ViewportRenderer {
     return this.scaleFrameUncached(frame, targetWidth, targetHeight);
   }
 
-  /**
-   * Scale a frame without caching (internal helper)
-   */
+  /** Scale a frame without caching using area/bilinear reconstruction. */
   private scaleFrameUncached(frame: PixelGrid, targetWidth: number, targetHeight: number): PixelGrid {
-    const srcHeight = frame.length;
-    const srcWidth = frame[0]?.length ?? 0;
-
-    const result: PixelGrid = [];
-    for (let y = 0; y < targetHeight; y++) {
-      const row: (RGB | null)[] = [];
-      const srcY = Math.floor(y * srcHeight / targetHeight);
-      for (let x = 0; x < targetWidth; x++) {
-        const srcX = Math.floor(x * srcWidth / targetWidth);
-        row.push(frame[srcY]?.[srcX] ?? null);
-      }
-      result.push(row);
-    }
-    return result;
+    return resamplePixelGrid(frame, targetWidth, targetHeight);
   }
 
   /**
@@ -719,7 +730,7 @@ export class ViewportRenderer {
    * Render players and NPCs to buffer with sub-pixel camera positioning and camera rotation
    * Both entity types are combined and Y-sorted for proper overlap rendering
    */
-  private renderEntities(buffer: PixelGrid, world: WorldDataProvider, _tick: number, _origin: { x: number; y: number }): void {
+  private renderEntities(buffer: PixelGrid, materialGrid: Uint8Array[], world: WorldDataProvider, _tick: number, _origin: { x: number; y: number }): void {
     const players = world.getPlayers();
     const npcs = world.getNPCs?.() ?? [];
     const localId = world.getLocalPlayerId();
@@ -754,9 +765,9 @@ export class ViewportRenderer {
       if (!sprite) {
         // Render placeholder if no sprite
         if (isPlayerEntity) {
-          this.renderPlaceholderPlayer(buffer, entity, screenCenterX, screenCenterY);
+          this.renderPlaceholderPlayer(buffer, materialGrid, entity, screenCenterX, screenCenterY);
         } else {
-          this.renderPlaceholderNPC(buffer, entity, screenCenterX, screenCenterY);
+          this.renderPlaceholderNPC(buffer, materialGrid, entity, screenCenterX, screenCenterY);
         }
         continue;
       }
@@ -809,6 +820,7 @@ export class ViewportRenderer {
           if (targetX < 0 || targetX >= (buffer[targetY]?.length ?? 0)) continue;
 
           buffer[targetY]![targetX] = pixel;
+          materialGrid[targetY]![targetX] = 0;
         }
       }
 
@@ -840,7 +852,7 @@ export class ViewportRenderer {
    * Render a placeholder for players without sprites
    * This is a small fallback marker - the actual placeholder sprite is generated separately
    */
-  private renderPlaceholderPlayer(buffer: PixelGrid, player: PlayerVisualState, screenCenterX: number, screenCenterY: number): void {
+  private renderPlaceholderPlayer(buffer: PixelGrid, materialGrid: Uint8Array[], player: PlayerVisualState, screenCenterX: number, screenCenterY: number): void {
     // Calculate screen position with rotation
     const worldPixelX = (player.x + 0.5) * this.tileRenderSize;
     const worldPixelY = (player.y + 0.5) * this.tileRenderSize;
@@ -861,6 +873,7 @@ export class ViewportRenderer {
         if (targetY >= 0 && targetY < buffer.length &&
             targetX >= 0 && targetX < (buffer[targetY]?.length ?? 0)) {
           buffer[targetY]![targetX] = placeholderColor;
+          materialGrid[targetY]![targetX] = 0;
         }
       }
     }
@@ -870,7 +883,7 @@ export class ViewportRenderer {
    * Render a placeholder for NPCs without sprites
    * Uses a different color scheme to distinguish from players
    */
-  private renderPlaceholderNPC(buffer: PixelGrid, npc: NPCVisualState, screenCenterX: number, screenCenterY: number): void {
+  private renderPlaceholderNPC(buffer: PixelGrid, materialGrid: Uint8Array[], npc: NPCVisualState, screenCenterX: number, screenCenterY: number): void {
     // Calculate screen position with rotation
     const worldPixelX = (npc.x + 0.5) * this.tileRenderSize;
     const worldPixelY = (npc.y + 0.5) * this.tileRenderSize;
@@ -891,6 +904,7 @@ export class ViewportRenderer {
         if (targetY >= 0 && targetY < buffer.length &&
             targetX >= 0 && targetX < (buffer[targetY]?.length ?? 0)) {
           buffer[targetY]![targetX] = placeholderColor;
+          materialGrid[targetY]![targetX] = 0;
         }
       }
     }

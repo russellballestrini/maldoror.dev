@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "sourceTileSize": 96,
+  "blockSize": 24,
+  "defaultAvatar": "avatars/default-traveler-vivid.png",
+  "terrainMasters": [
+    { "id": "canal-paving", "file": "terrain/paving-stone-master.png", "variants": 4, "walkable": true },
+    { "id": "canal-water", "file": "terrain/water-master.png", "variants": 4, "walkable": false, "material": "water" },
+    { "id": "canal-garden", "file": "terrain/garden-master.png", "variants": 4, "walkable": true, "material": "foliage" },
+    { "id": "canal-curb", "file": "terrain/curb-master.png", "variants": 4, "walkable": true }
+  ],
+  "terrain": {
+    "water": ["canal-water", "canal-water__v2", "canal-water__v3", "canal-water__v4"],
+    "paving": ["canal-paving", "canal-paving__v2", "canal-paving__v3", "canal-paving__v4"],
+    "garden": ["canal-garden", "canal-garden__v2", "canal-garden__v3", "canal-garden__v4"],
+    "curb": {
+      "n": "canal-curb__v3",
+      "e": "canal-curb__v2",
+      "s": "canal-curb__v4",
+      "w": "canal-curb",
+      "ne": "canal-curb__v2",
+      "nw": "canal-curb",
+      "se": "canal-curb__v2",
+      "sw": "canal-curb"
+    }
+  },
+  "assets": [
+    { "id": "flower-shop", "file": "sprites/flower-shop.png", "roles": ["building"], "scale": 0.95, "spriteTiles": [5,4], "collisionRect": [5,4], "collision": [] },
+    { "id": "blue-canal-house", "file": "sprites/blue-canal-house.png", "roles": ["building"], "scale": 0.95, "spriteTiles": [5,4], "collisionRect": [5,4], "collision": [] },
+    { "id": "bakery", "file": "sprites/bakery.png", "roles": ["building"], "scale": 0.95, "spriteTiles": [5,4], "collisionRect": [5,4], "collision": [] },
+    { "id": "ivy-cafe", "file": "sprites/ivy-cafe.png", "roles": ["building"], "scale": 0.95, "spriteTiles": [5,4], "collisionRect": [5,4], "collision": [] },
+    { "id": "teal-house", "file": "sprites/teal-house.png", "roles": ["building"], "scale": 0.95, "spriteTiles": [5,4], "collisionRect": [5,4], "collision": [] },
+    { "id": "rose-inn", "file": "sprites/rose-inn.png", "roles": ["building"], "scale": 0.95, "spriteTiles": [5,4], "collisionRect": [5,4], "collision": [] },
+    { "id": "bookshop", "file": "sprites/bookshop.png", "roles": ["building"], "scale": 0.95, "spriteTiles": [5,4], "collisionRect": [5,4], "collision": [] },
+    { "id": "pottery-workshop", "file": "sprites/pottery-workshop.png", "roles": ["building"], "scale": 0.95, "spriteTiles": [5,4], "collisionRect": [5,4], "collision": [] },
+    { "id": "flower-conservatory", "file": "sprites/flower-conservatory.png", "roles": ["building"], "scale": 0.95, "spriteTiles": [5,4], "collisionRect": [5,4], "collision": [] },
+    { "id": "stone-bridge", "file": "sprites/stone-bridge.png", "roles": ["bridge"], "scale": 0.96, "spriteTiles": [7,3], "collision": [] },
+    { "id": "vertical-stone-bridge", "file": "sprites/vertical-stone-bridge.png", "roles": ["bridge-vertical"], "scale": 0.80, "spriteTiles": [3,5], "collision": [] },
+    { "id": "quay-corner", "file": "sprites/quay-corner.png", "roles": ["edge"], "scale": 0.90, "collision": [[0,0]] },
+    { "id": "wooden-dock", "file": "sprites/wooden-dock.png", "roles": ["edge"], "scale": 0.72, "collision": [] },
+    { "id": "olive-tree", "file": "sprites/olive-tree.png", "roles": ["foliage"], "scale": 0.64, "collision": [[0,0]] },
+    { "id": "cypress", "file": "sprites/cypress.png", "roles": ["foliage"], "scale": 0.68, "collision": [[0,0]] },
+    { "id": "flowering-shrub", "file": "sprites/flowering-shrub.png", "roles": ["foliage"], "scale": 0.56, "collision": [[0,0]] },
+    { "id": "stone-planter", "file": "sprites/stone-planter.png", "roles": ["foliage", "street-large"], "scale": 0.58, "collision": [[0,0]] },
+    { "id": "flower-pots", "file": "sprites/flower-pots.png", "roles": ["street-small"], "scale": 0.42, "collision": [] },
+    { "id": "canal-lamp", "file": "sprites/canal-lamp.png", "roles": ["street-small"], "scale": 0.60, "collision": [[0,0]] },
+    { "id": "market-stall", "file": "sprites/market-stall.png", "roles": ["street-large"], "scale": 0.72, "collision": [[0,0]] },
+    { "id": "rowboat", "file": "sprites/rowboat.png", "roles": ["water"], "scale": 0.56, "collision": [] },
+    { "id": "lily-cluster", "file": "sprites/lily-cluster.png", "roles": ["water-detail"], "scale": 0.52, "collision": [] },
+    { "id": "floating-petals", "file": "sprites/floating-petals.png", "roles": ["water-detail"], "scale": 0.46, "collision": [] },
+    { "id": "mooring-posts", "file": "sprites/mooring-posts.png", "roles": ["water-detail"], "scale": 0.58, "collision": [] },
+    { "id": "flower-rowboat", "file": "sprites/flower-rowboat.png", "roles": ["water-detail"], "scale": 0.62, "collision": [] },
+    { "id": "wildflower-pots", "file": "sprites/wildflower-pots.png", "roles": ["quay-detail"], "scale": 0.52, "collision": [] },
+    { "id": "flower-quay-planter", "file": "sprites/flower-quay-planter.png", "roles": ["quay-detail"], "scale": 0.65, "collision": [[0,0]] },
+    { "id": "lemon-planter", "file": "sprites/lemon-planter.png", "roles": ["quay-detail"], "scale": 0.62, "collision": [[0,0]] },
+    { "id": "rose-arch", "file": "sprites/rose-arch.png", "roles": ["quay-detail"], "scale": 0.65, "collision": [[0,0]] },
+    { "id": "stone-bench", "file": "sprites/stone-bench.png", "roles": ["street-small", "street-large"], "scale": 0.56, "collision": [[0,0]] },
+    { "id": "fountain", "file": "sprites/fountain.png", "roles": ["street-large"], "scale": 0.64, "collision": [[0,0]] },
+    { "id": "banner-post", "file": "sprites/banner-post.png", "roles": ["street-small"], "scale": 0.56, "collision": [[0,0]] },
+    { "id": "ivy-trellis", "file": "sprites/ivy-trellis.png", "roles": ["foliage", "street-large"], "scale": 0.64, "collision": [[0,0]] }
+  ]
+}

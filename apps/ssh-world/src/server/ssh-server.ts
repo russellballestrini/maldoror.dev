@@ -79,6 +79,18 @@ export class SSHServer {
       connectedAt: new Date(),
     };
     let didAttemptAuth = false;
+    const connectionSessionIds = new Set<string>();
+    let connectionClosed = false;
+
+    const closeConnectionSessions = () => {
+      if (connectionClosed) return;
+      connectionClosed = true;
+
+      for (const sessionId of connectionSessionIds) {
+        void this.handleDisconnect(sessionId);
+      }
+      connectionSessionIds.clear();
+    };
 
     // Don't log connection here - wait to see if it's a real auth attempt
     // (HAProxy health checks connect and immediately disconnect)
@@ -126,7 +138,7 @@ export class SSHServer {
 
       client.on('session', (accept, _reject) => {
         const session = accept();
-        this.handleSession(session, context as ClientContext, client);
+        this.handleSession(session, context as ClientContext, connectionSessionIds);
       });
     });
 
@@ -139,6 +151,7 @@ export class SSHServer {
       if (didAttemptAuth) {
         console.error('Client error:', err.message);
       }
+      closeConnectionSessions();
     });
 
     client.on('end', () => {
@@ -146,9 +159,13 @@ export class SSHServer {
       // (Silently ignore HAProxy health check disconnects)
       if (didAttemptAuth && context.fingerprint) {
         console.log(`Client disconnected: ${context.fingerprint.slice(0, 16)}...`);
-        this.handleDisconnect(context.fingerprint);
       }
+      closeConnectionSessions();
     });
+
+    // Abrupt network loss can emit `close` without a preceding `end`.
+    // Keep cleanup idempotent because ssh2 may emit both events.
+    client.on('close', closeConnectionSessions);
   }
 
   private extractFingerprint(key: { algo: string; data: Buffer }): string {
@@ -161,9 +178,10 @@ export class SSHServer {
   private handleSession(
     session: Session,
     context: ClientContext,
-    _client: Connection
+    connectionSessionIds: Set<string>
   ): void {
     let ptyInfo: { cols: number; rows: number; term?: string } | null = null;
+    let sessionProxy: SessionProxy | null = null;
 
     session.on('pty', (accept, _reject, info) => {
       // info.term = the client's TERM (e.g. xterm-ghostty, xterm-kitty) —
@@ -181,7 +199,7 @@ export class SSHServer {
       const stream = accept();
 
       // Create session proxy (thin layer - game logic runs in worker)
-      const sessionProxy = new SessionProxy({
+      const proxy = new SessionProxy({
         stream,
         fingerprint: context.fingerprint,
         username: context.username,
@@ -191,23 +209,43 @@ export class SSHServer {
         term: ptyInfo.term,
         workerManager: this.config.workerManager,
       });
+      sessionProxy = proxy;
 
-      this.sessions.set(context.fingerprint, sessionProxy);
+      const sessionId = proxy.getSessionId();
+      this.sessions.set(sessionId, proxy);
+      connectionSessionIds.add(sessionId);
 
       // Set up input forwarding
       stream.on('data', (data: Buffer) => {
-        sessionProxy.handleInput(data);
+        proxy.handleInput(data);
       });
 
       stream.on('close', () => {
-        this.handleDisconnect(context.fingerprint);
+        connectionSessionIds.delete(sessionId);
+        void this.handleDisconnect(sessionId);
       });
 
-      await sessionProxy.start();
+      stream.on('end', () => {
+        connectionSessionIds.delete(sessionId);
+        void this.handleDisconnect(sessionId);
+      });
+
+      stream.on('error', () => {
+        connectionSessionIds.delete(sessionId);
+        void this.handleDisconnect(sessionId);
+      });
+
+      try {
+        await proxy.start();
+      } catch (error) {
+        connectionSessionIds.delete(sessionId);
+        await this.handleDisconnect(sessionId);
+        console.error('Failed to start SSH game session:', error);
+        stream.end();
+      }
     });
 
     session.on('window-change', (accept, _reject, info) => {
-      const sessionProxy = this.sessions.get(context.fingerprint);
       if (sessionProxy) {
         sessionProxy.resize(info.cols, info.rows);
       }
@@ -215,11 +253,11 @@ export class SSHServer {
     });
   }
 
-  private async handleDisconnect(fingerprint: string): Promise<void> {
-    const session = this.sessions.get(fingerprint);
+  private async handleDisconnect(sessionId: string): Promise<void> {
+    const session = this.sessions.get(sessionId);
     if (session) {
       await session.destroy();
-      this.sessions.delete(fingerprint);
+      this.sessions.delete(sessionId);
     }
   }
 
@@ -231,18 +269,25 @@ export class SSHServer {
    * Get transport metrics from all active sessions
    * Used by stats server to report backpressure stats
    *
-   * Note: With SessionProxy architecture, transport metrics are now
-   * in the worker process. This returns an empty array for now.
-   * TODO: Implement IPC to get metrics from worker sessions.
+   * SessionProxy owns the latency-bounded writer in the main process, so its
+   * counters are authoritative for bytes accepted by the SSH stream.
    */
   getTransportMetrics(): Array<{
     queuedBytes: number;
     droppedFrames: number;
     drainCount: number;
     totalBytesWritten: number;
+    peakQueuedBytes: number;
   }> {
-    // Transport metrics are now in worker process (WorkerSession)
-    // For now, return empty array. Could implement IPC query if needed.
-    return [];
+    return Array.from(this.sessions.values(), (session) => {
+      const metrics = session.getTransportMetrics();
+      return {
+        queuedBytes: metrics.queuedBytes,
+        droppedFrames: metrics.droppedFrames,
+        drainCount: metrics.drainCount,
+        totalBytesWritten: metrics.totalBytesWritten,
+        peakQueuedBytes: metrics.peakQueuedBytes,
+      };
+    });
   }
 }

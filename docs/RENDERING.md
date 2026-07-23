@@ -1,235 +1,152 @@
-# The Maldoror Rendering Engine — study, measurements, and roadmap
+# The Maldoror rendering engine
 
-*2026-07-23 — a deep study of the sprite/NPC/terrain rendering stack, the
-performance work landed this session, and researched directions for taking it
-further. Visual iterations are published at <https://maldoror.dev/gallery>.*
+*Current production truth, 2026-07-23. Visual evidence is published at
+<https://maldoror.dev/gallery>.*
 
----
-
-## 1. How the engine works today (technique inventory)
-
-### 1.1 Asset generation (packages/ai)
-- **Sprites** (`image-generator.ts`): `gpt-image-1-mini` generates six
-  HIGH-FIDELITY 1024×1024 transparent-background illustrations per character
-  (down/up/left × standing/walking). The first image (down-standing) is passed
-  as a **reference to `images.edit`** for the other five, keeping the subject
-  consistent. Right-facing frames are **horizontal flips** of left-facing ones
-  (guaranteed symmetry, 2 fewer generations). The 4-frame walk cycle is
-  [stand, walk, stand, walk].
-- **Pixelation**: sharp `trim` (drop transparent margins) → `resize` with
-  `kernel: 'nearest'` to each of the **10-step resolution pyramid**
-  (26, 51, 77, 102, 128, 154, 179, 205, 230, 256 — `RESOLUTIONS` in protocol).
-  Alpha < threshold → transparent (`null` pixel).
-- **Terrain** (`terrain-generator.ts`): base tiles per terrain type
-  (grass/dirt/sand/water/stone) + **15 autotile transition configs**
-  (n/e/s/w/ne/…/all — a 4-bit edge mask) per terrain pair. Same pixelation
-  pyramid. Persisted as `data/terrain/<id>/<res>.png` + `terrain_tiles` DB rows;
-  the worker loads + registers them at boot (`setTerrainTile` overrides the
-  flat fallback tiles).
-- **Buildings** (`building-generator.ts`): multi-tile structures, 4 camera
-  directions, same pipeline; **Meshy** (`meshy-client.ts`) can lift sprites to
-  3D GLB for the web viewers.
-
-### 1.2 World → pixels (packages/world + render/viewport-renderer)
-- `TileProvider` = the world data source: procedural chunk terrain (value
-  noise: elevation + moisture), AI tile registry, autotile transition lookup
-  (`getTransitionTileId` from the 4 neighbours), per-position deterministic
-  tile **rotation** for variety, roads, buildings, players, NPCs.
-- `ViewportRenderer.renderToBuffer` composites into a `PixelGrid`
-  ((RGB|null)[][]) painter's-algorithm style: terrain → roads → buildings →
-  **Y-sorted entities** (players+NPCs together, so overlap is correct).
-  Sub-tile camera precision, follow/free camera, **90° camera rotation**
-  (direction remap + point rotation), zoom 0-100% mapped exponentially to a
-  4px→viewport-height tile render size. Nearest-neighbour scaling with an LRU
-  frame cache picks the smallest pyramid resolution ≥ target.
-
-### 1.3 Pixels → terminal cells (packages/render/pixel-renderer)
-Three modes:
-- **normal**: 1 pixel = 2 spaces with bg color (2 cells/pixel).
-- **halfblock** (default): `▀` — fg = top pixel, bg = bottom pixel; 1×2
-  pixels per cell.
-- **braille**: U+2800 block — 2×4 dots per cell; per-cell brightness
-  threshold picks dot pattern, fg = avg of "on" pixels, bg = avg of "off".
-  *(This session: threshold changed from median → (min+max)/2 contrast split,
-  flat cells render as solid full-dot cells — kills dot-noise on uniform
-  terrain; conversion made allocation-free.)*
-- **Zoom-adaptive quantization**: >50% zoom → 5-bit, >70% → 4-bit color with
-  **Bayer 4×4 ordered dithering** — reduces both banding and unique-color
-  count (better SGR dedup).
-
-### 1.4 Cells → bytes on the wire
-- **Production path** (`renderToString`, called by the worker's 67 ms tick =
-  15 fps): renders full ANSI lines, then **line-level string diff** against
-  the previous frame — only changed lines are re-emitted; identical frame ⇒
-  ~zero bytes (idle costs only the 1 Hz stats bar).
-- Cached, **merged SGR** escapes (`ansi-cache.ts`, this session): one
-  `\x1b[38;2;…;48;2;…m` sequence instead of two; memoized on integer keys.
-- **Synchronized output** (this session): every frame is wrapped in DEC-2026
-  begin/end so Ghostty/kitty/WezTerm/foot/Alacritty apply it atomically — no
-  tearing. Unsupporting terminals ignore it.
-- A second, richer path (`render()`: cell-grid diff + **CRLE** color-grouped
-  emission + **foveated zones** + a prediction cache) exists but **is not
-  called by the production worker** — see §3.4.
-- **Transport**: worker renders → IPC (`process.send`) → main-process
-  `SessionProxy` → ssh2 stream. (OutputPump backpressure exists but is only
-  wired in the legacy in-process path — see roadmap.)
-
-### 1.5 Supporting machinery
-- Per-chunk/per-tile caches, brightness variant cache + per-cell lighting
-  grid (built, not yet driven by the world), perf-stats sampler,
-  `hot-reload` (SIGUSR1 swaps the worker while SSH sessions survive).
-
----
-
-## 2. Measured performance (this session's work)
-
-Micro-benchmark: 160×44-cell viewport scene with terrain + 5 entities
-(`tools/render-sim` primitives; box: 8-vCPU shared OVH VPS).
-
-| Stage | before | after | Δ |
-|---|---|---|---|
-| halfblock: full pipeline | 14.5 ms/frame | **6.5 ms/frame** | −55% |
-| — CRLE diff+emit | 13.2 ms | 5.0 ms | −62% |
-| braille: full pipeline | 57.4 ms/frame | **29.3 ms/frame** | −49% |
-| — pixels→cells | 29.2 ms | ~13 ms | −55% |
-| GC churn (halfblock, 150 frames) | ~37 MB | ~18 MB | −51% |
-
-What landed:
-1. **ansi-cache.ts** — memoized fg/bg/merged-SGR escape strings (integer keys).
-2. **CRLE rewrite** — integer color-pair keys (was string concat per cell),
-   parallel pos/char arrays (was per-cell objects), **no per-group sort**
-   (row-major scan order is already sorted), merged SGR per group.
-3. **Braille converter rewrite** — allocation-free two-pass min/max contrast
-   split (was: 8 heap objects + sort per cell), flat-cell solid shortcut.
-4. **Frame-buffer reuse** — `renderToBuffer` clears in place instead of
-   reallocating W×H rows every frame.
-5. **Exact tile-scan bounds** — 90°-rotation-aware axis-aligned bounds (was: a
-   square of radius max(W,H)+2 on both axes ⇒ 4-10× extra `getTile` calls at
-   low zoom).
-6. **Entity sort precompute** — screen-Y computed once per entity (was:
-   rotation transform ×2 per comparison).
-7. **Merged SGR in `renderHalfBlockRow`** — the production halfblock emitter.
-8. **DEC-2026 synchronized output** around every production frame.
-9. **Idle throttle** — skipped-frame stats-bar rewrite capped at 1 Hz.
-10. **Sprite hygiene** (`sprite-hygiene.ts`) — see §3.1; visual, but also
-    fewer unique colors per cell ⇒ fewer escapes.
-
-Verified live: 62.5K merged SGR sequences and balanced 2026 begin/end pairs
-observed in a real SSH session capture; movement, boot, and gameplay intact.
-
----
-
-## 3. What was wrong visually, and what we did
-
-*(Screenshots: gallery iterations 000-baseline → 001-ai-terrain-clean-sprites.)*
-
-### 3.1 Dark speckle fringe around every sprite — FIXED
-Generation-era alpha threshold (32) turned the artwork's anti-aliased edge
-into a contiguous 1-2px near-black **opaque halo** baked into the PNGs.
-Nearest-neighbour downscaling samples it into scattered black dots.
-Neighbour-count despeckling can't catch a contiguous halo — the fix is
-**dark-boundary erosion** (2 passes: dark pixels touching transparency die)
-plus isolated-speck cleanup, applied to the 256px base at **load time**
-(covers all existing assets; wired into player + NPC loaders). Generation
-threshold raised 32→96 for future assets.
-
-### 3.2 Flat solid-color world — FIXED
-`base-tiles.ts` had its texture generator disabled ("DISABLED FOR PERF
-TESTING") and the `terrain_tiles` DB was empty. Generated **35 AI tiles**
-(5 base + grass↔dirt + grass↔water transition sets, `tools/gen-terrain.mjs`,
-~$0.40 of gpt-image-1-mini) — the world now has textured earth, grass tufts,
-rippled sand, stone. With quantization+CRLE+line-diff, texture is affordable:
-the perf work paid for the beauty.
-
-### 3.3 Transition-tile style mismatch — OPEN (next iteration)
-The autotile transition tiles were generated **without a reference image**,
-so their grass/dirt art style doesn't match the base tiles (visible seams).
-Fix: regenerate transitions passing the base-tile original PNG through
-`images.edit` as reference — same trick the sprite pipeline already uses for
-view consistency. (Originals are kept in `tools/render-sim/terrain-debug/`.)
-
-### 3.4 The unused rich render path
-`render()` (cell-diff + CRLE + foveated + prediction) is dead code in
-production; `renderToString` (line-diff) is what runs, because the worker
-needs a string to send over IPC. Line-diff is decent when idle but **degrades
-to full-frame on any camera move** (every line changes). The CRLE cell path
-emits only changed cells and is now ~2.6× cheaper than before. **Unifying
-these** — a `renderToString`-shaped API over the cell-diff/CRLE engine — is
-the single biggest remaining bandwidth win (movement frames are ~100-280KB
-at 160×46; cell-diff+CRLE would cut most of it).
-
----
-
-## 4. Researched directions (state of the art → applied)
-
-### 4.1 Better glyphs than braille: sextants & octants
-- **Sextants** (2×3, Unicode 13 *Symbols for Legacy Computing*): ~universal
-  in modern terminals (Ghostty/kitty/VTE 100%, WezTerm with
-  `custom_block_glyphs`); solid mosaics — no braille dot-gap texture.
-- **Octants** (2×4, Unicode 16 *SfLC Supplement*): braille's resolution with
-  solid fills; Ghostty ~85-100%, VTE partial, kitty partial/alignment quirks.
-  Terminals increasingly draw these with built-in routines (font-independent).
-- Plan: a **`sextant` render mode** (2×3 cells, same two-color-per-cell
-  model, 64 glyph patterns) as the new high-detail default, octants as
-  progressive enhancement after a capability probe.
-- **Chafa-style per-cell glyph optimization**: pick the glyph+fg+bg from a
-  repertoire (blocks/quads/sextants) minimizing per-cell error — the quality
-  ceiling for pure-text rendering (chafa's whole trick; work-factor knob).
-
-### 4.2 Real pixels: kitty graphics protocol (Ghostty supports it)
-The kitty protocol can **transmit an image once** (PNG, chunked, by ID) and
-then **place it many times by ID** with z-index and pixel offsets — i.e., a
-genuine *sprite engine in the terminal*: upload each sprite frame once per
-session, then each game frame just re-places images (tiny bytes). Works over
-SSH (it's all escape sequences). Sixel/iTerm2 as fallbacks. Detection: query
-DA1 + a graphics probe (`ESC[c`, XTGETTCAP) with a short timeout at session
-start. This is the "it looks like an actual game" endgame for supporting
-terminals, with the cell renderer as the universal fallback.
-
-### 4.3 Asset-quality pipeline
-- **Downscale before posterize**: nearest-from-1024 aliases fine detail;
-  box/Lanczos to ~2× target, then nearest + **k-means/median-cut palette**
-  (~16-32 colors per sprite) reads dramatically cleaner at 26-51px, and fewer
-  unique colors ⇒ fewer SGR escapes. (K-Centroid-style downscaling is the
-  community standard for AI→pixel-art.)
-- **1px dark outline** pass after quantization: classic sprite readability
-  trick over busy terrain.
-- **Reference-image transitions** (§3.3) and **animated water** (2-3 AI
-  frames or hue-cycled variants; the tile system already supports
-  `animationFrames`).
-- **Blue-noise dithering** instead of Bayer 4×4 at high zoom (removes the
-  woven-cloth artifact on dirt).
-
-### 4.4 Motion & transport
-- **Movement interpolation**: entities snap tile-to-tile today; lerping
-  screen position across the ~200 ms move animation would read as smooth
-  motion (the sub-tile camera machinery already exists).
-- **Unify on the cell-diff/CRLE path** (§3.4).
-- **Scroll-region optimization**: on pure vertical camera moves, `CSI r` +
-  scroll + repaint only the exposed band.
-- **REP (`CSI Ps b`)** repeat-character compression for long runs (halfblock
-  rows are runs of `▀`) — opt-in after capability probe.
-- **Backpressure**: wire OutputPump (drop-oldest + forced full redraw on
-  drop) into SessionProxy so one stalled client can't balloon main-process
-  memory. Worker startup already hardened this session
-  (`WORKER_STARTUP_TIMEOUT_MS`).
-- **Typed-array framebuffer** (Uint32 RGBA) end-to-end: the remaining ~2×
-  CPU + GC win; biggest refactor, do after the mode/protocol work settles.
-
----
-
-## 5. The iteration loop (how to work on this)
+Maldoror renders an AI-authored world as pure ANSI. The current path is one
+composition:
 
 ```
-# 1. change renderer / assets
-node tools/render-sim/sim.mjs            # headless screenshots from the REAL pipeline
-# 2. LOOK at tools/render-sim/out/*.png  (rasterized terminal cells, 1:2 aspect)
-node tools/render-sim/publish-gallery.mjs <slug> "notes"   # -> maldoror.dev/gallery
-# 3. deploy: npx tsc in packages/render + apps/ssh-world, restart service
-# benchmarks: node --expose-gc <scratch>/render-bench.mjs
-# terrain assets: cd apps/ssh-world && node ../../tools/gen-terrain.mjs --pairs a:b,c:d
+world tiles + entities
+  -> retained world pixels
+  -> area-resampled LOD
+  -> two-colour octant cells
+  -> retained terminal codec
+  -> bounded SSH output
 ```
 
-The simulator drives the actual `TileProvider`/`ViewportRenderer`/cell
-renderers with the live world seed and real on-disk sprites — what it draws
-is what an SSH client gets, minus font rendering.
+## 1. Assets and world pixels
+
+### Canal-town kit
+
+`assets/canal-town/manifest.json` is the authority for the first production
+biome. It declares:
+
+- 33 architecture, bridge, quay, boat, foliage, water-detail, and street assets;
+- four terrain masters expanded into 16 deterministic raster variants;
+- each asset's placement roles, visual scale, and explicit collision offsets;
+- the default traveler sprite.
+
+The source generations remain under `assets/canal-town/generated/`; derived
+alpha-clean runtime sprites remain under `sprites/`. These assets were made
+with Codex's built-in ChatGPT image-generation capability, not an unofficial
+token scraper or a metered one-off script.
+
+`CanalTownTileProvider` composes those assets into unbounded signed-coordinate
+blocks: variable-width crossing canals, continuous curbs, east/west and
+north/south bridge decks, dense building fronts, foliage, street furniture,
+boats, and water detail. Its placement is deterministic from world seed and
+block coordinate. Collision comes from terrain/manifest metadata, never colour
+classification.
+
+The kit and terrain grids load once per worker. Persisted player/NPC PNGs retain
+their complete high-resolution data; shared bounded runtime caches select the
+closest complete resolution to 128px by default. This holds production below
+the 1.6 GiB cgroup limit without destroying source quality.
+
+### Painter's order
+
+`ViewportRenderer.renderToBuffer` composes terrain, roads, buildings, and
+Y-sorted players/NPCs into a `PixelGrid`. It supports sub-tile cameras,
+follow/free modes, 90-degree rotation, explicit viewport pixels, and a bounded
+scaled-frame cache.
+
+Downscaling uses area averaging rather than nearest-neighbour sampling. At the
+live town's 30% zoom, a 160x46 terminal resolves each source tile to 12 screen
+pixels while retaining roof, awning, foliage, and water texture.
+
+## 2. Pixels to terminal cells
+
+Ghostty-class terminals auto-select `octant`: every cell represents a 2x4
+pixel sample with one glyph plus foreground/background colours. The fitter
+chooses the two-colour partition with the lowest reconstruction error and has a
+solid-cell fast path. This replaced the former brightness split responsible for
+vertical rain-like streaks.
+
+Fallbacks remain:
+
+- `halfblock`: 1x2 pixels per cell, broadly compatible;
+- `braille`: 2x4 dotted representation;
+- `normal`: background-colour cells for diagnostics.
+
+The Ghostty octant path preserves truecolour. The earlier aggressive Bayer
+quantizer is not imposed on the production view.
+
+## 3. Motion and zoom
+
+Logical movement updates immediately for collision/server state. Visual actor
+coordinates interpolate over 200ms, and the follow camera has a small dead
+zone. Inside it, only actor cells change; after crossing it, the retained
+camera advances in whole terminal-cell steps that the codec can express as
+scroll operations.
+
+Zoom targets discrete 10% levels and follows a 180ms cubic ease. The viewport
+uses the nearest useful source LOD and area-resamples to the exact screen size.
+`primeCamera()` establishes the saved spawn after final zoom/layout restore and
+before the first keyframe, preventing an expensive animation from `(0,0)`.
+
+## 4. Terminal codec and animation
+
+`terminal-codec.ts` owns the terminal framebuffer. It emits:
+
+- full keyframes at startup, resize, teleport, or dependency loss;
+- DECSTBM/DECSLRM plus SU/SD/DCH/ICH for exact camera translations;
+- dirty cell intervals for actor/world repairs;
+- cost-aware cursor moves, REP runs, and merged SGR;
+- synchronized-output wrappers so compatible terminals apply a frame at once.
+
+Water glints use eight reserved indexed palette slots. Only genuinely bright
+water subpixels opt into those slots, leaving the source texture visible.
+Each tick rotates the slots in one 157-byte OSC-4 packet. Startup queries and
+saves the client's exact palette; cleanup restores it on every normal path.
+Terminal replies are consumed by the renderer rather than leaking into game
+input.
+
+## 5. Backpressure and lifecycle
+
+The worker returns complete encoded frames over IPC. Main-process
+`SessionProxy` writes them through a 64 KiB, depth-one `OutputPump`. A slow
+client may lose an unsent frame, but the proxy then requests a keyframe before
+accepting another dependent delta. Stats expose queued bytes, drops, drain
+events, written bytes, and peak queue.
+
+SSH connections, shells, and worker sessions have distinct IDs and idempotent
+cleanup. A `SIGUSR1` worker replacement preserves the established SSH sockets.
+Main-process error/end/close hardening is source-complete and should be loaded
+on the next safe full service restart after existing connections drain.
+
+## 6. Measured production result
+
+Real `TERM=xterm-ghostty` SSH capture at 160x46, July 23:
+
+| condition | measured terminal bytes |
+|---|---:|
+| initial synchronized cell frame | 270,069 |
+| six seconds after the initial frame, idle | 16,133 |
+| idle frame distribution | 89 x 157 B palette, 2 x 1,080 B HUD |
+| five seconds after one `d` input | 16,748 |
+| extra traffic vs equivalent idle capture | 5,130 |
+
+The idle capture contains zero camera scroll/catch-up operations after its first
+frame. `codec-bench.mjs` independently reports a zero-byte ordinary idle delta,
+321 bytes for a 0.2-tile actor update, and 1,181/315 bytes for one-cell x/y
+camera translations.
+
+The honest screenshot is
+`tools/render-sim/out/live-canal-town-accepted-faithful.png`. It was produced by
+replaying the actual SSH byte stream through `faithful-render.mjs`, including
+palette changes, margins, scroll operations, REP, DCH, and ICH.
+
+## 7. Verification loop
+
+```
+node tools/render-sim/canal-town-production.mjs
+python3 tools/render-sim/capture-live.py tools/render-sim/out/live.bin --settle 6
+node tools/render-sim/faithful-render.mjs tools/render-sim/out/live.bin 160 46
+node tools/render-sim/codec-bench.mjs
+pnpm test
+```
+
+Always look at the faithful PNG and compare it with
+`tools/render-sim/gallery/TARGET.png`. An idealized source-image raster is a
+useful development preview, not live acceptance evidence.

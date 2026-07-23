@@ -19,10 +19,13 @@ export class OutputPump {
   private queue: string[] = [];
   private queuedBytes = 0;
   private writing = false;
+  private backpressured = false;
   private destroyed = false;
 
   // Configurable limits
   private maxQueuedBytes: number;
+  private maxQueuedFrames: number;
+  private onDrop?: () => void;
 
   // Metrics
   private droppedFrames = 0;
@@ -36,14 +39,21 @@ export class OutputPump {
   private closeHandler: () => void;
   private errorHandler: () => void;
 
-  constructor(stream: NodeJS.WritableStream, options?: { maxQueuedBytes?: number }) {
+  constructor(stream: NodeJS.WritableStream, options?: {
+    maxQueuedBytes?: number;
+    maxQueuedFrames?: number;
+    onDrop?: () => void;
+  }) {
     this.stream = stream;
     this.maxQueuedBytes = options?.maxQueuedBytes ?? 512 * 1024; // 512KB default
+    this.maxQueuedFrames = options?.maxQueuedFrames ?? Number.POSITIVE_INFINITY;
+    this.onDrop = options?.onDrop;
 
     // Bind handlers so we can remove them later
     this.drainHandler = () => {
       if (this.destroyed) return;
       this.drainCount++;
+      this.backpressured = false;
       this.flush();
     };
 
@@ -69,6 +79,7 @@ export class OutputPump {
   private markDestroyed(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.backpressured = false;
     this.queue = [];
     this.queuedBytes = 0;
   }
@@ -90,11 +101,14 @@ export class OutputPump {
     }
 
     // Drop older frames if behind (keep latest for responsiveness)
-    while (this.queuedBytes > this.maxQueuedBytes && this.queue.length > 1) {
+    let droppedAny = false;
+    while ((this.queuedBytes > this.maxQueuedBytes || this.queue.length > this.maxQueuedFrames) && this.queue.length > 1) {
       const dropped = this.queue.shift()!;
       this.queuedBytes -= Buffer.byteLength(dropped, 'utf8');
       this.droppedFrames++;
+      droppedAny = true;
     }
+    if (droppedAny) this.onDrop?.();
 
     this.flush();
   }
@@ -106,10 +120,22 @@ export class OutputPump {
   writeImmediate(chunk: string): boolean {
     if (this.destroyed) return false;
 
+    // A false return still means Node accepted the previous chunk into its
+    // internal buffer. Do not write around that backpressure before `drain`:
+    // preserve ordering by retaining this critical packet locally instead.
+    if (this.backpressured) {
+      const bytes = Buffer.byteLength(chunk, 'utf8');
+      this.queue.push(chunk);
+      this.queuedBytes += bytes;
+      this.peakQueuedBytes = Math.max(this.peakQueuedBytes, this.queuedBytes);
+      return false;
+    }
+
     const bytes = Buffer.byteLength(chunk, 'utf8');
     this.totalBytesWritten += bytes;
-
-    return this.stream.write(chunk);
+    const ok = this.stream.write(chunk);
+    this.backpressured = !ok;
+    return ok;
   }
 
   /**
@@ -117,7 +143,7 @@ export class OutputPump {
    * Stops when stream.write() returns false (buffer full).
    */
   private flush(): void {
-    if (this.destroyed || this.writing) return;
+    if (this.destroyed || this.writing || this.backpressured) return;
     this.writing = true;
 
     while (this.queue.length > 0) {
@@ -130,7 +156,7 @@ export class OutputPump {
       const ok = this.stream.write(chunk);
       if (!ok) {
         // Buffer full - wait for drain event
-        this.drainCount++;
+        this.backpressured = true;
         break;
       }
     }
@@ -188,6 +214,13 @@ export class OutputPump {
     return this.peakQueuedBytes;
   }
 
+  /** Discard pending packets after a dependent delta was dropped. The caller
+   * should request and wait for a new keyframe before enqueueing again. */
+  clearQueued(): void {
+    this.queue = [];
+    this.queuedBytes = 0;
+  }
+
   /**
    * Get all metrics as an object (for /stats endpoint).
    */
@@ -216,6 +249,7 @@ export class OutputPump {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.backpressured = false;
     this.queue = [];
     this.queuedBytes = 0;
 

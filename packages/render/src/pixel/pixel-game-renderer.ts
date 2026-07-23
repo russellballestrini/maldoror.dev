@@ -1,17 +1,13 @@
 import type { Duplex } from 'stream';
-import type { WorldDataProvider } from '@maldoror/protocol';
+import type { RGB, WorldDataProvider } from '@maldoror/protocol';
 import { ViewportRenderer, type ViewportConfig, type TextOverlay, type CameraMode, type CameraRotation } from './viewport-renderer.js';
 import type { Direction } from '@maldoror/protocol';
 import {
-  renderPixelRow,
-  renderHalfBlockGrid,
-  renderBrailleGrid,
   quantizeGridDithered,
   renderNormalGridCells,
   renderHalfBlockGridCells,
   renderBrailleGridCells,
   renderOctantGridCells,
-  renderOctantGrid,
   cellsEqual,
   colorsEqual,
   renderCRLE,
@@ -19,6 +15,20 @@ import {
 } from './pixel-renderer.js';
 import { perfStats } from './perf-stats.js';
 import { sgrCode } from './ansi-cache.js';
+import {
+  TerminalCodec,
+  type TerminalCodecMetrics,
+} from './terminal-codec.js';
+import {
+  osc4EntriesPacket,
+  osc4Packet,
+  osc4Query,
+  osc104Restore,
+  parseOsc4ColorResponse,
+  PALETTE,
+  PHASES,
+  waterPalette,
+} from './palette-cycle.js';
 import { BG_PRIMARY, BG_TERTIARY, fg, bg, ACCENT_CYAN, ACCENT_GOLD, TEXT_SECONDARY, BORDER_DIM, RESET } from '../brand.js';
 
 // Synchronized output (DEC private mode 2026). Supported by kitty, WezTerm,
@@ -121,6 +131,7 @@ export interface PixelGameRendererConfig {
   renderMode?: RenderMode;  // Rendering mode (default: 'braille' for max resolution)
   layout?: Partial<LayoutConfig>;  // Optional layout configuration (reserves space for UI elements)
   optimizations?: PerfOptimizations;  // Performance optimizations
+  paletteAnimation?: boolean; // OSC-4 material animation (Ghostty-first)
 }
 
 /**
@@ -143,7 +154,6 @@ export class PixelGameRenderer {
   private viewportRenderer: ViewportRenderer;
   private tickCount: number = 0;
   private forceRedraw: boolean = true;
-  private previousOutput: string[] = [];
   private initialized: boolean = false;
   // Performance: Track previous overlay count to only force redraw when overlays change
   private previousOverlayCount: number = 0;
@@ -151,6 +161,10 @@ export class PixelGameRenderer {
   private playerX: number = 0;
   private playerY: number = 0;
   private zoomLevel: number;  // 100 = full resolution, 50 = half (zoomed out), etc.
+  private zoomTargetLevel: number;
+  private zoomFromLevel: number;
+  private zoomAnimationStartedAt: number | null = null;
+  private readonly ZOOM_ANIMATION_MS = 180;
   private renderMode: RenderMode;
   // Layout configuration (reserves space for UI elements around viewport)
   private layout: LayoutConfig;
@@ -182,6 +196,22 @@ export class PixelGameRenderer {
   // Foveated: Store previous cells for zones B and C (to avoid re-rendering)
   private zoneBCells: CellGrid = [];
   private zoneCCells: CellGrid = [];
+  // Production transport: retained terminal framebuffer + motion compensation.
+  private terminalCodec: TerminalCodec;
+  private lastCodecMetrics: TerminalCodecMetrics | null = null;
+  private previousStatsOutput: string = '';
+  // The player can move inside this retained camera frame. Once they cross the
+  // dead zone, the camera advances in whole terminal-cell increments so the
+  // codec can express motion exactly with SU/SD/DCH/ICH.
+  private cameraInitialized = false;
+  private cameraTileX = 0;
+  private cameraTileY = 0;
+  private lastWorldRevision: number | null = null;
+  private lastComposedCameraX = Number.NaN;
+  private lastComposedCameraY = Number.NaN;
+  private paletteAnimation: boolean;
+  private readonly originalPalette = new Map<number, RGB>();
+  private paletteResponseCarry = '';
 
   constructor(config: PixelGameRendererConfig) {
     this.stream = config.stream;
@@ -190,8 +220,10 @@ export class PixelGameRenderer {
     this.username = config.username ?? 'Unknown';
     this.renderMode = config.renderMode ?? 'halfblock';  // Default to halfblock for good balance
     this.zoomLevel = config.zoomLevel ?? 100;  // Default to 100% zoom (most zoomed in)
+    this.zoomTargetLevel = this.zoomLevel;
+    this.zoomFromLevel = this.zoomLevel;
+    this.paletteAnimation = config.paletteAnimation ?? this.renderMode === 'octant';
     this.layout = { ...DEFAULT_LAYOUT, ...config.layout };  // Merge with defaults
-    console.log(`[RENDERER DEBUG] config.layout=${JSON.stringify(config.layout)}, this.layout=${JSON.stringify(this.layout)}`);
 
     // Initialize performance optimizations
     const opts = config.optimizations ?? {};
@@ -219,6 +251,11 @@ export class PixelGameRenderer {
     };
 
     this.viewportRenderer = new ViewportRenderer(viewportConfig);
+    this.terminalCodec = new TerminalCodec({
+      headerRows: this.layout.headerRows,
+      terminalCols: availableCols,
+      terminalRows: this.rows,
+    });
   }
 
   /**
@@ -286,7 +323,6 @@ export class PixelGameRenderer {
   private calculatePixelDimensions(cols: number, availableRows: number): { pixelWidth: number; pixelHeight: number } {
     switch (this.renderMode) {
       case 'octant':
-      case 'octant':
       case 'braille':
         // Braille: 1 char = 2 pixels wide, 1 row = 4 pixels tall
         return { pixelWidth: cols * 2, pixelHeight: availableRows * 4 };
@@ -297,6 +333,23 @@ export class PixelGameRenderer {
       default:
         // Normal: 2 chars = 1 pixel wide, 1 row = 1 pixel tall
         return { pixelWidth: Math.floor(cols / 2), pixelHeight: availableRows };
+    }
+  }
+
+  private getCellGeometry(): {
+    cellPixelWidth: number;
+    cellPixelHeight: number;
+    terminalCellWidth: number;
+  } {
+    switch (this.renderMode) {
+      case 'octant':
+      case 'braille':
+        return { cellPixelWidth: 2, cellPixelHeight: 4, terminalCellWidth: 1 };
+      case 'halfblock':
+        return { cellPixelWidth: 1, cellPixelHeight: 2, terminalCellWidth: 1 };
+      case 'normal':
+      default:
+        return { cellPixelWidth: 1, cellPixelHeight: 1, terminalCellWidth: 2 };
     }
   }
 
@@ -332,6 +385,9 @@ export class PixelGameRenderer {
       brandBg,               // Set brand dark background
       `${ESC}[2J`,           // Clear screen (with dark bg)
       `${ESC}[H`,            // Move to home
+      this.paletteAnimation
+        ? Array.from({ length: PHASES }, (_, i) => osc4Query(PALETTE.WATER + i)).join('')
+        : '',
     ].join('');
 
     this.stream.write(init);
@@ -361,7 +417,16 @@ export class PixelGameRenderer {
     // Disable performance stats
     perfStats.disable();
 
+    const reservedPalette = Array.from({ length: PHASES }, (_, i) => PALETTE.WATER + i);
+    const exactRestores = reservedPalette
+      .filter((index) => this.originalPalette.has(index))
+      .map((index) => [index, this.originalPalette.get(index)!] as const);
+    const defaultRestores = reservedPalette.filter((index) => !this.originalPalette.has(index));
     const cleanup = [
+      exactRestores.length > 0 ? osc4EntriesPacket(exactRestores) : '',
+      defaultRestores.length > 0 ? osc104Restore(defaultRestores) : '',
+      `${ESC}[?69l`,        // Disable left/right margin mode
+      `${ESC}[r`,           // Reset top/bottom scroll margins
       `${ESC}[?1049l`,      // Exit alternate screen
       `${ESC}[?25h`,        // Show cursor
       `${ESC}[?7h`,         // Enable line wrap
@@ -369,7 +434,39 @@ export class PixelGameRenderer {
     ].join('');
 
     this.stream.write(cleanup);
+    this.originalPalette.clear();
+    this.paletteResponseCarry = '';
     this.initialized = false;
+  }
+
+  /** Consume OSC-4 query replies before the input router sees them as keys.
+   * Any user bytes interleaved in the same SSH packet are returned unchanged. */
+  consumeTerminalResponses(data: Buffer): Buffer {
+    if (!this.paletteAnimation && this.paletteResponseCarry.length === 0) return data;
+    const source = this.paletteResponseCarry + data.toString('utf8');
+    this.paletteResponseCarry = '';
+    const responsePattern = /\x1b\]4;\d+;rgb:[0-9a-f]{2,4}\/[0-9a-f]{2,4}\/[0-9a-f]{2,4}(?:\x1b\\|\x07)/gi;
+    let remaining = '';
+    let cursor = 0;
+    for (const match of source.matchAll(responsePattern)) {
+      const index = match.index ?? cursor;
+      remaining += source.slice(cursor, index);
+      const parsed = parseOsc4ColorResponse(match[0]);
+      if (parsed && parsed.index >= PALETTE.WATER && parsed.index < PALETTE.WATER + PHASES) {
+        this.originalPalette.set(parsed.index, parsed.color);
+      } else {
+        remaining += match[0];
+      }
+      cursor = index + match[0].length;
+    }
+    remaining += source.slice(cursor);
+
+    const incomplete = remaining.lastIndexOf(`${ESC}]4;`);
+    if (incomplete >= 0 && !/[\x07]|\x1b\\/.test(remaining.slice(incomplete))) {
+      this.paletteResponseCarry = remaining.slice(incomplete, incomplete + 256);
+      remaining = remaining.slice(0, incomplete);
+    }
+    return Buffer.from(remaining, 'utf8');
   }
 
   /**
@@ -585,11 +682,14 @@ export class PixelGameRenderer {
     );
     this.viewportRenderer.setPixelDimensions(pixelWidth, pixelHeight);
 
-    // Re-center camera after resize
-    this.viewportRenderer.setCamera(this.playerX, this.playerY);
+    // Re-center camera after resize. A resize changes the terminal framebuffer
+    // geometry, so it is an I-frame boundary.
+    this.cameraInitialized = false;
+    this.updateFollowCamera(this.playerX, this.playerY);
+    this.terminalCodec.resize(availableCols, rows);
 
     this.forceRedraw = true;
-    this.previousOutput = [];
+    this.previousStatsOutput = '';
     this.invalidateStatsBar();
   }
 
@@ -599,7 +699,75 @@ export class PixelGameRenderer {
   setCamera(tileX: number, tileY: number): void {
     this.playerX = tileX;
     this.playerY = tileY;
+    this.updateFollowCamera(tileX, tileY);
+  }
+
+  /**
+   * Establish the first camera position without animating from the renderer's
+   * default origin. Sessions call this after their final zoom/layout restore
+   * and before initialize(), so a returning player receives one keyframe at
+   * the saved location instead of a long sequence of synthetic scroll deltas.
+   */
+  primeCamera(tileX: number, tileY: number): void {
+    this.playerX = tileX;
+    this.playerY = tileY;
+    this.cameraTileX = tileX;
+    this.cameraTileY = tileY;
+    this.cameraInitialized = true;
     this.viewportRenderer.setCamera(tileX, tileY);
+    // setCamera() only moves the center in follow mode. Startup must also be
+    // exact when a hot-reloaded session restores free-camera mode.
+    this.viewportRenderer.snapToTarget();
+    this.lastComposedCameraX = Number.NaN;
+    this.lastComposedCameraY = Number.NaN;
+    this.forceRedraw = true;
+  }
+
+  /**
+   * Follow the player with a small dead zone and cell-quantized camera motion.
+   * The actor remains free to move at sub-cell precision inside the zone; only
+   * the retained world framebuffer scrolls, in exact terminal-cell steps, when
+   * the boundary is crossed.
+   */
+  private updateFollowCamera(playerX: number, playerY: number): void {
+    if (this.viewportRenderer.getCameraMode() === 'free') {
+      // Keep the follow target current without moving the free camera.
+      this.viewportRenderer.setCamera(playerX, playerY);
+      return;
+    }
+
+    if (!this.cameraInitialized) {
+      this.cameraTileX = playerX;
+      this.cameraTileY = playerY;
+      this.cameraInitialized = true;
+      this.viewportRenderer.setCamera(this.cameraTileX, this.cameraTileY);
+      return;
+    }
+
+    const tileSize = this.getCurrentTileSize();
+    const { cellPixelWidth, cellPixelHeight } = this.getCellGeometry();
+    const { availableCols, availableRows } = this.getViewportArea();
+    const deadZoneCols = Math.max(2, Math.floor(availableCols * 0.06));
+    const deadZoneRows = Math.max(1, Math.floor(availableRows * 0.08));
+    const deadZoneX = deadZoneCols * cellPixelWidth / tileSize;
+    const deadZoneY = deadZoneRows * cellPixelHeight / tileSize;
+
+    let desiredX = this.cameraTileX;
+    let desiredY = this.cameraTileY;
+    if (playerX > this.cameraTileX + deadZoneX) desiredX = playerX - deadZoneX;
+    else if (playerX < this.cameraTileX - deadZoneX) desiredX = playerX + deadZoneX;
+    if (playerY > this.cameraTileY + deadZoneY) desiredY = playerY - deadZoneY;
+    else if (playerY < this.cameraTileY - deadZoneY) desiredY = playerY + deadZoneY;
+
+    const cellWorldX = cellPixelWidth / tileSize;
+    const cellWorldY = cellPixelHeight / tileSize;
+    // Cap catch-up per 67ms render tick. This makes a camera pan visibly smooth
+    // while bounding each horizontal row shift and newly exposed edge.
+    const stepX = clamp(Math.round((desiredX - this.cameraTileX) / cellWorldX), -4, 4);
+    const stepY = clamp(Math.round((desiredY - this.cameraTileY) / cellWorldY), -2, 2);
+    this.cameraTileX += stepX * cellWorldX;
+    this.cameraTileY += stepY * cellWorldY;
+    this.viewportRenderer.setCamera(this.cameraTileX, this.cameraTileY);
   }
 
   /**
@@ -619,6 +787,7 @@ export class PixelGameRenderer {
     // Update FPS tracking
     this.frameCount++;
     const now = Date.now();
+    this.advanceAnimations(now);
     if (now - this.lastFpsUpdate >= 1000) {
       this.fps = this.frameCount;
       this.frameCount = 0;
@@ -653,7 +822,6 @@ export class PixelGameRenderer {
 
     // Generate stats bar
     const statsBar = this.renderStatsBar();
-
     // Render viewport to raw pixel buffer with overlays and brightness grid
     const { buffer, overlays, brightnessGrid } = this.viewportRenderer.renderToBuffer(world, this.tickCount);
 
@@ -730,54 +898,6 @@ export class PixelGameRenderer {
   }
 
   /**
-   * Pad a line to fill the screen width
-   */
-  private padLine(line: string): string {
-    // The line already has ANSI codes. We need to add padding spaces
-    // to reach the full column width
-    const tileSize = this.getCurrentTileSize();
-    const availableRows = this.rows - this.layout.headerRows;
-    const { widthTiles } = this.calculateViewportTiles(this.cols, availableRows);
-
-    // Calculate viewport pixel width and convert to terminal chars
-    const viewportPixelWidth = widthTiles * tileSize;
-    let viewportCharWidth: number;
-
-    switch (this.renderMode) {
-      case 'braille':
-        // Braille: 1 char = 2 pixels
-        viewportCharWidth = Math.floor(viewportPixelWidth / 2);
-        break;
-      case 'halfblock':
-        // Half-block: 1 char = 1 pixel
-        viewportCharWidth = viewportPixelWidth;
-        break;
-      case 'normal':
-      default:
-        // Normal: 2 chars = 1 pixel
-        viewportCharWidth = viewportPixelWidth * 2;
-        break;
-    }
-
-    // Only pad to the viewport area, not into the sidebar
-    const viewportWidth = this.cols - this.layout.rightSidebarCols;
-    const paddingNeeded = viewportWidth - viewportCharWidth;
-
-    if (paddingNeeded > 0) {
-      return line + bg(BG_PRIMARY) + ' '.repeat(paddingNeeded) + RESET;
-    }
-    return line;
-  }
-
-  /**
-   * Create a padding line that fills only the viewport area (not sidebar)
-   */
-  private createPaddingLine(): string {
-    const viewportWidth = this.cols - this.layout.rightSidebarCols;
-    return bg(BG_PRIMARY) + ' '.repeat(viewportWidth) + RESET;
-  }
-
-  /**
    * Render the stats bar with 1Hz caching to reduce string formatting overhead
    * Returns cached value if less than 1000ms has passed
    */
@@ -823,7 +943,8 @@ export class PixelGameRenderer {
     const leftSection = `  ${fgName}${this.username} ${fgVersion}${BUILD_VERSION}${fgLabel}`;
 
     // Mode info
-    const modeStr = this.renderMode === 'braille' ? 'BRAILLE' :
+    const modeStr = this.renderMode === 'octant' ? 'OCTANT' :
+                    this.renderMode === 'braille' ? 'BRAILLE' :
                     this.renderMode === 'halfblock' ? 'HALF' : 'NORMAL';
     const cameraMode = this.viewportRenderer.getCameraMode();
     const cameraRotation = this.viewportRenderer.getCameraRotation();
@@ -1097,9 +1218,23 @@ export class PixelGameRenderer {
    */
   invalidate(): void {
     this.forceRedraw = true;
-    this.previousOutput = [];
     this.previousCells = [];
+    this.previousStatsOutput = '';
+    this.lastWorldRevision = null;
+    this.lastComposedCameraX = Number.NaN;
+    this.lastComposedCameraY = Number.NaN;
+    this.terminalCodec.requestKeyframe();
     this.invalidateStatsBar();
+  }
+
+  /** Request an independently decodable transport frame after packet loss or
+   * backpressure dropping. */
+  requestKeyframe(): void {
+    this.invalidate();
+  }
+
+  getCodecMetrics(): TerminalCodecMetrics | null {
+    return this.lastCodecMetrics ? { ...this.lastCodecMetrics } : null;
   }
 
   /**
@@ -1124,32 +1259,57 @@ export class PixelGameRenderer {
     return this.zoomLevel;
   }
 
+  getTargetZoomLevel(): number {
+    return this.zoomTargetLevel;
+  }
+
   /**
    * Set zoom level and recalculate viewport
    * @param level Zoom percentage (0-100). 0 = base view (sprite = 1 tile), 100 = max zoom (256px tiles)
    */
   setZoomLevel(level: number): void {
-    // Clamp between 0% and 100% in 10% increments
-    this.zoomLevel = Math.round(Math.max(0, Math.min(100, level)) / 10) * 10;
+    const snapped = Math.round(clamp(level, 0, 100) / 10) * 10;
+    this.zoomAnimationStartedAt = null;
+    this.zoomFromLevel = snapped;
+    this.zoomTargetLevel = snapped;
+    this.zoomLevel = snapped;
+    this.reconfigureZoomViewport();
+  }
 
-    // Update viewport renderer's tile size for the new zoom level
-    const currentTileSize = this.getCurrentTileSize();
-    this.viewportRenderer.setTileRenderSize(currentTileSize);
+  /** Advance time-based renderer animations. Kept public so simulations and
+   * deterministic tests can step the exact production zoom curve. */
+  advanceAnimations(now: number = Date.now()): void {
+    if (this.zoomAnimationStartedAt === null) return;
+    const progress = clamp((now - this.zoomAnimationStartedAt) / this.ZOOM_ANIMATION_MS, 0, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    const previousTileSize = this.viewportRenderer.getTileRenderSize();
+    this.zoomLevel = this.zoomFromLevel + (this.zoomTargetLevel - this.zoomFromLevel) * eased;
+    const nextTileSize = this.getCurrentTileSize();
+    if (nextTileSize !== previousTileSize) this.reconfigureZoomViewport();
+    if (progress >= 1) {
+      this.zoomLevel = this.zoomTargetLevel;
+      this.zoomAnimationStartedAt = null;
+    }
+  }
 
+  private animateZoomTo(level: number): void {
+    const target = Math.round(clamp(level, 0, 100) / 10) * 10;
+    if (target === this.zoomTargetLevel && this.zoomAnimationStartedAt !== null) return;
+    this.zoomFromLevel = this.zoomLevel;
+    this.zoomTargetLevel = target;
+    this.zoomAnimationStartedAt = Date.now();
+  }
+
+  private reconfigureZoomViewport(): void {
+    this.viewportRenderer.setTileRenderSize(this.getCurrentTileSize());
     const availableRows = this.rows - this.layout.headerRows;
     const { widthTiles, heightTiles } = this.calculateViewportTiles(this.cols, availableRows);
     const { pixelWidth, pixelHeight } = this.calculatePixelDimensions(this.cols, availableRows);
-
-    this.viewportRenderer.resize(
-      Math.max(1, widthTiles),
-      Math.max(1, heightTiles)
-    );
+    this.viewportRenderer.resize(Math.max(1, widthTiles), Math.max(1, heightTiles));
     this.viewportRenderer.setPixelDimensions(pixelWidth, pixelHeight);
-
-    // Update camera for new viewport dimensions
-    this.viewportRenderer.setCamera(this.playerX, this.playerY);
-
-    this.invalidate();  // This also calls invalidateStatsBar()
+    this.cameraInitialized = false;
+    this.updateFollowCamera(this.playerX, this.playerY);
+    this.invalidate();
   }
 
   /**
@@ -1198,8 +1358,8 @@ export class PixelGameRenderer {
     );
     this.viewportRenderer.setPixelDimensions(pixelWidth, pixelHeight);
 
-    // Update camera for new viewport dimensions
-    this.viewportRenderer.setCamera(this.playerX, this.playerY);
+    this.cameraInitialized = false;
+    this.updateFollowCamera(this.playerX, this.playerY);
 
     this.invalidate();
   }
@@ -1218,14 +1378,14 @@ export class PixelGameRenderer {
    * Zoom in by 10% (increase zoom level = more zoomed in, less world visible)
    */
   zoomIn(): void {
-    this.setZoomLevel(this.zoomLevel + 10);
+    this.animateZoomTo(this.zoomTargetLevel + 10);
   }
 
   /**
    * Zoom out by 10% (decrease zoom level = more zoomed out, more world visible)
    */
   zoomOut(): void {
-    this.setZoomLevel(this.zoomLevel - 10);
+    this.animateZoomTo(this.zoomTargetLevel - 10);
   }
 
   /**
@@ -1233,13 +1393,53 @@ export class PixelGameRenderer {
    * Use this for batching multiple outputs together
    */
   renderToString(world: WorldDataProvider): string {
+    const renderStart = Date.now();
     this.tickCount++;
+
+    this.frameCount++;
+    const now = Date.now();
+    this.advanceAnimations(now);
+    if (now - this.lastFpsUpdate >= 1000) {
+      this.fps = this.frameCount;
+      this.frameCount = 0;
+      this.lastFpsUpdate = now;
+    }
 
     // Generate stats bar
     const statsBar = this.renderStatsBar();
+    const palettePacket = this.paletteAnimation
+      ? osc4Packet(PALETTE.WATER, waterPalette(this.tickCount % PHASES))
+      : '';
+    const precomposeCamera = this.viewportRenderer.getCameraCenter();
+    const worldRevision = world.getVisualRevision?.();
+    const canSkipComposition =
+      worldRevision !== undefined &&
+      this.lastWorldRevision === worldRevision &&
+      precomposeCamera.x === this.lastComposedCameraX &&
+      precomposeCamera.y === this.lastComposedCameraY &&
+      !this.forceRedraw;
 
-    // Render viewport to raw pixel buffer with overlays (already at correct resolution)
-    const { buffer, overlays } = this.viewportRenderer.renderToBuffer(world, this.tickCount);
+    if (canSkipComposition) {
+      if (statsBar === this.previousStatsOutput && !palettePacket) {
+        this.lastFrameBytes = 0;
+        this.lastRenderTime = Date.now() - renderStart;
+        return '';
+      }
+      const statsOutput = statsBar === this.previousStatsOutput
+        ? ''
+        : `${ESC}[1;1H${statsBar}${ESC}[0m`;
+      const output = `${SYNC_BEGIN}${statsOutput}${palettePacket}${SYNC_END}`;
+      if (statsOutput) this.previousStatsOutput = statsBar;
+      this.lastFrameBytes = Buffer.byteLength(output, 'utf8');
+      this.lastRenderTime = Date.now() - renderStart;
+      return output;
+    }
+
+    // Render viewport to a structured cell grid. Production used to stringify
+    // whole ANSI lines here; any camera movement changed every line and forced
+    // a near-full-frame repaint. Keeping structure is what lets TerminalCodec
+    // motion-compensate the retained terminal framebuffer.
+    const { buffer, overlays, brightnessGrid, materialGrid } = this.viewportRenderer.renderToBuffer(world, this.tickCount);
 
     // Apply color quantization with dithering at high zoom levels to reduce ANSI codes
     let quantizedBuffer = buffer;
@@ -1249,102 +1449,74 @@ export class PixelGameRenderer {
       quantizedBuffer = quantizeGridDithered(buffer, 5);
     }
 
-    // Convert to ANSI lines based on render mode
-    let viewportLines: string[];
+    let viewportCells: CellGrid;
     switch (this.renderMode) {
       case 'octant':
-        viewportLines = renderOctantGrid(quantizedBuffer);
+        viewportCells = renderOctantGridCells(quantizedBuffer, brightnessGrid, materialGrid);
         break;
       case 'braille':
-        viewportLines = renderBrailleGrid(quantizedBuffer);
+        viewportCells = renderBrailleGridCells(quantizedBuffer, brightnessGrid);
         break;
       case 'halfblock':
-        viewportLines = renderHalfBlockGrid(quantizedBuffer);
+        viewportCells = renderHalfBlockGridCells(quantizedBuffer, brightnessGrid);
         break;
       case 'normal':
       default:
-        viewportLines = quantizedBuffer.map(row => renderPixelRow(row));
+        viewportCells = renderNormalGridCells(quantizedBuffer);
         break;
     }
 
-    // Pad viewport lines to fill screen width
-    const paddedLines = viewportLines.map(line => this.padLine(line));
+    this.applyTextOverlays(viewportCells, overlays);
 
-    // Add padding rows if needed to fill the screen
-    const availableRows = this.rows - this.layout.headerRows;
-    while (paddedLines.length < availableRows) {
-      paddedLines.push(this.createPaddingLine());
+    const cameraCenter = this.viewportRenderer.getCameraCenter();
+    const geometry = this.getCellGeometry();
+    const encoded = this.terminalCodec.encode(viewportCells, {
+      x: cameraCenter.x,
+      y: cameraCenter.y,
+      rotation: this.viewportRenderer.getCameraRotation(),
+      ...geometry,
+    });
+    this.lastCodecMetrics = encoded.metrics;
+    this.lastWorldRevision = worldRevision ?? null;
+    this.lastComposedCameraX = cameraCenter.x;
+    this.lastComposedCameraY = cameraCenter.y;
+
+    const chunks: string[] = [];
+    // The HUD is outside the scroll margins and changes at most once per second.
+    if (statsBar !== this.previousStatsOutput || encoded.metrics.keyframe) {
+      chunks.push(`${ESC}[1;1H${statsBar}${ESC}[0m`);
+      this.previousStatsOutput = statsBar;
     }
+    chunks.push(encoded.output);
+    chunks.push(palettePacket);
 
-    // Combine stats bar + viewport
-    const lines = [statsBar, ...paddedLines];
-
-    // Generate output string
-    return this.generateFrameOutput(lines, overlays);
+    let output = chunks.join('');
+    if (output) output = SYNC_BEGIN + output + SYNC_END;
+    this.lastFrameBytes = Buffer.byteLength(output, 'utf8');
+    this.lastRenderTime = Date.now() - renderStart;
+    this.forceRedraw = false;
+    return output;
   }
 
-  /**
-   * Generate frame output string without writing to stream
-   */
-  private generateFrameOutput(lines: string[], overlays: TextOverlay[] = []): string {
-    let output = '';
-    const bgColorAnsi = bg(BG_PRIMARY);
-
-    // Performance: Only force full redraw when overlay count changes, not every frame with overlays
-    const overlayCountChanged = overlays.length !== this.previousOverlayCount;
-    this.previousOverlayCount = overlays.length;
-
-    if (this.forceRedraw || this.previousOutput.length !== lines.length || overlayCountChanged) {
-      // Full redraw - write every line from the top
-      output += `${ESC}[H`;  // Move to home
-      for (let y = 0; y < lines.length; y++) {
-        output += `${ESC}[${y + 1};1H`;  // Move to line y+1
-        output += lines[y] + `${ESC}[0m${bgColorAnsi}`;
-      }
-      // Clear any remaining lines below
-      output += `${ESC}[J`;  // Clear from cursor to end of screen
-      this.forceRedraw = false;
-    } else {
-      // Incremental update - only redraw changed lines
-      for (let y = 0; y < lines.length; y++) {
-        if (lines[y] !== this.previousOutput[y]) {
-          output += `${ESC}[${y + 1};1H`;  // Move to line y+1
-          output += lines[y] + `${ESC}[0m`;
-        }
-      }
-    }
-
-    // Render text overlays (usernames above players)
+  /** Fold text overlays into the retained CellGrid so old labels are repaired
+   * by the same dirty-cell pass instead of leaving ANSI trails behind. */
+  private applyTextOverlays(cells: CellGrid, overlays: TextOverlay[]): void {
+    if (this.renderMode === 'normal') return;
     for (const overlay of overlays) {
       const { row, col } = this.pixelToTerminal(overlay.pixelX, overlay.pixelY);
-
-      // Account for stats bar (+1) and 1-based terminal rows (+1)
-      const terminalRow = row + this.layout.headerRows + 1;
-
-      // Skip if out of bounds
-      if (terminalRow < 1 || terminalRow > this.rows) continue;
-
-      // Center the text
-      const textLen = overlay.text.length + 2;  // +2 for padding spaces
-      const startCol = Math.max(1, col - Math.floor(textLen / 2) + 1);
-
-      // Build the overlay text with ANSI colors
-      const bg = `${ESC}[48;2;${overlay.bgColor.r};${overlay.bgColor.g};${overlay.bgColor.b}m`;
-      const fg = `${ESC}[38;2;${overlay.fgColor.r};${overlay.fgColor.g};${overlay.fgColor.b}m`;
-      const reset = `${ESC}[0m`;
-
-      output += `${ESC}[${terminalRow};${startCol}H${bg}${fg} ${overlay.text} ${reset}`;
+      if (row < 0 || row >= cells.length) continue;
+      const text = ` ${overlay.text} `;
+      const start = Math.max(0, col - Math.floor(text.length / 2));
+      for (let i = 0; i < text.length; i++) {
+        const x = start + i;
+        if (x >= (cells[row]?.length ?? 0)) break;
+        cells[row]![x] = {
+          char: text[i]!,
+          fgColor: overlay.fgColor,
+          bgColor: overlay.bgColor,
+        };
+      }
     }
-
-    this.previousOutput = [...lines];
-
-    // Wrap the frame in synchronized-output markers (DEC 2026): supporting
-    // terminals (Ghostty, kitty, WezTerm, foot, Alacritty, iTerm2, ...) apply
-    // the whole update atomically — no tearing; others ignore the markers.
-    if (output) {
-      output = SYNC_BEGIN + output + SYNC_END;
-    }
-    return output;
   }
 
   /**
@@ -1434,7 +1606,14 @@ export class PixelGameRenderer {
    * Useful after panning in free mode
    */
   snapCameraToPlayer(): void {
+    this.cameraTileX = this.playerX;
+    this.cameraTileY = this.playerY;
+    this.cameraInitialized = true;
+    this.viewportRenderer.setCamera(this.playerX, this.playerY);
     this.viewportRenderer.snapToTarget();
+    this.lastComposedCameraX = Number.NaN;
+    this.lastComposedCameraY = Number.NaN;
+    this.forceRedraw = true;
   }
 
   /**
@@ -1480,8 +1659,18 @@ export class PixelGameRenderer {
       Math.max(1, heightTiles)
     );
     this.viewportRenderer.setPixelDimensions(pixelWidth, pixelHeight);
-    this.viewportRenderer.setCamera(this.playerX, this.playerY);
+    this.cameraInitialized = false;
+    this.updateFollowCamera(this.playerX, this.playerY);
+    this.terminalCodec = new TerminalCodec({
+      headerRows: this.layout.headerRows,
+      terminalCols: availableCols,
+      terminalRows: this.rows,
+    });
 
     this.invalidate();
   }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }

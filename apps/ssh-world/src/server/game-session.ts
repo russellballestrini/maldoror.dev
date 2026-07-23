@@ -35,7 +35,7 @@ import { BootScreen } from './boot-screen.js';
 import { db, schema } from '@maldoror/db';
 import { eq, and, between, inArray } from 'drizzle-orm';
 import type { ProviderConfig } from '@maldoror/ai';
-import { saveSpriteToDisk, loadSpriteFromDisk } from '../utils/sprite-storage.js';
+import { cacheRuntimeSprite, saveSpriteToDisk, loadSpriteFromDisk } from '../utils/sprite-storage.js';
 import { saveBuildingToDisk, loadAllBuildingDirections } from '../utils/building-storage.js';
 import { resourceMonitor } from '../utils/resource-monitor.js';
 
@@ -223,7 +223,10 @@ export class GameSession {
       this.currentPrompt = avatar?.prompt || '';
     } else if (avatar?.spriteJson) {
       // Fallback to database (for existing sprites before file storage)
-      this.tileProvider.setPlayerSprite(this.userId, avatar.spriteJson as Sprite);
+      this.tileProvider.setPlayerSprite(
+        this.userId,
+        cacheRuntimeSprite(this.userId, avatar.spriteJson as Sprite),
+      );
       this.currentPrompt = avatar.prompt || '';
     } else {
       // Use placeholder sprite
@@ -829,7 +832,10 @@ export class GameSession {
 
         // Update local sprite
         if (this.tileProvider && this.userId) {
-          this.tileProvider.setPlayerSprite(this.userId, result.result);
+          this.tileProvider.setPlayerSprite(
+            this.userId,
+            cacheRuntimeSprite(this.userId, result.result),
+          );
         }
 
         // Broadcast to all players
@@ -1203,7 +1209,10 @@ export class GameSession {
       });
 
       if (avatar?.spriteJson) {
-        this.tileProvider.setPlayerSprite(changedUserId, avatar.spriteJson as Sprite);
+        this.tileProvider.setPlayerSprite(
+          changedUserId,
+          cacheRuntimeSprite(changedUserId, avatar.spriteJson as Sprite),
+        );
       }
     } catch (error) {
       console.error(`Failed to reload sprite for ${changedUserId}:`, error);
@@ -1256,7 +1265,10 @@ export class GameSession {
         for (const playerId of needsDbLookup) {
           const avatar = avatarMap.get(playerId);
           if (avatar?.spriteJson) {
-            this.tileProvider?.setPlayerSprite(playerId, avatar.spriteJson);
+            this.tileProvider?.setPlayerSprite(
+              playerId,
+              cacheRuntimeSprite(playerId, avatar.spriteJson),
+            );
           }
           this.loadingSprites.delete(playerId);
         }

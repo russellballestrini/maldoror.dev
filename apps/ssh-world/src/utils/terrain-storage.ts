@@ -90,6 +90,7 @@ export async function saveTerrainTileToDisk(tile: Tile): Promise<void> {
     id: tile.id,
     name: tile.name,
     walkable: tile.walkable,
+    material: tile.material,
     animated: tile.animated || false,
     frameCount: tile.animationFrames?.length || 0,
   };
@@ -115,8 +116,19 @@ export async function loadTerrainTileFromDisk(tileId: string): Promise<Tile | nu
     // Load metadata
     const metadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
 
-    // Load base resolution
-    const basePath = getTerrainPngPath(tileId, BASE_SIZE);
+    // Loading every object-heavy PixelGrid pyramid exhausted the worker's
+    // 1.6GB cgroup before the first session. Keep one high-quality source grid
+    // in memory and let ViewportRenderer's bounded scale cache derive the exact
+    // on-screen size. 128 is enough for normal Ghostty viewports and is 4x
+    // smaller than 256 in pixel count.
+    const preferredResolution = Math.max(26, Math.min(
+      BASE_SIZE,
+      Number.parseInt(process.env.MALDOROR_ASSET_RESOLUTION || '128', 10) || 128
+    ));
+    const preferredPath = getTerrainPngPath(tileId, preferredResolution);
+    const basePath = fs.existsSync(preferredPath)
+      ? preferredPath
+      : getTerrainPngPath(tileId, BASE_SIZE);
     const basePixels = await loadPngAsPixelGrid(basePath);
 
     if (!basePixels) {
@@ -124,21 +136,16 @@ export async function loadTerrainTileFromDisk(tileId: string): Promise<Tile | nu
       return null;
     }
 
-    // Load all resolutions
-    const resolutions: Record<string, PixelGrid> = {};
-    for (const resolution of RESOLUTIONS) {
-      const filePath = getTerrainPngPath(tileId, resolution);
-      const pixels = await loadPngAsPixelGrid(filePath);
-      if (pixels) {
-        resolutions[String(resolution)] = pixels;
-      }
-    }
+    const resolutions: Record<string, PixelGrid> = {
+      [String(basePixels.length)]: basePixels,
+    };
 
     const tile: Tile = {
       id: metadata.id,
       name: metadata.name,
       pixels: basePixels,
       walkable: metadata.walkable,
+      material: metadata.material,
       resolutions,
     };
 
@@ -152,22 +159,19 @@ export async function loadTerrainTileFromDisk(tileId: string): Promise<Tile | nu
 
       for (let frameIdx = 0; frameIdx < metadata.frameCount; frameIdx++) {
         // Load base frame
-        const framePath = path.join(animDir, `frame_${frameIdx}_${BASE_SIZE}.png`);
+        const preferredFramePath = path.join(animDir, `frame_${frameIdx}_${preferredResolution}.png`);
+        const framePath = fs.existsSync(preferredFramePath)
+          ? preferredFramePath
+          : path.join(animDir, `frame_${frameIdx}_${BASE_SIZE}.png`);
         const framePixels = await loadPngAsPixelGrid(framePath);
         if (framePixels) {
           tile.animationFrames.push(framePixels);
         }
 
-        // Load frame resolutions
-        for (const resolution of RESOLUTIONS) {
-          const resFramePath = path.join(animDir, `frame_${frameIdx}_${resolution}.png`);
-          const resFramePixels = await loadPngAsPixelGrid(resFramePath);
-          if (resFramePixels) {
-            if (!tile.animationResolutions![String(resolution)]) {
-              tile.animationResolutions![String(resolution)] = [];
-            }
-            tile.animationResolutions![String(resolution)]!.push(resFramePixels);
-          }
+        if (framePixels) {
+          const key = String(framePixels.length);
+          if (!tile.animationResolutions![key]) tile.animationResolutions![key] = [];
+          tile.animationResolutions![key]!.push(framePixels);
         }
       }
     }

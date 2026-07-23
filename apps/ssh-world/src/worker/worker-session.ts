@@ -38,7 +38,7 @@ const PERF_OPTIMIZATIONS: PerfOptimizations = {
   foveated: true,       // Zone-based update rates (peripheral at 4Hz, core at 60Hz)
   enablePerfStats: false, // Set to true to log perf stats every 10s
 };
-import { TileProvider, DistrictTileProvider, createPlaceholderSprite } from '@maldoror/world';
+import { CanalTownTileProvider, TileProvider, DistrictTileProvider, createPlaceholderSprite } from '@maldoror/world';
 import type { PixelGrid } from '@maldoror/protocol';
 import type { Direction, AnimationFrame, PlayerVisualState, Sprite } from '@maldoror/protocol';
 import type { DirectionalBuildingSprite } from '@maldoror/ai';
@@ -52,10 +52,11 @@ import { BootScreen } from '../server/boot-screen.js';
 import { db, schema } from '@maldoror/db';
 import { eq, and, between, inArray } from 'drizzle-orm';
 import type { ProviderConfig } from '@maldoror/ai';
-import { saveSpriteToDisk, loadSpriteFromDisk } from '../utils/sprite-storage.js';
+import { cacheRuntimeSprite, saveSpriteToDisk, loadSpriteFromDisk } from '../utils/sprite-storage.js';
 import { saveBuildingToDisk, loadAllBuildingDirections } from '../utils/building-storage.js';
 import { VirtualStream } from './virtual-stream.js';
 import type { SessionState } from './game-worker.js';
+import type { LoadedCanalTownKit } from '../game/canal-town-assets.js';
 
 /**
  * Choose the terminal render mode. Octant (Unicode 16 solid 2×4 mosaics) is
@@ -85,7 +86,8 @@ export interface WorkerSessionConfig {
   gameServer: GameServer;
   worldSeed: bigint;
   providerConfig: ProviderConfig;
-  sendOutput: (sessionId: string, output: string) => void;
+  canalTownKit: LoadedCanalTownKit | null;
+  sendOutput: (sessionId: string, output: string, keyframe?: boolean) => void;
   sendUserId: (sessionId: string, userId: string) => void;
   sendEnded: (sessionId: string) => void;
   restoredState?: SessionState;
@@ -105,8 +107,10 @@ export class WorkerSession {
   private gameServer: GameServer;
   private worldSeed: bigint;
   private providerConfig: ProviderConfig;
+  private canalTownKit: LoadedCanalTownKit | null;
   private sendUserId: (sessionId: string, userId: string) => void;
   private sendEnded: (sessionId: string) => void;
+  private sendOutput: (sessionId: string, output: string, keyframe?: boolean) => void;
 
   private renderer: PixelGameRenderer | null = null;
   private componentManager: ComponentManager | null = null;
@@ -122,6 +126,12 @@ export class WorkerSession {
   private tickInterval: NodeJS.Timeout | null = null;
   private playerX: number = 0;
   private playerY: number = 0;
+  private visualPlayerX: number = 0;
+  private visualPlayerY: number = 0;
+  private moveFromX: number = 0;
+  private moveFromY: number = 0;
+  private moveStartedAt = 0;
+  private moveDurationMs = 200;
   private playerDirection: Direction = 'down';
   private playerAnimationFrame: AnimationFrame = 0;
   private isMoving: boolean = false;
@@ -180,8 +190,10 @@ export class WorkerSession {
     this.gameServer = config.gameServer;
     this.worldSeed = config.worldSeed;
     this.providerConfig = config.providerConfig;
+    this.canalTownKit = config.canalTownKit;
     this.sendUserId = config.sendUserId;
     this.sendEnded = config.sendEnded;
+    this.sendOutput = config.sendOutput;
     this.restoredState = config.restoredState;
 
     // Create virtual stream that sends output to main process
@@ -210,19 +222,25 @@ export class WorkerSession {
     return this.userId;
   }
 
+  requestKeyframe(): void {
+    this.renderer?.requestKeyframe();
+  }
+
   /**
    * Handle input data from main process
    */
   handleInput(data: Buffer): void {
     if (this.destroyed) return;
+    const routed = this.renderer?.consumeTerminalResponses(data) ?? data;
+    if (routed.length === 0) return;
 
     if (this.inputPaused) {
       // When paused (modal screens open), push input to stream
       // so modal screens can receive it via stream.on('data', ...)
-      this.stream.pushInput(data);
+      this.stream.pushInput(routed);
     } else if (this.inputRouter) {
       // Normal game mode - route through InputRouter
-      this.inputRouter.process(data);
+      this.inputRouter.process(routed);
     }
   }
 
@@ -320,7 +338,24 @@ export class WorkerSession {
     // the world IS that dense mockup-style canal town (DistrictTileProvider):
     // the player walks around a painting-quality scene rendered in octant.
     boot?.updateStep('Generating world chunks...', 'loading');
-    const districtPath = process.env.MALDOROR_DISTRICT;
+    const createDefaultProvider = (): TileProvider => this.canalTownKit
+      ? new CanalTownTileProvider({
+          worldSeed: this.worldSeed,
+          chunkCacheSize: 64,
+          assets: this.canalTownKit.assets,
+          terrain: this.canalTownKit.terrain,
+          blockSize: this.canalTownKit.blockSize,
+        })
+      : new TileProvider({ worldSeed: this.worldSeed, chunkCacheSize: 64 });
+    // The generated canal-town is the production world. MALDOROR_DISTRICT is
+    // retained as an opt-in legacy/set-piece experiment, but a stale district
+    // path must not silently override the canonical provider after its kit has
+    // loaded. Operators can still select the experiment explicitly by setting
+    // MALDOROR_CANAL_TOWN=0 alongside MALDOROR_DISTRICT.
+    const districtPath = this.canalTownKit ? undefined : process.env.MALDOROR_DISTRICT;
+    if (this.canalTownKit && process.env.MALDOROR_DISTRICT) {
+      console.log('[World] Canal-town kit active; ignoring legacy MALDOROR_DISTRICT override');
+    }
     if (districtPath) {
       const dtp = new DistrictTileProvider({ worldSeed: this.worldSeed, chunkCacheSize: 64 });
       try {
@@ -342,13 +377,10 @@ export class WorkerSession {
         }
       } catch (e) {
         console.error('[District] load failed, falling back to procedural world:', e);
-        this.tileProvider = new TileProvider({ worldSeed: this.worldSeed, chunkCacheSize: 64 });
+        this.tileProvider = createDefaultProvider();
       }
     } else {
-      this.tileProvider = new TileProvider({
-        worldSeed: this.worldSeed,
-        chunkCacheSize: 64,
-      });
+      this.tileProvider = createDefaultProvider();
     }
     this.tileProvider.setLocalPlayerId(this.userId!);
 
@@ -368,6 +400,10 @@ export class WorkerSession {
           .where(eq(schema.playerState.userId, this.userId!));
       }
     }
+    this.visualPlayerX = this.playerX;
+    this.visualPlayerY = this.playerY;
+    this.moveFromX = this.playerX;
+    this.moveFromY = this.playerY;
     boot?.markPreviousDone();
 
     // Load avatar
@@ -381,10 +417,14 @@ export class WorkerSession {
       this.tileProvider.setPlayerSprite(this.userId!, sprite);
       this.currentPrompt = avatar?.prompt || '';
     } else if (avatar?.spriteJson) {
-      this.tileProvider.setPlayerSprite(this.userId!, avatar.spriteJson as Sprite);
+      this.tileProvider.setPlayerSprite(
+        this.userId!,
+        cacheRuntimeSprite(this.userId!, avatar.spriteJson as Sprite),
+      );
       this.currentPrompt = avatar.prompt || '';
     } else {
-      const placeholderSprite = createPlaceholderSprite({ r: 100, g: 150, b: 255 });
+      const placeholderSprite = this.canalTownKit?.defaultAvatar ??
+        createPlaceholderSprite({ r: 100, g: 150, b: 255 });
       this.tileProvider.setPlayerSprite(this.userId!, placeholderSprite);
     }
     boot?.markPreviousDone();
@@ -423,6 +463,10 @@ export class WorkerSession {
     // (each district tile is a scene-slice; at full zoom you'd see one tile).
     if (this.districtMode) {
       this.renderer.setZoomLevel(20);
+    } else if (this.canalTownKit) {
+      // Town-scale framing: at a typical 160x46 Ghostty viewport this resolves
+      // to ~12 screen pixels per tile, exposing one whole dense canal block.
+      this.renderer.setZoomLevel(30);
     }
     boot?.markPreviousDone();
 
@@ -497,7 +541,7 @@ export class WorkerSession {
     // Restore renderer state if hot-reloading
     if (isRestoring && this.restoredState) {
       this.renderer.setZoomLevel(this.restoredState.zoomLevel);
-      this.renderer.setRenderMode(this.restoredState.renderMode as 'normal' | 'halfblock' | 'braille');
+      this.renderer.setRenderMode(this.restoredState.renderMode as 'normal' | 'halfblock' | 'braille' | 'octant');
       this.renderer.setCameraMode(this.restoredState.cameraMode as 'follow' | 'free');
     }
 
@@ -505,6 +549,11 @@ export class WorkerSession {
     if (!isRestoring) {
       await this.showEntranceScreen();
     }
+
+    // Zoom/layout configuration initially centers the renderer on its default
+    // (0,0). Prime the retained camera at the actual saved spawn so startup is
+    // one keyframe, not seconds of SU/DCH catch-up traffic.
+    this.renderer.primeCamera(this.visualPlayerX, this.visualPlayerY);
 
     // Initialize the renderer
     this.renderer.initialize();
@@ -519,8 +568,8 @@ export class WorkerSession {
     const state: PlayerVisualState = {
       userId: this.userId,
       username: this.username,
-      x: this.playerX,
-      y: this.playerY,
+      x: this.visualPlayerX,
+      y: this.visualPlayerY,
       direction: this.playerDirection,
       animationFrame: this.playerAnimationFrame,
       isMoving: this.isMoving,
@@ -529,8 +578,18 @@ export class WorkerSession {
     this.tileProvider.updatePlayer(state);
   }
 
+  /** Apply the canonical world-scale zoom whenever a modal recreates the
+   * renderer. Without this, returning from avatar/building/NPC creation fell
+   * back to the 100% single-tile view. */
+  private applyDefaultWorldFraming(renderer: PixelGameRenderer): void {
+    if (this.districtMode) renderer.setZoomLevel(20);
+    else if (this.canalTownKit) renderer.setZoomLevel(30);
+  }
+
   private tick(): void {
     if (this.destroyed || !this.renderer || !this.tileProvider) return;
+
+    this.advanceVisualPlayer(Date.now());
 
     // Update animation frame when moving
     if (this.isMoving) {
@@ -612,7 +671,7 @@ export class WorkerSession {
     }
 
     // Center camera on player
-    this.renderer.setCamera(this.playerX, this.playerY);
+    this.renderer.setCamera(this.visualPlayerX, this.visualPlayerY);
 
     // Render
     let output = this.renderer.renderToString(this.tileProvider);
@@ -622,7 +681,7 @@ export class WorkerSession {
     }
 
     if (output) {
-      this.stream.write(output);
+      this.sendOutput(this.sessionId, output, this.renderer.getCodecMetrics()?.keyframe ?? false);
     }
   }
 
@@ -908,7 +967,10 @@ export class WorkerSession {
         }
 
         if (this.tileProvider && this.userId) {
-          this.tileProvider.setPlayerSprite(this.userId, result.result);
+          this.tileProvider.setPlayerSprite(
+            this.userId,
+            cacheRuntimeSprite(this.userId, result.result),
+          );
         }
 
         if (this.userId) {
@@ -934,6 +996,8 @@ export class WorkerSession {
         rightSidebarCols: chatWidthA,
       },
     });
+    this.applyDefaultWorldFraming(this.renderer);
+    this.renderer.primeCamera(this.visualPlayerX, this.visualPlayerY);
     this.renderer.initialize();
 
     this.inputPaused = false;
@@ -1004,6 +1068,8 @@ export class WorkerSession {
         rightSidebarCols: chatWidthB,
       },
     });
+    this.applyDefaultWorldFraming(this.renderer);
+    this.renderer.primeCamera(this.visualPlayerX, this.visualPlayerY);
     this.renderer.initialize();
 
     this.inputPaused = false;
@@ -1193,6 +1259,8 @@ export class WorkerSession {
         rightSidebarCols: chatWidthN,
       },
     });
+    this.applyDefaultWorldFraming(this.renderer);
+    this.renderer.primeCamera(this.visualPlayerX, this.visualPlayerY);
     this.renderer.initialize();
 
     this.inputPaused = false;
@@ -1284,7 +1352,10 @@ export class WorkerSession {
         for (const playerId of needsDbLookup) {
           const avatar = avatarMap.get(playerId);
           if (avatar?.spriteJson) {
-            this.tileProvider?.setPlayerSprite(playerId, avatar.spriteJson);
+            this.tileProvider?.setPlayerSprite(
+              playerId,
+              cacheRuntimeSprite(playerId, avatar.spriteJson),
+            );
           }
           this.loadingSprites.delete(playerId);
         }
@@ -1395,6 +1466,10 @@ export class WorkerSession {
       return;
     }
 
+    this.moveFromX = this.visualPlayerX;
+    this.moveFromY = this.visualPlayerY;
+    this.moveStartedAt = Date.now();
+    this.moveDurationMs = this.consecutiveMoveCount >= this.MOMENTUM_THRESHOLD ? 100 : 200;
     this.playerX = targetX;
     this.playerY = targetY;
     this.playerDirection = direction;
@@ -1427,12 +1502,28 @@ export class WorkerSession {
     const animationDelay = isRunning ? 100 : 200;
 
     this.moveTimer = setTimeout(() => {
+      this.visualPlayerX = this.playerX;
+      this.visualPlayerY = this.playerY;
       this.isMoving = false;
       this.playerAnimationFrame = 0;
       this.consecutiveMoveCount = 0;
       this.consecutiveMoveDirection = null;
       this.updateLocalPlayerState();
     }, animationDelay);
+  }
+
+  private advanceVisualPlayer(now: number): void {
+    if (!this.isMoving) return;
+    const elapsed = now - this.moveStartedAt;
+    const t = Math.max(0, Math.min(1, elapsed / Math.max(1, this.moveDurationMs)));
+    // Smoothstep is monotonic and seek-safe; no overshoot or elastic motion.
+    const eased = t * t * (3 - 2 * t);
+    const nextX = this.moveFromX + (this.playerX - this.moveFromX) * eased;
+    const nextY = this.moveFromY + (this.playerY - this.moveFromY) * eased;
+    if (nextX === this.visualPlayerX && nextY === this.visualPlayerY) return;
+    this.visualPlayerX = nextX;
+    this.visualPlayerY = nextY;
+    this.updateLocalPlayerState();
   }
 
   private async showEntranceScreen(): Promise<void> {
