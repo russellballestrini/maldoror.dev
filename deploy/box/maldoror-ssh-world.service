@@ -1,0 +1,26 @@
+[Unit]
+Description=Maldoror — terminal SSH MMO (ssh-world)
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=ajax
+Group=ajax
+Slice=maldoror.slice
+WorkingDirectory=/mnt/donto-data/workspace/maldoror.dev/apps/ssh-world
+EnvironmentFile=/etc/donto/maldoror.env
+Environment=PATH=/usr/bin:/bin:/usr/local/bin
+ExecStart=/usr/bin/node dist/index.js
+Restart=on-failure
+RestartSec=5
+# Graceful drain: let SSH sessions finish + save player state on stop.
+KillSignal=SIGTERM
+TimeoutStopSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=maldoror-ssh-world
+
+[Install]
+WantedBy=multi-user.target

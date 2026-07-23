@@ -1,0 +1,14 @@
+[Unit]
+Description=Maldoror resource-capped slice (SSH world)
+Before=slices.target
+
+[Slice]
+# Interactive-ish game: normal-ish CPU weight, but a hard memory ceiling so it can
+# never OOM/swap-thrash a shared box. (The upstream docker-entrypoint asks node for
+# a 5.5G heap, which is far too large here — maldoror.env overrides NODE_OPTIONS.)
+CPUWeight=50
+IOWeight=50
+MemoryHigh=1280M
+MemoryMax=1600M
+MemorySwapMax=256M
+TasksMax=512
