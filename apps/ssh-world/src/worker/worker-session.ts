@@ -93,7 +93,7 @@ export class WorkerSession {
   private playerListModal: PlayerListComponent | null = null;
   private reloadOverlay: ReloadOverlayComponent | null = null;
   private chatComponent: ChatComponent | null = null;
-  private chatVisible: boolean = true;
+  private chatVisible: boolean = false; // hidden by default; toggle with ` or c
   private tileProvider: TileProvider | null = null;
   private destroyed: boolean = false;
   private inputPaused: boolean = false;
@@ -299,6 +299,23 @@ export class WorkerSession {
       chunkCacheSize: 64,
     });
     this.tileProvider.setLocalPlayerId(this.userId!);
+
+    // Spawn safety: new players default to (0,0), which for many world seeds is
+    // water (walkable:false) — leaving them stuck, unable to move in any
+    // direction. Also rescues anyone whose saved position is on a now-blocked
+    // tile. If the current tile isn't walkable land, relocate to the nearest
+    // walkable, non-building tile and persist it.
+    if (!this.isSpawnTileWalkable(this.playerX, this.playerY)) {
+      const spawn = this.findWalkableSpawn(this.playerX, this.playerY);
+      if (spawn && (spawn.x !== this.playerX || spawn.y !== this.playerY)) {
+        this.playerX = spawn.x;
+        this.playerY = spawn.y;
+        await db
+          .update(schema.playerState)
+          .set({ x: spawn.x, y: spawn.y })
+          .where(eq(schema.playerState.userId, this.userId!));
+      }
+    }
     boot?.markPreviousDone();
 
     // Load avatar
@@ -1239,6 +1256,66 @@ export class WorkerSession {
     }
 
     this.moveOptimistic(dx, dy, worldDirection);
+  }
+
+  /** A tile is a valid spawn/stand tile if it exists, is walkable, and has no building. */
+  private isSpawnTileWalkable(x: number, y: number): boolean {
+    const tile = this.tileProvider?.getTile(x, y);
+    if (!tile || !tile.walkable) return false;
+    if (this.tileProvider?.isBuildingAt(x, y)) return false;
+    return true;
+  }
+
+  /** Count how many of the 8 neighbours of (x,y) are walkable land (0..8). */
+  private openNeighbourCount(x: number, y: number): number {
+    const offsets: Array<[number, number]> = [
+      [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1],
+    ];
+    let n = 0;
+    for (const [ox, oy] of offsets) {
+      if (this.isSpawnTileWalkable(x + ox, y + oy)) n++;
+    }
+    return n;
+  }
+
+  /**
+   * Spiral outward from (cx, cy) in square rings and return a nearby tile that
+   * is walkable land AND reasonably open (so the player isn't dropped on a
+   * 1-tile island surrounded by water). Prefers the first tile with >=6 walkable
+   * neighbours; otherwise returns the most-open walkable tile found within range.
+   * Bounded so a fully-enclosed start can't scan forever.
+   */
+  private findWalkableSpawn(cx: number, cy: number): { x: number; y: number } | null {
+    const maxRadius = 120;
+    const OPEN_ENOUGH = 6;
+    let best: { x: number; y: number } | null = null;
+    let bestScore = -1;
+
+    const consider = (x: number, y: number): { x: number; y: number } | null => {
+      if (!this.isSpawnTileWalkable(x, y)) return null;
+      const score = this.openNeighbourCount(x, y);
+      if (score >= OPEN_ENOUGH) return { x, y }; // roomy — take it immediately
+      if (score > bestScore) {
+        bestScore = score;
+        best = { x, y };
+      }
+      return null;
+    };
+
+    const hit0 = consider(cx, cy);
+    if (hit0) return hit0;
+    for (let r = 1; r <= maxRadius; r++) {
+      for (let dx = -r; dx <= r; dx++) {
+        for (let dy = -r; dy <= r; dy++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; // ring only
+          const hit = consider(cx + dx, cy + dy);
+          if (hit) return hit;
+        }
+      }
+      // Once we're a little way out and have a decently open tile, stop scanning.
+      if (best && r >= 24 && bestScore >= 3) return best;
+    }
+    return best;
   }
 
   private moveOptimistic(dx: number, dy: number, direction: Direction): void {

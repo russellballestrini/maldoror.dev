@@ -793,11 +793,7 @@ export class PixelGameRenderer {
 
     // Build header content with generous padding
     const fgVersion = `${ESC}[38;2;100;100;120m`; // Dim gray for version
-    // DEBUG: Show sidebar width to diagnose chat visibility issue
-    const sidebarDebug = this.layout.rightSidebarCols > 0
-      ? `${ESC}[38;2;0;255;0m[CHAT:${this.layout.rightSidebarCols}]`
-      : `${ESC}[38;2;255;0;0m[NO CHAT]`;
-    const leftSection = `  ${fgName}${this.username} ${fgVersion}${BUILD_VERSION} ${sidebarDebug}${fgLabel}`;
+    const leftSection = `  ${fgName}${this.username} ${fgVersion}${BUILD_VERSION}${fgLabel}`;
 
     // Mode info
     const modeStr = this.renderMode === 'braille' ? 'BRAILLE' :
