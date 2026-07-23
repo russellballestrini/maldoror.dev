@@ -108,16 +108,30 @@ export class WorkerManager {
   /**
    * Stop the worker process
    */
-  stop(): void {
+  async stop(): Promise<void> {
     if (this.restartTimer) {
       clearTimeout(this.restartTimer);
       this.restartTimer = null;
     }
-    if (this.worker) {
+    const worker = this.worker;
+    if (worker) {
+      try {
+        await this.flushNPCState();
+      } catch (error) {
+        console.error('[WorkerManager] Final NPC checkpoint failed:', error);
+      }
+
+      const exited = new Promise<void>((resolve) => worker.once('exit', () => resolve()));
       this.sendToWorker({ type: 'shutdown' });
-      this.worker = null;
-      this.workerReady = false;
+      await Promise.race([
+        exited,
+        new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+      ]);
+
+      if (worker.connected) worker.kill('SIGTERM');
+      if (this.worker === worker) this.worker = null;
     }
+    this.workerReady = false;
     this.clearPendingRequests();
   }
 
@@ -164,6 +178,18 @@ export class WorkerManager {
         console.error('[WorkerManager] Failed to capture session states:', error);
         // Continue with hot reload anyway, sessions will start fresh
       }
+    }
+
+    // The body/motor snapshot is independent of session state and must be
+    // durable before the old worker is replaced.
+    try {
+      await this.flushNPCState();
+      console.log('[WorkerManager] Captured persistent NPC motor state');
+    } catch (error) {
+      console.error('[WorkerManager] Failed to checkpoint NPC state before reload:', error);
+      this.reloadState = 'running';
+      this.notifyReloadState();
+      throw new Error('Hot reload aborted because NPC state was not durable');
     }
 
     try {
@@ -539,6 +565,40 @@ export class WorkerManager {
     );
   }
 
+  async moveNPC(
+    npcId: string,
+    direction: 'up' | 'down' | 'left' | 'right'
+  ): Promise<NPCVisualState | null> {
+    if (!this.isReady()) return null;
+
+    const requestId = this.nextRequestId();
+    return this.sendRequest<NPCVisualState | null>(
+      {
+        type: 'move_npc',
+        requestId,
+        npcId,
+        direction,
+      },
+      requestId,
+      'npc_moved'
+    );
+  }
+
+  /** Works during reload after public request admission has been paused. */
+  async flushNPCState(): Promise<void> {
+    if (!this.workerReady || !this.worker?.connected) return;
+
+    const requestId = this.nextRequestId();
+    await this.sendRequest<void>(
+      {
+        type: 'flush_npc_state',
+        requestId,
+      },
+      requestId,
+      'npc_state_flushed'
+    );
+  }
+
   // === Session Methods (Hot-Reload Architecture) ===
 
   /**
@@ -815,6 +875,26 @@ export class WorkerManager {
           clearTimeout(pending.timeout);
           this.pendingRequests.delete(msg.requestId);
           pending.resolve(msg.npc);
+        }
+        break;
+      }
+
+      case 'npc_moved': {
+        const pending = this.pendingRequests.get(msg.requestId);
+        if (pending) {
+          clearTimeout(pending.timeout);
+          this.pendingRequests.delete(msg.requestId);
+          pending.resolve(msg.npc);
+        }
+        break;
+      }
+
+      case 'npc_state_flushed': {
+        const pending = this.pendingRequests.get(msg.requestId);
+        if (pending) {
+          clearTimeout(pending.timeout);
+          this.pendingRequests.delete(msg.requestId);
+          pending.resolve(undefined);
         }
         break;
       }

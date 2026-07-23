@@ -69,6 +69,12 @@ async function main() {
     defaultModel: providerConfig.model,
   });
   await npcManager.loadFromDB();
+  workerManager.onNPCCreated('npc-consciousness', (npc) => {
+    npcManager.loadNPC(npc.npcId).catch((error) => {
+      console.error(`[NPCConsciousness] Failed to activate newly-created NPC ${npc.npcId}:`, error);
+      Sentry.captureException(error);
+    });
+  });
   npcManager.start();
   console.log(`NPC consciousness manager started with ${npcManager.getNPCCount()} conscious NPCs`);
 
@@ -161,7 +167,7 @@ async function main() {
     sshServer.stop();
     statsServer.stop();
     agentServer.close();
-    workerManager.stop();
+    await workerManager.stop();
     process.exit(0);
   };
 

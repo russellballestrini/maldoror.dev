@@ -102,6 +102,19 @@ export class NPCConsciousnessManager {
     console.log(`[NPCConsciousness] Loaded ${this.npcs.size} conscious NPCs`);
   }
 
+  /** Load a newly-created canonical NPC without restarting the service. */
+  async loadNPC(npcId: string): Promise<void> {
+    if (this.npcs.has(npcId)) return;
+
+    const [npc] = await db
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.id, npcId))
+      .limit(1);
+
+    if (npc?.isNpc) await this.addNPC(npc);
+  }
+
   /**
    * Add an NPC to the manager
    */
@@ -131,13 +144,18 @@ export class NPCConsciousnessManager {
     // Initialize emotional state if needed
     await emotionProcessor.getEmotionalState(npc.id);
 
-    // Randomize interval around 2 hours per NPC for natural staggering
+    const persistedState = await db.query.playerState.findFirst({
+      where: eq(schema.playerState.userId, npc.id),
+    });
+
+    // Stable per-identity staggering avoids synchronized calls without
+    // re-rolling an inhabitant's schedule on every process restart.
     const baseInterval = npc.decisionIntervalMs || this.defaultDecisionIntervalMs;
-    const randomOffset = Math.floor(Math.random() * 600000); // 0-10 min random offset
+    const randomOffset = Math.floor(this.stableFraction(npc.id, 'decision-interval') * 600000);
     const decisionInterval = baseInterval + randomOffset;
 
-    // Stagger initial lastDecisionAt so NPCs don't all think at once
-    const initialOffset = Math.floor(Math.random() * decisionInterval);
+    const initialOffset = Math.floor(this.stableFraction(npc.id, 'initial-decision') * decisionInterval);
+    const lastDecisionAt = npc.npcLastDecisionAt?.getTime() ?? Date.now() - initialOffset;
 
     const consciousNpc: ConsciousNPC = {
       userId: npc.id,
@@ -145,22 +163,21 @@ export class NPCConsciousnessManager {
       personality: npc.personality,
       visualAppearance: npc.visualPrompt || undefined,
       engine,
-      position: { x: npc.spawnX || 0, y: npc.spawnY || 0 },
-      direction: 'down',
-      lastDecisionAt: Date.now() - initialOffset, // Staggered start
+      position: {
+        x: persistedState?.x ?? npc.spawnX ?? 0,
+        y: persistedState?.y ?? npc.spawnY ?? 0,
+      },
+      direction: this.isDirection(persistedState?.direction) ? persistedState.direction : 'down',
+      lastDecisionAt,
       decisionIntervalMs: decisionInterval,
-      spawnX: npc.spawnX || 0,
-      spawnY: npc.spawnY || 0,
-      roamRadius: npc.roamRadius || 15,
+      spawnX: npc.spawnX ?? 0,
+      spawnY: npc.spawnY ?? 0,
+      roamRadius: npc.roamRadius ?? 15,
     };
 
     console.log(`[NPCConsciousness] ${npc.username} will think every ${Math.round(decisionInterval / 60000)} minutes`);
 
     this.npcs.set(npc.id, consciousNpc);
-
-    // Register with game server
-    await this.workerManager.playerConnect(npc.id, `npc-${npc.id}`, npc.username);
-    this.workerManager.updatePlayerPosition(npc.id, consciousNpc.position.x, consciousNpc.position.y);
 
     console.log(`[NPCConsciousness] Added "${npc.username}" at (${consciousNpc.position.x}, ${consciousNpc.position.y})`);
   }
@@ -189,10 +206,6 @@ export class NPCConsciousnessManager {
       this.tickInterval = null;
     }
     this.started = false;
-
-    for (const npc of this.npcs.values()) {
-      this.workerManager.playerDisconnect(npc.userId);
-    }
 
     console.log('[NPCConsciousness] Stopped');
   }
@@ -267,7 +280,6 @@ export class NPCConsciousnessManager {
 
       // Remove from active NPCs
       this.npcs.delete(death.npcId);
-      this.workerManager.playerDisconnect(death.npcId);
 
       // Notify family members and trigger grief
       await this.processGriefForFamily(death);
@@ -373,16 +385,8 @@ export class NPCConsciousnessManager {
     const npc = this.npcs.get(npcId);
     if (!npc) return;
 
-    // Different intervals for different stages (all ~2 hours to reduce API costs)
-    const intervals: Record<string, number> = {
-      baby: 7200000,   // 2 hours
-      child: 7200000,  // 2 hours
-      adult: 7200000,  // 2 hours
-      elder: 7200000,  // 2 hours
-    };
-
-    const newInterval = intervals[stage] || 7200000;
-    npc.decisionIntervalMs = newInterval + Math.floor(Math.random() * 60000); // Add some variance
+    npc.decisionIntervalMs = 7200000
+      + Math.floor(this.stableFraction(npc.userId, `lifecycle-${stage}`) * 60000);
 
     console.log(`[NPCConsciousness] ${npc.username} now thinks every ${Math.round(npc.decisionIntervalMs / 60000)} minutes (${stage})`);
   }
@@ -391,11 +395,20 @@ export class NPCConsciousnessManager {
    * Run full cognitive process for an NPC
    */
   private async processConsciousness(npc: ConsciousNPC): Promise<void> {
+    const timeSinceLastDecision = Date.now() - npc.lastDecisionAt;
     npc.lastDecisionAt = Date.now();
 
     try {
+      await db
+        .update(schema.users)
+        .set({
+          npcLastDecisionAt: new Date(npc.lastDecisionAt),
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.users.id, npc.userId));
+
       // Build cognitive context
-      const context = await this.buildContext(npc);
+      const context = await this.buildContext(npc, timeSinceLastDecision);
 
       // Log observation
       addBotActivity({
@@ -488,12 +501,31 @@ export class NPCConsciousnessManager {
   /**
    * Build cognitive context for an NPC
    */
-  private async buildContext(npc: ConsciousNPC): Promise<CognitiveContext> {
-    // Get visible entities
-    const [players, npcs] = await Promise.all([
-      this.workerManager.getVisiblePlayers(npc.position.x, npc.position.y, 60, 40, npc.userId),
-      this.workerManager.getVisibleNPCs(npc.position.x, npc.position.y, 60, 40),
-    ]);
+  private async buildContext(
+    npc: ConsciousNPC,
+    timeSinceLastDecision: number
+  ): Promise<CognitiveContext> {
+    // The worker owns the one physical body. Synchronize cognition to it before
+    // calculating perception so autonomous motor movement and thought cannot drift.
+    const npcs = await this.workerManager.getVisibleNPCs(
+      npc.position.x,
+      npc.position.y,
+      Math.max(60, npc.roamRadius * 2 + 4),
+      Math.max(40, npc.roamRadius * 2 + 4)
+    );
+    const physicalBody = npcs.find((visible) => visible.npcId === npc.userId);
+    if (physicalBody) {
+      npc.position = { x: physicalBody.x, y: physicalBody.y };
+      npc.direction = physicalBody.direction;
+    }
+
+    const players = await this.workerManager.getVisiblePlayers(
+      npc.position.x,
+      npc.position.y,
+      60,
+      40,
+      npc.userId
+    );
 
     const visibleEntities: VisibleEntity[] = [
       ...players.map(p => ({
@@ -562,7 +594,7 @@ export class NPCConsciousnessManager {
       nearbyGatherings,
       recentChat,
       currentTime: new Date(),
-      timeSinceLastDecision: Date.now() - npc.lastDecisionAt,
+      timeSinceLastDecision,
     };
   }
 
@@ -579,7 +611,7 @@ export class NPCConsciousnessManager {
       case 'approach':
       case 'avoid':
         if (action.direction) {
-          this.moveNPC(npc, action.direction);
+          await this.moveNPC(npc, action.direction);
           addBotActivity({
             type: 'action',
             agentName: npc.username,
@@ -734,28 +766,26 @@ export class NPCConsciousnessManager {
   /**
    * Move an NPC, respecting roam radius
    */
-  private moveNPC(npc: ConsciousNPC, direction: Direction): void {
-    let newX = npc.position.x;
-    let newY = npc.position.y;
+  private async moveNPC(npc: ConsciousNPC, direction: Direction): Promise<void> {
+    const physicalBody = await this.workerManager.moveNPC(npc.userId, direction);
+    if (!physicalBody) return;
 
-    switch (direction) {
-      case 'up': newY--; break;
-      case 'down': newY++; break;
-      case 'left': newX--; break;
-      case 'right': newX++; break;
+    npc.position = { x: physicalBody.x, y: physicalBody.y };
+    npc.direction = physicalBody.direction;
+  }
+
+  private stableFraction(id: string, salt: string): number {
+    let hash = 2166136261;
+    const input = `${id}:${salt}`;
+    for (let i = 0; i < input.length; i++) {
+      hash ^= input.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
     }
+    return (hash >>> 0) / 0x100000000;
+  }
 
-    // Check roam radius
-    const dx = newX - npc.spawnX;
-    const dy = newY - npc.spawnY;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-
-    if (distance <= npc.roamRadius) {
-      npc.position.x = newX;
-      npc.position.y = newY;
-      npc.direction = direction;
-      this.workerManager.updatePlayerPosition(npc.userId, newX, newY);
-    }
+  private isDirection(value: unknown): value is Direction {
+    return value === 'up' || value === 'down' || value === 'left' || value === 'right';
   }
 
   /**

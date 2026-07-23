@@ -131,7 +131,10 @@ Monorepo (pnpm + turbo). `packages/*` libs, `apps/*` services.
 - `src/worker/virtual-stream.ts` — worker↔main stream (output via IPC, input via
   `pushInput`).
 - `src/game/game-server.ts` — world sim: players, NPCs, visibility, movement
-  queue. `src/game/npc-*` — NPC managers (consciousness/bot).
+  queue. `npc-manager.ts` owns each inhabitant's one rendered body and
+  restart-safe motor state; `npc-consciousness-manager.ts` owns thought,
+  memory, emotion, relationships, and goals, and requests body actions over
+  typed IPC. Conscious NPCs are never registered as duplicate player bodies.
 - `src/utils/` — `sprite-storage`/`npc-storage`/`png-storage`/`terrain-storage`
   (PNG↔PixelGrid + DB), `sprite-hygiene.ts` (despeckle fringe at load).
 
@@ -307,9 +310,9 @@ After the milestone: 2nd biome (forest) tileset · NPC townsfolk (reuse
   shared runtime sprite strategy.
 - Add day/night, weather, foliage, and lantern material palettes using the same
   OSC-4 ownership/save/restore contract.
-- Load the latest main-process lifecycle hardening on the next safe full service
-  restart; the worker path is already deployed without disconnecting the three
-  established SSH clients.
+- Continue the living-world layer from the canonical NPC body seam: authored
+  schedules, place-bound work, social consequences, birth/death visibility,
+  and semantic terminal LOD for non-humanoid inhabitants.
 
 Judge every visual change against `tools/render-sim/gallery/TARGET.png`. Keep
 the gallery + COMPARISON updated — it's how progress is made legible.

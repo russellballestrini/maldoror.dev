@@ -9,6 +9,23 @@
 export type NPCBehaviorState = 'idle' | 'wandering' | 'following_player' | 'fleeing';
 
 /**
+ * Restart-safe motor state persisted alongside an NPC's current position.
+ *
+ * This deliberately contains only simulation mechanics. Identity, memories,
+ * goals, and relationships remain in their domain tables, while x/y/direction
+ * remain first-class player_state columns for spatial queries.
+ */
+export interface NPCMotorState {
+  targetX: number | null;
+  targetY: number | null;
+  ticksUntilNextDecision: number;
+  behaviorState: NPCBehaviorState;
+  rngState: number;
+  isMoving: boolean;
+  movementTicksRemaining: number;
+}
+
+/**
  * NPC configuration for behavior
  */
 export interface NPCConfig {
@@ -50,6 +67,12 @@ export interface NPCState extends NPCVisualState {
 
   // Behavior state
   behaviorState: NPCBehaviorState;
+
+  // Deterministic PRNG state, persisted with the motor state
+  rngState: number;
+
+  // Short animation tail for discrete externally-requested steps
+  movementTicksRemaining: number;
 
   // Configuration
   config: NPCConfig;

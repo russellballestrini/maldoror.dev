@@ -93,6 +93,18 @@ export interface CreateNPCMessage {
   data: NPCCreateData;
 }
 
+export interface MoveNPCMessage {
+  type: 'move_npc';
+  requestId: string;
+  npcId: string;
+  direction: 'up' | 'down' | 'left' | 'right';
+}
+
+export interface FlushNPCStateMessage {
+  type: 'flush_npc_state';
+  requestId: string;
+}
+
 export interface AddBuildingCollisionMessage {
   type: 'add_building_collision';
   anchorX: number;
@@ -162,6 +174,8 @@ export type MainToWorkerMessage =
   | GetVisibleNPCsMessage
   | GetNPCSpriteMessage
   | CreateNPCMessage
+  | MoveNPCMessage
+  | FlushNPCStateMessage
   | AddBuildingCollisionMessage
   | CreateSessionMessage
   | DestroySessionMessage
@@ -236,6 +250,17 @@ export interface NPCCreatedBroadcast {
   npc: NPCVisualState;
 }
 
+export interface NPCMovedResponse {
+  type: 'npc_moved';
+  requestId: string;
+  npc: NPCVisualState | null;
+}
+
+export interface NPCStateFlushedResponse {
+  type: 'npc_state_flushed';
+  requestId: string;
+}
+
 // Session output (worker → main)
 export interface SessionOutputMessage {
   type: 'session_output';
@@ -270,6 +295,8 @@ export type WorkerToMainMessage =
   | NPCSpriteResponse
   | CreateNPCResponse
   | NPCCreatedBroadcast
+  | NPCMovedResponse
+  | NPCStateFlushedResponse
   | SessionOutputMessage
   | SessionUserIdMessage
   | SessionEndedMessage
@@ -439,6 +466,18 @@ process.on('message', async (msg: MainToWorkerMessage) => {
         break;
       }
 
+      case 'move_npc': {
+        const npc = gameServer?.moveNPC(msg.npcId, msg.direction) ?? null;
+        send({ type: 'npc_moved', requestId: msg.requestId, npc });
+        break;
+      }
+
+      case 'flush_npc_state': {
+        if (gameServer) await gameServer.flushNPCState();
+        send({ type: 'npc_state_flushed', requestId: msg.requestId });
+        break;
+      }
+
       case 'add_building_collision': {
         if (!gameServer) break;
         gameServer.addBuildingToCollisionCache(msg.anchorX, msg.anchorY);
@@ -541,7 +580,7 @@ process.on('message', async (msg: MainToWorkerMessage) => {
         workerSessions.clear();
 
         if (gameServer) {
-          gameServer.stop();
+          await gameServer.stop();
         }
         process.exit(0);
         break;

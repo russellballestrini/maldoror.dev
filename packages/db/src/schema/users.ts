@@ -28,6 +28,7 @@ export const users = pgTable('users', {
   aiProvider: varchar('ai_provider', { length: 32 }).default('openai'),
   aiModel: varchar('ai_model', { length: 64 }).default('gpt-4o-mini'),
   decisionIntervalMs: integer('decision_interval_ms').default(300000), // 5 minutes
+  npcLastDecisionAt: timestamp('npc_last_decision_at', { withTimezone: true }),
   spawnX: integer('spawn_x'),
   spawnY: integer('spawn_y'),
   roamRadius: integer('roam_radius').default(15),

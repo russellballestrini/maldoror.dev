@@ -10,6 +10,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { users } from './users';
+import type { NPCMotorState } from '@maldoror/protocol';
 
 /**
  * Player state - real-time position and status
@@ -25,6 +26,10 @@ export const playerState = pgTable('player_state', {
   // Visual state
   direction: varchar('direction', { length: 8 }).notNull().default('down'),
   animationFrame: integer('animation_frame').notNull().default(0),
+
+  // Present for NPC users only. Completes the motor snapshot so a worker
+  // replacement resumes the same trajectory instead of respawning/re-rolling.
+  npcMotorState: jsonb('npc_motor_state').$type<NPCMotorState>(),
 
   // Presence tracking
   isOnline: boolean('is_online').notNull().default(false),

@@ -128,8 +128,9 @@ export class GameServer {
   /**
    * Stop the game server
    */
-  stop(): void {
+  async stop(): Promise<void> {
     this.gameLoop.stop();
+    await this.npcManager.flushRuntimeState();
     console.log('Game server stopped');
   }
 
@@ -553,6 +554,24 @@ export class GameServer {
     return this.npcManager.getAllNPCs();
   }
 
+  /** Apply a conscious action to the same NPC body used by the renderer. */
+  moveNPC(npcId: string, direction: Direction): NPCVisualState | null {
+    return this.npcManager.moveNPC(npcId, direction);
+  }
+
+  async flushNPCState(): Promise<void> {
+    const wasRunning = this.gameLoop.isRunning();
+    if (wasRunning) this.gameLoop.stop();
+
+    try {
+      await this.npcManager.flushRuntimeState();
+    } catch (error) {
+      // A failed checkpoint aborts replacement; restore the old live worker.
+      if (wasRunning) this.gameLoop.start();
+      throw error;
+    }
+  }
+
   /**
    * Get NPC sprite by ID
    */
@@ -580,6 +599,5 @@ export class GameServer {
    */
   setGlobalNPCCreatedCallback(callback: NPCCreatedCallback): void {
     this.globalNPCCreatedCallback = callback;
-    this.npcManager.onNPCCreated(callback);
   }
 }

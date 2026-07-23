@@ -26,6 +26,7 @@ interface HotReloadInternals {
     username: string;
   }>;
   getAllSessionStates: ReturnType<typeof vi.fn>;
+  flushNPCState: ReturnType<typeof vi.fn>;
   spawnWorker: ReturnType<typeof vi.fn>;
   sendToWorker: ReturnType<typeof vi.fn>;
   hotReload(): Promise<void>;
@@ -89,12 +90,14 @@ describe('WorkerManager hot-reload state capture', () => {
       renderMode: 'octant',
       cameraMode: 'follow',
     }]);
+    manager.flushNPCState = vi.fn().mockResolvedValue(undefined);
     manager.spawnWorker = vi.fn().mockResolvedValue(undefined);
     manager.sendToWorker = vi.fn();
 
     await manager.hotReload();
 
     expect(kill).toHaveBeenCalledWith('SIGTERM');
+    expect(manager.flushNPCState).toHaveBeenCalledOnce();
     expect(manager.sendToWorker).toHaveBeenCalledWith(expect.objectContaining({
       type: 'create_session',
       sessionId: 'session-1',
@@ -107,5 +110,24 @@ describe('WorkerManager hot-reload state capture', () => {
         cameraMode: 'follow',
       },
     }));
+  });
+
+  it('does not replace the worker when the NPC checkpoint fails', async () => {
+    const manager = managerInternals() as unknown as HotReloadInternals;
+    const kill = vi.fn();
+    manager.workerReady = true;
+    manager.worker = { connected: true, kill };
+    manager.connectedSessions = new Map();
+    manager.workerSessions = new Map();
+    manager.getAllSessionStates = vi.fn().mockResolvedValue([]);
+    manager.flushNPCState = vi.fn().mockRejectedValue(new Error('database unavailable'));
+    manager.spawnWorker = vi.fn().mockResolvedValue(undefined);
+    manager.sendToWorker = vi.fn();
+
+    await expect(manager.hotReload()).rejects.toThrow(
+      'Hot reload aborted because NPC state was not durable'
+    );
+    expect(kill).not.toHaveBeenCalled();
+    expect(manager.spawnWorker).not.toHaveBeenCalled();
   });
 });
