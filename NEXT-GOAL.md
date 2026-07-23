@@ -388,8 +388,10 @@ Completed foundations:
   topology, terrain-cost curves, three route tiers, and explicit ford/bridge/
   non-walkable-ferry consequences;
 - route-aware linear-light composition, physical water ownership, tangent-
-  aligned timber bridges, and a separately authored overview material LOD pass
-  focused tests and faithful octant review;
+  aligned timber bridges, demand-driven semantic LOD, and linear-light material
+  mip pyramids pass focused tests and faithful octant review; the identical
+  retained overview improved from 50.79 seconds to 2.02 seconds cold without
+  restoring the rejected root-ring or tile-seam failures;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–014 expose the selected research candidates without claiming
@@ -397,9 +399,10 @@ Completed foundations:
 
 Still open and therefore goal-blocking:
 
-- the regional field/compositor/routes are not the live provider; their cold
-  path remains far outside the interactive budget (the retained overview lab
-  took 49.75 seconds);
+- the regional field/compositor/routes are not the live provider; the 25.1x
+  cold-path improvement is not permission to block input for 2.02 seconds, and
+  predictive background prewarming plus p50/p95/p99 traversal evidence remain
+  unbuilt;
 - six-family silhouettes, architecture, landmarks, routeside contacts, parcel
   composition, authoritative traversal, and cave/highland/coast interactions
   are not production-complete;

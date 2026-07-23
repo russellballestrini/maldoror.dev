@@ -96,14 +96,16 @@ route answers; bridge coverage clears water ownership and is walkable, while a
 ferry retains water ownership and remains non-walkable. Bridge texture axes use
 the route tangent instead of a fixed screen direction.
 
-The compositor authors a distinct 26 px overview resolution whose material
-frequency is raised before terminal downsampling. Shrinking the detail texture
-directly exposed generated root loops as repeated regional “donuts”; retaining
-that failed faithful frame led to semantic material LOD rather than another
-seam metric. The current faithful minimum-live-zoom candidate removes the root
-period and measures a tile-boundary/interior-change ratio of 0.982. It remains
-research-only because cold composition is not yet fast enough for traversal and
-family silhouettes have not been placed.
+The compositor now authors only the semantic resolution requested by a
+resolution-aware viewport. Requests are quantized into stable zoom bands, and
+linear-light mip pyramids follow the material footprint. Shrinking the detail
+texture directly exposed generated root loops as repeated regional “donuts”;
+retaining that failed faithful frame led to semantic material LOD rather than
+another seam metric. The faithful minimum-live-zoom candidate removes the root
+period and measures a tile-boundary/interior-change ratio of 0.999. Demand-
+driven composition reduced the retained 80 x 44-world-tile cold lab from 50.79
+seconds to 2.02 seconds. It remains research-only because background prewarming,
+interactive tail evidence, and family silhouettes are not complete.
 
 ## Non-periodic asset placement
 

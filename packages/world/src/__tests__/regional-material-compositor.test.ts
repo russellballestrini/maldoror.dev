@@ -155,7 +155,7 @@ describe('RegionalMaterialCompositor', () => {
     expect(ferry.walkable).toBe(false);
   });
 
-  it('authors a separate overview resolution instead of shrinking detail texture', () => {
+  it('authors only the requested semantic LOD and reuses quantized zoom bands', () => {
     const composed = new RegionalMaterialCompositor({
       worldSeed: 42n,
       field: { sample: () => sample([0, 1, 0, 0, 0, 0]) },
@@ -164,10 +164,15 @@ describe('RegionalMaterialCompositor', () => {
         [solidTile(family, 32)],
       ])) as Record<BiomeFamily, Tile[]>,
     });
-    const tile = composed.getTile(0, 0);
-    const overview = tile.resolutions?.['26'];
-    expect(tile.pixels).toHaveLength(32);
-    expect(overview).toHaveLength(26);
-    expect(overview?.[0]).toHaveLength(26);
+    const detail = composed.getTile(0, 0);
+    const overview = composed.getTileAtResolution(0, 0, 4);
+    const animatedZoomA = composed.getTileAtResolution(0, 0, 6);
+    const animatedZoomB = composed.getTileAtResolution(0, 0, 7);
+    expect(detail.pixels).toHaveLength(32);
+    expect(detail.resolutions?.['26']).toBeUndefined();
+    expect(overview.pixels).toHaveLength(4);
+    expect(overview.pixels[0]).toHaveLength(4);
+    expect(animatedZoomA.pixels).toHaveLength(8);
+    expect(animatedZoomB).toBe(animatedZoomA);
   });
 });

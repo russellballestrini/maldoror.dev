@@ -85,3 +85,24 @@ wet contact, then water reflection. The face is explicitly removed from the
 animated water material mask, so OSC palette cycling cannot recolour masonry.
 This is still one continuous world-space function and does not reintroduce
 edge-tile lookup tables.
+
+## Demand-driven regional LOD addendum — 2026-07-23
+
+Procedural regional materials do not eagerly author every stored resolution.
+`WorldDataProvider.getTileAtResolution` is an optional renderer contract: the
+viewport supplies the actual screen-pixel footprint, and a procedural provider
+may return a semantic LOD for that footprint. Static providers retain the
+existing `getTile` path unchanged.
+
+`RegionalMaterialCompositor` quantizes animated zoom requests into 4, 8, 16,
+and established higher-resolution bands. Cache identity includes the band, so
+one zoom cannot reuse pixels or material masks authored for another. Source
+materials are converted to linear light once and prepared as box-filtered mip
+pyramids. The chosen mip follows source-texel footprint; far views therefore
+average material energy instead of shrinking a noisy near surface or exposing
+one repeated exemplar motif.
+
+This decision reduced the retained 80 x 44-world-tile overview lab from 50.79
+seconds to 2.02 seconds cold while preserving the faithful ANSI composition.
+The selected architecture still requires predictive background prewarming and
+production p50/p95/p99 evidence before live cutover.

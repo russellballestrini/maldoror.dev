@@ -33,10 +33,14 @@ export interface RegionalMaterialCompositorConfig {
   textureScaleTiles?: number;
 }
 
-interface PreparedTexture {
+interface PreparedTextureLevel {
   width: number;
   height: number;
   linear: Float32Array;
+}
+
+interface PreparedTexture extends PreparedTextureLevel {
+  levels: readonly PreparedTextureLevel[];
 }
 
 const FOREST = 1;
@@ -44,8 +48,7 @@ const COAST = 2;
 const RURAL = 3;
 const MOUNTAIN = 4;
 const ROUTE_KINDS: readonly RegionalRouteKind[] = ['trail', 'local-road', 'arterial'];
-const OVERVIEW_RESOLUTION = 26;
-const OVERVIEW_TEXTURE_SCALE_TILES = 2;
+const SEMANTIC_RESOLUTIONS = [4, 8, 16, 26, 51, 77, 102, 128, 154, 179, 205, 230, 256] as const;
 
 /**
  * Continuous six-family material reconstruction in linear light.
@@ -107,14 +110,24 @@ export class RegionalMaterialCompositor {
   }
 
   getTile(tileX: number, tileY: number): Tile {
-    const key = `${tileX},${tileY}`;
+    return this.getTileAtResolution(tileX, tileY, this.sourceSize);
+  }
+
+  /**
+   * Compose only the semantic LOD the screen can consume. The requested size
+   * is quantized so animated zoom does not create a new full world cache on
+   * every intermediate frame.
+   */
+  getTileAtResolution(tileX: number, tileY: number, requestedResolution: number): Tile {
+    const resolution = this.selectResolution(requestedResolution);
+    const key = `${tileX},${tileY}@${resolution}`;
     const cached = this.cache.get(key);
     if (cached) {
       this.cache.delete(key);
       this.cache.set(key, cached);
       return cached;
     }
-    const tile = this.composeTile(tileX, tileY);
+    const tile = this.composeTile(tileX, tileY, resolution);
     this.cache.set(key, tile);
     while (this.cache.size > this.maxCachedTiles) {
       const oldest = this.cache.keys().next().value as string | undefined;
@@ -132,7 +145,20 @@ export class RegionalMaterialCompositor {
     this.cache.clear();
   }
 
-  private composeTile(tileX: number, tileY: number): Tile {
+  private selectResolution(requestedResolution: number): number {
+    const requested = Math.max(1, Math.min(this.sourceSize, Math.round(requestedResolution)));
+    return SEMANTIC_RESOLUTIONS.find((resolution) => (
+      resolution >= requested && resolution < this.sourceSize
+    )) ?? this.sourceSize;
+  }
+
+  private textureScaleForResolution(resolution: number): number {
+    if (resolution <= 4) return 2;
+    if (resolution <= 8) return Math.min(4, this.textureScaleTiles);
+    return this.textureScaleTiles;
+  }
+
+  private composeTile(tileX: number, tileY: number, resolution: number): Tile {
     const samples = [
       this.field.sample(tileX, tileY),
       this.field.sample(tileX + 1, tileY),
@@ -148,29 +174,18 @@ export class RegionalMaterialCompositor {
     const composed = this.composeGrid(
       tileX,
       tileY,
-      this.sourceSize,
-      this.textureScaleTiles,
+      resolution,
+      this.textureScaleForResolution(resolution),
       samples,
       routeSamples,
     );
-    const resolutions: Record<string, PixelGrid> = { [String(this.sourceSize)]: composed.pixels };
-    if (this.sourceSize > OVERVIEW_RESOLUTION) {
-      resolutions[String(OVERVIEW_RESOLUTION)] = this.composeGrid(
-        tileX,
-        tileY,
-        OVERVIEW_RESOLUTION,
-        OVERVIEW_TEXTURE_SCALE_TILES,
-        samples,
-        routeSamples,
-      ).pixels;
-    }
     return {
-      id: `regional-material:${tileX},${tileY}`,
+      id: `regional-material:${tileX},${tileY}@${resolution}`,
       name: 'Continuous regional biome material',
       pixels: composed.pixels,
       materialMask: composed.materialMask,
       walkable: !samples[0].isWater || Boolean(routeSamples?.[0].isWalkableRoute),
-      resolutions,
+      resolutions: { [String(resolution)]: composed.pixels },
     };
   }
 
@@ -208,6 +223,7 @@ export class RegionalMaterialCompositor {
             worldY,
             0x93d7 + familyIndex * 0x1f123,
             textureScaleTiles,
+            size,
             textureSamples[familyIndex]!,
           );
         }
@@ -253,6 +269,7 @@ export class RegionalMaterialCompositor {
             textureY,
             0x4d71,
             textureScaleTiles,
+            size,
             routeTexture,
           );
           const crossingOpacity = routeLayer.sample.crossingKind === 'ford' ? 0.48 : 1;
@@ -287,6 +304,7 @@ export class RegionalMaterialCompositor {
     worldY: number,
     salt: number,
     textureScaleTiles: number,
+    outputSize: number,
     out: Float64Array,
   ): void {
     out.fill(0);
@@ -302,20 +320,23 @@ export class RegionalMaterialCompositor {
         const weight = (dx === 0 ? 1 - blendX : blendX) * verticalWeight;
         const hash = this.hash(cellX + dx, cellY + dy, salt);
         const texture = textures[hash % textures.length]!;
-        const phaseX = (hash >>> 8) % texture.width;
-        const phaseY = (hash >>> 17) % texture.height;
+        const level = selectTextureLevel(texture, outputSize, textureScaleTiles);
+        const scaleX = level.width / texture.width;
+        const scaleY = level.height / texture.height;
+        const phaseX = ((hash >>> 8) % texture.width) * scaleX;
+        const phaseY = ((hash >>> 17) % texture.height) * scaleY;
         const sampleX = mirrorIndex(
-          Math.floor(worldX * texture.width / textureScaleTiles + phaseX),
-          texture.width,
+          Math.floor(worldX * level.width / textureScaleTiles + phaseX),
+          level.width,
         );
         const sampleY = mirrorIndex(
-          Math.floor(worldY * texture.height / textureScaleTiles + phaseY),
-          texture.height,
+          Math.floor(worldY * level.height / textureScaleTiles + phaseY),
+          level.height,
         );
-        const index = (sampleY * texture.width + sampleX) * 3;
-        out[0] = out[0]! + texture.linear[index]! * weight;
-        out[1] = out[1]! + texture.linear[index + 1]! * weight;
-        out[2] = out[2]! + texture.linear[index + 2]! * weight;
+        const index = (sampleY * level.width + sampleX) * 3;
+        out[0] = out[0]! + level.linear[index]! * weight;
+        out[1] = out[1]! + level.linear[index + 1]! * weight;
+        out[2] = out[2]! + level.linear[index + 2]! * weight;
       }
     }
   }
@@ -391,7 +412,57 @@ function prepareTexture(tile: Tile): PreparedTexture {
       linear[index + 2] = srgbToLinear(pixel.b);
     }
   }
+  const levels: PreparedTextureLevel[] = [{ width, height, linear }];
+  while (levels.at(-1)!.width > 1 || levels.at(-1)!.height > 1) {
+    levels.push(downsampleTextureLevel(levels.at(-1)!));
+  }
+  return { width, height, linear, levels };
+}
+
+function downsampleTextureLevel(source: PreparedTextureLevel): PreparedTextureLevel {
+  const width = Math.max(1, Math.ceil(source.width / 2));
+  const height = Math.max(1, Math.ceil(source.height / 2));
+  const linear = new Float32Array(width * height * 3);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const sourceX = x * 2;
+      const sourceY = y * 2;
+      let count = 0;
+      for (let offsetY = 0; offsetY < 2; offsetY++) {
+        const sampleY = sourceY + offsetY;
+        if (sampleY >= source.height) continue;
+        for (let offsetX = 0; offsetX < 2; offsetX++) {
+          const sampleX = sourceX + offsetX;
+          if (sampleX >= source.width) continue;
+          const sourceIndex = (sampleY * source.width + sampleX) * 3;
+          const targetIndex = (y * width + x) * 3;
+          linear[targetIndex] = linear[targetIndex]! + source.linear[sourceIndex]!;
+          linear[targetIndex + 1] = linear[targetIndex + 1]! + source.linear[sourceIndex + 1]!;
+          linear[targetIndex + 2] = linear[targetIndex + 2]! + source.linear[sourceIndex + 2]!;
+          count++;
+        }
+      }
+      const targetIndex = (y * width + x) * 3;
+      linear[targetIndex] = linear[targetIndex]! / count;
+      linear[targetIndex + 1] = linear[targetIndex + 1]! / count;
+      linear[targetIndex + 2] = linear[targetIndex + 2]! / count;
+    }
+  }
   return { width, height, linear };
+}
+
+function selectTextureLevel(
+  texture: PreparedTexture,
+  outputSize: number,
+  textureScaleTiles: number,
+): PreparedTextureLevel {
+  const texelsPerOutputPixel = Math.max(texture.width, texture.height) /
+    Math.max(1, outputSize * textureScaleTiles);
+  const levelIndex = Math.max(0, Math.min(
+    texture.levels.length - 1,
+    Math.round(Math.log2(Math.max(1, texelsPerOutputPixel))),
+  ));
+  return texture.levels[levelIndex]!;
 }
 
 function bilerp(a: number, b: number, c: number, d: number, u: number, v: number): number {

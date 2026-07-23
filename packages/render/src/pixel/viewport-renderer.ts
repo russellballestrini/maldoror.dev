@@ -467,7 +467,11 @@ export class ViewportRenderer {
 
     for (let worldTileY = startTileY; worldTileY <= endTileY; worldTileY++) {
       for (let worldTileX = startTileX; worldTileX <= endTileX; worldTileX++) {
-        const tile = world.getTile(worldTileX, worldTileY);
+        const tile = world.getTileAtResolution?.(
+          worldTileX,
+          worldTileY,
+          this.tileRenderSize,
+        ) ?? world.getTile(worldTileX, worldTileY);
 
         if (tile) {
           // Get the right frame for animated tiles, using pre-computed resolution if available

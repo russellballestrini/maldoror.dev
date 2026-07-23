@@ -22,6 +22,15 @@ headless simulator (<code>tools/render-sim</code>) — the same pipeline the SSH
 <section><h2>🎯 TARGET (mockup)</h2>
 <div class="grid"><figure><a href="/gallery/TARGET.png"><img loading="lazy" src="/gallery/TARGET.png" alt="target mockup"></a>
 <figcaption>The goal: a dense, warm, painterly canal-town rendered as pure ANSI in Ghostty.</figcaption></figure></div></section>
+<section><h2>015-demand-driven-regional-lod</h2><pre class="notes"># 015-demand-driven-regional-lod
+
+2026-07-23T20:29:47.297Z
+
+RESEARCH CANDIDATE — NOT LIVE. A CPU profile reproduced the minimum-zoom overview at 50.79s and attributed the blocking cost to eager texture/grid work: 10.49 million material pixels were composed before only 56,320 reached the faithful ANSI frame. The viewport can now request procedural terrain at its real screen footprint; semantic zoom bands prevent animation-cache churn, and linear-light material mip pyramids preserve low-zoom energy. The identical overview is 2.02s cold (25.1x faster), with boundary/interior ratio 0.999 and no return of the rejected root rings. Detail is 1.07s and the 16-cell tangent-aligned bridge is 1.22s. The side-by-side V5/V6 overview and faithful close frames are retained here. This closes eager-resolution waste only: predictive prewarming, live provider integration, silhouettes/architecture, p95/p99 traversal, Phase-0 approval, deployment, and physical Ghostty remain open.
+</pre><div class="grid"><figure><a href="/gallery/015-demand-driven-regional-lod/regional-lod-v5-overview-50s.png"><img loading="lazy" src="/gallery/015-demand-driven-regional-lod/regional-lod-v5-overview-50s.png" alt="regional-lod-v5-overview-50s.png"></a><figcaption>regional-lod-v5-overview-50s.png</figcaption></figure>
+<figure><a href="/gallery/015-demand-driven-regional-lod/regional-lod-v6-bridge-1s.png"><img loading="lazy" src="/gallery/015-demand-driven-regional-lod/regional-lod-v6-bridge-1s.png" alt="regional-lod-v6-bridge-1s.png"></a><figcaption>regional-lod-v6-bridge-1s.png</figcaption></figure>
+<figure><a href="/gallery/015-demand-driven-regional-lod/regional-lod-v6-detail-1s.png"><img loading="lazy" src="/gallery/015-demand-driven-regional-lod/regional-lod-v6-detail-1s.png" alt="regional-lod-v6-detail-1s.png"></a><figcaption>regional-lod-v6-detail-1s.png</figcaption></figure>
+<figure><a href="/gallery/015-demand-driven-regional-lod/regional-lod-v6-overview-2s.png"><img loading="lazy" src="/gallery/015-demand-driven-regional-lod/regional-lod-v6-overview-2s.png" alt="regional-lod-v6-overview-2s.png"></a><figcaption>regional-lod-v6-overview-2s.png</figcaption></figure></div></section>
 <section><h2>014-route-materials-and-semantic-lod</h2><pre class="notes"># 014-route-materials-and-semantic-lod
 
 2026-07-23T20:15:37.000Z

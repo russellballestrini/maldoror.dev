@@ -153,6 +153,10 @@ export interface WorldDataProvider {
    * and the camera are unchanged. */
   getVisualRevision?(): number;
   getTile(tileX: number, tileY: number): Tile | null;
+  /** Optional demand-driven terrain path. Procedural providers can author a
+   * semantic LOD near the requested screen size instead of eagerly building a
+   * high-resolution tile that the renderer immediately throws away. */
+  getTileAtResolution?(tileX: number, tileY: number, resolution: number): Tile | null;
   getBuildingTileAt?(tileX: number, tileY: number, direction?: BuildingDirection): BuildingTileData | null;
   getPlayers(): PlayerVisualState[];
   getPlayerSprite(userId: string): Sprite | null;

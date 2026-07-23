@@ -143,8 +143,8 @@ function renderFrame(frame) {
     for (let tileX = 0; tileX < tilesWide; tileX++) {
       const worldX = frame.origin[0] + tileX;
       const worldY = frame.origin[1] + tileY;
-      const tile = compositor.getTile(worldX, worldY);
-      const tilePixels = frame.overviewLod ? (tile.resolutions['26'] ?? tile.pixels) : tile.pixels;
+      const tile = compositor.getTileAtResolution(worldX, worldY, frame.displayTileSize);
+      const tilePixels = tile.pixels;
       const route = routes.sample(worldX, worldY);
       if (route.isRoute) routeTiles++;
       if (route.crossingKind === 'bridge') bridgeTiles++;
