@@ -68,6 +68,9 @@ fs.writeFileSync(path.join(GALLERY, 'index.html'), `<!doctype html>
 <h1>MALDOROR — render engine gallery</h1>
 <p>Ongoing visual iterations of the terminal render engine. Each section is one iteration of the
 headless simulator (<code>tools/render-sim</code>) — the same pipeline the SSH game renders with.</p>
+<section><h2>🎯 TARGET vs NOW</h2>
+<div class="grid"><figure style="grid-column:1/-1"><a href="/gallery/COMPARISON.png"><img loading="lazy" src="/gallery/COMPARISON.png" alt="target vs now"></a>
+<figcaption>Goal tracking: TARGET mockup vs the current town (fullres + octant). Style/assets match; gaps = density, organic canals, HUD, live-world integration.</figcaption></figure></div></section>
 <section><h2>🎯 TARGET (mockup)</h2>
 <div class="grid"><figure><a href="/gallery/TARGET.png"><img loading="lazy" src="/gallery/TARGET.png" alt="target mockup"></a>
 <figcaption>The goal: cozy canal-town at full fidelity in Ghostty. Phase A = style-matched assets in cell mode; Phase B = kitty graphics protocol.</figcaption></figure></div></section>
