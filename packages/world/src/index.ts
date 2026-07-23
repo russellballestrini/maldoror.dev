@@ -5,10 +5,20 @@ export {
   BIOME_FAMILIES,
   BiomeWorldField,
   type BiomeFamily,
+  type BiomePhysicalSample,
   type BiomeWeights,
   type BiomeWorldFieldConfig,
   type BiomeWorldSample,
 } from './biomes/biome-world-field.js';
+export {
+  RegionalRouteField,
+  type RegionalCrossingKind,
+  type RegionalLandmarkKind,
+  type RegionalRouteBiomeSampler,
+  type RegionalRouteFieldConfig,
+  type RegionalRouteKind,
+  type RegionalRouteSample,
+} from './routes/regional-route-field.js';
 
 // Chunk system
 export { ChunkGenerator, type GeneratedChunk } from './chunk/chunk-generator.js';

@@ -61,4 +61,17 @@ describe('BiomeWorldField', () => {
     expect(field.getStats()).toEqual({ cachedBlocks: 4, maxCachedBlocks: 4, blockSize: 16 });
     expect(field.sample(-65, -97).weights.reduce((sum, weight) => sum + weight, 0)).toBeCloseTo(1, 12);
   });
+
+  it('exposes identical physical descriptors without composing family weights', () => {
+    const field = new BiomeWorldField(WORLD_SEED, { blockSize: 16 });
+    for (const [x, y] of [[0, 0], [91, -126], [-18, 77], [320, 100]]) {
+      const physical = field.samplePhysical(x!, y!);
+      const full = field.sample(x!, y!);
+      expect(physical.elevation).toBeCloseTo(full.elevation, 6);
+      expect(physical.slope).toBeCloseTo(full.slope, 6);
+      expect(physical.waterDistance).toBeCloseTo(full.waterDistance, 5);
+      expect(physical.isWater).toBe(full.isWater);
+      expect(physical.isRiver).toBe(full.isRiver);
+    }
+  });
 });

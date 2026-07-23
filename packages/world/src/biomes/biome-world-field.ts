@@ -23,6 +23,14 @@ export interface BiomeWorldSample {
   isRiver: boolean;
 }
 
+export interface BiomePhysicalSample {
+  elevation: number;
+  slope: number;
+  waterDistance: number;
+  isWater: boolean;
+  isRiver: boolean;
+}
+
 export interface BiomeWorldFieldConfig {
   blockSize?: number;
   maxCachedBlocks?: number;
@@ -83,6 +91,7 @@ export class BiomeWorldField {
   private readonly seaLevel: number;
   private readonly filterHalo: number;
   private readonly cache = new Map<string, CachedBlock>();
+  private readonly riverSegmentCache = new Map<string, RiverSegment[]>();
   private accessClock = 0;
 
   private readonly warpNoiseX: PreparedNoise;
@@ -127,6 +136,31 @@ export class BiomeWorldField {
     return block.samples[gridIndex(localX, localY, this.blockSize)]!;
   }
 
+  /** Cheap physical lane for pathfinding and other sparse world queries.
+   * It bypasses the six-family filtering/composition block while preserving
+   * the exact elevation and hydrology functions used by the full field. */
+  samplePhysical(worldX: number, worldY: number): BiomePhysicalSample {
+    const tileX = Math.floor(worldX);
+    const tileY = Math.floor(worldY);
+    const elevation = this.elevationAt(tileX, tileY);
+    const slope = Math.max(
+      Math.abs(this.elevationAt(tileX - 1, tileY) - this.elevationAt(tileX + 1, tileY)) / 2,
+      Math.abs(this.elevationAt(tileX, tileY - 1) - this.elevationAt(tileX, tileY + 1)) / 2,
+    );
+    const riverDistance = this.distanceToRiver(tileX, tileY, this.riverSegmentsAt(tileX, tileY));
+    const coastDistance = elevation <= this.seaLevel
+      ? 0
+      : (elevation - this.seaLevel) / Math.max(0.0025, slope);
+    const isRiver = riverDistance <= 0 && elevation > this.seaLevel;
+    return {
+      elevation,
+      slope,
+      waterDistance: Math.min(coastDistance, Math.max(0, riverDistance)),
+      isWater: elevation <= this.seaLevel || isRiver,
+      isRiver,
+    };
+  }
+
   prewarm(minX: number, minY: number, maxX: number, maxY: number): void {
     const firstBlockX = floorDiv(Math.floor(minX), this.blockSize);
     const lastBlockX = floorDiv(Math.floor(maxX), this.blockSize);
@@ -147,6 +181,29 @@ export class BiomeWorldField {
 
   clear(): void {
     this.cache.clear();
+    this.riverSegmentCache.clear();
+  }
+
+  private riverSegmentsAt(worldX: number, worldY: number): RiverSegment[] {
+    const basinX = floorDiv(worldX, BASIN_SIZE);
+    const basinY = floorDiv(worldY, BASIN_SIZE);
+    const key = `${basinX},${basinY}`;
+    const cached = this.riverSegmentCache.get(key);
+    if (cached) {
+      this.riverSegmentCache.delete(key);
+      this.riverSegmentCache.set(key, cached);
+      return cached;
+    }
+    const originX = (basinX - 1) * BASIN_SIZE;
+    const originY = (basinY - 1) * BASIN_SIZE;
+    const segments = this.buildRiverSegments(originX, originY, BASIN_SIZE * 3, BASIN_SIZE * 3);
+    this.riverSegmentCache.set(key, segments);
+    while (this.riverSegmentCache.size > 128) {
+      const oldest = this.riverSegmentCache.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.riverSegmentCache.delete(oldest);
+    }
+    return segments;
   }
 
   private getBlock(blockX: number, blockY: number): CachedBlock {

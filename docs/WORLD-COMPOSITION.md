@@ -61,6 +61,34 @@ semantic and material layers first; route agreement, family-specific assets,
 semantic LOD, collision, predictive cold-block streaming, and full faithful
 atlas proof are required before a live switch.
 
+## Regional route hierarchy
+
+`RegionalRouteField` is the production port of the V4 route-topology lab. A
+cardinal-neighbour priority thinning pass turns a jittered candidate lattice
+into a sparse, irregular site process. The surviving sites form a Gabriel
+proximity graph; each edge is then solved on the biome field with an
+eight-neighbour least-cost search whose cost rises with terrain slope,
+directional elevation change, and water exposure. Two curve-subdivision passes
+hide the solver grid without changing the graph endpoints.
+
+The route field has arterial, local-road, and trail tiers. It exposes route
+distance, stable edge identity, nearby landmark semantics, and distinct ford,
+bridge, and ferry crossings. A ferry is explicitly non-walkable, so a long
+water connection cannot silently become a huge bridge or a collision path.
+`(0,0)` is the singular arrival landmark and lies exactly on an arterial.
+
+Pathfinding uses `BiomeWorldField.samplePhysical`, a cheap descriptor lane that
+shares the full field's exact elevation and hydrology functions but bypasses
+six-family filtering. That reduced the measured first origin block from about
+2.2 seconds in the rejected V1 implementation to about 270 ms on the retained
+V4 implementation; a neighbouring cold block measured 28 ms and cache hits
+measured 0.01–0.03 ms. The remaining cold-path tail still requires predictive
+background prewarming before this layer can enter the live input path.
+
+All route geometry is a pure function of world seed and coordinate. Derived
+site, path, and route-block caches are independently bounded, and tests prove
+sample equality across cache block sizes and traversal order.
+
 ## Non-periodic asset placement
 
 Procedural anchors come from a world-space priority field. A candidate survives
@@ -83,7 +111,8 @@ curbs, wet contact, reflections, collision, and terminal animation phases.
 
 ## Current limits
 
-This is the selected Phase-0 production candidate, not the end-state world.
+This is a researched production candidate, not the end-state world or a
+Phase-0 art-direction approval.
 The rebuilt origin now has coherent canal topology, dense side walls, legible
 crossing-scale negative space, and constructed water contacts in faithful ANSI
 review. It still needs physical Ghostty direction approval. Garden source art
