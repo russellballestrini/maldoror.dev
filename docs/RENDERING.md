@@ -125,15 +125,14 @@ on the next safe full service restart after existing connections drain.
 
 ## 6. Measured production result
 
-Real `TERM=xterm-ghostty` SSH capture at 160x46 from deployed `v3df6d44`,
+Real `TERM=xterm-ghostty` SSH capture at 160x46 from deployed `vea2e691`,
 July 23:
 
 | condition | measured terminal bytes |
 |---|---:|
-| startup plus first synchronized frame | 305,971 |
-| subsequent six seconds including `ddssaa` | 6,277 |
-| bytes after movement input | 1,919 |
-| synchronized frames | 18 |
+| startup plus first synchronized frame | 306,008 |
+| subsequent six seconds, no input | 8,597 |
+| synchronized frames | 44 |
 
 `codec-bench.mjs` independently reports a zero-byte ordinary idle delta, 321
 bytes for a 0.2-tile actor update, and 1,181/315 bytes for one-cell x/y camera
@@ -142,7 +141,7 @@ cgroup was approximately 733 MiB current/peak with zero swap, inside its 1.6
 GiB envelope.
 
 The raw stream and faithful automated screenshot are retained under
-`/mnt/donto-data/donto-resources/maldoror/rendering-research/track-4-world-composition/arrival-v3df6d44/`.
+`/mnt/donto-data/donto-resources/maldoror/rendering-research/track-4-world-composition/arrival-vea2e691/`.
 The screenshot was produced by replaying the actual SSH byte stream through
 `faithful-render.mjs`, including palette changes, margins, scroll operations,
 REP, DCH, ICH, and ordinary text overlays. Block geometry and cell colours are

@@ -292,9 +292,10 @@ sign-off.
 3. ✅ Codec v1: retained framebuffer, exact scroll transforms, dirty repairs,
    palette water, keyframes, and bounded output.
 4. ✅ Smooth actor/camera/zoom plus area-resampled LOD.
-5. ✅ Live worker deployment and honest real-SSH capture. Current 160×46 proof:
-   270,069-byte initial cell frame; 16,133 post-keyframe bytes over six seconds;
-   one step adds 5,130 bytes over the equivalent idle interval.
+5. ✅ Live worker deployment and real-SSH capture. Current `vea2e691` 160×46
+   proof: 306,008-byte startup/first frame; 8,597 subsequent bytes over six
+   seconds and 44 synchronized frames; exact origin persisted at `(0,0)`; 733
+   MB warmed cgroup peak with zero swap.
 6. ⏳ Operator sign-off in a physical Ghostty window. This is an external
    acceptance action and must not be fabricated by the automated harness.
 

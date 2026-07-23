@@ -6,11 +6,13 @@
  * The gallery dir is served at https://maldoror.dev/gallery via Caddy.
  *
  * Usage: node tools/render-sim/publish-gallery.mjs <slug> "<notes markdown>"
- *   [--files=one.png,two.png]
+ *   [--files=one.png,two.png] [--comparison=one.png]
+ *   [--comparison-label="LIVE ANSI · 160×46 · v1234567"]
  */
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import sharp from 'sharp';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.join(__dirname, 'out');
@@ -19,6 +21,8 @@ const GALLERY = path.join(__dirname, 'gallery');
 const slug = (process.argv[2] || 'iteration').replace(/[^a-z0-9-]/gi, '-').toLowerCase();
 const notes = process.argv[3] || '';
 const filesOption = process.argv.slice(4).find((arg) => arg.startsWith('--files='));
+const comparisonOption = process.argv.slice(4).find((arg) => arg.startsWith('--comparison='));
+const comparisonLabelOption = process.argv.slice(4).find((arg) => arg.startsWith('--comparison-label='));
 
 fs.mkdirSync(GALLERY, { recursive: true });
 
@@ -42,6 +46,55 @@ for (const shot of shots) {
 for (const f of shots) fs.copyFileSync(path.join(OUT, f), path.join(dest, f));
 fs.writeFileSync(path.join(dest, 'notes.md'), `# ${dirname}\n\n${new Date().toISOString()}\n\n${notes}\n`);
 console.log(`published ${dest} (${shots.length} images)`);
+
+if (comparisonOption) {
+  const currentFile = path.basename(comparisonOption.slice('--comparison='.length));
+  const currentPath = path.join(OUT, currentFile);
+  const targetPath = path.join(GALLERY, 'TARGET.png');
+  if (!fs.existsSync(currentPath)) throw new Error(`comparison input does not exist in ${OUT}: ${currentFile}`);
+  if (!fs.existsSync(targetPath)) throw new Error(`comparison target does not exist: ${targetPath}`);
+
+  const panelWidth = 720;
+  const panelHeight = 416;
+  const labelHeight = 40;
+  const target = await sharp(targetPath)
+    .resize(panelWidth, panelHeight, { fit: 'cover', position: 'centre' })
+    .png()
+    .toBuffer();
+  const current = await sharp(currentPath)
+    .resize(panelWidth, panelHeight, { fit: 'cover', position: 'centre' })
+    .png()
+    .toBuffer();
+  const currentLabel = comparisonLabelOption
+    ? comparisonLabelOption.slice('--comparison-label='.length)
+    : 'LIVE ANSI';
+  const escapeXml = (value) => value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;');
+  const labels = Buffer.from(`
+    <svg xmlns="http://www.w3.org/2000/svg" width="${panelWidth * 2}" height="${labelHeight}">
+      <rect width="100%" height="100%" fill="#0d0d12"/>
+      <text x="${panelWidth / 2}" y="29" fill="#f3eee7" text-anchor="middle" font-family="DejaVu Sans Mono, monospace" font-size="25">TARGET</text>
+      <text x="${panelWidth + panelWidth / 2}" y="29" fill="#f3eee7" text-anchor="middle" font-family="DejaVu Sans Mono, monospace" font-size="25">${escapeXml(currentLabel)}</text>
+    </svg>
+  `);
+  await sharp({
+    create: {
+      width: panelWidth * 2,
+      height: panelHeight + labelHeight,
+      channels: 3,
+      background: '#0d0d12',
+    },
+  }).composite([
+    { input: labels, left: 0, top: 0 },
+    { input: target, left: 0, top: labelHeight },
+    { input: current, left: panelWidth, top: labelHeight },
+  ]).png().toFile(path.join(GALLERY, 'COMPARISON.png'));
+  console.log(`comparison updated from ${currentFile}`);
+}
 
 // Regenerate index.html
 const iters = fs.readdirSync(GALLERY).filter(d => /^\d{3}-/.test(d)).sort().reverse();
