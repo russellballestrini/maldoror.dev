@@ -235,7 +235,12 @@ export class WorkerManager {
     renderMode: string;
     cameraMode: string;
   }>> {
-    if (!this.isReady()) return [];
+    // hotReload() deliberately flips reloadState before this request so the
+    // transport can show its update overlay and stop forwarding input. Using
+    // isReady() here therefore made every real reload return zero states. The
+    // capture only needs the old worker's live IPC channel, not the public
+    // request-admission state.
+    if (!this.workerReady || !this.worker?.connected) return [];
 
     const requestId = this.nextRequestId();
     return this.sendRequest(
