@@ -95,6 +95,13 @@ const CAMERA_TO_BUILDING_DIRECTION: Record<CameraRotation, BuildingDirection> = 
   270: 'west',
 };
 
+// Characters are bottom-centre anchored and intentionally exceed one terrain
+// tile. At exactly one tile, a naturally proportioned figure is only six
+// source pixels wide at the reference zoom and loses its face/limbs during
+// octant reconstruction. This modest semantic LOD preserves recognition while
+// keeping feet and collision on the authoritative world tile.
+const ENTITY_RENDER_SCALE = 1.25;
+
 /**
  * Rotate a point around the origin by camera angle
  * Used to transform world coordinates to screen-relative coordinates
@@ -802,6 +809,26 @@ export class ViewportRenderer {
     sortable.sort((a, b) => a.sy - b.sy);
     const sortedEntities = sortable.map(s => s.e);
 
+    // Ground every actor before any sprite is painted. Keeping this as a
+    // renderer-owned layer makes one transparent sprite work on paving,
+    // bridges, grass, and future biomes while preserving correct occlusion.
+    for (const entity of sortedEntities) {
+      const worldPixelX = (entity.x + 0.5) * this.tileRenderSize;
+      const worldPixelY = (entity.y + 0.5) * this.tileRenderSize;
+      const screenOffset = this.worldToScreen(
+        worldPixelX,
+        worldPixelY,
+        this.cameraCenterX,
+        this.cameraCenterY,
+      );
+      this.renderEntityShadow(
+        buffer,
+        materialGrid,
+        screenCenterX + screenOffset.x,
+        screenCenterY + screenOffset.y + this.tileRenderSize / 2,
+      );
+    }
+
     for (const entity of sortedEntities) {
       const isPlayerEntity = this.isPlayer(entity);
       const entityId = isPlayerEntity ? entity.userId : entity.npcId;
@@ -841,7 +868,11 @@ export class ViewportRenderer {
       // Use visual direction in cache key since same world direction shows different sprite when rotated
       const entityType = isPlayerEntity ? 'player' : 'npc';
       const frameId = `${entityType}:${entityId}:${visualDirection}:${entity.animationFrame}`;
-      const frame = this.scaleFrame(rawFrame, this.tileRenderSize, this.tileRenderSize, frameId);
+      const entityRenderSize = Math.max(
+        this.tileRenderSize,
+        Math.round(this.tileRenderSize * ENTITY_RENDER_SCALE),
+      );
+      const frame = this.scaleFrame(rawFrame, entityRenderSize, entityRenderSize, frameId);
 
       // Calculate screen position with rotation
       // World pixel position of entity (center of their tile)
@@ -851,8 +882,10 @@ export class ViewportRenderer {
       const screenOffset = this.worldToScreen(worldPixelX, worldPixelY, this.cameraCenterX, this.cameraCenterY);
       // Convert to buffer coordinates (top-left of sprite)
       // Use Math.floor for consistent alignment with terrain tiles
-      const screenX = Math.floor(screenCenterX + screenOffset.x - this.tileRenderSize / 2);
-      const screenY = Math.floor(screenCenterY + screenOffset.y - this.tileRenderSize / 2);
+      const screenX = Math.floor(screenCenterX + screenOffset.x - entityRenderSize / 2);
+      const screenY = Math.floor(
+        screenCenterY + screenOffset.y + this.tileRenderSize / 2 - entityRenderSize,
+      );
 
       // Composite sprite onto buffer
       for (let py = 0; py < frame.length; py++) {
@@ -880,7 +913,7 @@ export class ViewportRenderer {
       const showOverlay = isPlayerEntity ? entity.userId !== localId : true;
       if (showOverlay) {
         // Center the name above the sprite
-        const namePixelX = screenX + Math.floor(this.tileRenderSize / 2);
+        const namePixelX = screenX + Math.floor(entityRenderSize / 2);
         const namePixelY = screenY - Math.max(6, Math.floor(this.tileRenderSize / 10));  // Scale overlay offset
 
         // NPCs get a slightly different color scheme (amber/gold text)
@@ -894,6 +927,42 @@ export class ViewportRenderer {
           pixelY: namePixelY,
           ...overlayColors,
         });
+      }
+    }
+  }
+
+  private renderEntityShadow(
+    buffer: PixelGrid,
+    materialGrid: Uint8Array[],
+    footX: number,
+    footY: number,
+  ): void {
+    const radiusX = Math.max(2, this.tileRenderSize * 0.43);
+    const radiusY = Math.max(1, this.tileRenderSize * 0.14);
+    // The scene's established light is upper-left, so the soft cast component
+    // falls slightly right/down from the feet while retaining contact.
+    const centerX = footX + this.tileRenderSize * 0.13;
+    const centerY = footY + this.tileRenderSize * 0.08;
+    const minX = Math.floor(centerX - radiusX);
+    const maxX = Math.ceil(centerX + radiusX);
+    const minY = Math.floor(centerY - radiusY);
+    const maxY = Math.ceil(centerY + radiusY);
+    for (let y = minY; y <= maxY; y++) {
+      if (y < 0 || y >= buffer.length) continue;
+      for (let x = minX; x <= maxX; x++) {
+        if (x < 0 || x >= (buffer[y]?.length ?? 0)) continue;
+        const distance = ((x + 0.5 - centerX) / radiusX) ** 2 +
+          ((y + 0.5 - centerY) / radiusY) ** 2;
+        if (distance >= 1) continue;
+        const pixel = buffer[y]![x];
+        if (!pixel) continue;
+        const strength = 0.18 + (1 - distance) * 0.18;
+        buffer[y]![x] = {
+          r: Math.round(pixel.r * (1 - strength)),
+          g: Math.round(pixel.g * (1 - strength)),
+          b: Math.round(pixel.b * (1 - strength)),
+        };
+        materialGrid[y]![x] = 0;
       }
     }
   }

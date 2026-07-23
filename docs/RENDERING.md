@@ -28,7 +28,7 @@ biome. It declares:
 - the default traveler sprite.
 
 The source generations remain under `assets/canal-town/generated/`; derived
-alpha-clean runtime sprites remain under `sprites/`. These assets were made
+alpha-clean runtime sprites remain under `sprites/` and `avatars/`. These assets were made
 with Codex's built-in ChatGPT image-generation capability, not an unofficial
 token scraper or a metered one-off script.
 
@@ -55,13 +55,21 @@ Downscaling uses area averaging rather than nearest-neighbour sampling. At the
 live town's 30% zoom, a 160x46 terminal resolves each source tile to 12 screen
 pixels while retaining roof, awning, foliage, and water texture.
 
+Characters have their own semantic LOD. The active traveler is a retained,
+prompt-provenanced 16x24-logical-pixel master rather than a portrait shrunk
+until its anatomy disappears. Actors render at 1.25 terrain tiles,
+bottom-centred on their authoritative collision tile, over a renderer-owned
+upper-left-lit contact shadow.
+
 ## 2. Pixels to terminal cells
 
 Ghostty-class terminals auto-select `octant`: every cell represents a 2x4
-pixel sample with one glyph plus foreground/background colours. The fitter
-chooses the two-colour partition with the lowest reconstruction error and has a
-solid-cell fast path. This replaced the former brightness split responsible for
-vertical rain-like streaks.
+pixel sample with one glyph plus foreground/background colours. The fast
+production fitter retains its brightness split and solid-cell path. A bounded
+opponent-chroma gate detects the case brightness cannot represent—different
+hues at nearly equal luminance—and uses two-cluster Oklab only for those cells.
+The fixed reconstruction lab rejected global Oklab fitting: its target-scene
+gain was visually slight for roughly five times the fitting cost.
 
 Fallbacks remain:
 

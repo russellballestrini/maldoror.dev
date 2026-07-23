@@ -2,7 +2,7 @@
   "version": 1,
   "sourceTileSize": 96,
   "blockSize": 24,
-  "defaultAvatar": "avatars/default-traveler-vivid.png",
+  "defaultAvatar": "avatars/default-traveler-terminal-v2.png",
   "terrainMasters": [
     { "id": "canal-paving", "file": "terrain/paving-stone-master.png", "variants": 4, "walkable": true },
     { "id": "canal-water", "file": "terrain/water-master.png", "variants": 4, "walkable": false, "material": "water" },

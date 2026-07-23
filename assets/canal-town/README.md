@@ -37,8 +37,16 @@ The second architecture atlas adds the bookshop, pottery workshop, flower
 conservatory, ivy cafe, teal house, and rose inn. The canal-details atlas adds
 lilies, floating petals, moorings, flower boat, wildflower pots, quay planter,
 lemon planter, and rose arch. A separate portrait-shaped generation supplies
-the north/south stone bridge. The default traveler was generated as a small,
-high-contrast blue-cloaked figure so it remains legible at 12 screen pixels.
+the north/south stone bridge.
+
+The original portrait-derived traveler failed faithful terminal review: its
+body became only six source pixels wide and reconstructed as a navy H. The
+active `default-traveler-terminal-v2.png` is instead a 16x24-logical-pixel LOD
+master derived from a separate built-in subscription generation. Its hood,
+face, cloak, satchel, and boots are deliberately broad, palette-limited forms.
+The untouched generation and exact prompt are retained beside the runtime
+artifact; the intermediate alpha-clean image and visual evidence live in the
+mounted rendering-research tree.
 
 The vertical bridge source required deterministic chroma-key cleanup after the
 built-in image edit baked a checkerboard into its transparency preview. The
