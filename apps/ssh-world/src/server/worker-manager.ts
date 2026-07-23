@@ -48,6 +48,7 @@ export interface WorkerSessionConfig {
   userId: string | null;
   cols: number;
   rows: number;
+  term?: string;
   restoredState?: SessionRestoredState;
 }
 
@@ -194,6 +195,7 @@ export class WorkerManager {
           userId: config.userId,
           cols: config.cols,
           rows: config.rows,
+          term: config.term,
           restoredState: restoredState ? {
             sessionId: config.sessionId,
             playerX: restoredState.playerX,
@@ -532,6 +534,7 @@ export class WorkerManager {
       userId: config.userId,
       cols: config.cols,
       rows: config.rows,
+      term: config.term,
     });
   }
 

@@ -17,8 +17,11 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(__dirname, '../..');
 const { ViewportRenderer } = await import(`${REPO}/packages/render/dist/pixel/viewport-renderer.js`);
-const { renderHalfBlockGridCells, renderBrailleGridCells, quantizeGridDithered } =
+const { renderHalfBlockGridCells, renderBrailleGridCells, renderOctantGridCells, quantizeGridDithered } =
   await import(`${REPO}/packages/render/dist/pixel/pixel-renderer.js`);
+const { OCTANT_CHARS } = await import(`${REPO}/packages/render/dist/pixel/octant-chars.js`);
+const OCT_LOOKUP = new Map();
+OCTANT_CHARS.forEach((ch, pat) => { if (!OCT_LOOKUP.has(ch.codePointAt(0))) OCT_LOOKUP.set(ch.codePointAt(0), pat); });
 
 const OUT = path.join(__dirname, 'out');
 fs.mkdirSync(OUT, { recursive: true });
@@ -241,7 +244,7 @@ function rasterize(cells, mode) {
     if (mode === 'halfblock') {
       fillRect(px, py, CELL_W, CELL_H / 2, fg);
       fillRect(px, py + CELL_H / 2, CELL_W, CELL_H / 2, bg);
-    } else {
+    } else if (mode === 'braille') {
       fillRect(px, py, CELL_W, CELL_H, bg);
       const code = cell.char.charCodeAt(0) - 0x2800;
       const DOTBITS = [[0x01, 0x08], [0x02, 0x10], [0x04, 0x20], [0x40, 0x80]];
@@ -249,6 +252,13 @@ function rasterize(cells, mode) {
         if (code & DOTBITS[dr][dc]) {
           fillRect(px + dc * (CELL_W / 2) + 1, py + dr * (CELL_H / 4) + 1, CELL_W / 2 - 1, CELL_H / 4 - 1, fg);
         }
+      }
+    } else {
+      // octant: SOLID 2x4 sub-cells. Reconstruct pattern from octant char via reverse lookup.
+      fillRect(px, py, CELL_W, CELL_H, bg);
+      const pat = OCT_LOOKUP.get(cell.char.codePointAt(0)) ?? 0;
+      for (let r = 0; r < 4; r++) for (let c = 0; c < 2; c++) {
+        if (pat & (1 << (r*2+c))) fillRect(px + c*(CELL_W/2), py + r*(CELL_H/4), CELL_W/2, CELL_H/4, fg);
       }
     }
   }
@@ -266,7 +276,9 @@ async function shootCells(mode, tileRenderSize, quantBits, label) {
   vr.setCamera(9, 4);
   let { buffer } = vr.renderToBuffer(syncWorld, 0);
   if (quantBits > 0) buffer = quantizeGridDithered(buffer, quantBits);
-  const cells = mode === 'braille' ? renderBrailleGridCells(buffer) : renderHalfBlockGridCells(buffer);
+  const cells = mode === 'braille' ? renderBrailleGridCells(buffer)
+    : mode === 'octant' ? renderOctantGridCells(buffer)
+    : renderHalfBlockGridCells(buffer);
   const { img, Wp, Hp } = rasterize(cells, mode);
   const file = path.join(OUT, `showcase_${label}.png`);
   await sharp(img, { raw: { width: Wp, height: Hp, channels: 3 } }).png().toFile(file);
@@ -316,4 +328,7 @@ await shootFullres();
 await shootCells('halfblock', 51, 4, 'halfblock_z51');
 await shootCells('halfblock', 88, 4, 'halfblock_z88');
 await shootCells('braille', 102, 4, 'braille_z102');
+await shootCells('octant', 51, 4, 'octant_z51');
+await shootCells('octant', 88, 4, 'octant_z88');
+await shootCells('octant', 102, 4, 'octant_z102');
 console.log('done');

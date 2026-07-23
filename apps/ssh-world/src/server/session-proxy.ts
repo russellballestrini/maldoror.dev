@@ -20,6 +20,7 @@ const UPDATE_FG = `${ESC}[38;2;180;140;255m`;
 const RESET = `${ESC}[0m`;
 
 export interface SessionProxyConfig {
+  term?: string;
   stream: Duplex;
   fingerprint: string;
   username: string;
@@ -50,6 +51,7 @@ export class SessionProxy {
   private userId: string | null;
   private cols: number;
   private rows: number;
+  private term?: string;
   private workerManager: WorkerManager;
   private sessionId: string;
   private destroyed: boolean = false;
@@ -65,6 +67,7 @@ export class SessionProxy {
     this.userId = config.userId;
     this.cols = config.cols;
     this.rows = config.rows;
+    this.term = config.term;
     this.workerManager = config.workerManager;
     this.sessionId = crypto.randomUUID();
   }
@@ -278,6 +281,7 @@ export class SessionProxy {
       userId: this.userId,
       cols: this.cols,
       rows: this.rows,
+      term: this.term,
     });
   }
 

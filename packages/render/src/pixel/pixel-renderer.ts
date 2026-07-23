@@ -1,5 +1,6 @@
 import type { RGB, Pixel, PixelGrid } from '@maldoror/protocol';
 import { sgrCode, sgrPairKey } from './ansi-cache.js';
+import { OCTANT_CHARS } from './octant-chars.js';
 
 /**
  * ANSI escape codes for pixel rendering
@@ -313,6 +314,93 @@ function renderBrailleChar(
   return { char: String.fromCharCode(BRAILLE_BASE + brailleCode), fg, bg };
 }
 
+// Scratch for renderOctantChar (single-threaded).
+const OCT_SCRATCH = new Int16Array(8);
+
+/**
+ * Render a 2×4 pixel block as a single Unicode OCTANT character (Unicode 16
+ * Symbols for Legacy Computing Supplement). Same resolution as braille (8
+ * subpixels) but SOLID mosaics instead of dots — reads far closer to real
+ * pixels. Ghostty/kitty/VTE draw these with built-in routines that connect
+ * across cell boundaries.
+ *
+ * Identical two-color model to renderBrailleChar (contrast split → fg/bg),
+ * only the glyph differs: pattern bit for (row r, col c) = 1 << (r*2 + c),
+ * looked up in OCTANT_CHARS.
+ */
+function renderOctantChar(
+  block: Pixel[][],
+  cellBrightness: number = 1.0
+): { char: string; fg: RGB; bg: RGB } {
+  let minB = 999, maxB = -1;
+  for (let row = 0; row < 4; row++) {
+    const r = block[row];
+    for (let col = 0; col < 2; col++) {
+      const pixel = r?.[col] ?? null;
+      const b = pixel === null ? -1 : pixelBrightness(pixel);
+      OCT_SCRATCH[row * 2 + col] = b;
+      if (b >= 0) {
+        if (b < minB) minB = b;
+        if (b > maxB) maxB = b;
+      }
+    }
+  }
+
+  // All-transparent → empty cell
+  if (maxB < 0) {
+    let c: RGB = DEFAULT_BG;
+    if (cellBrightness !== 1.0) c = applyBrightness(c, cellBrightness);
+    return { char: OCTANT_CHARS[0]!, fg: c, bg: c };
+  }
+
+  // Flat cell → solid full block (pattern 255), fg=bg=average
+  if (maxB - minB <= 10) {
+    let sr = 0, sg = 0, sb = 0, n = 0;
+    for (let row = 0; row < 4; row++) {
+      const r = block[row];
+      for (let col = 0; col < 2; col++) {
+        const pixel = r?.[col] ?? null;
+        if (pixel !== null) { sr += pixel.r; sg += pixel.g; sb += pixel.b; n++; }
+      }
+    }
+    let avg: RGB = { r: Math.round(sr / n), g: Math.round(sg / n), b: Math.round(sb / n) };
+    if (cellBrightness !== 1.0) avg = applyBrightness(avg, cellBrightness);
+    return { char: OCTANT_CHARS[255]!, fg: avg, bg: avg };
+  }
+
+  const threshold = (minB + maxB) / 2;
+  let pattern = 0;
+  let fr = 0, fgG = 0, fb = 0, fn = 0;
+  let br = 0, bgG = 0, bb = 0, bn = 0;
+  for (let row = 0; row < 4; row++) {
+    const r = block[row];
+    for (let col = 0; col < 2; col++) {
+      const pixel = r?.[col] ?? null;
+      const b = OCT_SCRATCH[row * 2 + col]!;
+      if (pixel !== null && b >= threshold) {
+        pattern |= 1 << (row * 2 + col);
+        fr += pixel.r; fgG += pixel.g; fb += pixel.b; fn++;
+      } else if (pixel !== null) {
+        br += pixel.r; bgG += pixel.g; bb += pixel.b; bn++;
+      }
+    }
+  }
+
+  let fg: RGB = fn > 0
+    ? { r: Math.round(fr / fn), g: Math.round(fgG / fn), b: Math.round(fb / fn) }
+    : DEFAULT_BG;
+  let bg: RGB = bn > 0
+    ? { r: Math.round(br / bn), g: Math.round(bgG / bn), b: Math.round(bb / bn) }
+    : DEFAULT_BG;
+
+  if (cellBrightness !== 1.0) {
+    fg = applyBrightness(fg, cellBrightness);
+    bg = applyBrightness(bg, cellBrightness);
+  }
+
+  return { char: OCTANT_CHARS[pattern]!, fg, bg };
+}
+
 /**
  * Render a pixel grid using Braille characters (ultra-high resolution)
  * Each character represents 2×4 pixels = 8 subpixels
@@ -351,6 +439,49 @@ export function renderBrailleGrid(grid: PixelGrid): string[] {
       if (!lastBg || lastBg.r !== bg.r || lastBg.g !== bg.g || lastBg.b !== bg.b) {
         line += bgColor(bg);
         lastBg = bg;
+      }
+
+      line += char;
+    }
+
+    line += RESET;
+    result.push(line);
+  }
+
+  return result;
+}
+
+/**
+ * Render a pixel grid using OCTANT characters (string-line variant, used by
+ * the production renderToString path). Same 2×4 geometry as braille; solid
+ * mosaics. Merged-SGR color emission.
+ */
+export function renderOctantGrid(grid: PixelGrid): string[] {
+  const result: string[] = [];
+  const height = grid.length;
+  const width = grid[0]?.length ?? 0;
+
+  for (let y = 0; y < height; y += 4) {
+    let line = '';
+    let lastFg: RGB | null = null;
+    let lastBg: RGB | null = null;
+
+    for (let x = 0; x < width; x += 2) {
+      const block: Pixel[][] = [];
+      for (let dy = 0; dy < 4; dy++) {
+        const row: Pixel[] = [];
+        for (let dx = 0; dx < 2; dx++) row.push(grid[y + dy]?.[x + dx] ?? null);
+        block.push(row);
+      }
+
+      const { char, fg, bg } = renderOctantChar(block);
+
+      const fgChanged = !lastFg || lastFg.r !== fg.r || lastFg.g !== fg.g || lastFg.b !== fg.b;
+      const bgChanged = !lastBg || lastBg.r !== bg.r || lastBg.g !== bg.g || lastBg.b !== bg.b;
+      if (fgChanged || bgChanged) {
+        line += sgrCode(fgChanged ? fg : null, bgChanged ? bg : null);
+        if (fgChanged) lastFg = fg;
+        if (bgChanged) lastBg = bg;
       }
 
       line += char;
@@ -709,6 +840,38 @@ export function renderBrailleGridCells(grid: PixelGrid, brightnessGrid?: Brightn
   return result;
 }
 
+/**
+ * Render a pixel grid to a cell grid using OCTANT mode (2×4 solid mosaics).
+ * Same geometry as braille; used by the sim/showcase cell path.
+ */
+export function renderOctantGridCells(grid: PixelGrid, brightnessGrid?: BrightnessGrid): CellGrid {
+  const result: CellGrid = [];
+  const height = grid.length;
+  const width = grid[0]?.length ?? 0;
+
+  let cellY = 0;
+  for (let y = 0; y < height; y += 4) {
+    const cellRow: TerminalCell[] = [];
+    let cellX = 0;
+    for (let x = 0; x < width; x += 2) {
+      const block: Pixel[][] = [];
+      for (let dy = 0; dy < 4; dy++) {
+        const row: Pixel[] = [];
+        for (let dx = 0; dx < 2; dx++) row.push(grid[y + dy]?.[x + dx] ?? null);
+        block.push(row);
+      }
+      const cellBrightness = brightnessGrid?.[cellY]?.[cellX] ?? 1.0;
+      const { char, fg, bg } = renderOctantChar(block, cellBrightness);
+      cellRow.push({ char, fgColor: fg, bgColor: bg });
+      cellX++;
+    }
+    result.push(cellRow);
+    cellY++;
+  }
+
+  return result;
+}
+
 // ============================================
 // CRLE (Chromatic Run-Length Encoding) Renderer
 // ============================================
@@ -756,7 +919,7 @@ export function renderCRLE(
   cells: CellGrid,
   previousCells: CellGrid,
   headerRows: number,
-  renderMode: 'normal' | 'halfblock' | 'braille' = 'halfblock'
+  renderMode: 'normal' | 'halfblock' | 'braille' | 'octant' = 'halfblock'
 ): CRLERenderResult {
   // Group changed cells by color (integer pair keys — string keys per cell
   // were the hottest allocation in the whole frame pipeline)

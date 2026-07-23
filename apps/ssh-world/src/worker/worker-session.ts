@@ -56,6 +56,23 @@ import { saveBuildingToDisk, loadAllBuildingDirections } from '../utils/building
 import { VirtualStream } from './virtual-stream.js';
 import type { SessionState } from './game-worker.js';
 
+/**
+ * Choose the terminal render mode. Octant (Unicode 16 solid 2×4 mosaics) is
+ * the highest-fidelity mode but needs a terminal that draws the Symbols for
+ * Legacy Computing Supplement glyphs — Ghostty, kitty, foot, WezTerm, contour,
+ * and VTE-based terminals (gnome/xfce). We pick it from the client's TERM;
+ * everything else falls back to halfblock (universal). `MALDOROR_RENDER_MODE`
+ * overrides. Players can also cycle modes in-game.
+ */
+export function pickRenderMode(term?: string): 'normal' | 'halfblock' | 'braille' | 'octant' {
+  const env = process.env.MALDOROR_RENDER_MODE as ('normal' | 'halfblock' | 'braille' | 'octant' | undefined);
+  if (env === 'normal' || env === 'halfblock' || env === 'braille' || env === 'octant') return env;
+  const t = (term ?? '').toLowerCase();
+  // Terminals with built-in octant/legacy-computing glyph rendering
+  if (/ghostty|kitty|foot|wezterm|contour|vte|gnome|xfce|st-|rio|alacritty/.test(t)) return 'octant';
+  return 'halfblock';
+}
+
 export interface WorkerSessionConfig {
   sessionId: string;
   fingerprint: string;
@@ -63,6 +80,7 @@ export interface WorkerSessionConfig {
   userId: string | null;
   cols: number;
   rows: number;
+  term?: string;
   gameServer: GameServer;
   worldSeed: bigint;
   providerConfig: ProviderConfig;
@@ -80,6 +98,8 @@ export class WorkerSession {
   private userId: string | null;
   private cols: number;
   private rows: number;
+  private term?: string;
+  private renderMode: 'normal' | 'halfblock' | 'braille' | 'octant';
   private gameServer: GameServer;
   private worldSeed: bigint;
   private providerConfig: ProviderConfig;
@@ -153,6 +173,8 @@ export class WorkerSession {
     this.userId = config.userId;
     this.cols = config.cols;
     this.rows = config.rows;
+    this.term = config.term;
+    this.renderMode = pickRenderMode(this.term);
     this.gameServer = config.gameServer;
     this.worldSeed = config.worldSeed;
     this.providerConfig = config.providerConfig;
@@ -358,6 +380,7 @@ export class WorkerSession {
       cols: this.cols,
       rows: this.rows,
       username: this.username,
+      renderMode: this.renderMode,
       optimizations: PERF_OPTIMIZATIONS,
       layout: {
         headerRows: 2,
@@ -867,6 +890,7 @@ export class WorkerSession {
       cols: this.cols,
       rows: this.rows,
       username: this.username,
+      renderMode: this.renderMode,
       optimizations: PERF_OPTIMIZATIONS,
       layout: {
         headerRows: 2,
@@ -936,6 +960,7 @@ export class WorkerSession {
       cols: this.cols,
       rows: this.rows,
       username: this.username,
+      renderMode: this.renderMode,
       optimizations: PERF_OPTIMIZATIONS,
       layout: {
         headerRows: 2,
@@ -1124,6 +1149,7 @@ export class WorkerSession {
       cols: this.cols,
       rows: this.rows,
       username: this.username,
+      renderMode: this.renderMode,
       optimizations: PERF_OPTIMIZATIONS,
       layout: {
         headerRows: 2,

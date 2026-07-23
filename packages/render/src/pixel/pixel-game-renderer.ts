@@ -10,6 +10,8 @@ import {
   renderNormalGridCells,
   renderHalfBlockGridCells,
   renderBrailleGridCells,
+  renderOctantGridCells,
+  renderOctantGrid,
   cellsEqual,
   colorsEqual,
   renderCRLE,
@@ -73,9 +75,12 @@ const DEFAULT_LAYOUT: LayoutConfig = {
  * Render mode options
  * - 'normal': 2 chars per pixel width, 1 row per pixel height
  * - 'halfblock': 1 char per pixel width, 2 pixels per row (using ▀)
- * - 'braille': 2 pixels per char width, 4 pixels per row (using Braille dots) - HIGHEST RES
+ * - 'braille': 2×4 pixels per char (Braille dots) — high res, but dot-gap texture
+ * - 'octant': 2×4 pixels per char (Unicode 16 octant SOLID mosaics) — same
+ *   resolution as braille but solid fills; best fidelity where supported
+ *   (Ghostty, kitty, VTE). Falls back visually to braille geometry.
  */
-export type RenderMode = 'normal' | 'halfblock' | 'braille';
+export type RenderMode = 'normal' | 'halfblock' | 'braille' | 'octant';
 
 /**
  * Foveated zone configuration
@@ -254,6 +259,7 @@ export class PixelGameRenderer {
     const { availableRows } = this.getViewportArea();
     let maxTileSize: number;
     switch (this.renderMode) {
+      case 'octant':
       case 'braille':
         maxTileSize = availableRows * 4;  // 4 pixels per row in braille
         break;
@@ -279,6 +285,8 @@ export class PixelGameRenderer {
    */
   private calculatePixelDimensions(cols: number, availableRows: number): { pixelWidth: number; pixelHeight: number } {
     switch (this.renderMode) {
+      case 'octant':
+      case 'octant':
       case 'braille':
         // Braille: 1 char = 2 pixels wide, 1 row = 4 pixels tall
         return { pixelWidth: cols * 2, pixelHeight: availableRows * 4 };
@@ -421,6 +429,7 @@ export class PixelGameRenderer {
     const tileSize = this.getCurrentTileSize();
 
     switch (this.renderMode) {
+      case 'octant':
       case 'braille':
         // Braille: 2 pixels per cell width, 4 pixels per cell height
         tileX = Math.floor((cellX * 2) / tileSize);
@@ -663,6 +672,9 @@ export class PixelGameRenderer {
     // Pass brightness grid for cell-level lighting (braille/halfblock modes)
     let viewportCells: CellGrid;
     switch (this.renderMode) {
+      case 'octant':
+        viewportCells = renderOctantGridCells(quantizedBuffer, brightnessGrid);
+        break;
       case 'braille':
         viewportCells = renderBrailleGridCells(quantizedBuffer, brightnessGrid);
         break;
@@ -695,6 +707,7 @@ export class PixelGameRenderer {
     let col: number;
 
     switch (this.renderMode) {
+      case 'octant':
       case 'braille':
         // Braille: 4 pixels per row, 2 pixels per char
         row = Math.floor(pixelY / 4);
@@ -1195,7 +1208,7 @@ export class PixelGameRenderer {
    * Cycle through render modes
    */
   cycleRenderMode(): void {
-    const modes: RenderMode[] = ['braille', 'halfblock', 'normal'];
+    const modes: RenderMode[] = ['octant', 'braille', 'halfblock', 'normal'];
     const currentIndex = modes.indexOf(this.renderMode);
     const nextIndex = (currentIndex + 1) % modes.length;
     this.setRenderMode(modes[nextIndex]!);
@@ -1239,6 +1252,9 @@ export class PixelGameRenderer {
     // Convert to ANSI lines based on render mode
     let viewportLines: string[];
     switch (this.renderMode) {
+      case 'octant':
+        viewportLines = renderOctantGrid(quantizedBuffer);
+        break;
       case 'braille':
         viewportLines = renderBrailleGrid(quantizedBuffer);
         break;

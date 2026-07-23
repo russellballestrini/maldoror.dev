@@ -163,10 +163,12 @@ export class SSHServer {
     context: ClientContext,
     _client: Connection
   ): void {
-    let ptyInfo: { cols: number; rows: number } | null = null;
+    let ptyInfo: { cols: number; rows: number; term?: string } | null = null;
 
     session.on('pty', (accept, _reject, info) => {
-      ptyInfo = { cols: info.cols, rows: info.rows };
+      // info.term = the client's TERM (e.g. xterm-ghostty, xterm-kitty) —
+      // used to auto-select the octant render mode on capable terminals.
+      ptyInfo = { cols: info.cols, rows: info.rows, term: (info as { term?: string }).term };
       accept?.();
     });
 
@@ -186,6 +188,7 @@ export class SSHServer {
         userId: context.userId || null,
         cols: ptyInfo.cols,
         rows: ptyInfo.rows,
+        term: ptyInfo.term,
         workerManager: this.config.workerManager,
       });
 

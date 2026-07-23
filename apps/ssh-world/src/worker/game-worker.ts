@@ -117,6 +117,7 @@ export interface CreateSessionMessage {
   userId: string | null;
   cols: number;
   rows: number;
+  term?: string;
   restoredState?: SessionState;
 }
 
@@ -446,6 +447,7 @@ process.on('message', async (msg: MainToWorkerMessage) => {
           userId: msg.userId,
           cols: msg.cols,
           rows: msg.rows,
+          term: (msg as { term?: string }).term,
           gameServer,
           worldSeed,
           providerConfig,
