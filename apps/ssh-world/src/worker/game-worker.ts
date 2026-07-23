@@ -526,6 +526,7 @@ process.on('message', async (msg: MainToWorkerMessage) => {
         for (const session of workerSessions.values()) {
           states.push(session.getState());
         }
+        console.log(`[Worker] Reporting ${states.length} session states for hot reload`);
         send({ type: 'all_session_states', requestId: msg.requestId, states });
         break;
       }

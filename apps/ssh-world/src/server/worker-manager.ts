@@ -6,8 +6,9 @@
  * 2. Spawning fresh worker
  * 3. Re-registering all connected sessions
  *
- * State is NOT serialized - sessions have their own positions
- * and the database is the source of truth.
+ * A bounded visual/session state is serialized across a worker replacement.
+ * Fresh SSH logins still reset to the canonical origin; a hot reload is not a
+ * login and must not discard the already-running player's position or view.
  */
 
 import { fork, ChildProcess } from 'child_process';
@@ -240,10 +241,21 @@ export class WorkerManager {
     // isReady() here therefore made every real reload return zero states. The
     // capture only needs the old worker's live IPC channel, not the public
     // request-admission state.
+    console.log(
+      `[WorkerManager] State capture preflight ready=${this.workerReady} ` +
+      `ipc=${this.worker?.connected ?? false} tracked=${this.workerSessions.size}`,
+    );
     if (!this.workerReady || !this.worker?.connected) return [];
 
     const requestId = this.nextRequestId();
-    return this.sendRequest(
+    const states = await this.sendRequest<Array<{
+      sessionId: string;
+      playerX: number;
+      playerY: number;
+      zoomLevel: number;
+      renderMode: string;
+      cameraMode: string;
+    }>>(
       {
         type: 'get_all_session_states',
         requestId,
@@ -251,6 +263,8 @@ export class WorkerManager {
       requestId,
       'all_session_states'
     );
+    console.log(`[WorkerManager] State capture response count=${states.length}`);
+    return states;
   }
 
   /**

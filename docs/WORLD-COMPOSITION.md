@@ -47,4 +47,6 @@ This is the selected Phase-0 production candidate, not the end-state world.
 Diagnostic and faithful review still find the origin too open and paving-heavy,
 garden source art needs a stochastic interior atlas, and the world beyond route
 corridors is intentionally sparse until regional/biome composition is proven.
-Hot-reload session preservation and the full performance gate remain open.
+The active-session hot-reload path now preserves position and view state through
+a worker replacement, with a real SSH proof retained under the mounted research
+tree. The complete physical-display and performance gate remains open.

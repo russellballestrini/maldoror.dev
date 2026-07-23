@@ -9,6 +9,28 @@ interface WorkerManagerInternals {
   getAllSessionStates(): Promise<Array<{ sessionId: string; playerX: number; playerY: number }>>;
 }
 
+interface HotReloadInternals {
+  workerReady: boolean;
+  worker: { connected: boolean; kill: ReturnType<typeof vi.fn> } | null;
+  workerSessions: Map<string, {
+    sessionId: string;
+    fingerprint: string;
+    username: string;
+    userId: string;
+    cols: number;
+    rows: number;
+  }>;
+  connectedSessions: Map<string, {
+    userId: string;
+    sessionId: string;
+    username: string;
+  }>;
+  getAllSessionStates: ReturnType<typeof vi.fn>;
+  spawnWorker: ReturnType<typeof vi.fn>;
+  sendToWorker: ReturnType<typeof vi.fn>;
+  hotReload(): Promise<void>;
+}
+
 function managerInternals(): WorkerManagerInternals {
   const manager = new WorkerManager({
     worldSeed: 42n,
@@ -41,5 +63,49 @@ describe('WorkerManager hot-reload state capture', () => {
 
     await expect(manager.getAllSessionStates()).resolves.toEqual([]);
     expect(manager.sendRequest).not.toHaveBeenCalled();
+  });
+
+  it('re-registers the same session with its captured position and view', async () => {
+    const manager = managerInternals() as unknown as HotReloadInternals;
+    const kill = vi.fn();
+    manager.workerReady = true;
+    manager.worker = { connected: true, kill };
+    manager.connectedSessions = new Map();
+    manager.workerSessions = new Map([
+      ['session-1', {
+        sessionId: 'session-1',
+        fingerprint: 'fingerprint-1',
+        username: 'walker',
+        userId: 'user-1',
+        cols: 160,
+        rows: 46,
+      }],
+    ]);
+    manager.getAllSessionStates = vi.fn().mockResolvedValue([{
+      sessionId: 'session-1',
+      playerX: 5,
+      playerY: -2,
+      zoomLevel: 0.5,
+      renderMode: 'octant',
+      cameraMode: 'follow',
+    }]);
+    manager.spawnWorker = vi.fn().mockResolvedValue(undefined);
+    manager.sendToWorker = vi.fn();
+
+    await manager.hotReload();
+
+    expect(kill).toHaveBeenCalledWith('SIGTERM');
+    expect(manager.sendToWorker).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'create_session',
+      sessionId: 'session-1',
+      restoredState: {
+        sessionId: 'session-1',
+        playerX: 5,
+        playerY: -2,
+        zoomLevel: 0.5,
+        renderMode: 'octant',
+        cameraMode: 'follow',
+      },
+    }));
   });
 });
