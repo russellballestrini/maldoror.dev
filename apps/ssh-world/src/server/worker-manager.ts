@@ -620,10 +620,13 @@ export class WorkerManager {
         stdio: ['pipe', 'inherit', 'inherit', 'ipc'],
       });
 
-      // 60 second timeout to allow loading terrain tiles from database
+      // Timeout to allow loading terrain tiles from database. Configurable via
+      // WORKER_STARTUP_TIMEOUT_MS — on an I/O-contended host the worker child
+      // loads its module graph off disk slowly, so the default is generous.
+      const startupTimeoutMs = parseInt(process.env.WORKER_STARTUP_TIMEOUT_MS || '180000', 10);
       const timeout = setTimeout(() => {
-        reject(new Error('Worker startup timeout'));
-      }, 60000);
+        reject(new Error(`Worker startup timeout after ${startupTimeoutMs}ms`));
+      }, startupTimeoutMs);
 
       const onReady = (msg: WorkerToMainMessage) => {
         if (msg.type === 'ready') {
