@@ -69,22 +69,23 @@ async function tileRes(dir, name) {
   return { pixels: px, resolutions: res };
 }
 
-// ---- scene: 24x14 tiles. Layout string per row (chars):
-//  W=water  S=stone  '.'=stone(under building/prop anchors placed separately)
+// ---- scene: dense canal town. Narrower plaza paths (2-3 tiles), bigger water
+// blocks framed by buildings edge-to-edge, like the TARGET's packed layout.
+//  W=water  S=stone
 const MAP = [
   'SSSSSSSSSSSSSSSSSSSSSSSS',
-  'SWWWWSSSSSWWWWWWSSSSWWWS',
-  'SWWWWSSSSSWWWWWWSSSSWWWS',
-  'SWWWWSSSSSWWWWWWSSSSWWWS',
+  'SWWWWWWWSSWWWWWWWSSWWWWS'.slice(0,24),
+  'SWWWWWWWSSWWWWWWWSSWWWWS'.slice(0,24),
+  'SWWWWWWWSSWWWWWWWSSWWWWS'.slice(0,24),
+  'SWWWWWWWSSWWWWWWWSSWWWWS'.slice(0,24),
   'SSSSSSSSSSSSSSSSSSSSSSSS',
   'SSSSSSSSSSSSSSSSSSSSSSSS',
-  'WWWWWWSSSSSSSSSSSSSWWWWWW'.slice(0,24),
-  'WWWWWWSSSSSSSSSSSSSWWWWWW'.slice(0,24),
-  'WWWWWWSSSSSSSSSSSSSWWWWWW'.slice(0,24),
+  'SWWWWWSSWWWWWWWWWSSWWWWS'.slice(0,24),
+  'SWWWWWSSWWWWWWWWWSSWWWWS'.slice(0,24),
+  'SWWWWWSSWWWWWWWWWSSWWWWS'.slice(0,24),
+  'SWWWWWSSWWWWWWWWWSSWWWWS'.slice(0,24),
   'SSSSSSSSSSSSSSSSSSSSSSSS',
-  'SWWWWWSSSSWWWWWSSSSWWWWWS'.slice(0,24),
-  'SWWWWWSSSSWWWWWSSSSWWWWWS'.slice(0,24),
-  'SWWWWWSSSSWWWWWSSSSWWWWWS'.slice(0,24),
+  'SWWWWWWWSSWWWWWSSWWWWWWWS'.slice(0,24),
   'SSSSSSSSSSSSSSSSSSSSSSSS',
 ];
 const H = MAP.length, W = MAP[0].length;
@@ -122,15 +123,25 @@ async function place(dir, id, ax, ay, cols, rows) {
     if (t) overlays.set(`${ax+tx},${ay+ty}`, t);
   }
 }
-await place(BUILDINGS_DIR,'shop_awning', 10, 4, 2, 2);
-await place(BUILDINGS_DIR,'house_tall',  1, 9, 2, 2);
-await place(PROPS_DIR,'bridge_h', 6, 6, 3, 2);   // across the middle canal
-await place(PROPS_DIR,'lamp_post', 9, 5, 1, 1);
-await place(PROPS_DIR,'lamp_post', 14, 5, 1, 1);
-await place(PROPS_DIR,'planter', 8, 4, 1, 1);
-await place(PROPS_DIR,'umbrella_stall', 18, 9, 1, 1);
-await place(PROPS_DIR,'rowboat', 2, 2, 1, 1);
-await place(PROPS_DIR,'rowboat', 20, 11, 1, 1);
+// Dense town: buildings edge-to-edge along the plaza bands (rows 5-6, 11-12),
+// their 2-tall footprint sitting on the band so they front the canals.
+const BLDGS = ['shop_awning','house_tall','house_blue','bakery','tower_house'];
+async function bldg(id, x, y) { await place(BUILDINGS_DIR, id, x, y, 2, 2); }
+// top band (rows 5-6): row of buildings facing up over the top canals
+await bldg('house_blue', 1, 5); await bldg('shop_awning', 4, 5);
+await bldg('bakery', 10, 5); await bldg('house_tall', 13, 5); await bldg('tower_house', 20, 5);
+// mid band (row 11): buildings facing the mid canals
+await bldg('shop_awning', 2, 10); await bldg('house_blue', 16, 10); await bldg('bakery', 19, 10);
+// bridge across the middle-left canal + a second across mid-right
+await place(PROPS_DIR,'bridge_h', 6, 11, 3, 1);
+await place(PROPS_DIR,'bridge_h', 13, 6, 3, 1);
+// planters + lamps lining the plaza/canal edges (dense border like the mockup)
+for (const [px,py] of [[8,6],[9,6],[12,6],[13,11],[0,6],[7,11],[10,11],[15,11],[22,6],[3,12]])
+  await place(PROPS_DIR, 'planter', px, py, 1, 1);
+for (const [px,py] of [[9,6],[12,6],[6,11],[16,11],[0,11],[22,11]])
+  await place(PROPS_DIR, 'lamp_post', px, py, 1, 1);
+await place(PROPS_DIR,'umbrella_stall', 18, 12, 1, 1);
+for (const [px,py] of [[2,2],[20,2],[10,8],[3,9],[21,9]]) await place(PROPS_DIR,'rowboat', px, py, 1, 1);
 
 // sprites
 async function loadSprite(dir){ const sp={resolutions:{down:{}}}; const dirs=['down'];
@@ -181,7 +192,7 @@ function raster(cells, mode){
 async function cellShot(mode, TS, label){
   const COLS=180, ROWS=52; const pxW=mode==='octant'?COLS*2:COLS; const pxH=mode==='octant'?ROWS*4:ROWS*2;
   const vr=new ViewportRenderer({widthTiles:(pxW/TS)|0,heightTiles:(pxH/TS)|0,pixelWidth:pxW,pixelHeight:pxH,tileRenderSize:TS});
-  vr.setCamera(11,7);
+  vr.setCamera(11,8);
   let {buffer}=vr.renderToBuffer(world,0); buffer=quantizeGridDithered(buffer,4);
   const cells=mode==='octant'?renderOctantGridCells(buffer):renderHalfBlockGridCells(buffer);
   const {img,Wp,Hp}=raster(cells,mode);
