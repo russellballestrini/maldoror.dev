@@ -75,3 +75,13 @@ Garden and soil masses now use the same shared-corner reconstruction through
 `getGardenTransitionTile`. Their linear-light paving/garden blend has a
 separate cache namespace and never writes the water material mask. Water is
 resolved first, so a land-use transition cannot paint over a canal edge.
+
+## Constructed bank-face addendum — 2026-07-23
+
+Faithful origin review rejected the pale antialiased water/paving handoff even
+after its seams were continuous. The same signed material field now builds a
+multi-band waterfront: light land-side lip, jointed vertical stone face, dark
+wet contact, then water reflection. The face is explicitly removed from the
+animated water material mask, so OSC palette cycling cannot recolour masonry.
+This is still one continuous world-space function and does not reintroduce
+edge-tile lookup tables.

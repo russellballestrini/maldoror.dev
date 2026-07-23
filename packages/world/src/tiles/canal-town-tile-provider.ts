@@ -85,6 +85,7 @@ export class CanalTownTileProvider extends TileProvider {
   private readonly cornerTerrain: CanalTownTileProviderConfig['cornerTerrain'];
   private readonly worldField: CanalTownWorldField;
   private readonly rolePools = new Map<CanalPlacementRole, CanalTownAsset[]>();
+  private readonly assetsById = new Map<string, CanalTownAsset>();
   private readonly blockCache = new Map<string, CachedBlock>();
 
   constructor(config: CanalTownTileProviderConfig) {
@@ -102,6 +103,7 @@ export class CanalTownTileProvider extends TileProvider {
     });
 
     for (const asset of config.assets) {
+      this.assetsById.set(asset.id, asset);
       for (const role of asset.roles) {
         const pool = this.rolePools.get(role) ?? [];
         pool.push(asset);
@@ -274,6 +276,25 @@ export class CanalTownTileProvider extends TileProvider {
         return;
       }
     };
+    const placeLandmark = (
+      assetId: string,
+      fallbackRole: CanalPlacementRole,
+      localX: number,
+      localY: number,
+      authoredOverhang = false,
+    ): void => {
+      const asset = this.assetsById.get(assetId);
+      const anchorX = originX + localX;
+      const anchorY = originY + localY;
+      if (asset?.roles.includes(fallbackRole) &&
+          this.assetFits(fallbackRole, asset, anchorX, anchorY, authoredOverhang)) {
+        placements.push({ asset, anchorX, anchorY });
+        return;
+      }
+      // Minimal test kits and downstream manifests can still render a valid
+      // landmark from semantic roles without inheriting production IDs.
+      place(fallbackRole, localX, localY, authoredOverhang);
+    };
 
     // Candidate anchors come from a world-space priority field. Keeping only a
     // local maximum in each neighbourhood is an unbounded blue-noise analogue:
@@ -302,7 +323,11 @@ export class CanalTownTileProvider extends TileProvider {
         const anchorY = cellY * spacing + this.hash(cellX, cellY, stringHash('placement-y')) % spacing;
         if (anchorX < originX || anchorX >= originX + this.blockSize || anchorY < originY || anchorY >= originY + this.blockSize) continue;
         const sample = this.worldField.sample(anchorX, anchorY);
-        if (Math.hypot(anchorX, anchorY) < 5 || sample.isPlaza) continue;
+        // The arrival district has its own composition grammar below. Keep
+        // stochastic parcels outside its frame so its facade runs, canal
+        // contacts, bridges, and negative space read as one landmark.
+        const inArrivalFrame = Math.abs(anchorX) <= 15 && Math.abs(anchorY) <= 11;
+        if (inArrivalFrame || sample.isPlaza) continue;
 
         const localX = anchorX - originX;
         const localY = anchorY - originY;
@@ -326,8 +351,9 @@ export class CanalTownTileProvider extends TileProvider {
     }
     if (blockX === 0 && blockY === 0) {
       // The exact login origin is a deliberately authored landmark within the
-      // procedural hierarchy: a bridge, four enclosing façades, planted bank
-      // contacts, and an unobstructed east/west arrival axis.
+      // procedural hierarchy: a central river island, twin branches, a stone
+      // bridge plus constructed causeway, continuous outer street walls, and
+      // planted bank contacts.
       let upperBridgeX = 0;
       let deepestWater = Number.POSITIVE_INFINITY;
       for (let x = -16; x <= 16; x++) {
@@ -338,13 +364,43 @@ export class CanalTownTileProvider extends TileProvider {
         }
       }
       place('bridge', upperBridgeX, -6);
-      for (const [x, y] of [[-10, -5], [10, -5], [-10, 6], [10, 6]] as const) place('building', x, y, true);
-      for (const [x, y] of [[-6, -3], [6, -3], [-6, 4], [6, 4]] as const) place('foliage', x, y);
-      for (const [x, y] of [[-5, -2], [5, -2], [-5, 3], [5, 3]] as const) place('quay-detail', x, y);
-      place('street-small', -4, -3);
-      place('street-small', 4, 3);
-      place('street-large', -7, 0);
-      place('street-large', 7, 0);
+
+      // Front-facing five-tile facades form two continuous outer street walls.
+      // Their silhouettes overlap the viewport edge like a real district,
+      // instead of presenting four isolated dollhouses on a paving carpet.
+      const leftWall = ['flower-shop', 'bakery', 'pottery-workshop', 'flower-conservatory'] as const;
+      const rightWall = ['ivy-cafe', 'teal-house', 'blue-canal-house', 'flower-shop'] as const;
+      // The y=0 cross street remains a genuine portal through both walls.
+      const wallY = [-7, -3, 5, 9] as const;
+      for (let index = 0; index < wallY.length; index++) {
+        placeLandmark(leftWall[index]!, 'building', -12, wallY[index]!, true);
+        placeLandmark(rightWall[index]!, 'building', 12, wallY[index]!, true);
+      }
+
+      // Inner and outer bank contacts establish a constructed waterline. Edge
+      // pieces sit below foliage/details in painter order, with water life in
+      // the channel rather than on the plaza.
+      placeLandmark('quay-corner', 'edge', -2, -4);
+      placeLandmark('wooden-dock', 'edge', 2, -4);
+      placeLandmark('wooden-dock', 'edge', -2, 5);
+      placeLandmark('quay-corner', 'edge', 2, 5);
+      placeLandmark('wildflower-pots', 'quay-detail', -2, -3);
+      placeLandmark('flower-quay-planter', 'quay-detail', 2, -3);
+      placeLandmark('lemon-planter', 'quay-detail', -2, 4);
+      placeLandmark('rose-arch', 'quay-detail', 2, 4);
+      placeLandmark('flowering-shrub', 'foliage', -2, -6);
+      placeLandmark('cypress', 'foliage', 2, -6);
+      placeLandmark('olive-tree', 'foliage', -2, 7);
+      placeLandmark('stone-planter', 'foliage', 2, 7);
+      placeLandmark('ivy-trellis', 'foliage', -10, -4);
+      placeLandmark('flowering-shrub', 'foliage', 10, 5);
+      for (const [x, y] of [[-6, -3], [6, -3], [-6, 4], [6, 4]] as const) {
+        place('water-detail', x, y);
+      }
+      place('street-large', 0, 4);
+      for (const [x, y] of [[-2, -3], [2, -3], [-2, 3], [2, 3]] as const) {
+        placeLandmark('canal-lamp', 'street-small', x, y);
+      }
     }
 
     const overlays = new Map<string, BuildingTileData>();

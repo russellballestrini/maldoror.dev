@@ -16,10 +16,13 @@ The terrain compositor, bridge selection, parcel constraints, visual placement,
 and collision all consume those same values. This prevents a visible bridge or
 building from disagreeing with a repeated collision grammar.
 
-The origin is a singular authored landmark inside the hierarchy. `(0,0)` is
-dry, walkable paving on an east/west causeway, with the river and upper crossing
-framing it. Its facade and prop groups are deliberately placed; this exception
-does not introduce a repeating district stamp.
+The origin is a singular authored landmark inside the hierarchy. The procedural
+river forks continuously into twin canals around a dry north/south island and
+merges back into the world field beyond the arrival frame. `(0,0)` lies at its
+walkable east/west causeway; an upper stone bridge, four canal basins,
+constructed banks, facade walls, lamps, planting, docks, and water detail frame
+the crossing. Deliberate street portals keep the causeway open through both
+facade walls. This exception does not introduce a repeating district stamp.
 
 ## Non-periodic asset placement
 
@@ -44,9 +47,11 @@ curbs, wet contact, reflections, collision, and terminal animation phases.
 ## Current limits
 
 This is the selected Phase-0 production candidate, not the end-state world.
-Diagnostic and faithful review still find the origin too open and paving-heavy,
-garden source art needs a stochastic interior atlas, and the world beyond route
-corridors is intentionally sparse until regional/biome composition is proven.
+The rebuilt origin now has coherent canal topology, dense side walls, legible
+crossing-scale negative space, and constructed water contacts in faithful ANSI
+review. It still needs physical Ghostty direction approval. Garden source art
+needs a stochastic interior atlas, and the world beyond route corridors is
+intentionally sparse until regional/biome composition is proven.
 The active-session hot-reload path now preserves position and view state through
 a worker replacement, with a real SSH proof retained under the mounted research
 tree. The complete physical-display and performance gate remains open.

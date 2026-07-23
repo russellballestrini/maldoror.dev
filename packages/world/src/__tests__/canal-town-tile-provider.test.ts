@@ -61,6 +61,37 @@ describe('CanalTownTileProvider', () => {
     for (const [x, y] of waterCells) expect(world.getTile(x, y)?.walkable).toBe(false);
   });
 
+  it('forks the origin river around a dry arrival island and constructed causeway', () => {
+    const world = provider();
+    const field = new CanalTownWorldField(42n);
+
+    expect(field.sample(0, 0)).toMatchObject({ isWater: false, isPlaza: true });
+    expect(field.sample(0, 5).isWater).toBe(false);
+    expect(field.sample(-6, 4).isWater).toBe(true);
+    expect(field.sample(6, 4).isWater).toBe(true);
+    expect(field.sample(-6, 0)).toMatchObject({ isWater: false, isPlaza: true, isBridge: false });
+    expect(field.sample(6, 0)).toMatchObject({ isWater: false, isPlaza: true, isBridge: false });
+    expect(world.getTile(-6, 0)?.walkable).toBe(true);
+    expect(world.getTile(6, 0)?.walkable).toBe(true);
+    expect(field.sample(-12, 4).isWater).toBe(false);
+    expect(field.sample(12, 4).isWater).toBe(false);
+  });
+
+  it('frames the arrival with deterministic facade runs without blocking its centre', () => {
+    const world = provider();
+    expect(world.isBuildingAt(0, 0)).toBe(false);
+    expect(world.getBuildingTileAt(0, 0)).toBeNull();
+
+    for (const x of [-12, 12]) {
+      const occupiedAnchors = [-7, -3, 5, 9].filter((y) => world.isBuildingAt(x, y));
+      expect(occupiedAnchors.length).toBe(4);
+    }
+    for (let x = -16; x <= 16; x++) {
+      expect(world.getTile(x, 0)?.walkable, `terrain at ${x},0`).toBe(true);
+      expect(world.isBuildingAt(x, 0), `overlay collision at ${x},0`).toBe(false);
+    }
+  });
+
   it('places manifest assets deterministically with independent collision masks', () => {
     const a = provider();
     const b = provider();

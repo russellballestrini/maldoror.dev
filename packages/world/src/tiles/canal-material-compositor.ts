@@ -229,6 +229,7 @@ export class CanalMaterialCompositor {
         let finalR = lerp(baseR, edgeSample[0]!, edgeCoverage);
         let finalG = lerp(baseG, edgeSample[1]!, edgeCoverage);
         let finalB = lerp(baseB, edgeSample[2]!, edgeCoverage);
+        let stableConstructedEdge = false;
         if (this.constructedEdgeDetail) {
           // The interpolated semantic field supplies a stable local tangent.
           // Ignore the high-frequency perturbation here: joints should follow
@@ -261,14 +262,29 @@ export class CanalMaterialCompositor {
           finalG = lerp(finalG, srgbToLinear(205), lip);
           finalB = lerp(finalB, srgbToLinear(165), lip);
 
+          // Give the waterfront a readable vertical stone face instead of a
+          // pale antialiased handoff. It occupies the first water-side band,
+          // remains outside the animated water palette, and carries the same
+          // tangent-aligned masonry joints as the lip above it.
+          const wallFace = Number(signedDistance > 0) *
+            (1 - smoothstep(0.045, 0.18, signedDistance)) * 0.88;
+          finalR = lerp(finalR, srgbToLinear(139), wallFace);
+          finalG = lerp(finalG, srgbToLinear(116), wallFace);
+          finalB = lerp(finalB, srgbToLinear(86), wallFace);
+          const faceJoint = wallFace * joint * 0.38;
+          finalR *= 1 - faceJoint;
+          finalG *= 1 - faceJoint;
+          finalB *= 1 - faceJoint;
+          stableConstructedEdge = wallFace > 0.06;
+
           const wetContact = Number(signedDistance > 0) *
-            (1 - smoothstep(0.012, 0.078, signedDistance)) * 0.84;
+            bandPulse(signedDistance, 0.19, 0.07) * 0.78;
           finalR = lerp(finalR, srgbToLinear(28), wetContact);
           finalG = lerp(finalG, srgbToLinear(73), wetContact);
           finalB = lerp(finalB, srgbToLinear(76), wetContact);
 
           const reflectionBand = Number(signedDistance > 0) *
-            bandPulse(signedDistance, 0.075, 0.115) *
+            bandPulse(signedDistance, 0.28, 0.09) *
             (0.18 + 0.18 * Math.max(0, this.valueNoise(worldX * 3.1, worldY * 3.1, 0x19f37d)));
           finalR = lerp(finalR, srgbToLinear(151), reflectionBand);
           finalG = lerp(finalG, srgbToLinear(218), reflectionBand);
@@ -279,7 +295,7 @@ export class CanalMaterialCompositor {
           g: linearToSrgb(finalG),
           b: linearToSrgb(finalB),
         });
-        if (waterCoverage >= 0.5) materialRow[x] = 1;
+        if (waterCoverage >= 0.5 && !stableConstructedEdge) materialRow[x] = 1;
       }
       pixels.push(row);
       materialMask.push(materialRow);

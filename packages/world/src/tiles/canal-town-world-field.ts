@@ -45,11 +45,18 @@ export class CanalTownWorldField {
       );
     }
 
+    // The canonical arrival is a singular river island, not a plaza-coloured
+    // patch painted over the river. Split the origin river into two branches
+    // around a dry central causeway, then merge them continuously back into
+    // the same procedural channel upstream and downstream. A broad spatial
+    // blend keeps this landmark compatible with the unbounded hierarchy.
+    waterDistance = this.arrivalForkDistance(worldX, worldY, waterDistance);
+
     const bankRouteDistance = Math.abs(waterDistance - 2.8);
     const crossRouteDistance = this.crossRouteDistance(worldX, worldY);
     const routeDistance = Math.min(bankRouteDistance, crossRouteDistance);
-    const isPlaza = Math.hypot(worldX, worldY) <= 4.4 ||
-      (Math.abs(worldY) <= 1.5 && Math.abs(worldX) <= 9);
+    const isPlaza = Math.hypot(worldX, worldY) <= 2.8 ||
+      (Math.abs(worldY) <= 1.35 && Math.abs(worldX) <= 10);
     const isWater = waterDistance <= 0 && !isPlaza;
     const isBridge = isWater && crossRouteDistance <= 1.45;
     const region = this.fbm(worldX * 0.021, worldY * 0.021, 0x5b31);
@@ -58,6 +65,27 @@ export class CanalTownWorldField {
       region + gardenDetail * 0.28 > 0.61;
 
     return { waterDistance, routeDistance, isWater, isBridge, isPlaza, isGarden };
+  }
+
+  private arrivalForkDistance(worldX: number, worldY: number, proceduralDistance: number): number {
+    const absoluteY = Math.abs(worldY);
+    const absoluteX = Math.abs(worldX);
+    if (absoluteY >= 22 || absoluteX >= 28) return proceduralDistance;
+
+    const merge = smoothstep01((absoluteY - 11) / 11);
+    const branchOffset = 5.9 * (1 - merge);
+    // Keep the designed arrival frame centred; inherit the river's procedural
+    // meander only while the split branches merge back into the world field.
+    const centre = this.majorRiverCentre(0, worldY) * merge;
+    const proceduralWidth = 3.2 + this.valueNoise(worldY * 0.031, 0, 0x13d7) * 2.1;
+    const branchWidth = lerp(3.55, proceduralWidth, merge);
+    const forkDistance = Math.min(
+      Math.abs(worldX - (centre - branchOffset)) - branchWidth,
+      Math.abs(worldX - (centre + branchOffset)) - branchWidth,
+    );
+    const verticalBlend = lerp(forkDistance, proceduralDistance, merge);
+    const outerBlend = smoothstep01((absoluteX - 20) / 8);
+    return lerp(verticalBlend, proceduralDistance, outerBlend);
   }
 
   private majorRiverDistance(worldX: number, worldY: number, index: number): number {

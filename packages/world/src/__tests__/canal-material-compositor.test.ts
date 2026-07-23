@@ -45,6 +45,18 @@ describe('CanalMaterialCompositor', () => {
     expect(seamMean).toBeLessThan(90);
     expect(west.materialMask!.some((row) => row.some((value) => value === 1))).toBe(true);
     expect(east.materialMask!.some((row) => row.some((value) => value === 0))).toBe(true);
+
+    // The constructed stone face is visually on the water side but must stay
+    // out of the animated water palette or OSC colour cycling will recolour it.
+    let stableFacePixels = 0;
+    for (let y = 0; y < west.pixels.length; y++) {
+      for (let x = 0; x < west.pixels[y]!.length; x++) {
+        const pixel = west.pixels[y]![x]!;
+        const stoneLike = pixel.r > pixel.b + 20 && pixel.r > pixel.g;
+        if (stoneLike && west.materialMask![y]![x] === 0) stableFacePixels++;
+      }
+    }
+    expect(stableFacePixels).toBeGreaterThan(0);
   });
 
   it('does not allocate transitions for uniform interiors and keeps its cache bounded', () => {
