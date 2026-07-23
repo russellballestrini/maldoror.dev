@@ -25,8 +25,10 @@ system Caddy for TLS). So here:
 - **Env:** `/etc/donto/maldoror.env` (root:ajax 640) — `DATABASE_URL`, `SSH_PORT=2222`,
   `STATS_PORT=3105`, `AI_PROVIDER=openai`, `AI_MODEL=gpt-4o`, `OPENAI_API_KEY`, capped
   `NODE_OPTIONS`. SSH host key at `apps/ssh-world/keys/host.key` (gitignored).
-- **Web:** system Caddy vhost `maldoror.dev, www.maldoror.dev { reverse_proxy 127.0.0.1:3105 }`
-  (real Let's Encrypt cert, like `omega.donto.org`). Publishes the stats endpoint only.
+- **Web:** none on the box. `maldoror.dev` is **Cloudflare-proxied → Vercel** (existing
+  setup), so the box never sees its traffic. The stats endpoint stays on `127.0.0.1:3105`
+  (and `0.0.0.0:3105`); to publish it, point a **grey/DNS-only** subdomain
+  (e.g. `stats.maldoror.dev` → `15.235.185.42`) at the box and add a Caddy vhost for it.
 
 ## First-time install (already done 2026-07-23)
 
@@ -63,8 +65,9 @@ ssh -p 2222 localhost             # play locally
 
 - `abyss.maldoror.dev`  A → `15.235.185.42`  **DNS-only / grey cloud** (raw SSH can't be CF-proxied).
   Players then connect: `ssh -p 2222 abyss.maldoror.dev`.
-- `maldoror.dev` (+ `www`)  A → `15.235.185.42`. If Cloudflare-proxied, set SSL/TLS mode
-  **Full (strict)**; DNS-only also works. Caddy issues the cert automatically once it resolves.
+- `abyss.maldoror.dev` is set (2026-07-23) and the game is reachable there.
+- `maldoror.dev` stays on Vercel (unchanged). For box-served stats, add a **grey** subdomain
+  like `stats.maldoror.dev` → `15.235.185.42` and a matching Caddy vhost → `127.0.0.1:3105`.
 
 ## Notes / future
 
