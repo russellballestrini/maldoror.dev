@@ -721,7 +721,14 @@ Completed foundations:
   `track-6-acceptance-atlas/atmosphere-legibility-v1*/`. The correction passes
   37 files / 193 tests, 18/18 typecheck tasks, and 12/12 build tasks. It closes
   the crushed-night / precipitation-dominance defect only; Gate A remains open.
-  No image generation or metered model call was used;
+  A build-stamp audit caught that `tsc` left stale `dist/version.json`; the SSH
+  build now copies the source stamp deterministically. A zero-session controlled
+  restart loaded `vb07c0d4`, restored both persistent NPCs, and reached regional
+  ready in 8.37s at 671MB worker RSS. A fresh public-production SSH capture at
+  exact `(0,0)` retained 32 synchronized frames, 309,531 raw bytes, and 6,713
+  steady bytes. Public gallery iteration 032 exposes the exact rejected/selected
+  storm pair and this current live frame. No image generation or metered model
+  call was used;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–031 expose selected and rejected research candidates without

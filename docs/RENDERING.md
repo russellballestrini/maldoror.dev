@@ -223,3 +223,12 @@ streams, faithful frames, hashes, and the decision are retained under
 This is a selected corrective sub-gate. It does not pass Gate A; the complete
 fixed atlas must be recaptured after the remaining composition, route,
 waterfront, and material-boundary defects are corrected.
+
+The selected code is live as `vb07c0d4`. Deployment auditing exposed and fixed
+a stale-artifact seam: the SSH package build now copies `src/version.json` into
+`dist/version.json`, and the production startup banner was checked after a
+zero-session controlled restart. The replacement worker reached regional ready
+in 8.37 seconds at 671 MB RSS and restored both persistent NPCs. A fresh public
+SSH capture at exact `(0,0)` retained 32 synchronized frames, 309,531 total
+bytes, and 6,713 steady bytes. Gallery iteration 032 exposes that live frame and
+the exact rejected/selected night-storm pair.

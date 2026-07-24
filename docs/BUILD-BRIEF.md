@@ -216,9 +216,12 @@ octant), `MALDOROR_ASSET_ROOT=<repo-or-release-root>`, and
 `MALDOROR_CANAL_TOWN=0` may additionally expose the legacy
 `MALDOROR_DISTRICT=<png>` experiment. A regional startup error is fatal rather
 than silently showing a different world.
-Current live checkpoint: `v4d6bebd` (regional world, bounded terminal
-atmosphere cadence, real-SSH atlas harness, and corrected actor alpha),
-hot-reloaded 2026-07-24 after the additive migrations 0008-0009 activation.
+Current live checkpoint: `vb07c0d4` (regional world, bounded terminal
+atmosphere cadence, real-SSH atlas harness, corrected actor alpha, and selected
+night/storm hierarchy correction), activated by a controlled full restart on
+2026-07-24 with zero connected sessions. The SSH package build now copies the
+source version stamp into `dist/`; production startup must report the expected
+stamp before a deployment is accepted.
 Worker boot takes ~30-90s under load (module load off sdb) — patience, not a
 hang. `.service`/`.slice` mirrored in `deploy/box/`; `deploy/box/redeploy.sh` =
 full build+tsup+push+restart.
