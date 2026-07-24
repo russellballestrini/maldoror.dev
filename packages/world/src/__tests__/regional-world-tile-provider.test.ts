@@ -15,6 +15,7 @@ import { RegionalMaterialCompositor } from '../tiles/regional-material-composito
 import {
   RegionalWorldTileProvider,
   type RegionalAmbientAsset,
+  type RegionalEnvironmentContactAsset,
   type RegionalLandmarkAsset,
   type RegionalParcelComponentAsset,
   type RegionalRouteContactAsset,
@@ -170,6 +171,22 @@ function makeWorld(
       sprite: sprite(COLOURS[family]),
       collision: [[0, 0]] as const,
     })));
+  const environmentContacts: RegionalEnvironmentContactAsset[] = (['coast', 'mountain'] as const)
+    .map((family) => ({
+      id: `environment:${family}`,
+      families: [family],
+      role: 'environment-contact' as const,
+      sprite: sprite(COLOURS[family]),
+      collision: [[0, 0]] as const,
+      constraints: {
+        landOnly: true,
+        waterDistance: [0, 999] as const,
+        elevation: [0, 1] as const,
+        slope: [0, 1] as const,
+        routeDistance: [1.5, 999] as const,
+        nearbyWaterRadius: 0,
+      },
+    }));
   return new RegionalWorldTileProvider({
     worldSeed: 42n,
     field,
@@ -179,6 +196,7 @@ function makeWorld(
     ambient,
     routeContacts,
     parcelComponents,
+    environmentContacts,
     blockSize,
     maxCachedBlocks,
     ambientCellSize: 4,
@@ -190,6 +208,9 @@ function makeWorld(
     parcelMinimumLayers: 2,
     parcelMaximumLayers: 3,
     parcelLayerSpacing: 5,
+    environmentContactCellSize: 18,
+    environmentContactDensity: 1,
+    environmentContactLandmarkClearance: 4,
   });
 }
 
@@ -223,6 +244,7 @@ describe('RegionalWorldTileProvider', () => {
     expect(world.getRegionalStats().ambientAssets).toBe(BIOME_FAMILIES.length * 2);
     expect(world.getRegionalStats().routeContactAssets).toBe(BIOME_FAMILIES.length * 2);
     expect(world.getRegionalStats().parcelComponentAssets).toBe(BIOME_FAMILIES.length * 6);
+    expect(world.getRegionalStats().environmentContactAssets).toBe(2);
   });
 
   it('selects authored contact axes from route tangents and keeps the connector open', () => {
@@ -308,6 +330,23 @@ describe('RegionalWorldTileProvider', () => {
       expect(Math.abs(placement.anchorY)).toBeGreaterThanOrEqual(2);
       expect(world.isBuildingAt(placement.anchorX, placement.anchorY)).toBe(true);
     }
+  });
+
+  it('places sparse environment contacts only where declarative envelopes match', () => {
+    const world = makeWorld();
+    const placements = world.getEnvironmentContactPlacementsInBounds(-24, -40, 224, 40);
+    expect(placements.length).toBeGreaterThan(0);
+    expect(new Set(placements.flatMap((placement) => placement.families)))
+      .toEqual(new Set(['coast', 'mountain']));
+    for (const placement of placements) {
+      expect(placement.assetId).toBe(`environment:${placement.families[0]}`);
+      expect(world.isBuildingAt(placement.anchorX, placement.anchorY)).toBe(true);
+    }
+    const reversed = makeWorld(48);
+    for (const placement of [...placements].reverse()) {
+      reversed.getBuildingTileAt(placement.anchorX, placement.anchorY);
+    }
+    expect(reversed.getEnvironmentContactPlacementsInBounds(-24, -40, 224, 40)).toEqual(placements);
   });
 
   it('keeps overlays and collision exact across cache block sizes and traversal order', () => {

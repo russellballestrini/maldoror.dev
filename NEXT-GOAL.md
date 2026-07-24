@@ -438,9 +438,20 @@ Completed foundations:
   import p95 5.13 ms, and 734.03 MiB peak RSS with zero misses, mismatches, or
   worker errors. Immutable decoded-sprite reuse lowers the separate
   32-coordinate teleport-stress worker peak from 1,455.32 to 1,196.11 MiB;
+- a third built-in-subscription source adds four coast/headland and four
+  cave/highland silhouettes without painted terrain or water. A generic
+  manifest envelope controls family compatibility, land, water distance,
+  elevation, slope, route distance, and nearby-water contact; eight faithful
+  district fixtures pass all seven physical checks with zero mismatches. The
+  first broad locator was rejected at 3.5 minutes/~967 MiB for rebuilding full
+  derived blocks, and the first waterfall envelope was rejected as unreachable;
+  the selected bounded semantic cell cache plus reachable envelope preserves
+  the 180-frame corridor at render p50/p95/p99 4.08/9.38/30.54 ms, event-loop
+  p99 5.35 ms, import p95 4.29 ms, 756.21 MiB peak RSS, and zero misses,
+  mismatches, or errors;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
-  iterations 012–019 expose selected and rejected research candidates without
+  iterations 012–020 expose selected and rejected research candidates without
   claiming they are live.
 
 Still open and therefore goal-blocking:
@@ -454,8 +465,9 @@ Still open and therefore goal-blocking:
   still sparse, axis-aligned research prototypes rather than a complete world
   layer; the curved shared-station/shared-boundary grammar, waterfronts,
   squares/gardens, far greater travel-scale entropy, authoritative traversal,
-  stronger landmark framing, and cave/highland/coast/open-water interactions
-  remain before the family layer is production-complete;
+  stronger landmark framing, cave interiors, climbable highlands, waterfront
+  grammar, tidal/open-water/boat/island interactions, and environmental
+  consequences remain before the family layer is production-complete;
 - the complete Phase-0 diagnostic comparison and operator direction approval
   have not passed;
 - schedules, needs, relationships, memories, environmental systems, persistent

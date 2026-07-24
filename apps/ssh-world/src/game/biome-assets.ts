@@ -5,6 +5,8 @@ import {
   BIOME_FAMILIES,
   type BiomeFamily,
   type RegionalAmbientAsset,
+  type RegionalEnvironmentConstraints,
+  type RegionalEnvironmentContactAsset,
   type RegionalLandmarkAsset,
   type RegionalParcelComponentAsset,
   type RegionalRouteContactAsset,
@@ -66,6 +68,15 @@ export interface RegionalParcelComponentKit {
   assets: RegionalParcelComponentAsset[];
 }
 
+export interface RegionalEnvironmentContactKit {
+  manifestPath: string;
+  sourceTileSize: number;
+  cellSize: number;
+  density: number;
+  landmarkClearance: number;
+  assets: RegionalEnvironmentContactAsset[];
+}
+
 interface BaseMaterialEntry {
   id: string;
   file: string;
@@ -116,6 +127,17 @@ interface ParcelComponentEntry {
   scale: number;
   spriteTiles: [number, number];
   collision: Array<[number, number]>;
+}
+
+interface EnvironmentContactEntry {
+  id: string;
+  file: string;
+  families: BiomeFamily[];
+  role: 'environment-contact';
+  scale: number;
+  spriteTiles: [number, number];
+  collision: Array<[number, number]>;
+  constraints: RegionalEnvironmentConstraints;
 }
 
 const ROUTE_KINDS: readonly RegionalRouteKind[] = ['trail', 'local-road', 'arterial'];
@@ -415,6 +437,58 @@ export async function loadRegionalParcelComponentKit(
   };
 }
 
+/** Load large coast/highland/cave silhouettes with declarative geography.
+ * The loader validates every physical range before any worker can place art. */
+export async function loadRegionalEnvironmentContactKit(
+  manifestPath: string,
+): Promise<RegionalEnvironmentContactKit> {
+  const absoluteManifest = path.resolve(manifestPath);
+  const manifestDirectory = path.dirname(absoluteManifest);
+  const raw = JSON.parse(await fs.promises.readFile(absoluteManifest, 'utf8')) as unknown;
+  if (!isRecord(raw) || raw.version !== 1 || !Number.isInteger(raw.sourceTileSize) ||
+      !Number.isInteger(raw.cellSize) || typeof raw.density !== 'number' ||
+      !Number.isInteger(raw.landmarkClearance) || !Array.isArray(raw.assets)) {
+    throw new Error(`Invalid regional environment-contact manifest: ${absoluteManifest}`);
+  }
+  const sourceTileSize = Number(raw.sourceTileSize);
+  const cellSize = Number(raw.cellSize);
+  const density = Number(raw.density);
+  const landmarkClearance = Number(raw.landmarkClearance);
+  if (sourceTileSize < 16 || sourceTileSize > 192 || cellSize < 10 || cellSize > 128 ||
+      density < 0 || density > 1 || landmarkClearance < 4 || landmarkClearance > 64) {
+    throw new Error(`Regional environment-contact dimensions are invalid: ${absoluteManifest}`);
+  }
+  const entries = raw.assets.map((value, index) => parseEnvironmentContactEntry(value, index));
+  const ids = new Set(entries.map((entry) => entry.id));
+  if (ids.size !== entries.length || entries.length === 0) {
+    throw new Error('Regional environment-contact manifest must contain unique assets');
+  }
+  const assets: RegionalEnvironmentContactAsset[] = [];
+  for (const entry of entries) {
+    assets.push({
+      id: entry.id,
+      families: entry.families,
+      role: entry.role,
+      constraints: entry.constraints,
+      collision: entry.collision,
+      sprite: await loadRegionalSprite(
+        resolveAssetPath(manifestDirectory, entry.file),
+        sourceTileSize,
+        entry.scale,
+        entry.spriteTiles,
+      ),
+    });
+  }
+  return {
+    manifestPath: absoluteManifest,
+    sourceTileSize,
+    cellSize,
+    density,
+    landmarkClearance,
+    assets,
+  };
+}
+
 function parseEntry(value: unknown, index: number): MaterialEntry {
   if (!isRecord(value) ||
       !BIOME_FAMILIES.includes(value.family as BiomeFamily) ||
@@ -545,6 +619,48 @@ function parseParcelComponentEntry(value: unknown, index: number): ParcelCompone
     scale: value.scale,
     spriteTiles: value.spriteTiles as [number, number],
     collision: value.collision as Array<[number, number]>,
+  };
+}
+
+function parseEnvironmentContactEntry(value: unknown, index: number): EnvironmentContactEntry {
+  if (!isRecord(value) || value.role !== 'environment-contact' ||
+      typeof value.id !== 'string' || value.id.length === 0 ||
+      typeof value.file !== 'string' || value.file.length === 0 ||
+      !Array.isArray(value.families) || value.families.length === 0 ||
+      !value.families.every((family) => BIOME_FAMILIES.includes(family as BiomeFamily)) ||
+      !isTileDimensions(value.spriteTiles) ||
+      !Array.isArray(value.collision) || value.collision.length === 0 ||
+      !value.collision.every(isCollisionOffset) ||
+      typeof value.scale !== 'number' || value.scale < 0.2 || value.scale > 1 ||
+      !isRecord(value.constraints)) {
+    throw new Error(`Invalid regional environment-contact entry at index ${index}`);
+  }
+  const constraints = value.constraints;
+  if (typeof constraints.landOnly !== 'boolean' ||
+      !isNumericRange(constraints.waterDistance, 999) ||
+      !isNumericRange(constraints.elevation, 1) ||
+      !isNumericRange(constraints.slope, 1) ||
+      !isNumericRange(constraints.routeDistance, 999) ||
+      !Number.isInteger(constraints.nearbyWaterRadius) ||
+      Number(constraints.nearbyWaterRadius) < 0 || Number(constraints.nearbyWaterRadius) > 12) {
+    throw new Error(`Invalid regional environment-contact constraints at index ${index}`);
+  }
+  return {
+    id: value.id,
+    file: value.file,
+    families: value.families as BiomeFamily[],
+    role: 'environment-contact',
+    scale: value.scale,
+    spriteTiles: value.spriteTiles as [number, number],
+    collision: value.collision as Array<[number, number]>,
+    constraints: {
+      landOnly: constraints.landOnly,
+      waterDistance: constraints.waterDistance as [number, number],
+      elevation: constraints.elevation as [number, number],
+      slope: constraints.slope as [number, number],
+      routeDistance: constraints.routeDistance as [number, number],
+      nearbyWaterRadius: Number(constraints.nearbyWaterRadius),
+    },
   };
 }
 
@@ -696,6 +812,12 @@ function isTileDimensions(value: unknown): value is [number, number] {
 function isRouteDistance(value: unknown): value is [number, number] {
   return Array.isArray(value) && value.length === 2 &&
     value.every((part) => typeof part === 'number' && Number.isFinite(part) && part >= 0 && part <= 999) &&
+    value[1]! >= value[0]!;
+}
+
+function isNumericRange(value: unknown, maximum: number): value is [number, number] {
+  return Array.isArray(value) && value.length === 2 &&
+    value.every((part) => typeof part === 'number' && Number.isFinite(part) && part >= 0 && part <= maximum) &&
     value[1]! >= value[0]!;
 }
 

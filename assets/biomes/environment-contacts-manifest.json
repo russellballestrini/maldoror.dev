@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "sourceTileSize": 48,
+  "cellSize": 18,
+  "density": 0.72,
+  "landmarkClearance": 9,
+  "provenance": {
+    "generatedSource": "generated/regional-environment-contacts-v1-source.png",
+    "generatedSourceSha256": "747d7ad1864f9d758c59e3d8ffc8ccaf54550cbde6fa1fa0f7070022d09aca0c",
+    "generation": "built-in Codex/ChatGPT image generation; no metered API",
+    "derivation": "pnpm assets:derive-environment-contacts",
+    "note": "All geography is explicit manifest data; no filename or pixel inference selects placement."
+  },
+  "assets": [
+    { "id": "coast-cliff-pine-environment-contact-v1", "file": "environment-contacts/coast-cliff-pine-environment-contact-v1.png", "families": ["coast"], "role": "environment-contact", "scale": 0.9, "spriteTiles": [6, 6], "collision": [[-1, 0], [0, 0], [1, 0]], "constraints": { "landOnly": true, "waterDistance": [0, 8], "elevation": [0.38, 0.75], "slope": [0, 0.2], "routeDistance": [1.5, 999], "nearbyWaterRadius": 6 } },
+    { "id": "coast-broken-jetty-environment-contact-v1", "file": "environment-contacts/coast-broken-jetty-environment-contact-v1.png", "families": ["coast"], "role": "environment-contact", "scale": 0.9, "spriteTiles": [6, 6], "collision": [[-1, 0], [0, 0], [1, 0]], "constraints": { "landOnly": true, "waterDistance": [0, 6], "elevation": [0.38, 0.68], "slope": [0, 0.12], "routeDistance": [1.5, 999], "nearbyWaterRadius": 5 } },
+    { "id": "coast-basalt-arch-environment-contact-v1", "file": "environment-contacts/coast-basalt-arch-environment-contact-v1.png", "families": ["coast"], "role": "environment-contact", "scale": 0.9, "spriteTiles": [6, 6], "collision": [[-1, 0], [0, 0], [1, 0]], "constraints": { "landOnly": true, "waterDistance": [0, 5], "elevation": [0.38, 0.72], "slope": [0.002, 0.2], "routeDistance": [1.5, 999], "nearbyWaterRadius": 5 } },
+    { "id": "coast-headland-beacon-environment-contact-v1", "file": "environment-contacts/coast-headland-beacon-environment-contact-v1.png", "families": ["coast"], "role": "environment-contact", "scale": 0.9, "spriteTiles": [6, 6], "collision": [[-1, 0], [0, 0], [1, 0]], "constraints": { "landOnly": true, "waterDistance": [0, 9], "elevation": [0.4, 0.8], "slope": [0.002, 0.2], "routeDistance": [1.5, 999], "nearbyWaterRadius": 7 } },
+    { "id": "mountain-cave-mouth-environment-contact-v1", "file": "environment-contacts/mountain-cave-mouth-environment-contact-v1.png", "families": ["mountain"], "role": "environment-contact", "scale": 0.9, "spriteTiles": [6, 6], "collision": [[-1, 0], [0, 0], [1, 0]], "constraints": { "landOnly": true, "waterDistance": [5, 999], "elevation": [0.56, 1], "slope": [0.008, 0.2], "routeDistance": [1.5, 12], "nearbyWaterRadius": 0 } },
+    { "id": "mountain-falling-water-environment-contact-v1", "file": "environment-contacts/mountain-falling-water-environment-contact-v1.png", "families": ["mountain"], "role": "environment-contact", "scale": 0.9, "spriteTiles": [6, 6], "collision": [[-1, 0], [0, 0], [1, 0]], "constraints": { "landOnly": true, "waterDistance": [0, 6], "elevation": [0.52, 1], "slope": [0.004, 0.2], "routeDistance": [1.5, 999], "nearbyWaterRadius": 6 } },
+    { "id": "mountain-mine-gantry-environment-contact-v1", "file": "environment-contacts/mountain-mine-gantry-environment-contact-v1.png", "families": ["mountain"], "role": "environment-contact", "scale": 0.9, "spriteTiles": [6, 6], "collision": [[-1, 0], [0, 0], [1, 0]], "constraints": { "landOnly": true, "waterDistance": [4, 999], "elevation": [0.57, 1], "slope": [0.008, 0.2], "routeDistance": [1.5, 11], "nearbyWaterRadius": 0 } },
+    { "id": "mountain-way-shrine-environment-contact-v1", "file": "environment-contacts/mountain-way-shrine-environment-contact-v1.png", "families": ["mountain"], "role": "environment-contact", "scale": 0.9, "spriteTiles": [6, 6], "collision": [[-1, 0], [0, 0], [1, 0]], "constraints": { "landOnly": true, "waterDistance": [3, 999], "elevation": [0.55, 1], "slope": [0.006, 0.2], "routeDistance": [1.5, 10], "nearbyWaterRadius": 0 } }
+  ]
+}

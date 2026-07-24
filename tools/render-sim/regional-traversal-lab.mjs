@@ -13,6 +13,7 @@ import { monitorEventLoopDelay } from 'node:perf_hooks';
 import {
   loadRegionalAmbientKit,
   loadRegionalBiomeMaterialKit,
+  loadRegionalEnvironmentContactKit,
   loadRegionalLandmarkKit,
   loadRegionalParcelComponentKit,
   loadRegionalRouteContactKit,
@@ -41,6 +42,7 @@ const ASSET_PATHS = {
   ambient: path.join(ROOT, 'assets/biomes/ambient-manifest.json'),
   routeContacts: path.join(ROOT, 'assets/biomes/route-contacts-manifest.json'),
   parcelComponents: path.join(ROOT, 'assets/biomes/parcel-components-manifest.json'),
+  environmentContacts: path.join(ROOT, 'assets/biomes/environment-contacts-manifest.json'),
 };
 const FRAME_COUNT = Number(process.env.MALDOROR_TRAVERSAL_FRAMES ?? 32);
 if (!Number.isInteger(FRAME_COUNT) || FRAME_COUNT < 8 || FRAME_COUNT > 160) {
@@ -48,13 +50,22 @@ if (!Number.isInteger(FRAME_COUNT) || FRAME_COUNT < 8 || FRAME_COUNT > 160) {
 }
 
 fs.mkdirSync(OUTPUT, { recursive: true });
-const [biomeKit, routeKit, landmarkKit, ambientKit, routeContactKit, parcelKit] = await Promise.all([
+const [
+  biomeKit,
+  routeKit,
+  landmarkKit,
+  ambientKit,
+  routeContactKit,
+  parcelKit,
+  environmentKit,
+] = await Promise.all([
   loadRegionalBiomeMaterialKit(ASSET_PATHS.biomeMaterials),
   loadRegionalRouteMaterialKit(ASSET_PATHS.routeMaterials),
   loadRegionalLandmarkKit(ASSET_PATHS.landmarks),
   loadRegionalAmbientKit(ASSET_PATHS.ambient),
   loadRegionalRouteContactKit(ASSET_PATHS.routeContacts),
   loadRegionalParcelComponentKit(ASSET_PATHS.parcelComponents),
+  loadRegionalEnvironmentContactKit(ASSET_PATHS.environmentContacts),
 ]);
 
 const pathCoordinates = Array.from({ length: FRAME_COUNT }, (_, index) => ({
@@ -92,6 +103,7 @@ function createWorld() {
     ambient: ambientKit.assets,
     routeContacts: routeContactKit.assets,
     parcelComponents: parcelKit.assets,
+    environmentContacts: environmentKit.assets,
     blockSize: landmarkKit.blockSize,
     maxCachedBlocks: 64,
     ambientCellSize: ambientKit.cellSize,
@@ -104,6 +116,9 @@ function createWorld() {
     parcelMinimumLayers: parcelKit.minimumLayers,
     parcelMaximumLayers: parcelKit.maximumLayers,
     parcelLayerSpacing: parcelKit.layerSpacing,
+    environmentContactCellSize: environmentKit.cellSize,
+    environmentContactDensity: environmentKit.density,
+    environmentContactLandmarkClearance: environmentKit.landmarkClearance,
   });
   return { field, routes, compositor, world };
 }

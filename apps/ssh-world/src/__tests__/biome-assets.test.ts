@@ -4,6 +4,7 @@ import { BIOME_FAMILIES } from '@maldoror/world';
 import {
   loadRegionalAmbientKit,
   loadRegionalBiomeMaterialKit,
+  loadRegionalEnvironmentContactKit,
   loadRegionalLandmarkKit,
   loadRegionalParcelComponentKit,
   loadRegionalRouteMaterialKit,
@@ -119,5 +120,29 @@ describe('regional biome material manifest', () => {
     }
     expect(kit.assets.find((asset) => asset.id === 'canal-town-facade-parcel-mass-v1')?.sprite)
       .toBe(ambient.assets.find((asset) => asset.id === 'canal-town-facade-planter-v2')?.sprite);
+  });
+
+  it('loads coast and highland contacts with explicit physical envelopes', async () => {
+    const kit = await loadRegionalEnvironmentContactKit(
+      path.resolve('assets/biomes/environment-contacts-manifest.json'),
+    );
+    expect(kit.sourceTileSize).toBe(48);
+    expect(kit.cellSize).toBe(18);
+    expect(kit.density).toBeCloseTo(0.72);
+    expect(kit.assets).toHaveLength(8);
+    expect(new Set(kit.assets.flatMap((asset) => asset.families)))
+      .toEqual(new Set(['coast', 'mountain']));
+    for (const asset of kit.assets) {
+      expect(asset.role).toBe('environment-contact');
+      expect(asset.sprite.width).toBe(6);
+      expect(asset.sprite.height).toBe(6);
+      expect(asset.constraints.landOnly).toBe(true);
+      expect(asset.constraints.waterDistance[1]).toBeGreaterThanOrEqual(
+        asset.constraints.waterDistance[0],
+      );
+      const pixels = asset.sprite.tiles.flatMap((row) => row.flatMap((tile) => tile.pixels.flat()));
+      expect(pixels.some((pixel) => pixel === null)).toBe(true);
+      expect(pixels.some((pixel) => pixel !== null)).toBe(true);
+    }
   });
 });

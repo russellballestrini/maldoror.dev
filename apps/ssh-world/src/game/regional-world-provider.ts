@@ -7,6 +7,7 @@ import {
 import {
   loadRegionalAmbientKit,
   loadRegionalBiomeMaterialKit,
+  loadRegionalEnvironmentContactKit,
   loadRegionalLandmarkKit,
   loadRegionalParcelComponentKit,
   loadRegionalRouteContactKit,
@@ -20,6 +21,7 @@ export interface RegionalWorldAssetPaths {
   ambient: string;
   routeContacts: string;
   parcelComponents: string;
+  environmentContacts: string;
 }
 
 export interface RegionalWorldProviderOptions {
@@ -41,13 +43,22 @@ export interface LoadedRegionalWorldProvider {
 export async function loadRegionalWorldProvider(
   options: RegionalWorldProviderOptions,
 ): Promise<LoadedRegionalWorldProvider> {
-  const [biomeKit, routeKit, landmarkKit, ambientKit, routeContactKit, parcelKit] = await Promise.all([
+  const [
+    biomeKit,
+    routeKit,
+    landmarkKit,
+    ambientKit,
+    routeContactKit,
+    parcelKit,
+    environmentKit,
+  ] = await Promise.all([
     loadRegionalBiomeMaterialKit(options.assets.biomeMaterials),
     loadRegionalRouteMaterialKit(options.assets.routeMaterials),
     loadRegionalLandmarkKit(options.assets.landmarks),
     loadRegionalAmbientKit(options.assets.ambient),
     loadRegionalRouteContactKit(options.assets.routeContacts),
     loadRegionalParcelComponentKit(options.assets.parcelComponents),
+    loadRegionalEnvironmentContactKit(options.assets.environmentContacts),
   ]);
   const field = new BiomeWorldField(options.worldSeed, {
     blockSize: 16,
@@ -80,6 +91,7 @@ export async function loadRegionalWorldProvider(
     ambient: ambientKit.assets,
     routeContacts: routeContactKit.assets,
     parcelComponents: parcelKit.assets,
+    environmentContacts: environmentKit.assets,
     blockSize: landmarkKit.blockSize,
     maxCachedBlocks: 64,
     ambientCellSize: ambientKit.cellSize,
@@ -92,6 +104,9 @@ export async function loadRegionalWorldProvider(
     parcelMinimumLayers: parcelKit.minimumLayers,
     parcelMaximumLayers: parcelKit.maximumLayers,
     parcelLayerSpacing: parcelKit.layerSpacing,
+    environmentContactCellSize: environmentKit.cellSize,
+    environmentContactDensity: environmentKit.density,
+    environmentContactLandmarkClearance: environmentKit.landmarkClearance,
     maxPreparedViewports: 4,
   });
   return { field, routes, compositor, world };

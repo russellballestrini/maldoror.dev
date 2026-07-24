@@ -6,12 +6,14 @@ import sharp from 'sharp';
 import {
   loadRegionalAmbientKit,
   loadRegionalBiomeMaterialKit,
+  loadRegionalEnvironmentContactKit,
   loadRegionalLandmarkKit,
   loadRegionalParcelComponentKit,
   loadRegionalRouteMaterialKit,
   loadRegionalRouteContactKit,
 } from '../../apps/ssh-world/dist/game/biome-assets.js';
 import {
+  BIOME_FAMILIES,
   BiomeWorldField,
   RegionalMaterialCompositor,
   RegionalRouteField,
@@ -51,13 +53,22 @@ const routes = new RegionalRouteField(WORLD_SEED, field, {
   maxCachedPaths: 512,
   pathStep: 4,
 });
-const [biomeKit, routeKit, landmarkKit, ambientKit, routeContactKit, parcelKit] = await Promise.all([
+const [
+  biomeKit,
+  routeKit,
+  landmarkKit,
+  ambientKit,
+  routeContactKit,
+  parcelKit,
+  environmentKit,
+] = await Promise.all([
   loadRegionalBiomeMaterialKit(path.join(ROOT, 'assets/biomes/manifest.json')),
   loadRegionalRouteMaterialKit(path.join(ROOT, 'assets/routes/manifest.json')),
   loadRegionalLandmarkKit(path.join(ROOT, 'assets/biomes/landmarks-manifest.json')),
   loadRegionalAmbientKit(path.join(ROOT, 'assets/biomes/ambient-manifest.json')),
   loadRegionalRouteContactKit(path.join(ROOT, 'assets/biomes/route-contacts-manifest.json')),
   loadRegionalParcelComponentKit(path.join(ROOT, 'assets/biomes/parcel-components-manifest.json')),
+  loadRegionalEnvironmentContactKit(path.join(ROOT, 'assets/biomes/environment-contacts-manifest.json')),
 ]);
 if (new Set([landmarkKit.blockSize, ambientKit.blockSize, routeContactKit.blockSize]).size !== 1) {
   throw new Error('Regional landmark, ambient, and route-contact block sizes disagree');
@@ -82,6 +93,7 @@ const world = new RegionalWorldTileProvider({
   ambient: ambientKit.assets,
   routeContacts: routeContactKit.assets,
   parcelComponents: parcelKit.assets,
+  environmentContacts: environmentKit.assets,
   blockSize: landmarkKit.blockSize,
   maxCachedBlocks: 64,
   ambientCellSize: ambientKit.cellSize,
@@ -93,6 +105,9 @@ const world = new RegionalWorldTileProvider({
   parcelMinimumLayers: parcelKit.minimumLayers,
   parcelMaximumLayers: parcelKit.maximumLayers,
   parcelLayerSpacing: parcelKit.layerSpacing,
+  environmentContactCellSize: environmentKit.cellSize,
+  environmentContactDensity: environmentKit.density,
+  environmentContactLandmarkClearance: environmentKit.landmarkClearance,
 });
 
 function locateLandmarkFamilies() {
@@ -119,6 +134,7 @@ const ATLAS_MODES = [
   process.env.MALDOROR_REGIONAL_LANDMARK_ATLAS,
   process.env.MALDOROR_REGIONAL_AMBIENT_ATLAS,
   process.env.MALDOROR_REGIONAL_CONTACT_ATLAS,
+  process.env.MALDOROR_REGIONAL_ENVIRONMENT_ATLAS,
 ].filter((value) => value === '1').length;
 if (ATLAS_MODES > 1) {
   throw new Error('Choose one regional atlas mode');
@@ -221,6 +237,59 @@ if (process.env.MALDOROR_REGIONAL_CONTACT_ATLAS === '1') {
     };
   });
   if (FRAMES.length === 0) throw new Error(`Unknown route-contact asset: ${contactAssetFilter}`);
+}
+
+if (process.env.MALDOROR_REGIONAL_ENVIRONMENT_ATLAS === '1') {
+  const wanted = new Set(environmentKit.assets.map((asset) => asset.id));
+  const found = new Map();
+  const fixturePath = process.env.MALDOROR_REGIONAL_ENVIRONMENT_LOCATIONS;
+  if (fixturePath) {
+    const fixture = JSON.parse(fs.readFileSync(path.resolve(fixturePath), 'utf8'));
+    for (const frame of fixture.frames ?? []) {
+      if (!wanted.has(frame.assetId) || !Array.isArray(frame.anchor)) continue;
+      const placement = world.getEnvironmentContactPlacementsInBounds(
+        frame.anchor[0], frame.anchor[1], frame.anchor[0], frame.anchor[1],
+      ).find((candidate) => candidate.assetId === frame.assetId);
+      if (placement) found.set(placement.assetId, placement);
+    }
+  } else {
+    let previousRadius = 0;
+    for (const radius of [128, 256, 384, 512, 768, 1024]) {
+      const strips = [
+        [-radius, -radius, radius, -previousRadius - 1],
+        [-radius, previousRadius + 1, radius, radius],
+        [-radius, -previousRadius, -previousRadius - 1, previousRadius],
+        [previousRadius + 1, -previousRadius, radius, previousRadius],
+      ];
+      for (const bounds of strips) {
+        if (bounds[0] > bounds[2] || bounds[1] > bounds[3]) continue;
+        for (const placement of world.getEnvironmentContactPlacementsInBounds(...bounds)) {
+          if (wanted.has(placement.assetId) && !found.has(placement.assetId)) {
+            found.set(placement.assetId, placement);
+          }
+        }
+      }
+      if (found.size === wanted.size) break;
+      previousRadius = radius;
+    }
+  }
+  const missing = [...wanted].filter((id) => !found.has(id));
+  if (missing.length > 0) throw new Error(`Could not locate regional environment contacts: ${missing.join(', ')}`);
+  const contactTileSize = Number(process.env.MALDOROR_REGIONAL_ENVIRONMENT_TILE_SIZE ?? 8);
+  if (![4, 8, 16].includes(contactTileSize)) {
+    throw new Error(`MALDOROR_REGIONAL_ENVIRONMENT_TILE_SIZE must be 4, 8, or 16: ${contactTileSize}`);
+  }
+  FRAMES = environmentKit.assets.map((asset) => {
+    const placement = found.get(asset.id);
+    const scaleName = contactTileSize === 16 ? 'walking' : contactTileSize === 8 ? 'district' : 'regional';
+    return {
+      name: `${asset.id}-${scaleName}`,
+      centre: [placement.anchorX, placement.anchorY],
+      displayTileSize: contactTileSize,
+      assetId: asset.id,
+      anchor: [placement.anchorX, placement.anchorY],
+    };
+  });
 }
 
 function renderFrame(frame) {
@@ -361,6 +430,50 @@ function auditParcel(frame) {
   };
 }
 
+function auditEnvironmentContact(frame) {
+  const asset = environmentKit.assets.find((candidate) => candidate.id === frame.assetId);
+  if (!asset) return null;
+  const sample = field.sample(frame.anchor[0], frame.anchor[1]);
+  const route = routes.sample(frame.anchor[0], frame.anchor[1]);
+  const constraints = asset.constraints;
+  let nearbyWater = constraints.nearbyWaterRadius === 0;
+  if (!nearbyWater) {
+    for (let offsetY = -constraints.nearbyWaterRadius; offsetY <= constraints.nearbyWaterRadius; offsetY++) {
+      for (let offsetX = -constraints.nearbyWaterRadius; offsetX <= constraints.nearbyWaterRadius; offsetX++) {
+        if (offsetX * offsetX + offsetY * offsetY > constraints.nearbyWaterRadius ** 2) continue;
+        if (field.sample(frame.anchor[0] + offsetX, frame.anchor[1] + offsetY).isWater) nearbyWater = true;
+      }
+    }
+  }
+  const compatibility = Math.max(...asset.families.map((family) => (
+    sample.weights[BIOME_FAMILIES.indexOf(family)] ?? 0
+  )));
+  const checks = {
+    land: !constraints.landOnly || !sample.isWater,
+    waterDistance: rangeContains(sample.waterDistance, constraints.waterDistance),
+    elevation: rangeContains(sample.elevation, constraints.elevation),
+    slope: rangeContains(sample.slope, constraints.slope),
+    routeDistance: rangeContains(route.distance, constraints.routeDistance),
+    nearbyWater,
+    familyCompatibility: compatibility >= 0.18,
+  };
+  return {
+    assetId: asset.id,
+    sample: {
+      primary: sample.primary,
+      elevation: sample.elevation,
+      slope: sample.slope,
+      waterDistance: sample.waterDistance,
+      isWater: sample.isWater,
+      routeDistance: route.distance,
+      familyCompatibility: compatibility,
+    },
+    constraints,
+    checks,
+    mismatchCount: Object.values(checks).filter((value) => !value).length,
+  };
+}
+
 const metrics = {
   worldSeed: String(WORLD_SEED),
   sourceDimensions: [WIDTH, HEIGHT],
@@ -373,6 +486,8 @@ const metrics = {
   routeContactAssets: routeContactKit.assets.length,
   parcelComponentManifest: path.relative(ROOT, parcelKit.manifestPath),
   parcelComponentAssets: parcelKit.assets.length,
+  environmentContactManifest: path.relative(ROOT, environmentKit.manifestPath),
+  environmentContactAssets: environmentKit.assets.length,
   frames: [],
 };
 for (const frame of FRAMES) {
@@ -401,8 +516,14 @@ for (const frame of FRAMES) {
     visibleAmbient: world.getAmbientPlacementsInBounds(...visibleBounds),
     visibleRouteContacts: world.getRouteContactPlacementsInBounds(...visibleBounds),
     visibleParcelComponents: world.getParcelComponentPlacementsInBounds(...visibleBounds),
+    visibleEnvironmentContacts: world.getEnvironmentContactPlacementsInBounds(...visibleBounds),
     parcelAudit: auditParcel(frame),
+    environmentContactAudit: auditEnvironmentContact(frame),
   });
 }
 fs.writeFileSync(path.join(OUTPUT, 'metrics.json'), `${JSON.stringify(metrics, null, 2)}\n`);
 console.log(JSON.stringify({ output: OUTPUT, ...metrics }, null, 2));
+
+function rangeContains(value, range) {
+  return value >= range[0] && (range[1] >= 999 || value <= range[1]);
+}

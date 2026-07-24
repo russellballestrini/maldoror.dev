@@ -57,9 +57,25 @@ export interface RegionalParcelComponentAsset extends RegionalVisualAsset {
   role: 'mass';
 }
 
+export interface RegionalEnvironmentConstraints {
+  landOnly: boolean;
+  waterDistance: readonly [number, number];
+  elevation: readonly [number, number];
+  slope: readonly [number, number];
+  routeDistance: readonly [number, number];
+  nearbyWaterRadius: number;
+}
+
+/** A geography-bound silhouette. Placement is driven entirely by numeric
+ * physical constraints, never by IDs, filename cases, or inferred pixels. */
+export interface RegionalEnvironmentContactAsset extends RegionalVisualAsset {
+  role: 'environment-contact';
+  constraints: RegionalEnvironmentConstraints;
+}
+
 export interface RegionalAssetPlacement {
   assetId: string;
-  kind: 'landmark' | 'ambient' | 'route-contact' | 'parcel-component';
+  kind: 'landmark' | 'ambient' | 'environment-contact' | 'route-contact' | 'parcel-component';
   families: readonly BiomeFamily[];
   siteX: number;
   siteY: number;
@@ -155,6 +171,7 @@ export interface RegionalWorldTileProviderConfig extends TileProviderConfig {
   ambient?: readonly RegionalAmbientAsset[];
   routeContacts?: readonly RegionalRouteContactAsset[];
   parcelComponents?: readonly RegionalParcelComponentAsset[];
+  environmentContacts?: readonly RegionalEnvironmentContactAsset[];
   blockSize?: number;
   maxCachedBlocks?: number;
   ambientCellSize?: number;
@@ -167,12 +184,16 @@ export interface RegionalWorldTileProviderConfig extends TileProviderConfig {
   parcelMinimumLayers?: number;
   parcelMaximumLayers?: number;
   parcelLayerSpacing?: number;
+  environmentContactCellSize?: number;
+  environmentContactDensity?: number;
+  environmentContactLandmarkClearance?: number;
+  maxCachedEnvironmentContactCells?: number;
   maxPreparedViewports?: number;
 }
 
 interface Placement {
   asset: RegionalVisualAsset;
-  kind: 'landmark' | 'ambient' | 'route-contact' | 'parcel-component';
+  kind: 'landmark' | 'ambient' | 'environment-contact' | 'route-contact' | 'parcel-component';
   siteX: number;
   siteY: number;
   anchorX: number;
@@ -237,6 +258,7 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly ambient: readonly RegionalAmbientAsset[];
   private readonly routeContacts: readonly RegionalRouteContactAsset[];
   private readonly parcelComponents: readonly RegionalParcelComponentAsset[];
+  private readonly environmentContacts: readonly RegionalEnvironmentContactAsset[];
   private readonly blockSize: number;
   private readonly maxCachedBlocks: number;
   private readonly ambientCellSize: number;
@@ -249,6 +271,10 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly parcelMinimumLayers: number;
   private readonly parcelMaximumLayers: number;
   private readonly parcelLayerSpacing: number;
+  private readonly environmentContactCellSize: number;
+  private readonly environmentContactDensity: number;
+  private readonly environmentContactLandmarkClearance: number;
+  private readonly maxCachedEnvironmentContactCells: number;
   private readonly maxPreparedViewports: number;
   private readonly placementMinOffsetX: number;
   private readonly placementMaxOffsetX: number;
@@ -256,6 +282,7 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly placementMaxOffsetY: number;
   private readonly blockCache = new Map<string, CachedBlock>();
   private readonly routeContactPlacementCache = new Map<string, Placement | null>();
+  private readonly environmentContactPlacementCache = new Map<string, Placement | null>();
   private readonly preparedViewports = new Map<string, ImportedPreparedViewport>();
   private accessClock = 0;
 
@@ -270,6 +297,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     this.ambient = config.ambient ?? [];
     this.routeContacts = config.routeContacts ?? [];
     this.parcelComponents = config.parcelComponents ?? [];
+    this.environmentContacts = config.environmentContacts ?? [];
     this.blockSize = Math.max(16, config.blockSize ?? 32);
     this.maxCachedBlocks = Math.max(9, config.maxCachedBlocks ?? 64);
     this.ambientCellSize = Math.max(3, config.ambientCellSize ?? 4);
@@ -285,6 +313,16 @@ export class RegionalWorldTileProvider extends TileProvider {
       Math.min(5, config.parcelMaximumLayers ?? 3),
     );
     this.parcelLayerSpacing = Math.max(4, Math.min(8, config.parcelLayerSpacing ?? 5));
+    this.environmentContactCellSize = Math.max(10, config.environmentContactCellSize ?? 18);
+    this.environmentContactDensity = Math.max(0, Math.min(1, config.environmentContactDensity ?? 0.72));
+    this.environmentContactLandmarkClearance = Math.max(
+      4,
+      config.environmentContactLandmarkClearance ?? 9,
+    );
+    this.maxCachedEnvironmentContactCells = Math.max(
+      64,
+      config.maxCachedEnvironmentContactCells ?? 4096,
+    );
     this.maxPreparedViewports = Math.max(1, Math.min(16, config.maxPreparedViewports ?? 4));
     for (const asset of this.landmarks) {
       if (asset.families.length === 0 || asset.landmarkKinds.length === 0) {
@@ -313,11 +351,18 @@ export class RegionalWorldTileProvider extends TileProvider {
         throw new Error(`Regional parcel component has invalid semantics: ${asset.id}`);
       }
     }
+    for (const asset of this.environmentContacts) {
+      if (asset.role !== 'environment-contact' || asset.families.length === 0 ||
+          asset.collision.length === 0 || asset.constraints.nearbyWaterRadius < 0) {
+        throw new Error(`Regional environment contact has invalid semantics: ${asset.id}`);
+      }
+    }
     const placementAssets: readonly RegionalVisualAsset[] = [
       ...this.landmarks,
       ...this.ambient,
       ...this.routeContacts,
       ...this.parcelComponents,
+      ...this.environmentContacts,
     ];
     const extentX = placementAssets.flatMap((asset) => {
       const reach = this.landmarks.includes(asset as RegionalLandmarkAsset) ? LANDMARK_ANCHOR_REACH : 0;
@@ -704,26 +749,31 @@ export class RegionalWorldTileProvider extends TileProvider {
   getRegionalStats(): {
     landmarkAssets: number;
     ambientAssets: number;
+    environmentContactAssets: number;
     routeContactAssets: number;
     parcelComponentAssets: number;
     cachedBlocks: number;
     cachedPlacements: number;
     cachedLandmarkPlacements: number;
     cachedAmbientPlacements: number;
+    cachedEnvironmentContactPlacements: number;
     cachedRouteContactPlacements: number;
     cachedParcelComponentPlacements: number;
     cachedRouteContactCells: number;
+    cachedEnvironmentContactCells: number;
     cachedOverlayTiles: number;
     cachedSolidTiles: number;
     blockSize: number;
     maxCachedBlocks: number;
     maxCachedRouteContactCells: number;
+    maxCachedEnvironmentContactCells: number;
     preparedViewports: number;
     preparedTerrainTiles: number;
   } {
     return {
       landmarkAssets: this.landmarks.length,
       ambientAssets: this.ambient.length,
+      environmentContactAssets: this.environmentContacts.length,
       routeContactAssets: this.routeContacts.length,
       parcelComponentAssets: this.parcelComponents.length,
       cachedBlocks: this.blockCache.size,
@@ -739,6 +789,12 @@ export class RegionalWorldTileProvider extends TileProvider {
         (total, block) => total + block.placements.filter((placement) => placement.kind === 'ambient').length,
         0,
       ),
+      cachedEnvironmentContactPlacements: [...this.blockCache.values()].reduce(
+        (total, block) => total + block.placements.filter(
+          (placement) => placement.kind === 'environment-contact',
+        ).length,
+        0,
+      ),
       cachedRouteContactPlacements: [...this.blockCache.values()].reduce(
         (total, block) => total + block.placements.filter((placement) => placement.kind === 'route-contact').length,
         0,
@@ -750,6 +806,7 @@ export class RegionalWorldTileProvider extends TileProvider {
         0,
       ),
       cachedRouteContactCells: this.routeContactPlacementCache.size,
+      cachedEnvironmentContactCells: this.environmentContactPlacementCache.size,
       cachedOverlayTiles: [...this.blockCache.values()].reduce(
         (total, block) => total + block.overlays.size,
         0,
@@ -761,6 +818,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       blockSize: this.blockSize,
       maxCachedBlocks: this.maxCachedBlocks,
       maxCachedRouteContactCells: this.maxCachedRouteContactCells,
+      maxCachedEnvironmentContactCells: this.maxCachedEnvironmentContactCells,
       preparedViewports: this.preparedViewports.size,
       preparedTerrainTiles: [...this.preparedViewports.values()].reduce(
         (total, viewport) => total + viewport.terrain.size,
@@ -894,9 +952,41 @@ export class RegionalWorldTileProvider extends TileProvider {
       a.assetId.localeCompare(b.assetId));
   }
 
+  getEnvironmentContactPlacementsInBounds(
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number,
+  ): RegionalAssetPlacement[] {
+    const placements: RegionalAssetPlacement[] = [];
+    const firstCellX = floorDiv(Math.floor(minX), this.environmentContactCellSize) - 1;
+    const lastCellX = floorDiv(Math.floor(maxX), this.environmentContactCellSize) + 1;
+    const firstCellY = floorDiv(Math.floor(minY), this.environmentContactCellSize) - 1;
+    const lastCellY = floorDiv(Math.floor(maxY), this.environmentContactCellSize) + 1;
+    for (let cellY = firstCellY; cellY <= lastCellY; cellY++) {
+      for (let cellX = firstCellX; cellX <= lastCellX; cellX++) {
+        const placement = this.getEnvironmentContactPlacement(cellX, cellY);
+        if (!placement || placement.anchorX < minX || placement.anchorX > maxX ||
+            placement.anchorY < minY || placement.anchorY > maxY) continue;
+        placements.push({
+          assetId: placement.asset.id,
+          kind: 'environment-contact',
+          families: placement.asset.families,
+          siteX: placement.siteX,
+          siteY: placement.siteY,
+          anchorX: placement.anchorX,
+          anchorY: placement.anchorY,
+        });
+      }
+    }
+    return placements.sort((a, b) => a.anchorY - b.anchorY || a.anchorX - b.anchorX ||
+      a.assetId.localeCompare(b.assetId));
+  }
+
   override destroy(): void {
     this.blockCache.clear();
     this.routeContactPlacementCache.clear();
+    this.environmentContactPlacementCache.clear();
     this.preparedViewports.clear();
     this.compositor.clear();
     super.destroy();
@@ -977,6 +1067,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       }
     }
     placements.push(...this.buildAmbientPlacements(originX, originY));
+    placements.push(...this.buildEnvironmentContactPlacements(originX, originY));
     const connectors = new Map<string, ParcelConnector>();
     for (const contact of this.buildRouteContactPlacements(originX, originY)) {
       placements.push(contact);
@@ -1150,6 +1241,136 @@ export class RegionalWorldTileProvider extends TileProvider {
       }
     }
     return placements;
+  }
+
+  /** Place large geography contacts from declarative physical envelopes. The
+   * candidate field, exclusion priority, and asset variant are all stable in
+   * world coordinates, so cache block size and traversal order cannot alter
+   * the result. */
+  private buildEnvironmentContactPlacements(originX: number, originY: number): Placement[] {
+    if (this.environmentContacts.length === 0 || this.environmentContactDensity <= 0) return [];
+    const placements: Placement[] = [];
+    const firstCellX = floorDiv(originX, this.environmentContactCellSize) - 1;
+    const lastCellX = floorDiv(originX + this.blockSize - 1, this.environmentContactCellSize) + 1;
+    const firstCellY = floorDiv(originY, this.environmentContactCellSize) - 1;
+    const lastCellY = floorDiv(originY + this.blockSize - 1, this.environmentContactCellSize) + 1;
+    for (let cellY = firstCellY; cellY <= lastCellY; cellY++) {
+      for (let cellX = firstCellX; cellX <= lastCellX; cellX++) {
+        const placement = this.getEnvironmentContactPlacement(cellX, cellY);
+        if (!placement || placement.anchorX < originX || placement.anchorX >= originX + this.blockSize ||
+            placement.anchorY < originY || placement.anchorY >= originY + this.blockSize) continue;
+        placements.push(placement);
+      }
+    }
+    return placements;
+  }
+
+  private getEnvironmentContactPlacement(cellX: number, cellY: number): Placement | null {
+    const key = `${cellX},${cellY}`;
+    if (this.environmentContactPlacementCache.has(key)) {
+      const cached = this.environmentContactPlacementCache.get(key) ?? null;
+      this.environmentContactPlacementCache.delete(key);
+      this.environmentContactPlacementCache.set(key, cached);
+      return cached;
+    }
+    const placement = this.computeEnvironmentContactPlacement(cellX, cellY);
+    this.environmentContactPlacementCache.set(key, placement);
+    while (this.environmentContactPlacementCache.size > this.maxCachedEnvironmentContactCells) {
+      const oldest = this.environmentContactPlacementCache.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.environmentContactPlacementCache.delete(oldest);
+    }
+    return placement;
+  }
+
+  private computeEnvironmentContactPlacement(cellX: number, cellY: number): Placement | null {
+    if (!this.isEnvironmentContactPriorityMaximum(cellX, cellY) ||
+        this.hashUnit(cellX, cellY, 0x2ac1) > this.environmentContactDensity) return null;
+    const candidate = this.environmentContactCandidate(cellX, cellY);
+    const route = this.routes.sample(candidate.x, candidate.y);
+    if (route.landmarkDistance < this.environmentContactLandmarkClearance) return null;
+    const biome = this.field.sample(candidate.x, candidate.y);
+    const asset = this.selectEnvironmentContactAsset(candidate.x, candidate.y, biome, route);
+    if (!asset || !this.assetFits(candidate.x, candidate.y, asset)) return null;
+    return {
+      asset,
+      kind: 'environment-contact',
+      siteX: candidate.x,
+      siteY: candidate.y,
+      anchorX: candidate.x,
+      anchorY: candidate.y,
+    };
+  }
+
+  private environmentContactCandidate(cellX: number, cellY: number): { x: number; y: number } {
+    const margin = 0.16;
+    const span = 1 - margin * 2;
+    return {
+      x: Math.floor((cellX + margin + this.hashUnit(cellX, cellY, 0x913d) * span) *
+        this.environmentContactCellSize),
+      y: Math.floor((cellY + margin + this.hashUnit(cellX, cellY, 0xc7a5) * span) *
+        this.environmentContactCellSize),
+    };
+  }
+
+  private isEnvironmentContactPriorityMaximum(cellX: number, cellY: number): boolean {
+    const priority = this.hashUnit(cellX, cellY, 0x31f7);
+    for (let offsetY = -1; offsetY <= 1; offsetY++) {
+      for (let offsetX = -1; offsetX <= 1; offsetX++) {
+        if (offsetX === 0 && offsetY === 0) continue;
+        const neighbour = this.hashUnit(cellX + offsetX, cellY + offsetY, 0x31f7);
+        if (neighbour > priority || (neighbour === priority &&
+            (offsetY < 0 || (offsetY === 0 && offsetX < 0)))) return false;
+      }
+    }
+    return true;
+  }
+
+  private selectEnvironmentContactAsset(
+    worldX: number,
+    worldY: number,
+    biome: BiomeWorldSample,
+    route: RegionalRouteSample,
+  ): RegionalEnvironmentContactAsset | null {
+    let selected: RegionalEnvironmentContactAsset | null = null;
+    let selectedScore = Number.NEGATIVE_INFINITY;
+    const nearbyWater = new Map<number, boolean>();
+    for (const asset of this.environmentContacts) {
+      const constraints = asset.constraints;
+      const compatibility = Math.max(...asset.families.map((family) => (
+        biome.weights[BIOME_FAMILIES.indexOf(family)] ?? 0
+      )));
+      if (compatibility < 0.18) continue;
+      let touchesWater = true;
+      if (constraints.nearbyWaterRadius > 0) {
+        const cached = nearbyWater.get(constraints.nearbyWaterRadius);
+        touchesWater = cached ?? this.hasNearbyWater(worldX, worldY, constraints.nearbyWaterRadius);
+        nearbyWater.set(constraints.nearbyWaterRadius, touchesWater);
+      }
+      if (constraints.landOnly && biome.isWater ||
+          !withinRange(biome.waterDistance, constraints.waterDistance) ||
+          !withinRange(biome.elevation, constraints.elevation) ||
+          !withinRange(biome.slope, constraints.slope) ||
+          !withinRange(route.distance, constraints.routeDistance) ||
+          !touchesWater) continue;
+      const variation = this.hashUnit(worldX, worldY, stringHash(asset.id)) * 0.035;
+      const score = compatibility + variation;
+      if (score > selectedScore) {
+        selected = asset;
+        selectedScore = score;
+      }
+    }
+    return selected;
+  }
+
+  private hasNearbyWater(worldX: number, worldY: number, radius: number): boolean {
+    for (let offsetY = -radius; offsetY <= radius; offsetY++) {
+      for (let offsetX = -radius; offsetX <= radius; offsetX++) {
+        if (offsetX * offsetX + offsetY * offsetY > radius * radius) continue;
+        if (this.field.sample(worldX + offsetX, worldY + offsetY).isWater) return true;
+      }
+    }
+    return false;
   }
 
   /** Route contacts are sparse parcel seeds, not generic prop scatter. A
@@ -1501,6 +1722,10 @@ function floorDiv(value: number, divisor: number): number {
 
 function positiveMod(value: number, divisor: number): number {
   return ((value % divisor) + divisor) % divisor;
+}
+
+function withinRange(value: number, range: readonly [number, number]): boolean {
+  return value >= range[0] && (range[1] >= 999 || value <= range[1]);
 }
 
 function coprimeStride(size: number, start: number): number {

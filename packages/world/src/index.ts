@@ -81,6 +81,8 @@ export {
   RegionalWorldTileProvider,
   type RegionalAmbientAsset,
   type RegionalAssetPlacement,
+  type RegionalEnvironmentConstraints,
+  type RegionalEnvironmentContactAsset,
   type RegionalLandmarkAsset,
   type RegionalLandmarkPlacement,
   type RegionalPrewarmResult,
