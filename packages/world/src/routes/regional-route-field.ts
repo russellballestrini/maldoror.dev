@@ -1,4 +1,5 @@
 import type { BiomePhysicalSample, BiomeWorldSample } from '../biomes/biome-world-field.js';
+import { spatialHash2DUnit } from '../spatial-hash.js';
 
 export type RegionalRouteKind = 'trail' | 'local-road' | 'arterial';
 export type RegionalLandmarkKind = 'arrival' | 'settlement' | 'ruin' | 'waystation';
@@ -615,9 +616,7 @@ export class RegionalRouteField {
   }
 
   private hashUnit(x: number, y: number, salt: number): number {
-    let value = Math.imul((x | 0) ^ this.seed32 ^ salt, 0x45d9f3b);
-    value = Math.imul(value ^ (y | 0), 0x119de1f3);
-    return ((value ^ (value >>> 16)) >>> 0) / 0xffffffff;
+    return spatialHash2DUnit(this.seed32, x, y, salt);
   }
 }
 

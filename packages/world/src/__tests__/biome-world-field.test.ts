@@ -36,7 +36,7 @@ describe('BiomeWorldField', () => {
       ['canal-town', [0, 0]],
       ['forest', [320, 100]],
       ['coast', [0, 80]],
-      ['rural', [360, 30]],
+      ['rural', [336, 128]],
       ['mountain', [60, 20]],
       ['ruins', [100, -120]],
     ] as const);

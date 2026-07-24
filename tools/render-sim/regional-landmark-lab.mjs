@@ -286,6 +286,18 @@ if (process.env.MALDOROR_REGIONAL_CONTACT_ATLAS === '1') {
             accessAxis: placement.accessAxis,
           });
           const waterfrontAudit = parcelAudit?.waterfront;
+          const layoutAudit = parcelAudit?.layout;
+          const validParcel = components.length > 0 && Boolean(layoutAudit) &&
+            parcelAudit.collisionOverlapCells === 0 &&
+            parcelAudit.connectorCollisionBlocked === 0 &&
+            parcelAudit.connectorVisuallyBlocked === 0 &&
+            parcelAudit.connectorMaterialMissing === 0 &&
+            parcelAudit.familyMismatchCount === 0 &&
+            parcelAudit.componentPathFrameMissing === 0 &&
+            layoutAudit.sharedBoundaryMismatch <= 1e-9 &&
+            layoutAudit.overlapSampleRate === 0 &&
+            layoutAudit.waterIntrusionSampleRate === 0 &&
+            layoutAudit.protectedPathIntrusionRate === 0;
           const validWaterfront = waterfront && waterfront.piers.length >= 2 &&
             waterfront.slips.length >= 1 &&
             components.filter((component) => component.waterfrontId === waterfront.id).length >= 2 &&
@@ -302,7 +314,7 @@ if (process.env.MALDOROR_REGIONAL_CONTACT_ATLAS === '1') {
             waterfrontAudit.surfaceMissingRate === 0 &&
             waterfrontAudit.componentCount >= 2 &&
             waterfrontAudit.functions.length >= 2;
-          if (hasCore && (requireWaterfront ? validWaterfront : components.length > 0)) {
+          if (hasCore && (requireWaterfront ? validWaterfront : (validParcel || validWaterfront))) {
             found.set(placement.assetId, placement);
           } else {
             rejectedParcelCandidates.set(
@@ -371,6 +383,7 @@ if (process.env.MALDOROR_REGIONAL_CONTACT_ATLAS === '1') {
       assetId: asset.id,
       parcelId: placement.parcelId,
       accessAxis: placement.accessAxis,
+      contactSite: [placement.siteX, placement.siteY],
       rejectedParcelCandidates: rejectedParcelCandidates.get(asset.id) ?? 0,
     };
   });
@@ -519,11 +532,12 @@ async function writeOctant(filename, grid) {
 
 function auditParcel(frame) {
   if (!frame.parcelId || !frame.accessAxis) return null;
+  const contactSite = frame.contactSite ?? frame.centre;
   const contacts = world.getRouteContactPlacementsInBounds(
-    frame.centre[0] - 8,
-    frame.centre[1] - 8,
-    frame.centre[0] + 8,
-    frame.centre[1] + 8,
+    contactSite[0] - 8,
+    contactSite[1] - 8,
+    contactSite[0] + 8,
+    contactSite[1] + 8,
   );
   const contact = contacts.find((placement) => placement.parcelId === frame.parcelId);
   if (!contact) throw new Error(`Could not resolve parcel audit contact: ${frame.parcelId}`);
@@ -551,7 +565,10 @@ function auditParcel(frame) {
     contact.siteX + 32,
     contact.siteY + 32,
   ).find((candidate) => candidate.id.startsWith(`${contact.parcelId}:`));
-  if (!layout && !waterfront) throw new Error(`Could not resolve parcel program: ${contact.parcelId}`);
+  // Candidate discovery can encounter a semantic contact whose generated
+  // parcel program is absent or terrain-invalid. That is a normal rejection,
+  // not an atlas-harness crash; selected frames are gated on a non-null audit.
+  if (!layout && !waterfront) return null;
   const protectedCells = connectorCells.filter((cell) => cell.protected);
   const coreCells = connectorCells.filter((cell) => cell.core);
   const assetById = new Map([

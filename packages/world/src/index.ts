@@ -1,9 +1,11 @@
 // Noise generation
 export { SeededRandom, ValueNoise } from './noise/noise.js';
+export { spatialHash2DUnit, spatialHash2DUint32 } from './spatial-hash.js';
 export { CanalTownWorldField, type CanalTownWorldSample } from './tiles/canal-town-world-field.js';
 export {
   BIOME_FAMILIES,
   BiomeWorldField,
+  REGIONAL_BASIN_SIZE,
   type BiomeFamily,
   type BiomePhysicalSample,
   type BiomeWeights,

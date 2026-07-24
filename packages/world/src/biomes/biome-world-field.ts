@@ -1,4 +1,5 @@
 import FastNoiseLite from 'fastnoise-lite';
+import { spatialHash2DUnit } from '../spatial-hash.js';
 
 export const BIOME_FAMILIES = [
   'canal-town',
@@ -11,6 +12,7 @@ export const BIOME_FAMILIES = [
 
 export type BiomeFamily = typeof BIOME_FAMILIES[number];
 export type BiomeWeights = readonly [number, number, number, number, number, number];
+export const REGIONAL_BASIN_SIZE = 112;
 
 export interface BiomeWorldSample {
   weights: BiomeWeights;
@@ -73,7 +75,6 @@ const FOREST = 1;
 const COAST = 2;
 const MOUNTAIN = 4;
 const RUINS = 5;
-const BASIN_SIZE = 112;
 
 /**
  * Deterministic regional geography expressed as continuous family weights.
@@ -185,8 +186,8 @@ export class BiomeWorldField {
   }
 
   private riverSegmentsAt(worldX: number, worldY: number): RiverSegment[] {
-    const basinX = floorDiv(worldX, BASIN_SIZE);
-    const basinY = floorDiv(worldY, BASIN_SIZE);
+    const basinX = floorDiv(worldX, REGIONAL_BASIN_SIZE);
+    const basinY = floorDiv(worldY, REGIONAL_BASIN_SIZE);
     const key = `${basinX},${basinY}`;
     const cached = this.riverSegmentCache.get(key);
     if (cached) {
@@ -194,9 +195,14 @@ export class BiomeWorldField {
       this.riverSegmentCache.set(key, cached);
       return cached;
     }
-    const originX = (basinX - 1) * BASIN_SIZE;
-    const originY = (basinY - 1) * BASIN_SIZE;
-    const segments = this.buildRiverSegments(originX, originY, BASIN_SIZE * 3, BASIN_SIZE * 3);
+    const originX = (basinX - 1) * REGIONAL_BASIN_SIZE;
+    const originY = (basinY - 1) * REGIONAL_BASIN_SIZE;
+    const segments = this.buildRiverSegments(
+      originX,
+      originY,
+      REGIONAL_BASIN_SIZE * 3,
+      REGIONAL_BASIN_SIZE * 3,
+    );
     this.riverSegmentCache.set(key, segments);
     while (this.riverSegmentCache.size > 128) {
       const oldest = this.riverSegmentCache.keys().next().value as string | undefined;
@@ -397,10 +403,10 @@ export class BiomeWorldField {
   }
 
   private buildRiverSegments(originX: number, originY: number, width: number, height: number): RiverSegment[] {
-    const firstCellX = Math.floor(originX / BASIN_SIZE) - 3;
-    const lastCellX = Math.floor((originX + width - 1) / BASIN_SIZE) + 3;
-    const firstCellY = Math.floor(originY / BASIN_SIZE) - 3;
-    const lastCellY = Math.floor((originY + height - 1) / BASIN_SIZE) + 3;
+    const firstCellX = Math.floor(originX / REGIONAL_BASIN_SIZE) - 3;
+    const lastCellX = Math.floor((originX + width - 1) / REGIONAL_BASIN_SIZE) + 3;
+    const firstCellY = Math.floor(originY / REGIONAL_BASIN_SIZE) - 3;
+    const lastCellY = Math.floor((originY + height - 1) / REGIONAL_BASIN_SIZE) + 3;
     const nodes = new Map<string, ReturnType<BiomeWorldField['basinNode']>>();
     const nodeFor = (cellX: number, cellY: number) => {
       const key = `${cellX},${cellY}`;
@@ -457,8 +463,8 @@ export class BiomeWorldField {
   }
 
   private basinNode(cellX: number, cellY: number): { cellX: number; cellY: number; x: number; y: number; elevation: number } {
-    const x = (cellX + 0.16 + this.hashUnit(cellX, cellY, 0x4137) * 0.68) * BASIN_SIZE;
-    const y = (cellY + 0.16 + this.hashUnit(cellX, cellY, 0x97c1) * 0.68) * BASIN_SIZE;
+    const x = (cellX + 0.16 + this.hashUnit(cellX, cellY, 0x4137) * 0.68) * REGIONAL_BASIN_SIZE;
+    const y = (cellY + 0.16 + this.hashUnit(cellX, cellY, 0x97c1) * 0.68) * REGIONAL_BASIN_SIZE;
     return { cellX, cellY, x, y, elevation: this.elevationAt(x, y) };
   }
 
@@ -523,14 +529,9 @@ export class BiomeWorldField {
   }
 
   private hashUnit(x: number, y: number, salt: number): number {
-    return this.hash(x, y, salt) / 0xffffffff;
+    return spatialHash2DUnit(this.seed32, x, y, salt);
   }
 
-  private hash(x: number, y: number, salt: number): number {
-    let value = Math.imul((x | 0) ^ this.seed32 ^ salt, 0x45d9f3b);
-    value = Math.imul(value ^ (y | 0), 0x119de1f3);
-    return (value ^ (value >>> 16)) >>> 0;
-  }
 }
 
 function blurField(source: Float32Array, radius: number, width: number, height: number): Float32Array {

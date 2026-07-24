@@ -13,6 +13,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
 import FastNoiseLite from 'fastnoise-lite';
+import {
+  REGIONAL_BASIN_SIZE,
+  spatialHash2DUint32,
+} from '../../packages/world/dist/index.js';
 import { renderOctantGridCells } from '../../packages/render/dist/pixel/pixel-renderer.js';
 import { OCTANT_CHARS } from '../../packages/render/dist/pixel/octant-chars.js';
 
@@ -80,13 +84,11 @@ const gridIndex = (x, y, width) => y * width + x;
 const indexAt = (x, y) => gridIndex(x, y, WIDTH);
 
 function hash(x, y, salt) {
-  let value = Math.imul((x | 0) ^ SEED ^ salt, 0x45d9f3b);
-  value = Math.imul(value ^ (y | 0), 0x119de1f3);
-  return (value ^ (value >>> 16)) >>> 0;
+  return spatialHash2DUint32(SEED, x, y, salt);
 }
 
 function hashUnit(x, y, salt) {
-  return hash(x, y, salt) / 0xffffffff;
+  return hash(x, y, salt) / 0x1_0000_0000;
 }
 
 function elevationAt(x, y) {
@@ -100,7 +102,7 @@ function elevationAt(x, y) {
   return clamp(continent * 0.61 + ridge * 0.23 + broadShelf * 0.16);
 }
 
-const BASIN_SIZE = 112;
+const BASIN_SIZE = REGIONAL_BASIN_SIZE;
 
 function basinNode(cellX, cellY) {
   return {

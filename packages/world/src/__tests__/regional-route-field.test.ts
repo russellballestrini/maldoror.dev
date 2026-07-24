@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { BiomeWorldField } from '../biomes/biome-world-field.js';
-import { RegionalRouteField } from '../routes/regional-route-field.js';
+import {
+  BiomeWorldField,
+  type BiomeWeights,
+  type BiomeWorldSample,
+} from '../biomes/biome-world-field.js';
+import {
+  RegionalRouteField,
+  type RegionalRouteBiomeSampler,
+} from '../routes/regional-route-field.js';
 
 const SEED = 8_801_799_478_018_485n;
 
@@ -70,6 +77,40 @@ describe('RegionalRouteField', () => {
     expect(routeTiles / total).toBeLessThan(0.18);
     expect(crossingTiles).toBeGreaterThan(0);
   }, 30_000);
+
+  it('decorrelates accepted site coordinates across both spatial axes', () => {
+    const physical = {
+      elevation: 0.5,
+      slope: 0.01,
+      waterDistance: 10,
+      isWater: false,
+      isRiver: false,
+    };
+    const flatBiomes: RegionalRouteBiomeSampler = {
+      samplePhysical: () => physical,
+      sample: (): BiomeWorldSample => ({
+        ...physical,
+        weights: [0, 1, 0, 0, 0, 0] as unknown as BiomeWeights,
+        primary: 'forest',
+        ecologicalPrimary: 'forest',
+      }),
+    };
+    const routes = new RegionalRouteField(42n, flatBiomes, {
+      siteCellSize: 40,
+      maxCachedSites: 10_000,
+    });
+    const sites = routes.getLandmarkSites(-800, -800, 800, 800)
+      .filter((site) => site.id !== 'site:arrival');
+    const rows = new Set(sites.map((site) => site.y));
+    const columns = new Set(sites.map((site) => site.x));
+    const phases = new Set(sites.map((site) => (
+      `${((site.x % 40) + 40) % 40},${((site.y % 40) + 40) % 40}`
+    )));
+    expect(sites.length).toBeGreaterThan(180);
+    expect(rows.size).toBeGreaterThan(sites.length * 0.55);
+    expect(columns.size).toBeGreaterThan(sites.length * 0.55);
+    expect(phases.size).toBeGreaterThan(sites.length * 0.4);
+  });
 
   it('keeps both caches bounded', () => {
     const biomes = new BiomeWorldField(SEED, { blockSize: 16, maxCachedBlocks: 16 });

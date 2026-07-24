@@ -33,6 +33,7 @@
     "research:regional-predictive-traversal": "node tools/render-sim/regional-predictive-traversal-lab.mjs",
     "research:regional-parcels": "node tools/render-sim/regional-parcel-model-lab.mjs",
     "research:placement-entropy": "node tools/render-sim/regional-placement-entropy-lab.mjs",
+    "research:macro-entropy": "pnpm --filter @maldoror/world build && node tools/render-sim/regional-macro-entropy-lab.mjs",
     "research:texture-reconstruction": "node tools/render-sim/texture-reconstruction-lab.mjs",
     "clean": "turbo run clean && rm -rf node_modules",
     "db:generate": "pnpm --filter @maldoror/db generate",

@@ -1,3 +1,5 @@
+import { spatialHash2DUnit, spatialHash2DUint32 } from '../spatial-hash.js';
+
 export interface CanalTownWorldSample {
   /** Signed distance in world tiles: negative is water, positive is land. */
   waterDistance: number;
@@ -181,13 +183,11 @@ export class CanalTownWorldField {
   }
 
   private hashUnit(x: number, y: number, salt: number): number {
-    return this.hash(x, y, salt) / 0xffffffff;
+    return spatialHash2DUnit(this.seed32, x, y, salt);
   }
 
   private hash(x: number, y: number, salt: number): number {
-    let value = Math.imul((x | 0) ^ this.seed32 ^ salt, 0x45d9f3b);
-    value = Math.imul(value ^ (y | 0), 0x119de1f3);
-    return (value ^ (value >>> 16)) >>> 0;
+    return spatialHash2DUint32(this.seed32, x, y, salt);
   }
 }
 

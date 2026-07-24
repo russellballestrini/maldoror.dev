@@ -10,6 +10,7 @@ import {
   type BiomeFamily,
   type BiomeWorldSample,
 } from '../biomes/biome-world-field.js';
+import { spatialHash2DUnit } from '../spatial-hash.js';
 import type {
   RegionalLandmarkKind,
   RegionalLandmarkSite,
@@ -2775,15 +2776,7 @@ export class RegionalWorldTileProvider extends TileProvider {
   }
 
   private hashUnit(x: number, y: number, salt: number): number {
-    // Mix each spatial axis before the final avalanche. Folding y into a
-    // once-multiplied x value left visible horizontal placement bands over
-    // large bounds because nearby signed coordinates retained correlations.
-    let value = (this.seed32 ^ salt ^ Math.imul(x | 0, 0x9e3779b1)) | 0;
-    value = Math.imul(value ^ (value >>> 16), 0x85ebca6b);
-    value ^= Math.imul(y | 0, 0xc2b2ae35);
-    value = Math.imul(value ^ (value >>> 13), 0x27d4eb2d);
-    value ^= value >>> 16;
-    return (value >>> 0) / 0x1_0000_0000;
+    return spatialHash2DUnit(this.seed32, x, y, salt);
   }
 }
 

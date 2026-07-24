@@ -569,6 +569,33 @@ Completed foundations:
   p50/p95/p99 4.35/10.75/38.82 and 4.37/9.38/22.62 ms; initial leads
   6.056/6.339 seconds and 788.72 MiB peak RSS keep service readiness open.
   Production is unchanged;
+- the placement defect was not isolated to overlays: biome basin centres,
+  hydrology, canal variation, and route sites still used the same folded-axis
+  mixer. One shared signed-coordinate primitive now owns all five consumers,
+  and the production basin size is exported once so research cannot silently
+  audit a different scale. At the real 112-tile scale, 10,201 rejected basin
+  centres had 4,872 unique x positions but only 1,275 y positions, 51 centres
+  on one row, and 1,126 phases; the selected field has 5,693/5,709 x/y
+  positions, at most seven on a row, and 4,831 phases. A real four-neighbour
+  flat-terrain route-site audit moves from 188/95 unique x/y positions and 14
+  repeats of one nearest vector to 261/299 and at most two repeats. Behavioral
+  regressions now guard both macro fields. Every coordinate proof was then
+  invalidated and replayed: the four-region route graph remains cache-exact
+  with all tiers/crossings at 6.55-7.97% coverage; six ecotone frames retain
+  exact overlap and all family coverage; all eight terrain contacts have zero
+  mismatch; the new 71-cell/two-chamber cave and three-switchback ascent have
+  100% surface/collision integrity. The strict six-family locator itself was
+  hardened after retaining one canal parcel with 2.1352% water intrusion, one
+  missing-program candidate, and one contact-centre audit error; the selected
+  family set has zero overlap, blockage, missing surface, family/path mismatch,
+  ordinary-parcel water/path intrusion, or shared-boundary drift. Full evidence
+  and primary-source deductions are in
+  `travel-entropy-v12-macro-hash-audit/FINDINGS.md`. Full verification is 31
+  files / 161 tests plus all 13 package typechecks and builds. Two independent
+  180-frame traversals retained zero misses/mismatches/failures/errors at render
+  p50/p95/p99 4.54/11.42/19.14 and 3.82/6.79/17.71 ms. Their 6.985/7.019-second
+  cold leads and 809.98/808.91 MiB peak RSS keep service readiness open.
+  Production is unchanged;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–025 expose selected and rejected research candidates without
