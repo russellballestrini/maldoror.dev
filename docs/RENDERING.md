@@ -396,3 +396,45 @@ finished art. The centre is still rectilinear, approaches lack terrain-shaped
 taper and wear, support locations are cadence-based rather than span-aware, and
 only one bridge vocabulary exists. Production remains `vb07c0d4`; Gate A and
 physical Ghostty acceptance remain open.
+
+### Bounded bridge landings and coastal road subgrade (2026-07-24)
+
+V34-V39 continue at the same fixed coast crossing. `RegionalRouteSample` now
+separates the physical crossing core from its bounded structural context. It
+carries bank-to-bank span plus signed longitudinal progress (`-1/+1` at the
+banks); `crossingKind` remains the water/collision authority, while
+`crossingInfluenceKind` exists only across the short dry landing approaches.
+Tests pin wet core, dry approach, far ordinary road, cache equality, and the
+rule that visual landing influence cannot clear the water material mask.
+
+The compositor uses that frame to taper material from timber into the route,
+flare the bank section, slightly waist the mid-span deck, station stone
+abutments at both banks, derive panel/post count from span, and place one or two
+support stations according to span. A channel-specific warm deck lift retains
+readability after OCTANT reduction. Ordinary physically dry roads in a strong
+coast field receive a subtle wider subgrade at overview LOD; bridge/ford/ferry
+cores do not. This repairs a case where correct dry route geometry looked like
+a vector drawn over water because coarse coast material visually submerged the
+narrow bank.
+
+V34 (long dark bar), V36 (too-dark warm deck), and V38 (ineffective generic
+ground restoration) remain rejections. V39 is selected only as the next
+crossing architecture. Its origin safeguards are byte-identical at walking,
+district, and regional zoom, and the west-waterfront walking composition is
+unchanged.
+
+V40 proves V39 through 9/9 fresh-scratch real-SSH frames at origin, west
+waterfront, and coast crossing over all three semantic zooms. It retains
+2,376,797 raw bytes and 223 synchronized frames with all position, zoom, and
+OCTANT assertions. Cold readiness was 10.188 seconds; worker RSS grew from
+about 818 MB to about 952 MB; coordinator heap warnings reached 94%. The strict
+complete-atlas validator correctly rejects the three-site fixture as
+incomplete. Evidence is under
+`track-6-acceptance-atlas/composition-hierarchy-v40-real-ssh-landing-and-subgrade/`.
+Full verification passes 38 files / 208 tests, 18/18 typecheck tasks, and 12/12
+build tasks.
+
+This does not pass Gate A. The bridge is still more rectilinear than the target
+bar, only one bridge vocabulary exists, and approach wear, longer-span support
+variation, topology-specific crossings, the fresh complete atlas, load, and
+physical Ghostty acceptance remain open. Production remains `vb07c0d4`.

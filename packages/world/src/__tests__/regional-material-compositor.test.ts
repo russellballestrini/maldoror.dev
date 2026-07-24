@@ -80,6 +80,9 @@ function routeSample(
   return {
     distance: 0,
     signedDistance: 0,
+    crossingInfluenceKind: crossingKind,
+    crossingSpan: crossingKind === 'bridge' ? 8 : 0,
+    crossingProgress: crossingKind === 'bridge' ? 0 : Number.POSITIVE_INFINITY,
     halfWidth: 1,
     isRoute: true,
     isCrossing: crossingKind !== null,
@@ -205,7 +208,12 @@ describe('RegionalMaterialCompositor', () => {
 
   it('lays walkable bridge material over water but leaves ferries as water', () => {
     const bridge = routedCompositor({ sample: () => routeSample('local-road', 'bridge') }).getTile(0, 0);
-    expect(bridge.pixels[4]![4]).toEqual({ r: 210, g: 195, b: 170 });
+    const bridgeCentre = bridge.pixels[4]![4]!;
+    expect(Math.hypot(
+      bridgeCentre.r - 210,
+      bridgeCentre.g - 195,
+      bridgeCentre.b - 170,
+    )).toBeLessThan(6);
     expect(bridge.materialMask?.[4]?.[4]).toBe(0);
     expect(bridge.walkable).toBe(true);
 
@@ -213,6 +221,22 @@ describe('RegionalMaterialCompositor', () => {
     expect(ferry.pixels[4]![4]).toEqual(COLOURS.coast);
     expect(ferry.materialMask?.[4]?.[4]).toBe(1);
     expect(ferry.walkable).toBe(false);
+  });
+
+  it('renders a bounded bridge landing without granting bridge traversal authority', () => {
+    const approach = {
+      ...routeSample('local-road', null),
+      crossingInfluenceKind: 'bridge' as const,
+      crossingSpan: 8,
+      crossingProgress: 1.2,
+    };
+    const landing = routedCompositor({ sample: () => approach }).getTile(0, 0);
+    const ordinaryRoad = routedCompositor({
+      sample: () => routeSample('local-road', null),
+    }).getTile(0, 0);
+
+    expect(landing.pixels[4]![4]).not.toEqual(ordinaryRoad.pixels[4]![4]);
+    expect(landing.materialMask?.[4]?.[4]).toBe(1);
   });
 
   it('uses the route half-width to keep bridge deck and water ownership aligned', () => {

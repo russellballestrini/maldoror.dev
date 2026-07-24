@@ -119,6 +119,35 @@ describe('RegionalRouteField', () => {
     expect(crossingTiles).toBeGreaterThan(0);
   }, 30_000);
 
+  it('bounds bridge influence to its wet core and dry landing approaches', () => {
+    const biomes = new BiomeWorldField(SEED, { blockSize: 16, maxCachedBlocks: 96 });
+    const routes = new RegionalRouteField(SEED, biomes, {
+      blockSize: 16,
+      pathStep: 4,
+      maxCachedBlocks: 96,
+      maxCachedPaths: 512,
+    });
+    const wetCore = routes.sample(-159, -220);
+    const dryApproach = routes.sample(-151, -220);
+    const ordinaryRoute = routes.sample(-148, -220);
+
+    expect(wetCore.crossingKind).toBe('bridge');
+    expect(wetCore.crossingInfluenceKind).toBe('bridge');
+    expect(wetCore.crossingSpan).toBeCloseTo(6, 4);
+    expect(Math.abs(wetCore.crossingProgress)).toBeLessThanOrEqual(1.05);
+
+    expect(dryApproach.crossingKind).toBeNull();
+    expect(dryApproach.crossingInfluenceKind).toBe('bridge');
+    expect(dryApproach.crossingSpan).toBeCloseTo(wetCore.crossingSpan, 4);
+    expect(Math.abs(dryApproach.crossingProgress)).toBeGreaterThan(1);
+
+    expect(ordinaryRoute.isRoute).toBe(true);
+    expect(ordinaryRoute.crossingKind).toBeNull();
+    expect(ordinaryRoute.crossingInfluenceKind).toBeNull();
+    expect(ordinaryRoute.crossingSpan).toBe(0);
+    expect(ordinaryRoute.crossingProgress).toBe(Number.POSITIVE_INFINITY);
+  }, 30_000);
+
   it('decorrelates accepted site coordinates across both spatial axes', () => {
     const physical = {
       elevation: 0.5,

@@ -85,6 +85,9 @@ function routeSample(x: number, y: number): RegionalRouteSample {
   return {
     distance: Math.abs(y),
     signedDistance: y,
+    crossingInfluenceKind: null,
+    crossingSpan: 0,
+    crossingProgress: Number.POSITIVE_INFINITY,
     halfWidth: 1,
     isRoute: y === 0,
     isCrossing: false,
@@ -455,6 +458,9 @@ describe('RegionalWorldTileProvider', () => {
     const northSouthRoute = (x: number, y: number): RegionalRouteSample => ({
       distance: Math.abs(x),
       signedDistance: -x,
+      crossingInfluenceKind: null,
+      crossingSpan: 0,
+      crossingProgress: Number.POSITIVE_INFINITY,
       halfWidth: 1,
       isRoute: x === 0,
       isCrossing: false,
@@ -485,6 +491,9 @@ describe('RegionalWorldTileProvider', () => {
     const diagonalRoute = (x: number, y: number): RegionalRouteSample => ({
       distance: Math.abs(x - y) / Math.SQRT2,
       signedDistance: (x - y) / Math.SQRT2,
+      crossingInfluenceKind: null,
+      crossingSpan: 0,
+      crossingProgress: Number.POSITIVE_INFINITY,
       halfWidth: 1,
       isRoute: x === y,
       isCrossing: false,

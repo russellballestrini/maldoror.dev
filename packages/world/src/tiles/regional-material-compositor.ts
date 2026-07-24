@@ -990,6 +990,7 @@ export class RegionalMaterialCompositor {
     const textureSamples = Array.from({ length: BIOME_FAMILIES.length }, () => new Float64Array(3));
     const quayTexture = new Float64Array(3);
     const routeTexture = new Float64Array(3);
+    const routeBaseTexture = new Float64Array(3);
     const bridgeStructureTexture = new Float64Array(3);
     for (let y = 0; y < size; y++) {
       const row: RGB[] = [];
@@ -1047,16 +1048,18 @@ export class RegionalMaterialCompositor {
         const water = textureSamples[COAST]!;
         const town = textureSamples[0]!;
         const ruins = textureSamples[5]!;
-        let linear = [0, 1, 2].map((channel) => {
+        const groundLinear = [0, 1, 2].map((channel) => {
           const ecological = lerp(first[channel]!, second[channel]!, ecologicalMix);
           const withTown = lerp(ecological, town[channel]!, canalOverlay);
-          const withCulture = lerp(
+          return lerp(
             withTown,
             ruins[channel]!,
             ruinsOverlay * (0.88 - canalOverlay * 0.2),
           );
-          return lerp(withCulture, water[channel]!, waterMaterialWeight);
         });
+        let linear = groundLinear.map((value, channel) => (
+          lerp(value, water[channel]!, waterMaterialWeight)
+        ));
         // A strong canal-town field turns the physically reconstructed shore
         // into a civic edge on its dry side. This is not a rectangular quay
         // sprite: the band follows the same continuous hydrology ownership as
@@ -1096,19 +1099,52 @@ export class RegionalMaterialCompositor {
         const routeLayer = routeSamples
           ? selectRouteLayer(routeSamples, smoothU, smoothV)
           : null;
-        if (routeLayer && routeLayer.sample.crossingKind !== 'ferry' && this.routeMaterials) {
-          const crossingTextures = routeLayer.sample.crossingKind
-            ? this.crossingMaterials?.[routeLayer.sample.crossingKind]
+        const visualCrossingKind = routeLayer?.sample.crossingKind === 'bridge' ||
+            routeLayer?.sample.crossingInfluenceKind === 'bridge'
+          ? 'bridge'
+          : routeLayer?.sample.crossingKind ?? null;
+        if (routeLayer && visualCrossingKind !== 'ferry' && this.routeMaterials) {
+          // At overview scales a narrow, physically dry shore corridor can be
+          // visually submerged by bilinear water reconstruction even though
+          // route routing and collision correctly see land. Restore a soft
+          // shoulder from the same local ground reconstruction before laying
+          // the road. Crossing semantics stay authoritative: no shoulder is
+          // applied to a physically wet bridge/ford/ferry core, and the water
+          // material mask below is untouched.
+          if (routeLayer.sample.crossingKind === null && waterMaterialWeight > 0.0001) {
+            const shoulderSection = 1 - smoothstep(
+              size <= 8 ? 0.58 : 0.72,
+              size <= 8 ? 1.28 : 1.16,
+              routeLayer.normalizedDistance,
+            );
+            const shoulderCoverage = smoothstep(0.04, 0.42, routeLayer.opacity) *
+              shoulderSection * waterMaterialWeight * (size <= 8 ? 0.78 : 0.48);
+            linear = linear.map((value, channel) => (
+              lerp(value, groundLinear[channel]!, shoulderCoverage)
+            ));
+          }
+          const crossingTextures = visualCrossingKind
+            ? this.crossingMaterials?.[visualCrossingKind]
             : undefined;
           const routeTextures = crossingTextures ?? this.routeMaterials[routeLayer.sample.routeKind!];
-          const surfaceStyle = routeLayer.sample.crossingKind
-            ? this.crossingSurfaceStyles?.[routeLayer.sample.crossingKind]
+          const surfaceStyle = visualCrossingKind
+            ? this.crossingSurfaceStyles?.[visualCrossingKind]
             : this.routeSurfaceStyles?.[routeLayer.sample.routeKind!];
+          const routeBaseStyle = routeLayer.sample.routeKind
+            ? this.routeSurfaceStyles?.[routeLayer.sample.routeKind]
+            : undefined;
+          const isBridge = visualCrossingKind === 'bridge';
+          const bridgeProgress = isBridge && Number.isFinite(routeLayer.sample.crossingProgress)
+            ? Math.abs(routeLayer.sample.crossingProgress)
+            : 0;
+          const approachBlend = isBridge
+            ? smoothstep(0.94, 1.62, bridgeProgress)
+            : 0;
           let textureX = worldX;
           let textureY = worldY;
           let routeTangentX = 0;
           let routeTangentY = 0;
-          if (routeLayer.sample.crossingKind === 'bridge') {
+          if (isBridge) {
             const directionLength = Math.hypot(
               routeLayer.sample.directionX,
               routeLayer.sample.directionY,
@@ -1129,40 +1165,118 @@ export class RegionalMaterialCompositor {
             size,
             routeTexture,
           );
-          const crossingOpacity = routeLayer.sample.crossingKind === 'ford' ? 0.48 : 1;
-          const authoredOpacity = surfaceStyle
+          if (isBridge && approachBlend > 0.0001 && routeLayer.sample.routeKind) {
+            const routeBaseTextures = this.routeMaterials[routeLayer.sample.routeKind];
+            this.sampleTextureField(
+              routeBaseTextures,
+              worldX,
+              worldY,
+              0x4d71,
+              routeBaseStyle?.textureScaleTiles ?? textureScaleTiles,
+              size,
+              routeBaseTexture,
+            );
+            for (let channel = 0; channel < 3; channel++) {
+              routeTexture[channel] = lerp(
+                routeTexture[channel]!,
+                routeBaseTexture[channel]!,
+                approachBlend,
+              );
+            }
+          }
+          const crossingOpacity = visualCrossingKind === 'ford' ? 0.48 : 1;
+          const crossingAuthoredOpacity = surfaceStyle
             ? (size <= 8 ? surfaceStyle.overviewOpacity : surfaceStyle.detailOpacity)
             : 1;
-          const authoredWidth = surfaceStyle
+          const routeAuthoredOpacity = routeBaseStyle
+            ? (size <= 8 ? routeBaseStyle.overviewOpacity : routeBaseStyle.detailOpacity)
+            : crossingAuthoredOpacity;
+          const authoredOpacity = lerp(
+            crossingAuthoredOpacity,
+            routeAuthoredOpacity,
+            approachBlend,
+          );
+          const crossingAuthoredWidth = surfaceStyle
             ? (size <= 8 ? surfaceStyle.overviewWidthScale : surfaceStyle.detailWidthScale)
             : 1;
-          const bankContact = routeLayer.sample.crossingKind === 'bridge'
+          const routeAuthoredWidth = routeBaseStyle
+            ? (size <= 8 ? routeBaseStyle.overviewWidthScale : routeBaseStyle.detailWidthScale)
+            : crossingAuthoredWidth;
+          const authoredWidth = lerp(
+            crossingAuthoredWidth,
+            routeAuthoredWidth,
+            approachBlend,
+          );
+          const bankContact = isBridge
             ? bridgeBankContact(waterCoverage)
             : 0;
-          const shapedCoverage = routeLayer.sample.crossingKind === 'bridge'
+          const shapedCoverage = isBridge
             ? bridgeShapeCoverage(
                 routeLayer.opacity,
                 routeLayer.normalizedDistance,
                 bankContact,
                 authoredWidth,
+                bridgeProgress,
               )
             : routeShapeCoverage(
                 routeLayer.opacity,
                 routeLayer.normalizedDistance,
                 authoredWidth,
               );
+          const coastalSubgrade = visualCrossingKind === null
+            ? smoothstep(0.18, 0.62, weights[COAST]) *
+              smoothstep(0.04, 0.42, routeLayer.opacity) *
+              (1 - smoothstep(
+                authoredWidth * 0.72,
+                authoredWidth * (size <= 8 ? 1.58 : 1.34),
+                routeLayer.normalizedDistance,
+              )) * (size <= 8 ? 0.34 : 0.18)
+            : 0;
+          if (coastalSubgrade > 0.0001) {
+            linear = linear.map((value, channel) => lerp(
+              value,
+              Math.min(1, routeTexture[channel]! * 1.08 + 0.012),
+              coastalSubgrade,
+            ));
+          }
           const opacity = shapedCoverage * crossingOpacity * authoredOpacity;
           linear = linear.map((value, channel) => lerp(value, routeTexture[channel]!, opacity));
-          if (routeLayer.sample.crossingKind === 'bridge') {
+          if (isBridge) {
             // A bridge is a deck plus load-bearing substructure, not a timber-
             // filled route rectangle. Continuous hydrology locates both bank
             // seats; normalized route distance owns the transverse section;
             // the route-aligned longitudinal frame places sparse pier rhythm.
             // The same deck coverage below remains the walkability authority.
-            const edgeBeam = smoothstep(0.56, 0.7, routeLayer.normalizedDistance) *
-              (1 - smoothstep(0.82, 0.94, routeLayer.normalizedDistance));
-            const supportDistance = Math.abs(textureY / 3 - Math.round(textureY / 3)) * 3;
-            const supportBeam = 1 - smoothstep(0.06, 0.18, supportDistance);
+            const structurePresence = 1 - smoothstep(0.98, 1.38, bridgeProgress);
+            const deckInterior = shapedCoverage * structurePresence *
+              (1 - smoothstep(0.56, 0.72, routeLayer.normalizedDistance));
+            const deckLift = size <= 8
+              ? [0.018, 0.01, 0.003]
+              : [0.052, 0.028, 0.009];
+            linear = linear.map((value, channel) => Math.min(
+              1,
+              value + deckInterior * deckLift[channel]!,
+            ));
+            const edgeBeam = smoothstep(0.74, 0.8, routeLayer.normalizedDistance) *
+              (1 - smoothstep(0.88, 0.94, routeLayer.normalizedDistance)) *
+              structurePresence;
+            const span = Math.max(0, routeLayer.sample.crossingSpan);
+            const panelCount = Math.max(2, Math.round(span / 2.6));
+            const panelPosition = (routeLayer.sample.crossingProgress + 1) * panelCount / 2;
+            const postDistance = Math.abs(panelPosition - Math.round(panelPosition));
+            const postBeam = Number.isFinite(postDistance)
+              ? 1 - smoothstep(0.08, 0.22, postDistance)
+              : 0;
+            const supportTarget = span >= 9 ? 0.46 : 0;
+            const supportDistance = supportTarget > 0
+              ? Math.min(
+                  Math.abs(routeLayer.sample.crossingProgress - supportTarget),
+                  Math.abs(routeLayer.sample.crossingProgress + supportTarget),
+                )
+              : Math.abs(routeLayer.sample.crossingProgress);
+            const supportBeam = span >= 6
+              ? 1 - smoothstep(0.055, 0.14, supportDistance)
+              : 0;
             const wetStructure = smoothstep(0.38, 0.78, waterCoverage);
             const outerSupportZone = smoothstep(0.82, 0.94, routeLayer.normalizedDistance) *
               (1 - smoothstep(1.08, 1.24, routeLayer.normalizedDistance));
@@ -1170,6 +1284,7 @@ export class RegionalMaterialCompositor {
               routeLayer.opacity,
               routeLayer.normalizedDistance,
               bankContact,
+              bridgeProgress,
             );
             const pierWeight = routeLayer.opacity * wetStructure * outerSupportZone * supportBeam;
             const structureWeight = abutmentWeight;
@@ -1186,7 +1301,11 @@ export class RegionalMaterialCompositor {
                 bridgeStructureTexture,
               );
               linear = linear.map((value, channel) => (
-                lerp(value, bridgeStructureTexture[channel]!, structureWeight * 0.9)
+                lerp(
+                  value,
+                  Math.min(1, bridgeStructureTexture[channel]! * 1.15 + 0.025),
+                  structureWeight * 0.96,
+                )
               ));
             }
             const normalX = -routeTangentY;
@@ -1197,9 +1316,10 @@ export class RegionalMaterialCompositor {
               Math.min(1, routeLayer.normalizedSignedDistance / 0.45),
             );
             const lightFacing = signedSide * lightNormal;
-            const railZone = smoothstep(0.58, 0.72, routeLayer.normalizedDistance) *
-              (1 - smoothstep(0.92, 1.04, routeLayer.normalizedDistance));
-            const railWeight = routeLayer.opacity * wetStructure * railZone;
+            const railZone = smoothstep(0.74, 0.8, routeLayer.normalizedDistance) *
+              (1 - smoothstep(0.88, 0.94, routeLayer.normalizedDistance));
+            const railWeight = routeLayer.opacity * railZone * structurePresence *
+              (0.22 + postBeam * 0.7);
             linear = linear.map((value, channel) => (
               lerp(value, routeTexture[channel]!, railWeight * 0.84)
             ));
@@ -1212,7 +1332,7 @@ export class RegionalMaterialCompositor {
               (1 - smoothstep(1.12, 1.34, routeLayer.normalizedDistance));
             const constructionShade = Math.min(
               0.28,
-              edgeBeam * 0.16 +
+                edgeBeam * 0.16 +
                 supportBeam * shapedCoverage * (size <= 8 ? 0.04 : 0.08) +
                 pierWeight * (size <= 8 ? 0.08 : 0.16) +
                 sideShadow * (size <= 8 ? 0.1 : 0.16),
@@ -1240,6 +1360,9 @@ export class RegionalMaterialCompositor {
               routeLayer.normalizedDistance,
               bridgeBankWeight,
               bridgeWidthScale,
+              Number.isFinite(routeLayer.sample.crossingProgress)
+                ? Math.abs(routeLayer.sample.crossingProgress)
+                : 0,
             )
           : 0;
         if (waterCoverage >= 0.5 && bridgeCoverage < 0.5) materialRow[x] = 1;
@@ -1704,9 +1827,15 @@ function bridgeShapeCoverage(
   normalizedDistance: number,
   bankContact = 0,
   widthScale = 1,
+  longitudinalProgress = 0,
 ): number {
-  const sectionCore = lerp(0.76, 0.98, bankContact) * widthScale;
-  const sectionEdge = lerp(0.94, 1.2, bankContact) * widthScale;
+  const landingFlare = smoothstep(0.72, 0.98, longitudinalProgress) *
+    (1 - smoothstep(1.04, 1.48, longitudinalProgress));
+  const midspanWaist = 1 - smoothstep(0.16, 0.7, longitudinalProgress);
+  const sectionCore = lerp(0.76, 0.98, bankContact) * widthScale +
+    landingFlare * 0.13 - midspanWaist * 0.055;
+  const sectionEdge = lerp(0.94, 1.2, bankContact) * widthScale +
+    landingFlare * 0.2 - midspanWaist * 0.085;
   const crossSection = 1 - smoothstep(sectionCore, sectionEdge, normalizedDistance);
   return smoothstep(0.18, 0.7, routeCoverage) * crossSection;
 }
@@ -1726,9 +1855,15 @@ function bridgeAbutmentCoverage(
   routeCoverage: number,
   normalizedDistance: number,
   bankContact: number,
+  longitudinalProgress: number,
 ): number {
-  const transverseSeat = 1 - smoothstep(0.94, 1.2, normalizedDistance);
-  return smoothstep(0.16, 0.62, routeCoverage) * transverseSeat * bankContact;
+  const transverseSeat = 1 - smoothstep(1.04, 1.4, normalizedDistance);
+  const bankStation = 1 - smoothstep(
+    0.12,
+    0.44,
+    Math.abs(Math.abs(longitudinalProgress) - 1),
+  );
+  return smoothstep(0.16, 0.62, routeCoverage) * transverseSeat * bankContact * bankStation;
 }
 
 function prepareTexture(tile: Tile): PreparedTexture {

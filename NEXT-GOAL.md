@@ -829,6 +829,27 @@ Completed foundations:
   `track-6-acceptance-atlas/composition-hierarchy-v32-semantic-route-width-bridge/FINDINGS.md`
   and
   `track-6-acceptance-atlas/composition-hierarchy-v33-real-ssh-structural-crossing/FINDINGS.md`;
+- V34-V40 add longitudinal crossing semantics instead of extending a bridge
+  texture blindly onto land. The route field now exposes bank-to-bank span and
+  signed progress where `-1/+1` are the banks; physical `crossingKind` remains
+  the collision authority while bounded `crossingInfluenceKind` gives only the
+  dry landing visual context. A warm lifted deck, thin rail/post rhythm,
+  bank-stationed stone abutments, mid-span shaping, and span-aware support
+  placement replace the uniform V32 bar. V34's longer dark bar, V36's lost dark
+  deck, and V38's visually ineffective generic-ground shoulder remain explicit
+  rejections. V39 adds a subtle coastal subgrade only beneath ordinary
+  physically dry roads, so map-scale approaches read as causeways rather than
+  vectors painted over water without changing crossing collision. Origin
+  walking/district/regional safeguards remain byte-identical; west waterfront
+  remains selected. The 9/9 V40 real-SSH audit retains 2,376,797 raw bytes and
+  223 synchronized frames with every position/zoom/OCTANT assertion passing.
+  Cold readiness is still 10.188s, worker RSS grows from about 818MB to about
+  952MB, and coordinator heap warnings reach 94%, so performance remains
+  failed. The strict atlas validator correctly rejects this bounded three-site
+  manifest as incomplete. Production remains `vb07c0d4`; no image generation
+  or metered model call was used. Full verification is 38 files / 208 tests,
+  18/18 typecheck tasks, and 12/12 build tasks. Evidence is in
+  `track-6-acceptance-atlas/composition-hierarchy-v40-real-ssh-landing-and-subgrade/FINDINGS.md`;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
@@ -871,9 +892,11 @@ Still open and therefore goal-blocking:
   corrected and the exact fixed atlas passes on a fresh build. The selected
   night/storm and water/route/quay corrections still require that fresh
   complete-atlas proof; neither is a substitute for it. The selected
-  V32 structural bridge is only a selected sub-gate and remains visually short
-  of acceptance until terrain-shaped landings, span-aware supports, approach
-  wear, and crossing-family diversity close, followed by the fresh full atlas.
+  V39's bounded landing/span-aware bridge is only a selected sub-gate and
+  remains visually short of acceptance until approach wear, longer-span and
+  topology-specific support vocabularies, crossing-family diversity, and the
+  surrounding coast-composition failures close, followed by the fresh full
+  atlas.
   Deterministic traversal, the load ladder, 30-minute terminal run, and physical
   Ghostty acceptance also remain open.
 

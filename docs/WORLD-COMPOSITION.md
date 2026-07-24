@@ -120,11 +120,18 @@ and created false parcels, so sign must never replace authoritative distance.
 
 A bridge narrows its visible deck from normalized centreline distance and uses
 that identical shaped coverage for the material mask. Continuous hydrology
-selects stone bank seats; the signed cross-section and route-aligned frame add
-timber rails, asymmetric relief, shadow, and sparse support cadence. These cues
-survive all three semantic zooms, but the selected V32 result is still a basis:
-terrain-shaped approaches, span-aware piers, crossing-family diversity, and a
-non-bar silhouette remain open.
+selects stone bank seats. The route field also supplies bank-to-bank span and a
+signed longitudinal coordinate with `-1/+1` at the banks. Physical
+`crossingKind` stays authoritative for collision; a separately bounded
+`crossingInfluenceKind` lets only the dry landing taper timber into its route.
+That frame stations abutments, panel/post rhythm, mid-span shaping, and
+span-aware supports without a screen-axis or fixed coordinate special case.
+On a physically dry coastal route, a low-contrast subgrade restores the narrow
+bank when overview interpolation would otherwise make it look submerged;
+bridge/ford/ferry cores are excluded. V39 selects this architecture, not a
+finished crossing vocabulary: approach wear, longer spans, topology-specific
+structures, crossing-family diversity, and a less rectilinear silhouette
+remain open.
 
 Hydrology owns visible wet pixels before any cultural-family overlay. A strong
 canal-town or ruins weight can influence dry constructed ground, but cannot
@@ -245,6 +252,13 @@ the place-led arrival hierarchy, manifest-owned route scale/opacity, and
 semantic quay LOD. It rejects the current bridge as visually complete despite
 its narrower and collision-consistent deck. The audit is a nine-frame research
 subset, not the complete fixed Gate-A atlas and not a production deployment.
+
+The V40 audit repeats those same three coordinates after the bounded-landing
+and coastal-subgrade pass. Its 9/9 real-SSH frames retain 2,376,797 raw bytes
+and 223 synchronized frames with position, zoom, and OCTANT assertions. Exact
+origin output remains byte-identical across all three scales. This is still a
+three-site day/clear subset: the strict validator correctly rejects it as a
+complete atlas, and the cold-readiness/RSS/heap evidence remains failed.
 
 ## Predictive regional cache transport
 

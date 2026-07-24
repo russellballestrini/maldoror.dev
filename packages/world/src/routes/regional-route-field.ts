@@ -10,6 +10,14 @@ export interface RegionalRouteSample {
   /** Signed centreline offset in the local route-normal frame. The sign is
    * stable for an edge and enables asymmetric cross-section lighting. */
   signedDistance: number;
+  /** Crossing kind extended only through the bounded dry approach zone. This
+   * is visual/structural context; `crossingKind` remains the physical core. */
+  crossingInfluenceKind: RegionalCrossingKind | null;
+  /** Bank-to-bank length of the associated crossing in world tiles. */
+  crossingSpan: number;
+  /** Signed longitudinal position: -1/+1 are the two banks, values outside
+   * that range are bounded dry approaches, and Infinity means no crossing. */
+  crossingProgress: number;
   /** Half-width of the nearest route centreline, including the one-tile
    * influence apron just outside authoritative route ownership. */
   halfWidth: number;
@@ -73,6 +81,9 @@ interface RoutePoint {
   y: number;
   isWater: boolean;
   crossingCode: number;
+  crossingInfluenceCode: number;
+  crossingSpan: number;
+  crossingProgress: number;
 }
 
 interface RoutePath {
@@ -87,6 +98,9 @@ interface CachedRouteBlock {
   halfWidth: Float32Array;
   kind: Uint8Array;
   crossing: Uint8Array;
+  crossingInfluence: Uint8Array;
+  crossingSpan: Float32Array;
+  crossingProgress: Float32Array;
   routeIds: Array<string | null>;
   directionX: Float32Array;
   directionY: Float32Array;
@@ -175,6 +189,9 @@ export class RegionalRouteField {
     return {
       distance: block.distance[index]!,
       signedDistance: block.signedDistance[index]!,
+      crossingInfluenceKind: CROSSING_BY_CODE[block.crossingInfluence[index]!] ?? null,
+      crossingSpan: block.crossingSpan[index]!,
+      crossingProgress: block.crossingProgress[index]!,
       halfWidth: block.halfWidth[index]!,
       isRoute: kind !== null,
       isCrossing: crossingKind !== null,
@@ -269,6 +286,10 @@ export class RegionalRouteField {
     const halfWidth = new Float32Array(size);
     const kind = new Uint8Array(size);
     const crossing = new Uint8Array(size);
+    const crossingInfluence = new Uint8Array(size);
+    const crossingSpan = new Float32Array(size);
+    const crossingProgress = new Float32Array(size);
+    crossingProgress.fill(Number.POSITIVE_INFINITY);
     const routeIds = new Array<string | null>(size).fill(null);
     const directionX = new Float32Array(size);
     const directionY = new Float32Array(size);
@@ -309,6 +330,9 @@ export class RegionalRouteField {
         halfWidth,
         kind,
         crossing,
+        crossingInfluence,
+        crossingSpan,
+        crossingProgress,
         routeIds,
         directionX,
         directionY,
@@ -340,6 +364,9 @@ export class RegionalRouteField {
       halfWidth,
       kind,
       crossing,
+      crossingInfluence,
+      crossingSpan,
+      crossingProgress,
       routeIds,
       directionX,
       directionY,
@@ -358,6 +385,9 @@ export class RegionalRouteField {
     halfWidth: Float32Array,
     kind: Uint8Array,
     crossing: Uint8Array,
+    crossingInfluence: Uint8Array,
+    crossingSpan: Float32Array,
+    crossingProgress: Float32Array,
     routeIds: Array<string | null>,
     directionX: Float32Array,
     directionY: Float32Array,
@@ -395,6 +425,26 @@ export class RegionalRouteField {
           distance[index] = value;
           signedDistance[index] = signedOffset;
           halfWidth[index] = path.edge.width;
+          const influenceCode = Math.max(
+            start.crossingInfluenceCode,
+            end.crossingInfluenceCode,
+          );
+          if (influenceCode > 0) {
+            const segmentDx = end.x - start.x;
+            const segmentDy = end.y - start.y;
+            const along = Math.max(0, Math.min(1, (
+              (worldX - start.x) * segmentDx + (worldY - start.y) * segmentDy
+            ) / Math.max(1e-9, segmentDx * segmentDx + segmentDy * segmentDy)));
+            const startProgress = Number.isFinite(start.crossingProgress)
+              ? start.crossingProgress
+              : end.crossingProgress;
+            const endProgress = Number.isFinite(end.crossingProgress)
+              ? end.crossingProgress
+              : start.crossingProgress;
+            crossingInfluence[index] = influenceCode;
+            crossingSpan[index] = Math.max(start.crossingSpan, end.crossingSpan);
+            crossingProgress[index] = startProgress + (endProgress - startProgress) * along;
+          }
           if (value <= path.edge.width) {
             kind[index] = routeCode;
             routeIds[index] = path.edge.id;
@@ -619,14 +669,37 @@ export class RegionalRouteField {
     const reversed: RoutePoint[] = [];
     for (let index = endIndex; index !== -1; index = previous[index]!) {
       const point = toWorld(index);
-      reversed.push({ ...point, isWater: terrainAt(index).isWater, crossingCode: 0 });
+      reversed.push({
+        ...point,
+        isWater: terrainAt(index).isWater,
+        crossingCode: 0,
+        crossingInfluenceCode: 0,
+        crossingSpan: 0,
+        crossingProgress: Number.POSITIVE_INFINITY,
+      });
       if (index === startIndex) break;
     }
     reversed.reverse();
     const points = [
-      { x: edge.start.x, y: edge.start.y, isWater: this.physicalSample(edge.start.x, edge.start.y).isWater, crossingCode: 0 },
+      {
+        x: edge.start.x,
+        y: edge.start.y,
+        isWater: this.physicalSample(edge.start.x, edge.start.y).isWater,
+        crossingCode: 0,
+        crossingInfluenceCode: 0,
+        crossingSpan: 0,
+        crossingProgress: Number.POSITIVE_INFINITY,
+      },
       ...reversed,
-      { x: edge.end.x, y: edge.end.y, isWater: this.physicalSample(edge.end.x, edge.end.y).isWater, crossingCode: 0 },
+      {
+        x: edge.end.x,
+        y: edge.end.y,
+        isWater: this.physicalSample(edge.end.x, edge.end.y).isWater,
+        crossingCode: 0,
+        crossingInfluenceCode: 0,
+        crossingSpan: 0,
+        crossingProgress: Number.POSITIVE_INFINITY,
+      },
     ];
     return smoothRoutePoints(removeCollinearPoints(points), (x, y) => this.physicalSample(x, y).isWater);
   }
@@ -637,6 +710,9 @@ export class RegionalRouteField {
       y: point.y,
       isWater: this.physicalSample(point.x, point.y).isWater,
       crossingCode: 0,
+      crossingInfluenceCode: 0,
+      crossingSpan: 0,
+      crossingProgress: Number.POSITIVE_INFINITY,
     })));
   }
 
@@ -828,10 +904,20 @@ function smoothRoutePoints(
     y,
     isWater: isWaterAt(x, y),
     crossingCode: 0,
+    crossingInfluenceCode: 0,
+    crossingSpan: 0,
+    crossingProgress: Number.POSITIVE_INFINITY,
   })));
 }
 
 function classifyCrossings(points: RoutePoint[]): RoutePoint[] {
+  const cumulative = new Float64Array(points.length);
+  for (let index = 1; index < points.length; index++) {
+    cumulative[index] = cumulative[index - 1]! + Math.hypot(
+      points[index]!.x - points[index - 1]!.x,
+      points[index]!.y - points[index - 1]!.y,
+    );
+  }
   let runStart = -1;
   for (let index = 0; index <= points.length; index++) {
     const isWater = index < points.length && points[index]!.isWater;
@@ -854,6 +940,36 @@ function classifyCrossings(points: RoutePoint[]): RoutePoint[] {
     const crossingCode = span > 12 ? 3 : span > 3.5 ? 2 : 1;
     for (let pointIndex = runStart; pointIndex <= runEnd; pointIndex++) {
       points[pointIndex]!.crossingCode = crossingCode;
+    }
+    const bankStart = runStart > 0
+      ? (cumulative[runStart - 1]! + cumulative[runStart]!) / 2
+      : cumulative[runStart]!;
+    const bankEnd = runEnd < points.length - 1
+      ? (cumulative[runEnd]! + cumulative[runEnd + 1]!) / 2
+      : cumulative[runEnd]!;
+    const bankSpan = Math.max(0.5, bankEnd - bankStart);
+    const halfSpan = bankSpan / 2;
+    const midpoint = (bankStart + bankEnd) / 2;
+    const landingLength = crossingCode === 2
+      ? Math.max(3.25, Math.min(5.5, bankSpan * 0.42))
+      : crossingCode === 1 ? 2.25 : 2.75;
+    for (let pointIndex = 0; pointIndex < points.length; pointIndex++) {
+      const arc = cumulative[pointIndex]!;
+      if (arc < bankStart - landingLength || arc > bankEnd + landingLength) continue;
+      const progress = arc < bankStart
+        ? -1 - (bankStart - arc) / landingLength
+        : arc > bankEnd
+          ? 1 + (arc - bankEnd) / landingLength
+          : (arc - midpoint) / halfSpan;
+      const point = points[pointIndex]!;
+      const currentDistance = Number.isFinite(point.crossingProgress)
+        ? Math.max(0, Math.abs(point.crossingProgress) - 1)
+        : Number.POSITIVE_INFINITY;
+      const candidateDistance = Math.max(0, Math.abs(progress) - 1);
+      if (candidateDistance > currentDistance) continue;
+      point.crossingInfluenceCode = crossingCode;
+      point.crossingSpan = bankSpan;
+      point.crossingProgress = progress;
     }
     runStart = -1;
   }
