@@ -50,7 +50,7 @@ export {
   scaleGrid,
   downsampleGrid,
 } from './pixel/pixel-renderer.js';
-export { resamplePixelGrid } from './pixel/pixel-resampler.js';
+export { resamplePackedPixelGrid, resamplePixelGrid } from './pixel/pixel-resampler.js';
 
 export {
   ViewportRenderer,

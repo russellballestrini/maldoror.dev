@@ -1,4 +1,4 @@
-import type { PixelGrid } from './pixel.js';
+import type { PackedPixelGrid, PixelGrid } from './pixel.js';
 
 /**
  * A single tile within a building
@@ -7,6 +7,9 @@ import type { PixelGrid } from './pixel.js';
 export interface BuildingTile {
   pixels: PixelGrid; // Base 256x256 resolution
   resolutions: Record<string, PixelGrid>; // All zoom levels [26, 51, 77, 102, 128, 154, 179, 205, 230, 256]
+  /** Compact immutable source raster. Regional authored assets use this form
+   * so one worker does not retain millions of per-pixel RGB objects. */
+  packedPixels?: PackedPixelGrid;
 }
 
 /**

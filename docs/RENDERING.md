@@ -438,3 +438,29 @@ This does not pass Gate A. The bridge is still more rectilinear than the target
 bar, only one bridge vocabulary exists, and approach wear, longer-span support
 variation, topology-specific crossings, the fresh complete atlas, load, and
 physical Ghostty acceptance remain open. Production remains `vb07c0d4`.
+
+## Packed authored raster ownership
+
+The first Gate-D memory profile found the largest retained duplication below
+the renderer: the complete regional kit held roughly 4.6 million authored
+source pixels as nested JavaScript arrays of RGB objects in both the coordinator
+and persistent generator. Forced-GC kit heap grew by 181.35 MiB, even though the
+transport and imported viewport paths already used typed RGBA planes.
+
+Regional material masters and multi-tile silhouettes now keep their immutable
+source raster in `PackedPixelGrid`. The compositor reads material bytes directly;
+visibility, overlap composition, prewarm packing, and the renderer accept the
+same packed form. The painterly resampler has a packed-source path whose output
+is exact against object-grid reconstruction at native size, reduction, and
+enlargement. Alpha below the existing authored threshold remains transparent;
+partial alpha remains byte-exact. No art or placement vocabulary is removed.
+
+On the identical two-isolate readiness proof, peak RSS falls from 863.508 to
+546.707 MiB and total origin readiness from 9.761 to 8.949 seconds. Both the
+origin and traversal hashes remain unchanged. The full 180-frame 160x46
+predictive proof peaks at 570.40 MiB with render p50/p95/p99
+4.44/7.84/18.92 ms, event-loop-delay p99 5.79 ms, and no coverage miss,
+mismatch, or worker error. This is a selected architecture increment, not a
+Gate-D pass: real-SSH churn, load ladder, long run, bandwidth, cgroup, and
+physical Ghostty evidence remain open. Detailed evidence is under
+`track-7-performance/packed-raster-v1/` on the mounted research drive.

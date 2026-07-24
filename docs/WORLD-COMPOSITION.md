@@ -260,6 +260,18 @@ origin output remains byte-identical across all three scales. This is still a
 three-site day/clear subset: the strict validator correctly rejects it as a
 complete atlas, and the cold-readiness/RSS/heap evidence remains failed.
 
+The next performance pass changes storage ownership, not composition. The full
+authored regional kit formerly retained roughly 4.6 million pixels as nested
+RGB objects in each isolate. Immutable tile-major RGBA planes reduce the
+forced-GC full-kit heap delta from 181.35 to 1.23 MiB and the identical
+two-isolate readiness peak from 863.508 to 546.707 MiB. Origin and traversal
+frame hashes remain byte-identical, so family material, vertical silhouettes,
+alpha, placement, collision, and semantic LOD are unchanged. The 180-frame
+160x46 predictive path peaks at 570.40 MiB with zero coverage misses, hash
+mismatches, or errors. This removes a measured duplication; it does not replace
+the still-required real-SSH load ladder, long-run cache/cgroup proof, complete
+atlas, or physical Ghostty acceptance.
+
 ## Predictive regional cache transport
 
 Cold regional composition remains intentionally expensive: it solves physical

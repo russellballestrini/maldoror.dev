@@ -2,6 +2,8 @@ import type {
   BuildingDirection,
   BuildingSprite,
   BuildingTileData,
+  PackedPixelGrid,
+  Pixel,
   PixelGrid,
   Tile,
   WorldLightSource,
@@ -3347,7 +3349,9 @@ function greatestCommonDivisor(a: number, b: number): number {
 function hasVisiblePixels(tile: BuildingTileData): boolean {
   const cached = VISIBLE_TILE_CACHE.get(tile);
   if (cached !== undefined) return cached;
-  const visible = tile.pixels.some((row) => row.some((pixel) => pixel !== null));
+  const visible = tile.packedPixels
+    ? packedHasVisiblePixels(tile.packedPixels)
+    : tile.pixels.some((row) => row.some((pixel) => pixel !== null));
   VISIBLE_TILE_CACHE.set(tile, visible);
   return visible;
 }
@@ -3374,8 +3378,69 @@ function validateSpriteAnchor(asset: RegionalVisualAsset): void {
 }
 
 function compositeTiles(beneath: BuildingTileData, above: BuildingTileData): BuildingTileData {
+  if (beneath.packedPixels || above.packedPixels) return compositePackedTiles(beneath, above);
   const pixels = compositeGrids(beneath.pixels, above.pixels);
   return { pixels, resolutions: { [String(pixels.length)]: pixels } };
+}
+
+function packedHasVisiblePixels(packed: PackedPixelGrid): boolean {
+  validatePackedGrid(packed);
+  for (let index = 3; index < packed.data.length; index += 4) {
+    if (packed.data[index] !== 0) return true;
+  }
+  return false;
+}
+
+function compositePackedTiles(
+  beneath: BuildingTileData,
+  above: BuildingTileData,
+): BuildingTileData {
+  const beneathDimensions = tileDimensions(beneath);
+  const aboveDimensions = tileDimensions(above);
+  const width = Math.max(beneathDimensions.width, aboveDimensions.width);
+  const height = Math.max(beneathDimensions.height, aboveDimensions.height);
+  const packedPixels: PackedPixelGrid = { width, height, data: new Uint8Array(width * height * 4) };
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const pixel = tilePixelAt(above, x, y) ?? tilePixelAt(beneath, x, y);
+      if (!pixel) continue;
+      const offset = (y * width + x) * 4;
+      packedPixels.data[offset] = pixel.r;
+      packedPixels.data[offset + 1] = pixel.g;
+      packedPixels.data[offset + 2] = pixel.b;
+      packedPixels.data[offset + 3] = pixel.a ?? 255;
+    }
+  }
+  return { pixels: [], resolutions: {}, packedPixels };
+}
+
+function tileDimensions(tile: BuildingTileData): { width: number; height: number } {
+  if (tile.packedPixels) {
+    validatePackedGrid(tile.packedPixels);
+    return { width: tile.packedPixels.width, height: tile.packedPixels.height };
+  }
+  return { width: tile.pixels[0]?.length ?? 0, height: tile.pixels.length };
+}
+
+function tilePixelAt(tile: BuildingTileData, x: number, y: number): Pixel {
+  if (!tile.packedPixels) return tile.pixels[y]?.[x] ?? null;
+  if (x >= tile.packedPixels.width || y >= tile.packedPixels.height) return null;
+  const offset = (y * tile.packedPixels.width + x) * 4;
+  const alpha = tile.packedPixels.data[offset + 3]!;
+  if (alpha === 0) return null;
+  return {
+    r: tile.packedPixels.data[offset]!,
+    g: tile.packedPixels.data[offset + 1]!,
+    b: tile.packedPixels.data[offset + 2]!,
+    ...(alpha < 255 ? { a: alpha } : {}),
+  };
+}
+
+function validatePackedGrid(packed: PackedPixelGrid): void {
+  if (!Number.isInteger(packed.width) || !Number.isInteger(packed.height) ||
+      packed.width < 1 || packed.height < 1 || packed.data.length !== packed.width * packed.height * 4) {
+    throw new Error('Packed building tile dimensions do not match its RGBA data');
+  }
 }
 
 function compositeGrids(beneath: PixelGrid, above: PixelGrid): PixelGrid {

@@ -1,5 +1,5 @@
-import type { PixelGrid } from '@maldoror/protocol';
-import { resamplePixelGrid } from '@maldoror/render';
+import type { PackedPixelGrid, PixelGrid } from '@maldoror/protocol';
+import { resamplePackedPixelGrid, resamplePixelGrid } from '@maldoror/render';
 import type {
   RegionalPackedPreparedViewport,
   RegionalPreparedViewport,
@@ -28,7 +28,12 @@ export function packRegionalPreparedViewport(
     if (entry.x !== expectedX || entry.y !== expectedY) {
       throw new Error(`Regional viewport terrain packing order mismatch at ${entry.x},${entry.y}`);
     }
-    const grid = displayGrid(entry.tile.pixels, entry.tile.resolutions?.[String(source.resolution)], source.resolution);
+    const grid = displayGrid(
+      entry.tile.pixels,
+      entry.tile.resolutions?.[String(source.resolution)],
+      entry.tile.packedPixels,
+      source.resolution,
+    );
     packGridInto(grid, terrainRgba, index * bytesPerTile);
     packMaterialInto(entry.tile.materialMask, terrainMaterial, index * pixelsPerTile, source.resolution);
     terrainWalkable[index] = Number(entry.tile.walkable);
@@ -40,7 +45,12 @@ export function packRegionalPreparedViewport(
     const entry = source.overlays[index]!;
     overlayCoordinates[index * 2] = entry.x;
     overlayCoordinates[index * 2 + 1] = entry.y;
-    const grid = displayGrid(entry.tile.pixels, entry.tile.resolutions[String(source.resolution)], source.resolution);
+    const grid = displayGrid(
+      entry.tile.pixels,
+      entry.tile.resolutions[String(source.resolution)],
+      entry.tile.packedPixels,
+      source.resolution,
+    );
     packGridInto(grid, overlayRgba, index * bytesPerTile);
   }
 
@@ -77,7 +87,13 @@ export function regionalPackedViewportTransferList(
   ] as ArrayBuffer[];
 }
 
-function displayGrid(base: PixelGrid, exact: PixelGrid | undefined, resolution: number): PixelGrid {
+function displayGrid(
+  base: PixelGrid,
+  exact: PixelGrid | undefined,
+  packed: PackedPixelGrid | undefined,
+  resolution: number,
+): PixelGrid {
+  if (packed) return resamplePackedPixelGrid(packed, resolution, resolution);
   const grid = exact ?? base;
   if (grid.length === resolution && grid[0]?.length === resolution) return grid;
   return resamplePixelGrid(grid, resolution, resolution);

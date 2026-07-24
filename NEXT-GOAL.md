@@ -850,6 +850,23 @@ Completed foundations:
   or metered model call was used. Full verification is 38 files / 208 tests,
   18/18 typecheck tasks, and 12/12 build tasks. Evidence is in
   `track-6-acceptance-atlas/composition-hierarchy-v40-real-ssh-landing-and-subgrade/FINDINGS.md`;
+- the first Gate-D memory pass profiles the complete authored kit instead of
+  guessing from aggregate RSS. Roughly 4.6 million source pixels per isolate
+  were retained as individual RGB objects; forced-GC heap grew by 181.35 MiB
+  across the seven kits. Immutable tile-major RGBA planes reduce that retained
+  heap delta to 1.23 MiB and the full-kit RSS delta from 192.43 to 39.49 MiB
+  without removing an asset, semantic layer, or cache. The identical two-isolate
+  origin-readiness proof falls from 863.508 to 546.707 MiB peak RSS and from
+  9.761 to 8.949 seconds, with byte-identical origin and traversal hashes. A
+  180-frame 160x46 predictive traversal peaks at 570.40 MiB, renders at
+  4.44/7.84/18.92 ms p50/p95/p99, and has zero coverage misses, checkpoint
+  mismatches, or errors. Packed/object resampling is exact at native, reduced,
+  and enlarged resolutions. This is selected research, not deployment or Gate
+  D completion: fresh real-SSH churn, the 5/10/20 ladder, long run, cgroup,
+  bandwidth, and physical Ghostty proofs remain open. Verification is 38 files
+  / 212 tests, 18/18 typecheck tasks, and 12/12 build tasks. Evidence is in
+  `track-7-performance/packed-raster-v1/FINDINGS.md`; no image generation or
+  metered model call was used;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without

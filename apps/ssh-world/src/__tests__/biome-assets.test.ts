@@ -20,14 +20,16 @@ describe('regional biome material manifest', () => {
       expect(kit.materials[family]).toHaveLength(4);
       expect(kit.overviewMaterials[family]).toHaveLength(1);
       for (const tile of kit.materials[family]) {
-        expect(tile.pixels).toHaveLength(96);
-        expect(tile.pixels[0]).toHaveLength(96);
+        expect(tile.pixels).toEqual([]);
+        expect(tile.packedPixels).toMatchObject({ width: 96, height: 96 });
       }
-      expect(kit.overviewMaterials[family].every((tile) => tile.pixels.length === 128)).toBe(true);
+      expect(kit.overviewMaterials[family].every((tile) => (
+        tile.pixels.length === 0 && tile.packedPixels?.width === 128 && tile.packedPixels.height === 128
+      ))).toBe(true);
     }
     expect(kit.landmarkFabricMaterials['canal-town']).toHaveLength(1);
     expect(kit.landmarkFabricMaterials['canal-town']?.every((tile) => (
-      tile.walkable && tile.pixels.length === 96 && tile.pixels[0]?.length === 96
+      tile.walkable && tile.pixels.length === 0 && tile.packedPixels?.width === 96
     ))).toBe(true);
     expect(Object.keys(kit.landmarkFabricMaterials)).toEqual(['canal-town']);
     expect(kit.materials.coast.every((tile) => tile.material === 'water' && !tile.walkable)).toBe(true);
@@ -40,7 +42,9 @@ describe('regional biome material manifest', () => {
     expect(Object.keys(kit.routeMaterials).sort()).toEqual(['arterial', 'local-road', 'trail']);
     for (const tiles of Object.values(kit.routeMaterials)) {
       expect(tiles).toHaveLength(4);
-      expect(tiles.every((tile) => tile.walkable && tile.pixels.length === 96)).toBe(true);
+      expect(tiles.every((tile) => (
+        tile.walkable && tile.pixels.length === 0 && tile.packedPixels?.width === 96
+      ))).toBe(true);
     }
     expect(kit.crossingMaterials.bridge).toHaveLength(4);
     expect(kit.crossingMaterials.ferry).toBeUndefined();
@@ -87,10 +91,10 @@ describe('regional biome material manifest', () => {
       expect(asset.sprite.width).toBe(6);
       expect(asset.sprite.height).toBe(5);
       expect(asset.collision).not.toContainEqual([0, 0]);
-      const pixels = asset.sprite.tiles.flatMap((row) => row.flatMap((tile) => tile.pixels.flat()));
-      expect(pixels.some((pixel) => pixel === null)).toBe(true);
-      expect(pixels.some((pixel) => pixel !== null)).toBe(true);
-      expect(pixels.some((pixel) => pixel !== null && pixel.a !== undefined && pixel.a > 0 && pixel.a < 255)).toBe(true);
+      const alpha = spriteAlphaValues(asset.sprite);
+      expect(alpha.some((value) => value === 0)).toBe(true);
+      expect(alpha.some((value) => value > 0)).toBe(true);
+      expect(alpha.some((value) => value > 0 && value < 255)).toBe(true);
     }
   });
 
@@ -108,9 +112,9 @@ describe('regional biome material manifest', () => {
       expect(asset.sprite.width).toBe(5);
       expect(asset.sprite.height).toBe(4);
       expect(asset.routeDistance[0]).toBeGreaterThanOrEqual(2);
-      const pixels = asset.sprite.tiles.flatMap((row) => row.flatMap((tile) => tile.pixels.flat()));
-      expect(pixels.some((pixel) => pixel === null)).toBe(true);
-      expect(pixels.some((pixel) => pixel !== null && pixel.a !== undefined && pixel.a < 255)).toBe(true);
+      const alpha = spriteAlphaValues(asset.sprite);
+      expect(alpha.some((value) => value === 0)).toBe(true);
+      expect(alpha.some((value) => value > 0 && value < 255)).toBe(true);
     }
   });
 
@@ -134,9 +138,9 @@ describe('regional biome material manifest', () => {
       expect(asset.sprite.height).toBe(6);
       expect(asset.spriteAnchor).toEqual([3, 3]);
       expect(asset.collision).not.toContainEqual([0, 0]);
-      const pixels = asset.sprite.tiles.flatMap((row) => row.flatMap((tile) => tile.pixels.flat()));
-      expect(pixels.some((pixel) => pixel === null)).toBe(true);
-      expect(pixels.some((pixel) => pixel !== null && pixel.a !== undefined && pixel.a < 255)).toBe(true);
+      const alpha = spriteAlphaValues(asset.sprite);
+      expect(alpha.some((value) => value === 0)).toBe(true);
+      expect(alpha.some((value) => value > 0 && value < 255)).toBe(true);
     }
   });
 
@@ -212,9 +216,22 @@ describe('regional biome material manifest', () => {
       expect(asset.constraints.waterDistance[1]).toBeGreaterThanOrEqual(
         asset.constraints.waterDistance[0],
       );
-      const pixels = asset.sprite.tiles.flatMap((row) => row.flatMap((tile) => tile.pixels.flat()));
-      expect(pixels.some((pixel) => pixel === null)).toBe(true);
-      expect(pixels.some((pixel) => pixel !== null)).toBe(true);
+      const alpha = spriteAlphaValues(asset.sprite);
+      expect(alpha.some((value) => value === 0)).toBe(true);
+      expect(alpha.some((value) => value > 0)).toBe(true);
     }
   });
 });
+
+function spriteAlphaValues(sprite: {
+  tiles: Array<Array<{ pixels: unknown[]; packedPixels?: { data: Uint8Array } }>>;
+}): number[] {
+  return sprite.tiles.flatMap((row) => row.flatMap((tile) => {
+    expect(tile.pixels).toEqual([]);
+    expect(tile.packedPixels).toBeDefined();
+    const data = tile.packedPixels!.data;
+    const alpha: number[] = [];
+    for (let index = 3; index < data.length; index += 4) alpha.push(data[index]!);
+    return alpha;
+  }));
+}

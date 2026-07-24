@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { BuildingSprite, BuildingTile, Pixel, PixelGrid, Tile } from '@maldoror/protocol';
+import type { BuildingSprite, BuildingTile, PackedPixelGrid, Tile } from '@maldoror/protocol';
 import {
   BIOME_FAMILIES,
   type BiomeFamily,
@@ -899,19 +899,16 @@ async function loadTerrainMasterVariants(
       .removeAlpha()
       .raw()
       .toBuffer({ resolveWithObject: true });
-    const pixels: PixelGrid = Array.from({ length: info.height }, (_, y) =>
-      Array.from({ length: info.width }, (_, x) => {
-        const offset = (y * info.width + x) * info.channels;
-        return { r: data[offset]!, g: data[offset + 1]!, b: data[offset + 2]! };
-      }));
+    const packedPixels = packOpaqueRaster(data, info.width, info.height, info.channels);
     const id = index === 0 ? entry.id : `${entry.id}__v${index + 1}`;
     variants.push({
       id,
       name: id,
       walkable: entry.walkable,
       material: entry.material,
-      pixels,
-      resolutions: { [String(tileSize)]: pixels },
+      pixels: [],
+      packedPixels,
+      resolutions: {},
     });
   }
   return variants;
@@ -985,37 +982,49 @@ async function loadRegionalSpriteUncached(
   for (let tileY = 0; tileY < tilesHigh; tileY++) {
     const row: BuildingTile[] = [];
     for (let tileX = 0; tileX < tilesWide; tileX++) {
-      const pixels: PixelGrid = [];
+      const packedPixels: PackedPixelGrid = {
+        width: tileSize,
+        height: tileSize,
+        data: new Uint8Array(tileSize * tileSize * 4),
+      };
       for (let y = 0; y < tileSize; y++) {
-        const pixelRow: Pixel[] = [];
         for (let x = 0; x < tileSize; x++) {
           const sourceX = tileX * tileSize + x - offsetX;
           const sourceY = tileY * tileSize + y - offsetY;
-          if (sourceX < 0 || sourceY < 0 || sourceX >= info.width || sourceY >= info.height) {
-            pixelRow.push(null);
-            continue;
-          }
+          if (sourceX < 0 || sourceY < 0 || sourceX >= info.width || sourceY >= info.height) continue;
           const sourceIndex = (sourceY * info.width + sourceX) * info.channels;
           const alpha = data[sourceIndex + 3] ?? 0;
-          if (alpha < 4) {
-            pixelRow.push(null);
-          } else {
-            const pixel: Pixel = {
-              r: data[sourceIndex]!,
-              g: data[sourceIndex + 1]!,
-              b: data[sourceIndex + 2]!,
-            };
-            if (alpha < 255) pixel.a = alpha;
-            pixelRow.push(pixel);
-          }
+          if (alpha < 4) continue;
+          const targetIndex = (y * tileSize + x) * 4;
+          packedPixels.data[targetIndex] = data[sourceIndex]!;
+          packedPixels.data[targetIndex + 1] = data[sourceIndex + 1]!;
+          packedPixels.data[targetIndex + 2] = data[sourceIndex + 2]!;
+          packedPixels.data[targetIndex + 3] = alpha;
         }
-        pixels.push(pixelRow);
       }
-      row.push({ pixels, resolutions: { [String(tileSize)]: pixels } });
+      row.push({ pixels: [], resolutions: {}, packedPixels });
     }
     tiles.push(row);
   }
   return { width: tilesWide, height: tilesHigh, tiles };
+}
+
+function packOpaqueRaster(
+  source: Uint8Array,
+  width: number,
+  height: number,
+  channels: number,
+): PackedPixelGrid {
+  const data = new Uint8Array(width * height * 4);
+  for (let index = 0; index < width * height; index++) {
+    const sourceOffset = index * channels;
+    const targetOffset = index * 4;
+    data[targetOffset] = source[sourceOffset]!;
+    data[targetOffset + 1] = source[sourceOffset + 1]!;
+    data[targetOffset + 2] = source[sourceOffset + 2]!;
+    data[targetOffset + 3] = 255;
+  }
+  return { width, height, data };
 }
 
 function isCollisionOffset(value: unknown): value is [number, number] {

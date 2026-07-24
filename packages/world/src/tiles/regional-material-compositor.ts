@@ -1867,13 +1867,23 @@ function bridgeAbutmentCoverage(
 }
 
 function prepareTexture(tile: Tile): PreparedTexture {
-  const height = tile.pixels.length;
-  const width = tile.pixels[0]?.length ?? 0;
+  const height = tile.packedPixels?.height ?? tile.pixels.length;
+  const width = tile.packedPixels?.width ?? tile.pixels[0]?.length ?? 0;
   if (width === 0 || height === 0) throw new Error(`Empty regional material texture: ${tile.id}`);
+  if (tile.packedPixels && tile.packedPixels.data.length !== width * height * 4) {
+    throw new Error(`Packed regional material texture dimensions do not match RGBA data: ${tile.id}`);
+  }
   const linear = new Float32Array(width * height * 3);
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      const pixel = tile.pixels[y]?.[x] ?? { r: 0, g: 0, b: 0 };
+      const packedOffset = (y * width + x) * 4;
+      const pixel = tile.packedPixels
+        ? {
+          r: tile.packedPixels.data[packedOffset]!,
+          g: tile.packedPixels.data[packedOffset + 1]!,
+          b: tile.packedPixels.data[packedOffset + 2]!,
+        }
+        : tile.pixels[y]?.[x] ?? { r: 0, g: 0, b: 0 };
       const index = (y * width + x) * 3;
       linear[index] = srgbToLinear(pixel.r);
       linear[index + 1] = srgbToLinear(pixel.g);
