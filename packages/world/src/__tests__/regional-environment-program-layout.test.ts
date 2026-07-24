@@ -39,6 +39,43 @@ describe('regional environment program layout', () => {
     expect(walkableCellsConnected(cells)).toBe(true);
   });
 
+  it('keeps cave floors four-neighbour connected across orientation and grid phase', () => {
+    const disconnected: string[] = [];
+    const gridPhases = [
+      { x: 0.1, y: 0.1 },
+      { x: 0.5, y: 0.5 },
+      { x: 0.85, y: 0.3 },
+    ];
+    for (const phase of gridPhases) {
+      for (let angleIndex = 0; angleIndex < 16; angleIndex++) {
+        const angle = angleIndex * Math.PI / 8;
+        for (const seed of [1, 42, 991, 0x4f31]) {
+          const layout = buildRegionalEnvironmentProgramLayout({
+            id: `environment:cave:${phase.x}:${phase.y}:${angleIndex}:${seed}`,
+            kind: 'cave-interior',
+            routePoint: phase,
+            anchorPoint: {
+              x: phase.x + Math.cos(angle) * 5.5,
+              y: phase.y + Math.sin(angle) * 5.5,
+            },
+            seed,
+            sampleTerrain: () => ({ elevation: 0.58, slope: 0.02, isWater: false }),
+          });
+          expect(layout).not.toBeNull();
+          const components = walkableComponentSizes(
+            rasterizeRegionalEnvironmentProgramLayout(layout!),
+          );
+          if (components.length !== 1) {
+            disconnected.push(
+              `phase ${phase.x},${phase.y}; angle ${angleIndex}; seed ${seed}: ${components.join('+')}`,
+            );
+          }
+        }
+      }
+    }
+    expect(disconnected).toEqual([]);
+  });
+
   it('selects a higher endpoint and lengthens the ascent with a few long switchbacks', () => {
     const layout = buildRegionalEnvironmentProgramLayout({
       id: 'environment:test-highland',
@@ -80,20 +117,30 @@ describe('regional environment program layout', () => {
 function walkableCellsConnected(
   cells: ReturnType<typeof rasterizeRegionalEnvironmentProgramLayout>,
 ): boolean {
+  return walkableComponentSizes(cells).length === 1;
+}
+
+function walkableComponentSizes(
+  cells: ReturnType<typeof rasterizeRegionalEnvironmentProgramLayout>,
+): number[] {
   const walkable = new Set(cells.filter((cell) => cell.walkable).map((cell) => `${cell.x},${cell.y}`));
-  const first = walkable.values().next().value as string | undefined;
-  if (!first) return false;
-  const visited = new Set([first]);
-  const queue = [first];
-  while (queue.length > 0) {
-    const current = queue.shift()!;
-    const [x, y] = current.split(',').map(Number) as [number, number];
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-      const key = `${x + dx},${y + dy}`;
-      if (!walkable.has(key) || visited.has(key)) continue;
-      visited.add(key);
-      queue.push(key);
+  const components: number[] = [];
+  while (walkable.size > 0) {
+    const first = walkable.values().next().value as string;
+    walkable.delete(first);
+    const queue = [first];
+    let size = 0;
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      size++;
+      const [x, y] = current.split(',').map(Number) as [number, number];
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const key = `${x + dx},${y + dy}`;
+        if (!walkable.delete(key)) continue;
+        queue.push(key);
+      }
     }
+    components.push(size);
   }
-  return visited.size === walkable.size;
+  return components.sort((a, b) => b - a);
 }

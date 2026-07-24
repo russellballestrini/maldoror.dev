@@ -107,8 +107,8 @@ export function buildRegionalEnvironmentProgramLayout(
   const accessPath = buildRegionalPolylinePath({
     id: `${config.id}:access`,
     points: [config.routePoint, config.anchorPoint],
-    radius: 0.42,
-    feather: 0.22,
+    radius: 0.72,
+    feather: 0.28,
   });
   return config.kind === 'cave-interior'
     ? buildCaveLayout(config, approach, accessPath, routeTerrain.elevation, anchorTerrain.elevation)
@@ -133,8 +133,15 @@ function buildCaveLayout(
     point(config.anchorPoint, approach, reach, tangent, bendB * 0.45),
   ];
   if (!pathStaysDry(mainPoints, config.sampleTerrain)) return null;
+  const smoothedMainPoints = smoothPolyline(mainPoints, 2);
+  if (!pathStaysDry(smoothedMainPoints, config.sampleTerrain)) return null;
   const branchSign = hashUnit(config.seed, 0xa1d7) < 0.5 ? -1 : 1;
-  const branchOrigin = mainPoints[1]!;
+  // Attach the branch to the path that is actually rasterized. The original
+  // control point is no longer guaranteed to lie on the Chaikin-smoothed
+  // centreline and could leave a small, unreachable branch/chamber island.
+  const branchOrigin = [...smoothedMainPoints].sort((a, b) => (
+    distance(a, mainPoints[1]!) - distance(b, mainPoints[1]!)
+  ))[0]!;
   const branchEnd = point(
     branchOrigin,
     approach,
@@ -144,20 +151,18 @@ function buildCaveLayout(
   );
   const branchPoints = [branchOrigin, branchEnd];
   if (!pathStaysDry(branchPoints, config.sampleTerrain)) return null;
-  const smoothedMainPoints = smoothPolyline(mainPoints, 2);
   const smoothedBranchPoints = smoothPolyline(branchPoints, 1);
-  if (!pathStaysDry(smoothedMainPoints, config.sampleTerrain) ||
-      !pathStaysDry(smoothedBranchPoints, config.sampleTerrain)) return null;
+  if (!pathStaysDry(smoothedBranchPoints, config.sampleTerrain)) return null;
   const mainPath = buildRegionalPolylinePath({
     id: `${config.id}:cave-main`,
     points: smoothedMainPoints,
-    radius: 0.76,
+    radius: 0.84,
     feather: 0.32,
   });
   const branchPath = buildRegionalPolylinePath({
     id: `${config.id}:cave-branch`,
     points: smoothedBranchPoints,
-    radius: 0.64,
+    radius: 0.78,
     feather: 0.3,
   });
   const chamberAngle = Math.atan2(approach.y, approach.x) +
@@ -377,7 +382,20 @@ export function rasterizeRegionalEnvironmentProgramLayout(
       });
     }
   }
-  return cells;
+  if (layout.kind !== 'cave-interior') return cells;
+  // High-frequency boundary breakup can occasionally admit one diagonal-only
+  // floor sample outside the continuous tunnel mask. It is visual speckle, not
+  // traversable geography, so remove only cardinally isolated floor samples;
+  // larger disconnected components remain visible to the topology tests.
+  const walkable = new Set(
+    cells.filter((cell) => cell.walkable).map((cell) => `${cell.x},${cell.y}`),
+  );
+  return cells.filter((cell) => !cell.walkable || (
+    walkable.has(`${cell.x + 1},${cell.y}`) ||
+    walkable.has(`${cell.x - 1},${cell.y}`) ||
+    walkable.has(`${cell.x},${cell.y + 1}`) ||
+    walkable.has(`${cell.x},${cell.y - 1}`)
+  ));
 }
 
 function finishLayout(

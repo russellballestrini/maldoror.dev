@@ -127,6 +127,33 @@ const world = new RegionalWorldTileProvider({
 });
 const environmentProgramLayouts = new Map();
 
+function resolveEnvironmentProgramLayout(placement) {
+  if (!placement.environmentProgramId) return null;
+  const cached = environmentProgramLayouts.get(placement.environmentProgramId);
+  if (cached) return cached;
+  const layout = world.getEnvironmentProgramLayoutsInBounds(
+    placement.anchorX - 48,
+    placement.anchorY - 48,
+    placement.anchorX + 48,
+    placement.anchorY + 48,
+  ).find((candidate) => candidate.id === placement.environmentProgramId) ?? null;
+  if (layout) environmentProgramLayouts.set(layout.id, layout);
+  return layout;
+}
+
+function environmentProgramIsExact(placement) {
+  if (!placement.environmentProgram) return true;
+  const layout = resolveEnvironmentProgramLayout(placement);
+  if (!layout) return false;
+  const audit = auditEnvironmentProgram({
+    environmentProgram: placement.environmentProgram,
+    environmentProgramId: placement.environmentProgramId,
+  });
+  if (audit?.mismatchCount === 0) return true;
+  environmentProgramLayouts.delete(layout.id);
+  return false;
+}
+
 function locateLandmarkFamilies() {
   const assetIds = new Set(landmarkKit.assets.map((asset) => asset.id));
   const found = new Map();
@@ -253,9 +280,28 @@ if (process.env.MALDOROR_REGIONAL_CONTACT_ATLAS === '1') {
             .filter((component) => component.parcelId === placement.parcelId);
           const waterfront = world.getWaterfrontLayoutsInBounds(...searchBounds)
             .find((layout) => layout.id.startsWith(`${placement.parcelId}:`));
+          const parcelAudit = auditParcel({
+            centre: [placement.siteX, placement.siteY],
+            parcelId: placement.parcelId,
+            accessAxis: placement.accessAxis,
+          });
+          const waterfrontAudit = parcelAudit?.waterfront;
           const validWaterfront = waterfront && waterfront.piers.length >= 2 &&
             waterfront.slips.length >= 1 &&
-            components.filter((component) => component.waterfrontId === waterfront.id).length >= 2;
+            components.filter((component) => component.waterfrontId === waterfront.id).length >= 2 &&
+            parcelAudit.collisionOverlapCells === 0 &&
+            parcelAudit.connectorCollisionBlocked === 0 &&
+            parcelAudit.connectorVisuallyBlocked === 0 &&
+            parcelAudit.connectorMaterialMissing === 0 &&
+            parcelAudit.familyMismatchCount === 0 &&
+            parcelAudit.componentPathFrameMissing === 0 &&
+            waterfrontAudit?.dryProgramRate >= 0.9 &&
+            waterfrontAudit.wetPierRate >= 0.9 &&
+            waterfrontAudit.wetSlipRate >= 0.9 &&
+            waterfrontAudit.pierWalkableRate === 1 &&
+            waterfrontAudit.surfaceMissingRate === 0 &&
+            waterfrontAudit.componentCount >= 2 &&
+            waterfrontAudit.functions.length >= 2;
           if (hasCore && (requireWaterfront ? validWaterfront : components.length > 0)) {
             found.set(placement.assetId, placement);
           } else {
@@ -341,7 +387,9 @@ if (process.env.MALDOROR_REGIONAL_ENVIRONMENT_ATLAS === '1') {
       const placement = world.getEnvironmentContactPlacementsInBounds(
         frame.anchor[0], frame.anchor[1], frame.anchor[0], frame.anchor[1],
       ).find((candidate) => candidate.assetId === frame.assetId);
-      if (placement) found.set(placement.assetId, placement);
+      if (placement && environmentProgramIsExact(placement)) {
+        found.set(placement.assetId, placement);
+      }
     }
   } else {
     let previousRadius = 0;
@@ -356,6 +404,7 @@ if (process.env.MALDOROR_REGIONAL_ENVIRONMENT_ATLAS === '1') {
         if (bounds[0] > bounds[2] || bounds[1] > bounds[3]) continue;
         for (const placement of world.getEnvironmentContactPlacementsInBounds(...bounds)) {
           if (wanted.has(placement.assetId) && !found.has(placement.assetId)) {
+            if (!environmentProgramIsExact(placement)) continue;
             found.set(placement.assetId, placement);
           }
         }
@@ -372,14 +421,7 @@ if (process.env.MALDOROR_REGIONAL_ENVIRONMENT_ATLAS === '1') {
   }
   FRAMES = environmentKit.assets.map((asset) => {
     const placement = found.get(asset.id);
-    const layout = placement.environmentProgramId
-      ? world.getEnvironmentProgramLayoutsInBounds(
-        placement.anchorX - 48,
-        placement.anchorY - 48,
-        placement.anchorX + 48,
-        placement.anchorY + 48,
-      ).find((candidate) => candidate.id === placement.environmentProgramId)
-      : null;
+    const layout = resolveEnvironmentProgramLayout(placement);
     if (placement.environmentProgram && !layout) {
       throw new Error(
         `Could not build ${placement.environmentProgram} at ${asset.id} (${placement.anchorX},${placement.anchorY})`,
@@ -651,9 +693,22 @@ function auditWaterfront(layout, components) {
     field.sample(Math.floor(x), Math.floor(y)).isWater
   ));
   const pierCentres = layout.piers.map((pier) => centroid(pier.polygon));
-  const pierWalkableRate = pierCentres.filter((point) => (
-    world.getTile(Math.floor(point.x), Math.floor(point.y)).walkable
-  )).length / Math.max(1, pierCentres.length);
+  const pierCentreAudit = pierCentres.map((point) => {
+    const x = Math.floor(point.x);
+    const y = Math.floor(point.y);
+    const sample = sampleRegionalWaterfrontLayout(x + 0.5, y + 0.5, layout);
+    const tile = world.getTile(x, y);
+    return {
+      x,
+      y,
+      pierWeight: sample.pierWeight,
+      isWater: field.sample(x, y).isWater,
+      tileId: tile.id,
+      walkable: tile.walkable,
+    };
+  });
+  const pierWalkableRate = pierCentreAudit.filter((point) => point.walkable).length /
+    Math.max(1, pierCentreAudit.length);
   let sampledSurfaceCells = 0;
   let missingSurfaceCells = 0;
   for (let y = Math.floor(layout.bounds.minY); y <= Math.ceil(layout.bounds.maxY); y++) {
@@ -677,6 +732,7 @@ function auditWaterfront(layout, components) {
     wetPierRate: wetPiers.rate,
     wetSlipRate: wetSlips.rate,
     pierWalkableRate,
+    pierCentreAudit,
     surfaceMissingRate: missingSurfaceCells / Math.max(1, sampledSurfaceCells),
     componentCount: components.filter((placement) => placement.waterfrontId === layout.id).length,
     functions: [...new Set(components

@@ -434,7 +434,7 @@ describe('RegionalWorldTileProvider', () => {
 
   it('places sparse environment contacts only where declarative envelopes match', () => {
     const world = makeWorld();
-    const placements = world.getEnvironmentContactPlacementsInBounds(-24, -40, 224, 40);
+    const placements = world.getEnvironmentContactPlacementsInBounds(-400, -400, 400, 400);
     expect(placements.length).toBeGreaterThan(0);
     expect(new Set(placements.flatMap((placement) => placement.families)))
       .toEqual(new Set(['coast', 'mountain']));
@@ -446,7 +446,21 @@ describe('RegionalWorldTileProvider', () => {
     for (const placement of [...placements].reverse()) {
       reversed.getBuildingTileAt(placement.anchorX, placement.anchorY);
     }
-    expect(reversed.getEnvironmentContactPlacementsInBounds(-24, -40, 224, 40)).toEqual(placements);
+    expect(reversed.getEnvironmentContactPlacementsInBounds(-400, -400, 400, 400)).toEqual(placements);
+  });
+
+  it('decorrelates two-dimensional contact jitter instead of collapsing into placement rows', () => {
+    const world = makeWorld(32, 32, routeSample, () => biomeSample('mountain'));
+    const placements = world.getEnvironmentContactPlacementsInBounds(-2000, -48, 2000, 48);
+    const occupiedRows = new Set(placements.map((placement) => placement.anchorY));
+    const jitterPhases = new Set(placements.map((placement) => {
+      const phaseX = ((placement.anchorX % 18) + 18) % 18;
+      const phaseY = ((placement.anchorY % 18) + 18) % 18;
+      return `${phaseX},${phaseY}`;
+    }));
+    expect(placements.length).toBeGreaterThan(80);
+    expect(occupiedRows.size).toBeGreaterThan(placements.length * 0.25);
+    expect(jitterPhases.size).toBeGreaterThan(placements.length * 0.4);
   });
 
   it('expands semantic cave contacts into connected walkable interiors and solid rock', () => {

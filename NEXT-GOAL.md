@@ -540,6 +540,35 @@ Completed foundations:
   independent 180-frame repeats retained zero misses/mismatches/errors, but
   their 6.246/7.051/6.434-second cold leads and 26.42/54.62/34.67 ms render
   p99s keep service readiness open. Production is unchanged;
+- a controlled travel-scale audit proved that the regional overlay hash was
+  collapsing sparse detail into a visible lattice: 142 contacts occupied only
+  three rows, two sub-cell phases, and four nearest-neighbour vectors. The
+  selected independent-axis avalanche retains comparable density (133
+  contacts) across 62 rows, 93 phases, and 131 nearest-neighbour vectors. A
+  behavioral regression now guards this visual property. The placement reset
+  then found and retained a real rejected cave with three topology/ownership
+  mismatches instead of choosing a convenient coordinate. Branches now attach
+  to the actual smoothed centreline, a 192-layout orientation/grid-phase/seed
+  sweep requires four-neighbour connectivity, and environment programs own
+  terrain/collision deterministically across parcel and program overlaps.
+  Replaying the identical cave coordinate changes surface coverage 26.15% to
+  100%, wall solidity 97.06% to 100%, and total mismatches three to zero; all
+  eight declarative environment contacts remain exact. Full comparison,
+  primary-source deductions, faithful frames, and raw metrics are in
+  `travel-entropy-v3-hash-audit/FINDINGS.md`. This closes one lattice defect,
+  not the travel-scale entropy gate. The same coordinate reset re-located one
+  viable route/parcel program per family. Its first waterfront was explicitly
+  rejected for two collision overlaps and 50% pier-center walkability; tile
+  collision now consumes the same sub-pixel program coverage as rendering,
+  contact collision is reserved before yard placement, and the strict locator
+  accepts only the complete invariant set. The selected `parcel:62:-54`
+  waterfront has 100% dry/wet/pier-walkability/surface agreement and zero
+  overlap, blockage, semantic, path-frame, or missing-material mismatches.
+  Two independent 180-frame predictive traversals retained zero coverage
+  misses, checkpoint mismatches, scheduler failures, or errors at render
+  p50/p95/p99 4.35/10.75/38.82 and 4.37/9.38/22.62 ms; initial leads
+  6.056/6.339 seconds and 788.72 MiB peak RSS keep service readiness open.
+  Production is unchanged;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–025 expose selected and rejected research candidates without
@@ -555,10 +584,12 @@ Still open and therefore goal-blocking:
 - the first six-family landmark silhouettes and shared-boundary parcel
   compounds are still sparse research prototypes rather than a complete world
   layer; coast-specific waterfront diversity, larger squares/commons, far
-  greater travel-scale entropy, authoritative traversal, stronger landmark
-  framing, multiple cave/highland programs and production cave transitions,
-  tidal/open-water/boat/island interactions, and environmental consequences
-  remain before the family layer is production-complete;
+  greater travel-scale entropy across route topology, hydrology, biome fields,
+  ambient clusters, landmarks, and parcel programs, authoritative traversal,
+  stronger landmark framing, multiple cave/highland programs and production
+  cave transitions, tidal/open-water/boat/island interactions, and
+  environmental consequences remain before the family layer is
+  production-complete;
 - the complete Phase-0 diagnostic comparison and operator direction approval
   have not passed;
 - schedules, needs, relationships, memories, environmental systems, persistent

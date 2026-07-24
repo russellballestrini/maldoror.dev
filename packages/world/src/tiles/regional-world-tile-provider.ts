@@ -337,6 +337,7 @@ interface CollectedDerivedLayers {
   waterfrontSurfaces: Map<string, WaterfrontSurface>;
   environmentSurfaces: Map<string, EnvironmentProgramSurface>;
   environmentWalkable: Set<string>;
+  environmentSolid: Set<string>;
 }
 
 const VISIBLE_TILE_CACHE = new WeakMap<BuildingTileData, boolean>();
@@ -527,7 +528,14 @@ export class RegionalWorldTileProvider extends TileProvider {
     const surface = parcel.surfaces.get(key);
     const waterfront = parcel.waterfrontSurfaces.get(key);
     const environment = parcel.environmentSurfaces.get(key);
-    return connector
+    return environment
+      ? this.compositor.getEnvironmentProgramGroundTile(
+        tileX,
+        tileY,
+        environment.layout,
+        environment.routeKind,
+      )
+      : connector
       ? this.compositor.getPathAccessTile(
         tileX,
         tileY,
@@ -546,13 +554,6 @@ export class RegionalWorldTileProvider extends TileProvider {
         )
         : surface
         ? this.compositor.getParcelGroundTile(tileX, tileY, surface.layout, surface.routeKind)
-        : environment
-          ? this.compositor.getEnvironmentProgramGroundTile(
-            tileX,
-            tileY,
-            environment.layout,
-            environment.routeKind,
-          )
         : this.compositor.getTile(tileX, tileY);
   }
 
@@ -565,7 +566,15 @@ export class RegionalWorldTileProvider extends TileProvider {
     const surface = parcel.surfaces.get(key);
     const waterfront = parcel.waterfrontSurfaces.get(key);
     const environment = parcel.environmentSurfaces.get(key);
-    return connector
+    return environment
+      ? this.compositor.getEnvironmentProgramGroundTileAtResolution(
+        tileX,
+        tileY,
+        resolution,
+        environment.layout,
+        environment.routeKind,
+      )
+      : connector
       ? this.compositor.getPathAccessTileAtResolution(
         tileX,
         tileY,
@@ -592,14 +601,6 @@ export class RegionalWorldTileProvider extends TileProvider {
           surface.layout,
           surface.routeKind,
         )
-        : environment
-          ? this.compositor.getEnvironmentProgramGroundTileAtResolution(
-            tileX,
-            tileY,
-            resolution,
-            environment.layout,
-            environment.routeKind,
-          )
         : this.compositor.getTileAtResolution(tileX, tileY, resolution);
   }
 
@@ -680,7 +681,15 @@ export class RegionalWorldTileProvider extends TileProvider {
         const surface = derived.surfaces.get(key);
         const waterfront = derived.waterfrontSurfaces.get(key);
         const environment = derived.environmentSurfaces.get(key);
-        const terrainTile = connector
+        const terrainTile = environment
+          ? this.compositor.getEnvironmentProgramGroundTileAtResolution(
+            x,
+            y,
+            normalizedResolution,
+            environment.layout,
+            environment.routeKind,
+          )
+          : connector
           ? this.compositor.getPathAccessTileAtResolution(
             x,
             y,
@@ -707,21 +716,15 @@ export class RegionalWorldTileProvider extends TileProvider {
               surface.layout,
               surface.routeKind,
             )
-            : environment
-              ? this.compositor.getEnvironmentProgramGroundTileAtResolution(
-                x,
-                y,
-                normalizedResolution,
-                environment.layout,
-                environment.routeKind,
-              )
             : this.compositor.getTileAtResolution(x, y, normalizedResolution);
         terrain.push({ x, y, tile: terrainTile });
         const authoredOverlay = super.getBuildingTileAt(x, y);
         const overlay = authoredOverlay ?? (connector?.protected ? null : derived.overlays.get(key) ?? null);
         if (overlay) overlays.push({ x, y, tile: overlay });
         const opensAuthoredMass = connector?.protected || derived.environmentWalkable.has(key);
-        if ((!opensAuthoredMass && super.isBuildingAt(x, y)) || derived.solid.has(key)) {
+        if (derived.environmentSolid.has(key) || (!opensAuthoredMass && (
+          super.isBuildingAt(x, y) || derived.solid.has(key)
+        ))) {
           solid.push([x, y]);
         }
       }
@@ -749,6 +752,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     const waterfrontSurfaces = new Map<string, WaterfrontSurface>();
     const environmentSurfaces = new Map<string, EnvironmentProgramSurface>();
     const environmentWalkable = new Set<string>();
+    const environmentSolid = new Set<string>();
     const firstBlockX = floorDiv(bounds.minX - this.placementMaxOffsetX, this.blockSize);
     const lastBlockX = floorDiv(bounds.maxX - this.placementMinOffsetX, this.blockSize);
     const firstBlockY = floorDiv(bounds.minY - this.placementMaxOffsetY, this.blockSize);
@@ -770,6 +774,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     }
     const parcel = this.collectParcelLayers(bounds);
     for (const [key, tile] of parcel.overlays) {
+      if (parcel.environmentSurfaces.has(key)) continue;
       const beneath = overlays.get(key);
       overlays.set(key, beneath ? compositeTiles(beneath, tile) : tile);
     }
@@ -780,6 +785,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       environmentWalkable.add(key);
       solid.delete(key);
     }
+    for (const key of parcel.environmentSolid) environmentSolid.add(key);
     for (const key of parcel.solid) solid.add(key);
     for (const [key, connector] of parcel.connectors) connectors.set(key, connector);
     for (const [key, surface] of parcel.surfaces) surfaces.set(key, surface);
@@ -793,6 +799,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       waterfrontSurfaces,
       environmentSurfaces,
       environmentWalkable,
+      environmentSolid,
     };
   }
 
@@ -990,6 +997,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       }
     }
     const component = parcel.overlays.get(key);
+    if (parcel.environmentSurfaces.has(key)) return derived;
     return component ? (derived ? compositeTiles(derived, component) : component) : derived;
   }
 
@@ -998,7 +1006,9 @@ export class RegionalWorldTileProvider extends TileProvider {
     if (prepared) return prepared.solid.has(positionKey(worldX, worldY));
     const key = positionKey(worldX, worldY);
     const parcel = this.getParcelLayerBlock(worldX, worldY);
-    if (parcel.connectors.get(key)?.protected || parcel.environmentWalkable.has(key)) return false;
+    if (parcel.environmentWalkable.has(key)) return false;
+    if (parcel.environmentSolid.has(key)) return true;
+    if (parcel.connectors.get(key)?.protected) return false;
     if (super.isBuildingAt(worldX, worldY)) return true;
     if (parcel.solid.has(key)) return true;
     return this.blocksNear(worldX, worldY).some((block) => block.solid.has(key));
@@ -1667,6 +1677,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     const waterfrontSurfaces = new Map<string, WaterfrontSurface>();
     const environmentSurfaces = new Map<string, EnvironmentProgramSurface>();
     const environmentWalkable = new Set<string>();
+    const environmentSolid = new Set<string>();
     const inside = (key: string): boolean => {
       const separator = key.indexOf(',');
       const x = Number(key.slice(0, separator));
@@ -1692,10 +1703,11 @@ export class RegionalWorldTileProvider extends TileProvider {
     }
     for (const program of this.getEnvironmentProgramsInBounds(bounds)) {
       for (const [key, surface] of program.surfaces) {
-        if (inside(key) && !environmentSurfaces.has(key)) environmentSurfaces.set(key, surface);
+        if (!inside(key) || environmentSurfaces.has(key)) continue;
+        environmentSurfaces.set(key, surface);
+        if (program.walkable.has(key)) environmentWalkable.add(key);
+        if (program.solid.has(key)) environmentSolid.add(key);
       }
-      for (const key of program.walkable) if (inside(key)) environmentWalkable.add(key);
-      for (const key of program.solid) if (inside(key)) solid.add(key);
     }
     return {
       overlays,
@@ -1705,6 +1717,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       waterfrontSurfaces,
       environmentSurfaces,
       environmentWalkable,
+      environmentSolid,
     };
   }
 
@@ -1842,7 +1855,9 @@ export class RegionalWorldTileProvider extends TileProvider {
     for (const cell of rasterizeRegionalParcelLayout(layout)) {
       surfaces.set(positionKey(cell.x, cell.y), surface);
     }
-    const occupied = new Set<string>();
+    const occupied = new Set(contact.asset.collision.map(([offsetX, offsetY]) => (
+      positionKey(contact.anchorX + offsetX, contact.anchorY + offsetY)
+    )));
     for (let layer = 1; layer <= layers; layer++) {
       const stationDistance = stationDistances[layer - 1]!;
       const station = sampleRegionalParcelPath(path, stationDistance);
@@ -1986,7 +2001,9 @@ export class RegionalWorldTileProvider extends TileProvider {
     const protectedCells = new Set([...connectors.entries()]
       .filter(([, connector]) => connector.protected)
       .map(([key]) => key));
-    const occupied = new Set<string>();
+    const occupied = new Set(contact.asset.collision.map(([offsetX, offsetY]) => (
+      positionKey(contact.anchorX + offsetX, contact.anchorY + offsetY)
+    )));
     const base = Math.floor(this.hashUnit(contact.siteX, contact.siteY, 0x2af3) * programAssets.length);
     const offsets = [-4.4, 4.4];
     for (const [index, tangentOffset] of offsets.entries()) {
@@ -2758,9 +2775,15 @@ export class RegionalWorldTileProvider extends TileProvider {
   }
 
   private hashUnit(x: number, y: number, salt: number): number {
-    let value = Math.imul((x | 0) ^ this.seed32 ^ salt, 0x45d9f3b);
-    value = Math.imul(value ^ (y | 0), 0x119de1f3);
-    return ((value ^ (value >>> 16)) >>> 0) / 0xffffffff;
+    // Mix each spatial axis before the final avalanche. Folding y into a
+    // once-multiplied x value left visible horizontal placement bands over
+    // large bounds because nearby signed coordinates retained correlations.
+    let value = (this.seed32 ^ salt ^ Math.imul(x | 0, 0x9e3779b1)) | 0;
+    value = Math.imul(value ^ (value >>> 16), 0x85ebca6b);
+    value ^= Math.imul(y | 0, 0xc2b2ae35);
+    value = Math.imul(value ^ (value >>> 13), 0x27d4eb2d);
+    value ^= value >>> 16;
+    return (value >>> 0) / 0x1_0000_0000;
   }
 }
 

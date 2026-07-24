@@ -22,7 +22,10 @@ import {
   rasterizeRegionalEnvironmentProgramLayout,
   sampleRegionalEnvironmentProgramLayout,
 } from '../tiles/regional-environment-program-layout.js';
-import { buildRegionalWaterfrontLayout } from '../tiles/regional-waterfront-layout.js';
+import {
+  buildRegionalWaterfrontLayout,
+  sampleRegionalWaterfrontLayout,
+} from '../tiles/regional-waterfront-layout.js';
 
 const COLOURS: Record<BiomeFamily, RGB> = {
   'canal-town': { r: 220, g: 150, b: 90 },
@@ -296,6 +299,33 @@ describe('RegionalMaterialCompositor', () => {
     );
     expect(pierTile.id).toContain('regional-waterfront-ground:waterfront:test-blend');
     expect(pierTile.walkable).toBe(true);
+
+    let partialPierCell: { x: number; y: number } | null = null;
+    for (let y = Math.floor(layout.bounds.minY); y <= Math.ceil(layout.bounds.maxY); y++) {
+      for (let x = Math.floor(layout.bounds.minX); x <= Math.ceil(layout.bounds.maxX); x++) {
+        const centre = sampleRegionalWaterfrontLayout(x + 0.5, y + 0.5, layout);
+        const centreWeight = Math.max(centre.apronWeight, centre.workYardWeight, centre.pierWeight);
+        let sampledWeight = 0;
+        for (let sampleY = 0; sampleY < 8; sampleY++) {
+          for (let sampleX = 0; sampleX < 8; sampleX++) {
+            sampledWeight = Math.max(sampledWeight, sampleRegionalWaterfrontLayout(
+              x + (sampleX + 0.5) / 8,
+              y + (sampleY + 0.5) / 8,
+              layout,
+            ).pierWeight);
+          }
+        }
+        if (centreWeight <= 0.08 && sampledWeight > 0.2) partialPierCell ??= { x, y };
+      }
+    }
+    expect(partialPierCell).not.toBeNull();
+    expect(composed.getWaterfrontGroundTileAtResolution(
+      partialPierCell!.x,
+      partialPierCell!.y,
+      8,
+      layout,
+      'local-road',
+    ).walkable).toBe(true);
   });
 
   it('carves cave darkness and contour trails from blended terrain instead of square stamps', () => {

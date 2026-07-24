@@ -505,6 +505,7 @@ export class RegionalMaterialCompositor {
     const pierTexture = new Float64Array(3);
     const textureScaleTiles = this.textureScaleForResolution(resolution);
     const bridgeTextures = this.crossingMaterials?.bridge;
+    let maximumWalkableSurfaceWeight = 0;
     for (let y = 0; y < resolution; y++) {
       const row: RGB[] = [];
       for (let x = 0; x < resolution; x++) {
@@ -517,6 +518,7 @@ export class RegionalMaterialCompositor {
           sample.workYardWeight,
           sample.pierWeight,
         );
+        maximumWalkableSurfaceWeight = Math.max(maximumWalkableSurfaceWeight, surfaceWeight);
         if (surfaceWeight <= 0.0001 && sample.edgeWeight <= 0.0001) {
           row.push(beneath);
           continue;
@@ -566,17 +568,12 @@ export class RegionalMaterialCompositor {
       }
       pixels.push(row);
     }
-    const centre = sampleRegionalWaterfrontLayout(tileX + 0.5, tileY + 0.5, layout);
     const tile: Tile = {
       id: `regional-waterfront-ground:${layout.id}:${tileX},${tileY}@${resolution}`,
       name: 'Regional working-waterfront terrain',
       pixels,
       materialMask: base.materialMask,
-      walkable: base.walkable || Math.max(
-        centre.apronWeight,
-        centre.workYardWeight,
-        centre.pierWeight,
-      ) > 0.08,
+      walkable: base.walkable || maximumWalkableSurfaceWeight > 0.08,
       resolutions: { [String(resolution)]: pixels },
     };
     this.cache.set(key, tile);
