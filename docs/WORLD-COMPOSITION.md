@@ -60,8 +60,8 @@ default. One worker-owned kit shares immutable raster assets and bounded
 physical, route, and material caches; each SSH session owns isolated players,
 NPCs, user structures, roads, and prepared-view LRU state. The former canal
 provider is an explicit environment-controlled rollback lane, never a silent
-startup fallback. This source transition is not itself a deployment or visual
-acceptance claim.
+startup fallback. This topology is live in production from `v14d6b58`; its
+deployment is evidence, not visual-direction or end-state acceptance.
 
 ## Regional route hierarchy
 
@@ -218,9 +218,16 @@ peak RSS is 776.02 MiB. The authoritative session now observes player motion,
 free-camera motion, resize, rotation, render-mode changes, and zoom; input opens
 only after exact visible coverage exists.
 
-These are local source/runtime measurements, not Gate-D completion. Production
-SSH activation, the 5/10/20-presence ladder, 30-minute run, and physical Ghostty
-proof remain open.
+The production 160x46 SSH capture then exposed a presentation-cadence failure:
+the exact one-minute-per-second simulation clock triggered seven full global
+truecolour repaints and 1,327,492 steady bytes over six seconds. The selected
+terminal projector now holds 48 coherent global atmosphere states per world day
+while preserving immediate weather/season transitions and one-second localized
+rain/storm animation. Repeating the live capture retains 90 synchronized frames
+at 19,787 steady bytes, a 98.51% reduction with zero full-world idle repaints.
+
+These are live bounded measurements, not Gate-D completion. The 5/10/20-
+presence ladder, 30-minute run, and physical Ghostty proof remain open.
 
 ## Non-periodic asset placement
 
@@ -244,7 +251,7 @@ curbs, wet contact, reflections, collision, and terminal animation phases.
 
 ## Current limits
 
-This is a source-integrated production candidate, not the end-state world or a
+This is a live production foundation, not the end-state world or a
 Phase-0 art-direction approval.
 The rebuilt origin now has coherent canal topology, dense side walls, legible
 crossing-scale negative space, and constructed water contacts in faithful ANSI

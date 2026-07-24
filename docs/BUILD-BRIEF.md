@@ -216,6 +216,8 @@ octant), `MALDOROR_ASSET_ROOT=<repo-or-release-root>`, and
 `MALDOROR_CANAL_TOWN=0` may additionally expose the legacy
 `MALDOROR_DISTRICT=<png>` experiment. A regional startup error is fatal rather
 than silently showing a different world.
+Current live checkpoint: `v14d6b58` (regional world plus bounded terminal
+atmosphere cadence), activated 2026-07-24 with additive migrations 0008-0009.
 Worker boot takes ~30-90s under load (module load off sdb) — patience, not a
 hang. `.service`/`.slice` mirrored in `deploy/box/`; `deploy/box/redeploy.sh` =
 full build+tsup+push+restart.

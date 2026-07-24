@@ -161,3 +161,20 @@ pnpm test
 Always look at the faithful PNG and compare it with
 `tools/render-sim/gallery/TARGET.png`. An idealized source-image raster is a
 useful development preview, not live acceptance evidence.
+
+### Regional production capture (2026-07-24)
+
+The regional provider is live at `v14d6b58`. Its first retained 160x46 capture
+failed the bandwidth gate: the one-world-minute-per-second simulation clock
+forced seven global atmosphere repaints and 1,327,492 bytes after the first
+frame over six seconds. The simulation cadence remains exact; a terminal-only
+projector now presents 48 coherent global grades per world day, immediate
+weather/season transitions, and localized one-second rain/storm animation.
+
+The repeated real SSH capture retains 90 synchronized frames while reducing the
+same steady window to 19,787 bytes (98.51%) with no full-world idle repaint.
+The raw rejected/selected streams, faithful PNGs, hashes, database backup proof,
+and exact `(17,-11)` to `(0,0)` login test live under
+`/mnt/donto-data/donto-resources/maldoror/rendering-research/track-5-motion-transport/live-regional-deploy-v1/`.
+Public gallery iteration 030 shows the selected faithful frame. Physical
+Ghostty acceptance and sustained concurrency remain open.

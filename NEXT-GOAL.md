@@ -667,17 +667,38 @@ Completed foundations:
   verification is 34 files / 184 tests, all 18 typecheck tasks, all 12 build
   tasks, and clean diff validation. This is source readiness, not production
   activation; production remains unchanged;
+- the regional stack and persistent living-world migrations are now activated
+  in the public production SSH service. A verified 44,655,547-byte pre-migration
+  custom-format backup (`18905ea1...bfdff4`) precedes the exact transactional
+  application of additive migrations 0008-0009; five users, two NPCs, and five
+  player states remained intact. The retained hot reload at `v14d6b58` reaches
+  regional readiness in 8.757 seconds (1.109-second generator startup,
+  5.663-second origin generation), restores both NPCs, has zero service
+  restarts, and peaks at 839.79 MiB. A controlled key-backed production login
+  staged at `(17,-11)` persists exactly `(0,0)` after entry, twice. The first
+  faithful live capture exposed and retains a real failure: advancing the exact
+  simulation clock once per second caused seven 210-235 KiB global atmosphere
+  repaints and 1,327,492 steady bytes over six seconds. The selected presentation
+  cadence keeps 48 coherent global atmosphere states per world day while rain
+  and storm retain one-second localized animation; the repeated 160x46 capture
+  keeps 90 synchronized frames but emits only 19,787 steady bytes, a 98.51%
+  reduction with zero full-world idle repaints. Full evidence and hashes are in
+  `track-5-motion-transport/live-regional-deploy-v1/`. Public gallery iteration
+  030 and TARGET-vs-NOW now show the faithfully replayed live regional frame.
+  Full verification is 36 files / 189 tests, 18/18 typecheck tasks, and 12/12
+  build tasks. No image generation or metered model call was used. This closes
+  production activation, not the remaining atlas/load/life/human-display gates;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
-  iterations 012–028 expose selected and rejected research candidates without
+  iterations 012–030 expose selected and rejected research candidates without
   claiming they are live.
 
 Still open and therefore goal-blocking:
 
-- the regional stack is now the authoritative source provider with exact-origin
-  readiness and movement/camera/zoom transport, but it is not yet activated in
-  the running production service. Production SSH latency, the 5/10/20-presence
-  ladder, 30-minute run, cgroup behavior, and physical Ghostty remain unproven;
+- the regional stack is now the live authoritative provider with exact-origin
+  readiness, real SSH latency, movement/camera/zoom transport, and one bounded
+  six-second production capture. The 5/10/20-presence ladder, 30-minute run,
+  long-run cgroup behavior, and physical Ghostty remain unproven;
 - the first six-family landmark silhouettes and shared-boundary parcel
   compounds are still sparse research prototypes rather than a complete world
   layer; coast-specific waterfront diversity, larger squares/commons, far
@@ -691,15 +712,15 @@ Still open and therefore goal-blocking:
   have not passed;
 - the deterministic schedule/need/role/relationship/memory core plus the first
   persistent wetness, water-state, phenology/decay, and authored-light
-  consequences now have restart-exact accelerated evidence. The additive
-  migrations are not deployed and Gate C has not passed: uninterrupted physical
-  60-minute observation with two real human clients, reconnect and newcomer
+  consequences now have restart-exact accelerated evidence and their additive
+  state schema is live. Gate C has not passed: uninterrupted physical 60-minute
+  observation with two real human clients, reconnect and newcomer
   checks, natural conversations and plans, richer event coordination,
   player-caused persisted world change, coherent fronts, long-horizon geometric
-  growth/decay, and production-provider integration remain open;
+  growth/decay, and production multi-human integration remain open;
 - the 24-coordinate multi-zoom/time/weather atlas, deterministic traversal,
-  load ladder, 30-minute terminal run, production deployment, and physical
-  Ghostty acceptance all remain open.
+  load ladder, 30-minute terminal run, and physical Ghostty acceptance all
+  remain open.
 
 This ledger records real progress and the remaining distance. It does not
 relax, subdivide, or supersede any proof gate above.
