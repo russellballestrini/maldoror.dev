@@ -17,6 +17,7 @@ import {
   type RegionalLandmarkKind,
   type RegionalCrossingKind,
   type RegionalRouteKind,
+  type RegionalRouteSurfaceStyle,
 } from '@maldoror/world';
 import sharp from 'sharp';
 
@@ -35,6 +36,8 @@ export interface RegionalRouteMaterialKit {
   tiles: Tile[];
   routeMaterials: Record<RegionalRouteKind, Tile[]>;
   crossingMaterials: Partial<Record<RegionalCrossingKind, Tile[]>>;
+  routeSurfaceStyles: Record<RegionalRouteKind, RegionalRouteSurfaceStyle>;
+  crossingSurfaceStyles: Partial<Record<RegionalCrossingKind, RegionalRouteSurfaceStyle>>;
 }
 
 export interface RegionalLandmarkKit {
@@ -101,6 +104,9 @@ interface MaterialEntry extends BaseMaterialEntry {
 interface RouteMaterialEntry extends BaseMaterialEntry {
   routeKind?: RegionalRouteKind;
   crossingKind?: RegionalCrossingKind;
+  textureScaleTiles: number;
+  detailOpacity: number;
+  overviewOpacity: number;
 }
 
 interface LandmarkEntry {
@@ -293,15 +299,36 @@ export async function loadRegionalRouteMaterialKit(manifestPath: string): Promis
     arterial: [],
   };
   const crossingMaterials: Partial<Record<RegionalCrossingKind, Tile[]>> = {};
+  const routeSurfaceStyles = {} as Record<RegionalRouteKind, RegionalRouteSurfaceStyle>;
+  const crossingSurfaceStyles: Partial<Record<RegionalCrossingKind, RegionalRouteSurfaceStyle>> = {};
   const tiles: Tile[] = [];
   for (const entry of [...routeEntries, ...crossingEntries]) {
     const imagePath = resolveAssetPath(manifestDirectory, entry.file);
     const variants = await loadTerrainMasterVariants(imagePath, samplingTextureSize, entry);
-    if (entry.routeKind) routeMaterials[entry.routeKind].push(...variants);
-    if (entry.crossingKind) crossingMaterials[entry.crossingKind] = variants;
+    const style = {
+      textureScaleTiles: entry.textureScaleTiles,
+      detailOpacity: entry.detailOpacity,
+      overviewOpacity: entry.overviewOpacity,
+    };
+    if (entry.routeKind) {
+      routeMaterials[entry.routeKind].push(...variants);
+      routeSurfaceStyles[entry.routeKind] = style;
+    }
+    if (entry.crossingKind) {
+      crossingMaterials[entry.crossingKind] = variants;
+      crossingSurfaceStyles[entry.crossingKind] = style;
+    }
     tiles.push(...variants);
   }
-  return { manifestPath: absoluteManifest, sourceTileSize, tiles, routeMaterials, crossingMaterials };
+  return {
+    manifestPath: absoluteManifest,
+    sourceTileSize,
+    tiles,
+    routeMaterials,
+    crossingMaterials,
+    routeSurfaceStyles,
+    crossingSurfaceStyles,
+  };
 }
 
 /** Load the bounded landmark research kit from explicit family, route-site,
@@ -628,7 +655,10 @@ function parseRouteEntry(value: unknown, index: number, role: 'route' | 'crossin
       typeof value.id !== 'string' || value.id.length === 0 ||
       typeof value.file !== 'string' || value.file.length === 0 ||
       !Number.isInteger(value.variants) || Number(value.variants) < 1 || Number(value.variants) > 16 ||
-      typeof value.walkable !== 'boolean') {
+      typeof value.walkable !== 'boolean' ||
+      typeof value.textureScaleTiles !== 'number' || value.textureScaleTiles < 1 || value.textureScaleTiles > 24 ||
+      typeof value.detailOpacity !== 'number' || value.detailOpacity < 0.2 || value.detailOpacity > 1 ||
+      typeof value.overviewOpacity !== 'number' || value.overviewOpacity < 0.2 || value.overviewOpacity > 1) {
     throw new Error(`Invalid regional ${role} material entry at index ${index}`);
   }
   const material = value.material;
@@ -643,6 +673,9 @@ function parseRouteEntry(value: unknown, index: number, role: 'route' | 'crossin
     variants: Number(value.variants),
     walkable: value.walkable,
     material: material as Tile['material'],
+    textureScaleTiles: value.textureScaleTiles,
+    detailOpacity: value.detailOpacity,
+    overviewOpacity: value.overviewOpacity,
   };
 }
 

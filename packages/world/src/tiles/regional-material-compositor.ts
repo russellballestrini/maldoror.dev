@@ -39,6 +39,15 @@ export interface RegionalRouteSampler {
   sample(worldX: number, worldY: number): RegionalRouteSample;
 }
 
+export interface RegionalRouteSurfaceStyle {
+  /** World-tile span of the source master at walking scale. */
+  textureScaleTiles: number;
+  /** Material ownership at walking/near zoom after place material is retained. */
+  detailOpacity: number;
+  /** Reduced map-scale ownership so infrastructure does not erase place. */
+  overviewOpacity: number;
+}
+
 export type RegionalTextureReconstruction =
   | 'square-bilinear'
   | 'hex-contrast'
@@ -59,6 +68,8 @@ export interface RegionalMaterialCompositorConfig {
   routes?: RegionalRouteSampler;
   routeMaterials?: Readonly<Record<RegionalRouteKind, readonly Tile[]>>;
   crossingMaterials?: Readonly<Partial<Record<RegionalCrossingKind, readonly Tile[]>>>;
+  routeSurfaceStyles?: Readonly<Record<RegionalRouteKind, RegionalRouteSurfaceStyle>>;
+  crossingSurfaceStyles?: Readonly<Partial<Record<RegionalCrossingKind, RegionalRouteSurfaceStyle>>>;
   maxCachedTiles?: number;
   variantPeriodTiles?: number;
   /** World-tile span of one complete source texture. Values above one prevent
@@ -112,6 +123,8 @@ export class RegionalMaterialCompositor {
   private readonly landmarkFabricMaterials?: Readonly<Partial<Record<BiomeFamily, readonly PreparedTexture[]>>>;
   private readonly routeMaterials?: Readonly<Record<RegionalRouteKind, readonly PreparedTexture[]>>;
   private readonly crossingMaterials?: Readonly<Partial<Record<RegionalCrossingKind, readonly PreparedTexture[]>>>;
+  private readonly routeSurfaceStyles?: Readonly<Record<RegionalRouteKind, RegionalRouteSurfaceStyle>>;
+  private readonly crossingSurfaceStyles?: Readonly<Partial<Record<RegionalCrossingKind, RegionalRouteSurfaceStyle>>>;
   private readonly maxCachedTiles: number;
   private readonly variantPeriodTiles: number;
   private readonly textureScaleTiles: number;
@@ -181,6 +194,8 @@ export class RegionalMaterialCompositor {
         sources?.map(prepareTexture),
       ])) as Readonly<Partial<Record<RegionalCrossingKind, readonly PreparedTexture[]>>>;
     }
+    this.routeSurfaceStyles = config.routeSurfaceStyles;
+    this.crossingSurfaceStyles = config.crossingSurfaceStyles;
     const prepared = [
       ...BIOME_FAMILIES.flatMap((family) => this.materials[family]),
       ...BIOME_FAMILIES.flatMap((family) => this.overviewMaterials?.[family] ?? []),
@@ -969,6 +984,7 @@ export class RegionalMaterialCompositor {
     const pixels: PixelGrid = [];
     const materialMask: MaterialMask = [];
     const textureSamples = Array.from({ length: BIOME_FAMILIES.length }, () => new Float64Array(3));
+    const quayTexture = new Float64Array(3);
     for (let y = 0; y < size; y++) {
       const row: RGB[] = [];
       const materialRow = new Uint8Array(size);
@@ -978,10 +994,27 @@ export class RegionalMaterialCompositor {
         const worldX = tileX + (x + 0.5) / size;
         const worldY = tileY + (y + 0.5) / size;
         const weights = interpolateWeights(samples, smoothU, smoothV);
+        const waterCoverage = bilerp(
+          Number(samples[0].isWater),
+          Number(samples[1].isWater),
+          Number(samples[2].isWater),
+          Number(samples[3].isWater),
+          smoothU,
+          smoothV,
+        );
         const ecology = strongestEcologicalPair(weights);
-        const canalOverlay = smoothstep(0.12, 0.62, weights[0]);
-        const ruinsOverlay = smoothstep(0.14, 0.68, weights[5]);
+        // Cultural families describe constructed dry ground. Hydrology owns
+        // wet pixels absolutely: without this separation a strong canal-town
+        // weight repaints a physically wet canal as beige paving while the
+        // collision mask still calls it water. Fade cultural overlays before
+        // the wet boundary and reconstruct visible water from the authored
+        // coast/water material instead.
+        const dryCoverage = 1 - smoothstep(0.08, 0.72, waterCoverage);
+        const waterMaterialWeight = smoothstep(0.12, 0.78, waterCoverage);
+        const canalOverlay = smoothstep(0.12, 0.62, weights[0]) * dryCoverage;
+        const ruinsOverlay = smoothstep(0.14, 0.68, weights[5]) * dryCoverage;
         const needed = new Set<number>([ecology[0], ecology[1]]);
+        if (waterMaterialWeight > 0.001) needed.add(COAST);
         if (canalOverlay > 0.001) needed.add(0);
         if (ruinsOverlay > 0.001) needed.add(5);
         for (const familyIndex of needed) {
@@ -1005,13 +1038,55 @@ export class RegionalMaterialCompositor {
         const ecologicalMix = secondWeight / ecologicalTotal;
         const first = textureSamples[ecology[0]]!;
         const second = textureSamples[ecology[1]]!;
+        const water = textureSamples[COAST]!;
         const town = textureSamples[0]!;
         const ruins = textureSamples[5]!;
         let linear = [0, 1, 2].map((channel) => {
           const ecological = lerp(first[channel]!, second[channel]!, ecologicalMix);
           const withTown = lerp(ecological, town[channel]!, canalOverlay);
-          return lerp(withTown, ruins[channel]!, ruinsOverlay * (0.88 - canalOverlay * 0.2));
+          const withCulture = lerp(
+            withTown,
+            ruins[channel]!,
+            ruinsOverlay * (0.88 - canalOverlay * 0.2),
+          );
+          return lerp(withCulture, water[channel]!, waterMaterialWeight);
         });
+        // A strong canal-town field turns the physically reconstructed shore
+        // into a civic edge on its dry side. This is not a rectangular quay
+        // sprite: the band follows the same continuous hydrology ownership as
+        // the collision mask, samples scale-authored limestone in world space,
+        // and leaves the wet side under water ownership. The adjacent narrow
+        // contact shadow keeps the quay legible after ANSI reduction.
+        const detailQuayTextures = this.landmarkFabricMaterials?.['canal-town'];
+        const quayTextures = size <= 8 ? this.materials['canal-town'] : detailQuayTextures;
+        const townConstruction = smoothstep(0.42, 0.78, weights[0]);
+        const quayWeight = townConstruction *
+          smoothstep(0.16, 0.34, waterCoverage) *
+          (1 - smoothstep(0.43, 0.54, waterCoverage));
+        if (quayTextures && quayWeight > 0.0001) {
+          this.sampleTextureField(
+            quayTextures,
+            worldX,
+            worldY,
+            0x51a7,
+            size <= 8 ? textureScaleTiles : 1.6,
+            size,
+            quayTexture,
+            this.variantPeriodTiles,
+            false,
+          );
+          const quayOpacity = size <= 8 ? 0.44 : 0.72;
+          linear = linear.map((value, channel) => (
+            lerp(value, quayTexture[channel]!, quayWeight * quayOpacity)
+          ));
+        }
+        const wetContactWeight = townConstruction *
+          smoothstep(0.46, 0.54, waterCoverage) *
+          (1 - smoothstep(0.66, 0.78, waterCoverage));
+        if (wetContactWeight > 0.0001) {
+          const contactOpacity = size <= 8 ? 0.12 : 0.2;
+          linear = linear.map((value) => value * (1 - wetContactWeight * contactOpacity));
+        }
         const routeLayer = routeSamples
           ? selectRouteLayer(routeSamples, smoothU, smoothV)
           : null;
@@ -1020,6 +1095,9 @@ export class RegionalMaterialCompositor {
             ? this.crossingMaterials?.[routeLayer.sample.crossingKind]
             : undefined;
           const routeTextures = crossingTextures ?? this.routeMaterials[routeLayer.sample.routeKind!];
+          const surfaceStyle = routeLayer.sample.crossingKind
+            ? this.crossingSurfaceStyles?.[routeLayer.sample.crossingKind]
+            : this.routeSurfaceStyles?.[routeLayer.sample.routeKind!];
           const routeTexture = new Float64Array(3);
           let textureX = worldX;
           let textureY = worldY;
@@ -1040,28 +1118,40 @@ export class RegionalMaterialCompositor {
             textureX,
             textureY,
             0x4d71,
-            textureScaleTiles,
+            surfaceStyle?.textureScaleTiles ?? textureScaleTiles,
             size,
             routeTexture,
           );
           const crossingOpacity = routeLayer.sample.crossingKind === 'ford' ? 0.48 : 1;
-          const opacity = routeLayer.opacity * crossingOpacity;
+          const authoredOpacity = surfaceStyle
+            ? (size <= 8 ? surfaceStyle.overviewOpacity : surfaceStyle.detailOpacity)
+            : 1;
+          const shapedCoverage = routeLayer.sample.crossingKind === 'bridge'
+            ? bridgeShapeCoverage(routeLayer.opacity, routeLayer.normalizedDistance)
+            : routeLayer.opacity;
+          const opacity = shapedCoverage * crossingOpacity * authoredOpacity;
           linear = linear.map((value, channel) => lerp(value, routeTexture[channel]!, opacity));
+          if (routeLayer.sample.crossingKind === 'bridge') {
+            // The bridge is a constructed cross-section, not a timber-filled
+            // route rectangle. Erode the interpolated footprint into a narrow
+            // deck, retain side beams near its physical edges, and add sparse
+            // transverse support rhythm in the route-aligned frame.
+            const edgeBeam = smoothstep(0.56, 0.7, routeLayer.normalizedDistance) *
+              (1 - smoothstep(0.82, 0.94, routeLayer.normalizedDistance));
+            const supportDistance = Math.abs(textureY / 3 - Math.round(textureY / 3)) * 3;
+            const supportBeam = 1 - smoothstep(0.06, 0.18, supportDistance);
+            const constructionShade = Math.min(0.22, edgeBeam * 0.16 + supportBeam * shapedCoverage * 0.08);
+            linear = linear.map((value) => value * (1 - constructionShade));
+          }
         }
         row.push({
           r: linearToSrgb(linear[0]!),
           g: linearToSrgb(linear[1]!),
           b: linearToSrgb(linear[2]!),
         });
-        const waterCoverage = bilerp(
-          Number(samples[0].isWater),
-          Number(samples[1].isWater),
-          Number(samples[2].isWater),
-          Number(samples[3].isWater),
-          smoothU,
-          smoothV,
-        );
-        const bridgeCoverage = routeLayer?.sample.crossingKind === 'bridge' ? routeLayer.opacity : 0;
+        const bridgeCoverage = routeLayer?.sample.crossingKind === 'bridge'
+          ? bridgeShapeCoverage(routeLayer.opacity, routeLayer.normalizedDistance)
+          : 0;
         if (waterCoverage >= 0.5 && bridgeCoverage < 0.5) materialRow[x] = 1;
       }
       pixels.push(row);
@@ -1456,7 +1546,7 @@ function selectRouteLayer(
   samples: readonly [RegionalRouteSample, RegionalRouteSample, RegionalRouteSample, RegionalRouteSample],
   u: number,
   v: number,
-): { sample: RegionalRouteSample; opacity: number } | null {
+): { sample: RegionalRouteSample; opacity: number; normalizedDistance: number } | null {
   const cornerWeights = [
     (1 - u) * (1 - v),
     u * (1 - v),
@@ -1475,10 +1565,29 @@ function selectRouteLayer(
     }
   }
   if (selectedIndex < 0) return null;
+  const normalizedDistance = bilerp(
+    normalizedRouteDistance(samples[0]),
+    normalizedRouteDistance(samples[1]),
+    normalizedRouteDistance(samples[2]),
+    normalizedRouteDistance(samples[3]),
+    u,
+    v,
+  );
   return {
     sample: samples[selectedIndex]!,
     opacity: smoothstep(0.02, 0.42, coverage),
+    normalizedDistance,
   };
+}
+
+function normalizedRouteDistance(sample: RegionalRouteSample): number {
+  if (sample.halfWidth <= 0 || !Number.isFinite(sample.distance)) return 2;
+  return sample.distance / sample.halfWidth;
+}
+
+function bridgeShapeCoverage(routeCoverage: number, normalizedDistance: number): number {
+  const crossSection = 1 - smoothstep(0.72, 0.94, normalizedDistance);
+  return smoothstep(0.18, 0.7, routeCoverage) * crossSection;
 }
 
 function prepareTexture(tile: Tile): PreparedTexture {

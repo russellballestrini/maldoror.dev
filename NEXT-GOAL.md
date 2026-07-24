@@ -773,9 +773,40 @@ Completed foundations:
   three-scale result. This selects one rendering/composition sub-gate only: it
   is not live, not Gate A, and cold readiness (21.891s at 817MB RSS) remains a
   performance failure;
+- the V21-V26 water/route/crossing pass now fixes a world/render contradiction
+  instead of cosmetically covering it. Physical hydrology owns visibly wet
+  pixels before cultural overlays, so canal-town weights can no longer paint
+  water beige while collision still reports water. At the singular arrival,
+  the most nearly collinear pair of stable graph edges forms one continuous
+  through arterial and the remaining spoke stays local; named half-widths plus
+  manifest-owned texture scale and near/map opacity keep the hierarchy legible
+  without letting roads erase the place. V22's bright stair-step quay and V24's
+  visually unchanged binary bridge erosion are retained rejections. V23 selects
+  semantic quay LOD: broad V2 limestone is restrained to the dry near-scale
+  water edge, while map views use lower-contrast town material. V25 carries
+  interpolated route distance/half-width into a narrower visible and collision-
+  consistent bridge deck, but its rigid bar, abrupt landings, absent piers, and
+  weak bank engineering remain an explicit failure. The V26 loopback real-SSH
+  audit completed 9/9 assigned day/clear frames at exact origin, west waterfront,
+  and coast crossing across walking/district/regional zoom: 2,564,855 raw bytes,
+  225 synchronized frames, and all position/zoom/OCTANT and hash evidence
+  retained. The west-waterfront walking composition is selected for continued
+  work; the crossing is not. Cold readiness was 22.554s, origin preparation
+  6.946s, and RSS 826MB with repeated high-heap warnings, so performance remains
+  a failure. Scratch ports/container were verified absent after capture.
+  Production remains `vb07c0d4`; no new image generation or metered model call
+  was used. A separate live same-account proof then moved a returning user to
+  authoritative `(12,0)`, disconnected, and observed exact `(0,0)` on the next
+  real SSH login. Its two streams retain 648,892 raw bytes and 92 synchronized
+  frames, with zero active sessions after the audit; hot-reload restoration
+  remains correctly exempt because it is not a new login. Full verification
+  passes 38 files / 204 tests, 18/18 typecheck tasks, and 12/12 build tasks.
+  Public gallery iteration 035 exposes the retained visual ladder without
+  changing live TARGET-vs-NOW. Evidence and primary-source rationale are in
+  `track-6-acceptance-atlas/composition-hierarchy-v26-real-ssh-water-route-crossing/FINDINGS.md`;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
-  iterations 012–031 expose selected and rejected research candidates without
+  iterations 012–035 expose selected and rejected research candidates without
   claiming they are live.
 
 Still open and therefore goal-blocking:
@@ -787,8 +818,10 @@ Still open and therefore goal-blocking:
 - the first six-family landmark silhouettes and shared-boundary parcel
   compounds now include a selected two-sided canal-town focal core, but remain
   sparse research prototypes rather than a complete world layer. The core now
-  has selected entrance-level constructed grounding but still lacks continuous
-  canal/quay composition, larger squares/commons, dense secondary frontage, and
+  has selected entrance-level constructed grounding plus water-owned semantic
+  quay material, but still lacks continuous usable quay circulation,
+  convincing bank-aware crossings, larger squares/commons, dense secondary
+  frontage, and
   equivalent focal vocabularies for the other five families. Coast-specific
   waterfront diversity, far
   greater travel-scale entropy across route topology, hydrology, biome fields,
@@ -811,8 +844,10 @@ Still open and therefore goal-blocking:
   **failed** visual audit. Gate A remains open until the recorded composition,
   route/crossing, and dynamically enumerated material-boundary failures are
   corrected and the exact fixed atlas passes on a fresh build. The selected
-  night/storm correction still requires that fresh complete-atlas proof; it is
-  not a substitute for it.
+  night/storm and water/route/quay corrections still require that fresh
+  complete-atlas proof; neither is a substitute for it. The selected
+  distance-shaped bridge is only a mechanical basis and remains visually
+  rejected until the crossing/landing/support defects recorded in V26 close.
   Deterministic traversal, the load ladder, 30-minute terminal run, and physical
   Ghostty acceptance also remain open.
 

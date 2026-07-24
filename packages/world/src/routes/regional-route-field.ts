@@ -7,6 +7,9 @@ export type RegionalCrossingKind = 'ford' | 'bridge' | 'ferry';
 
 export interface RegionalRouteSample {
   distance: number;
+  /** Half-width of the nearest route centreline, including the one-tile
+   * influence apron just outside authoritative route ownership. */
+  halfWidth: number;
   isRoute: boolean;
   isCrossing: boolean;
   isWalkableRoute: boolean;
@@ -77,6 +80,7 @@ interface RoutePath {
 
 interface CachedRouteBlock {
   distance: Float32Array;
+  halfWidth: Float32Array;
   kind: Uint8Array;
   crossing: Uint8Array;
   routeIds: Array<string | null>;
@@ -108,6 +112,11 @@ const LANDMARK_BY_CODE: ReadonlyArray<RegionalLandmarkKind | null> = [
   'ruin',
   'waystation',
 ];
+const ROUTE_HALF_WIDTH: Readonly<Record<RegionalRouteKind, number>> = {
+  trail: 0.78,
+  'local-road': 1.05,
+  arterial: 1.45,
+};
 
 /**
  * Sparse, coordinate-stable regional route hierarchy.
@@ -161,6 +170,7 @@ export class RegionalRouteField {
     const crossingKind = CROSSING_BY_CODE[block.crossing[index]!] ?? null;
     return {
       distance: block.distance[index]!,
+      halfWidth: block.halfWidth[index]!,
       isRoute: kind !== null,
       isCrossing: crossingKind !== null,
       isWalkableRoute: kind !== null && crossingKind !== 'ferry',
@@ -249,6 +259,7 @@ export class RegionalRouteField {
     const size = this.blockSize * this.blockSize;
     const distance = new Float32Array(size);
     distance.fill(Number.POSITIVE_INFINITY);
+    const halfWidth = new Float32Array(size);
     const kind = new Uint8Array(size);
     const crossing = new Uint8Array(size);
     const routeIds = new Array<string | null>(size).fill(null);
@@ -287,6 +298,7 @@ export class RegionalRouteField {
         originX,
         originY,
         distance,
+        halfWidth,
         kind,
         crossing,
         routeIds,
@@ -316,6 +328,7 @@ export class RegionalRouteField {
     }
     return {
       distance,
+      halfWidth,
       kind,
       crossing,
       routeIds,
@@ -332,6 +345,7 @@ export class RegionalRouteField {
     originX: number,
     originY: number,
     distance: Float32Array,
+    halfWidth: Float32Array,
     kind: Uint8Array,
     crossing: Uint8Array,
     routeIds: Array<string | null>,
@@ -359,6 +373,7 @@ export class RegionalRouteField {
           const index = gridIndex(localX, localY, this.blockSize);
           if (value >= distance[index]!) continue;
           distance[index] = value;
+          halfWidth[index] = path.edge.width;
           if (value <= path.edge.width) {
             kind[index] = routeCode;
             routeIds[index] = path.edge.id;
@@ -458,10 +473,12 @@ export class RegionalRouteField {
           start,
           end,
           kind,
-          width: kind === 'arterial' ? 1.85 : kind === 'local-road' ? 1.3 : 0.85,
+          width: ROUTE_HALF_WIDTH[kind],
         });
       }
     }
+    promoteArrivalThroughRoute(edges);
+    for (const edge of edges) edge.width = ROUTE_HALF_WIDTH[edge.kind];
     return edges;
   }
 
@@ -661,11 +678,62 @@ class MinHeap {
 }
 
 function routeKindFor(start: RouteSite, end: RouteSite, length: number, siteCellSize: number): RegionalRouteKind {
+  // The arrival is a place, not a traffic roundabout. Its incident Gabriel
+  // edges are classified together after topology exists so only the most
+  // continuous through-pair becomes arterial; all other arrival approaches
+  // remain local streets.
+  if (start.landmarkKind === 'arrival' || end.landmarkKind === 'arrival') return 'local-road';
   const priority = Math.min(start.priority, end.priority);
-  if (start.landmarkKind === 'arrival' || end.landmarkKind === 'arrival' ||
-      (priority < 0.12 && length > siteCellSize * 2.15)) return 'arterial';
+  if (priority < 0.12 && length > siteCellSize * 2.15) return 'arterial';
   if (priority < 0.48 || start.landmarkKind === 'settlement' || end.landmarkKind === 'settlement') return 'local-road';
   return 'trail';
+}
+
+/** Select the most nearly collinear pair of arrival edges as the primary
+ * movement line. This preserves global connectivity while preventing every
+ * spoke touching the singular login site from becoming a full-width
+ * arterial. The decision depends only on stable geometry and edge IDs. */
+function promoteArrivalThroughRoute(edges: RouteEdge[]): void {
+  const incident = edges
+    .filter((edge) => edge.start.landmarkKind === 'arrival' || edge.end.landmarkKind === 'arrival')
+    .sort((a, b) => a.id.localeCompare(b.id));
+  if (incident.length === 0) return;
+  for (const edge of incident) edge.kind = 'local-road';
+  if (incident.length === 1) {
+    incident[0]!.kind = 'arterial';
+    return;
+  }
+  let selected: readonly [RouteEdge, RouteEdge] = [incident[0]!, incident[1]!];
+  let selectedScore = arrivalPairScore(selected[0], selected[1]);
+  for (let first = 0; first < incident.length; first++) {
+    for (let second = first + 1; second < incident.length; second++) {
+      const pair = [incident[first]!, incident[second]!] as const;
+      const score = arrivalPairScore(pair[0], pair[1]);
+      const pairId = `${pair[0].id}|${pair[1].id}`;
+      const selectedId = `${selected[0].id}|${selected[1].id}`;
+      if (score < selectedScore - 1e-9 ||
+          (Math.abs(score - selectedScore) <= 1e-9 && pairId.localeCompare(selectedId) < 0)) {
+        selected = pair;
+        selectedScore = score;
+      }
+    }
+  }
+  selected[0].kind = 'arterial';
+  selected[1].kind = 'arterial';
+}
+
+function arrivalPairScore(first: RouteEdge, second: RouteEdge): number {
+  const direction = (edge: RouteEdge): readonly [number, number] => {
+    const arrival = edge.start.landmarkKind === 'arrival' ? edge.start : edge.end;
+    const other = edge.start.landmarkKind === 'arrival' ? edge.end : edge.start;
+    const dx = other.x - arrival.x;
+    const dy = other.y - arrival.y;
+    const length = Math.max(1e-9, Math.hypot(dx, dy));
+    return [dx / length, dy / length];
+  };
+  const a = direction(first);
+  const b = direction(second);
+  return a[0] * b[0] + a[1] * b[1];
 }
 
 function routeKindCode(kind: RegionalRouteKind): number {

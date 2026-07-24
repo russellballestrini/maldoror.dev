@@ -16,6 +16,9 @@
       "id": "regional-route-arterial-stone",
       "file": "materials/arterial-stone-master-v1.png",
       "variants": 4,
+      "textureScaleTiles": 2.6,
+      "detailOpacity": 0.8,
+      "overviewOpacity": 0.68,
       "walkable": true
     },
     {
@@ -23,6 +26,9 @@
       "id": "regional-route-local-earth",
       "file": "materials/local-earth-master-v1.png",
       "variants": 4,
+      "textureScaleTiles": 3.2,
+      "detailOpacity": 0.74,
+      "overviewOpacity": 0.62,
       "walkable": true
     },
     {
@@ -30,6 +36,9 @@
       "id": "regional-route-trail-floor",
       "file": "materials/trail-floor-master-v1.png",
       "variants": 4,
+      "textureScaleTiles": 4.0,
+      "detailOpacity": 0.64,
+      "overviewOpacity": 0.54,
       "walkable": true,
       "material": "foliage"
     }
@@ -40,6 +49,9 @@
       "id": "regional-route-bridge-timber",
       "file": "materials/bridge-timber-master-v1.png",
       "variants": 4,
+      "textureScaleTiles": 2.4,
+      "detailOpacity": 0.96,
+      "overviewOpacity": 0.9,
       "walkable": true
     }
   ]

@@ -43,9 +43,9 @@ function solidTile(family: BiomeFamily, size = 8): Tile {
   return { id: family, name: family, walkable: family !== 'coast', pixels, resolutions: { [String(size)]: pixels } };
 }
 
-function solidColourTile(id: string, colour: RGB): Tile {
-  const pixels = Array.from({ length: 8 }, () => Array.from({ length: 8 }, () => ({ ...colour })));
-  return { id, name: id, walkable: true, pixels, resolutions: { '8': pixels } };
+function solidColourTile(id: string, colour: RGB, size = 8): Tile {
+  const pixels = Array.from({ length: size }, () => Array.from({ length: size }, () => ({ ...colour })));
+  return { id, name: id, walkable: true, pixels, resolutions: { [String(size)]: pixels } };
 }
 
 function sample(weights: BiomeWeights, isWater = false): BiomeWorldSample {
@@ -79,6 +79,7 @@ function routeSample(
 ): RegionalRouteSample {
   return {
     distance: 0,
+    halfWidth: 1,
     isRoute: true,
     isCrossing: crossingKind !== null,
     isWalkableRoute: crossingKind !== 'ferry',
@@ -124,6 +125,16 @@ describe('RegionalMaterialCompositor', () => {
     expect(centre.b).toBeGreaterThan(120);
   });
 
+  it('keeps physical water visible beneath strong cultural-family weights', () => {
+    const wetTown = compositor({ sample: () => sample([0.98, 0, 0.02, 0, 0, 0], true) });
+    const wetRuins = compositor({ sample: () => sample([0, 0, 0.02, 0, 0, 0.98], true) });
+
+    expect(wetTown.getTile(0, 0).pixels[4]![4]).toEqual(COLOURS.coast);
+    expect(wetTown.getTile(0, 0).materialMask?.[4]?.[4]).toBe(1);
+    expect(wetRuins.getTile(0, 0).pixels[4]![4]).toEqual(COLOURS.coast);
+    expect(wetRuins.getTile(0, 0).materialMask?.[4]?.[4]).toBe(1);
+  });
+
   it('reconstructs a smooth ecological handoff across neighbouring tiles', () => {
     const field: BiomeSampler = {
       sample: (x) => {
@@ -150,6 +161,39 @@ describe('RegionalMaterialCompositor', () => {
     expect(right.walkable).toBe(false);
   });
 
+  it('builds a hydrology-following canal-town quay only on the dry shore', () => {
+    const field: BiomeSampler = {
+      sample: (x) => sample([0.98, 0, 0.02, 0, 0, 0], x >= 1),
+    };
+    const materials = Object.fromEntries(BIOME_FAMILIES.map((family) => [
+      family,
+      [solidTile(family, 12)],
+    ])) as Record<BiomeFamily, Tile[]>;
+    const baseline = new RegionalMaterialCompositor({ worldSeed: 42n, field, materials });
+    const quay = new RegionalMaterialCompositor({
+      worldSeed: 42n,
+      field,
+      materials,
+      landmarkFabricMaterials: {
+        'canal-town': [solidColourTile('quay:limestone', { r: 245, g: 225, b: 180 }, 12)],
+      },
+    });
+    const baselineTile = baseline.getTile(0, 0);
+    const quayTile = quay.getTile(0, 0);
+    const delta = (a: RGB, b: RGB) => Math.hypot(a.r - b.r, a.g - b.g, a.b - b.b);
+    const dryShoreDeltas = quayTile.pixels[6]!.map((pixel, x) => {
+      const baselinePixel = baselineTile.pixels[6]![x];
+      return quayTile.materialMask?.[6]?.[x] === 0 && pixel && baselinePixel
+        ? delta(pixel, baselinePixel)
+        : 0;
+    });
+
+    expect(Math.max(...dryShoreDeltas)).toBeGreaterThan(12);
+    expect(quayTile.materialMask?.[6]?.[2]).toBe(0);
+    expect(quayTile.materialMask?.[6]?.[11]).toBe(1);
+    expect(quayTile.pixels[6]![11]).toEqual(baselineTile.pixels[6]![11]);
+  });
+
   it('bounds composed tile cache and reuses live entries', () => {
     const composed = compositor({ sample: () => sample([0, 1, 0, 0, 0, 0]) }, 8);
     const first = composed.getTile(0, 0);
@@ -168,6 +212,28 @@ describe('RegionalMaterialCompositor', () => {
     expect(ferry.pixels[4]![4]).toEqual(COLOURS.coast);
     expect(ferry.materialMask?.[4]?.[4]).toBe(1);
     expect(ferry.walkable).toBe(false);
+  });
+
+  it('uses the route half-width to keep bridge deck and water ownership aligned', () => {
+    const routes: RegionalRouteSampler = {
+      sample: (_x, y) => ({
+        ...routeSample('local-road', y === 0 ? 'bridge' : null),
+        distance: Math.abs(y),
+        halfWidth: 1,
+        isRoute: y === 0,
+        isCrossing: y === 0,
+        isWalkableRoute: y === 0,
+        crossingKind: y === 0 ? 'bridge' : null,
+        routeKind: y === 0 ? 'local-road' : null,
+        routeId: y === 0 ? 'test-shaped-bridge' : null,
+      }),
+    };
+    const bridge = routedCompositor(routes).getTile(0, 0);
+
+    expect(bridge.materialMask?.[0]?.[4]).toBe(0);
+    expect(bridge.materialMask?.[7]?.[4]).toBe(1);
+    expect(bridge.pixels[0]![4]).not.toEqual(COLOURS.coast);
+    expect(bridge.pixels[7]![4]).toEqual(COLOURS.coast);
   });
 
   it('blends parcel access material across the corridor axis without a ground stamp', () => {

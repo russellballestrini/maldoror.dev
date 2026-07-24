@@ -113,6 +113,8 @@ export async function loadRegionalWorldKit(
     routes,
     routeMaterials: routeKit.routeMaterials,
     crossingMaterials: routeKit.crossingMaterials,
+    routeSurfaceStyles: routeKit.routeSurfaceStyles,
+    crossingSurfaceStyles: routeKit.crossingSurfaceStyles,
     maxCachedTiles: 4096,
     variantPeriodTiles: 5,
     textureScaleTiles: 7,

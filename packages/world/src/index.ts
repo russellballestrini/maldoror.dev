@@ -77,6 +77,7 @@ export {
   RegionalMaterialCompositor,
   type BiomeSampler,
   type RegionalRouteSampler,
+  type RegionalRouteSurfaceStyle,
   type RegionalMaterialCompositorConfig,
 } from './tiles/regional-material-compositor.js';
 export {

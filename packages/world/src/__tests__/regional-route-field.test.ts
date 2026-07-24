@@ -18,6 +18,7 @@ describe('RegionalRouteField', () => {
     const origin = routes.sample(0, 0);
 
     expect(origin.isRoute).toBe(true);
+    expect(origin.halfWidth).toBeCloseTo(1.45);
     expect(origin.routeKind).toBe('arterial');
     expect(origin.landmarkKind).toBe('arrival');
     expect(origin.landmarkDistance).toBe(0);
@@ -28,6 +29,27 @@ describe('RegionalRouteField', () => {
       priority: 0,
       landmarkKind: 'arrival',
     });
+  });
+
+  it('forms one continuous arrival arterial instead of promoting every spoke', () => {
+    const biomes = new BiomeWorldField(SEED, { blockSize: 16 });
+    const routes = new RegionalRouteField(SEED, biomes, {
+      blockSize: 16,
+      pathStep: 4,
+      maxCachedBlocks: 64,
+      maxCachedPaths: 256,
+    });
+    const arrivalKinds = new Map<string, string>();
+    for (let y = -24; y <= 24; y++) {
+      for (let x = -24; x <= 24; x++) {
+        const route = routes.sample(x, y);
+        if (route.routeId?.includes('site:arrival') && route.routeKind) {
+          arrivalKinds.set(route.routeId, route.routeKind);
+        }
+      }
+    }
+    expect([...arrivalKinds.values()].filter((kind) => kind === 'arterial')).toHaveLength(2);
+    expect([...arrivalKinds.values()].filter((kind) => kind === 'local-road')).toHaveLength(1);
   });
 
   it('is exact across cache block sizes and traversal order', () => {

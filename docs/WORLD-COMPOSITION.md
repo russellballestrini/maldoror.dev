@@ -77,7 +77,17 @@ The route field has arterial, local-road, and trail tiers. It exposes route
 distance, stable edge identity, nearby landmark semantics, and distinct ford,
 bridge, and ferry crossings. A ferry is explicitly non-walkable, so a long
 water connection cannot silently become a huge bridge or a collision path.
-`(0,0)` is the singular arrival landmark and lies exactly on an arterial.
+`(0,0)` is the singular arrival landmark and lies exactly on an arterial. The
+arrival is treated as a place rather than a traffic hub: after the stable graph
+exists, the most nearly collinear pair of incident edges becomes one continuous
+through arterial and any remaining arrival spoke stays local. This keeps global
+movement legible without turning every frontage into a full-width arterial.
+Every new SSH login, including a returning account with persisted state, resets
+and persists this exact origin. A connected session restored across a worker
+hot reload is deliberately not a new login and keeps its position. A live
+same-key reconnect proof moved to `(12,0)`, disconnected, and observed `(0,0)`
+on the next login; raw streams and faithful replays are retained under
+`track-6-acceptance-atlas/login-origin-reconnect-v1/`.
 
 Pathfinding uses `BiomeWorldField.samplePhysical`, a cheap descriptor lane that
 shares the full field's exact elevation and hydrology functions but bypasses
@@ -93,10 +103,26 @@ sample equality across cache block sizes and traversal order.
 
 Route surfaces are a separate authored semantic manifest: worn stone for
 arterials, packed earth for local roads, forest floor for trails, and timber
-for bridges. `RegionalMaterialCompositor` masks those materials over the same
-route answers; bridge coverage clears water ownership and is walkable, while a
-ferry retains water ownership and remains non-walkable. Bridge texture axes use
-the route tangent instead of a fixed screen direction.
+for bridges. The manifest owns world-space texture scale and separate detail/
+overview opacity for every class. The route sample carries its authoritative
+half-width even through the one-tile influence apron, so the compositor can
+interpolate a cross-section instead of reconstructing shape from a binary mask.
+`RegionalMaterialCompositor` masks those materials over the same route answers;
+bridge coverage clears water ownership and is walkable, while a ferry retains
+water ownership and remains non-walkable. Bridge texture axes use the route
+tangent instead of a fixed screen direction. A bridge narrows its visible deck
+from normalized centreline distance and uses that identical shaped coverage for
+the material mask; the first edge/support shading is retained, but bank-aware
+approaches, piers, and a non-bar silhouette remain open.
+
+Hydrology owns visible wet pixels before any cultural-family overlay. A strong
+canal-town or ruins weight can influence dry constructed ground, but cannot
+paint physical water beige while collision still reports water. In a strong
+canal-town field, the dry-side water boundary may receive a semantic quay band:
+near LOD samples the scale-authored landmark limestone sparingly, while district
+and regional LOD use broader lower-contrast town material. The failed bright
+map-scale outline remains retained as V22; V23 is the selected material-LOD
+basis, not a complete quay circulation or waterfront-program claim.
 
 The compositor now authors only the semantic resolution requested by a
 resolution-aware viewport. Requests are quantized into stable zoom bands, and
@@ -201,6 +227,13 @@ The V20 six-capture real-SSH proof covers three semantic zooms and two
 viewports at exact `(0,0)`. It is a selected research architecture, not a claim
 that the surrounding canal-town district or the other five families are
 composition-complete.
+
+The V26 real-SSH audit adds the exact origin, adjacent west waterfront, and one
+coast crossing at all three semantic zooms. It selects physical-water ownership,
+the place-led arrival hierarchy, manifest-owned route scale/opacity, and
+semantic quay LOD. It rejects the current bridge as visually complete despite
+its narrower and collision-consistent deck. The audit is a nine-frame research
+subset, not the complete fixed Gate-A atlas and not a production deployment.
 
 ## Predictive regional cache transport
 

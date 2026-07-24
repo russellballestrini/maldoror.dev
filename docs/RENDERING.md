@@ -310,3 +310,54 @@ This selects an entrance-grounding architecture and material tier only. It is
 not deployed, does not pass Gate A, and does not close canal/quay continuity,
 civic-space composition, the five remaining family vocabularies, performance,
 the fresh full atlas, or physical Ghostty acceptance.
+
+### Hydrology-owned place hierarchy and semantic quay LOD (2026-07-24)
+
+V21-V26 correct a deeper contradiction exposed by the failed atlas: strong
+canal-town family weights could repaint physically wet cells as beige town
+material while the material/collision mask still identified water. The
+regional compositor now resolves continuous water coverage before cultural
+overlays. Wet pixels reconstruct from the authored coast/water material;
+canal-town and ruins overlays fade out before the wet boundary. Visible
+material, collision, and world hydrology therefore agree.
+
+The singular arrival no longer promotes every incident graph edge to a broad
+arterial. The route field deterministically chooses the most nearly collinear
+pair as one through arterial and leaves other arrival access local. Named route
+half-widths survive into the sample apron, while the route manifest owns each
+class's world-space texture scale and separate near/map opacity. Infrastructure
+can remain legible without erasing the place it crosses.
+
+V22's first continuous quay is retained as a rejection because its pale paver
+edge collapsed into a bright staircase at district and regional zoom. The
+selected V23 semantic LOD uses broad limestone only at walking scale on the dry
+side of the hydrology edge, with a restrained wet contact; map scales use a
+broader, lower-contrast town material. This is a material/ownership sub-gate,
+not a claim that a complete walkable quay program exists.
+
+V24 proved that eroding only binary bridge coverage did not fix the rectangular
+slab. V25 now carries interpolated route distance and half-width through the
+compositor so visible timber and material-mask ownership share a narrower deck
+cross-section. Route-aligned edge/support shading adds a first construction
+rhythm. The real-SSH V26 audit shows the deck is narrower but still rejects it
+as a final crossing: the bar-like silhouette, abrupt banks, absent approaches,
+and weak support/load story remain visible.
+
+The 9/9 V26 real-SSH frames retain 2,564,855 raw bytes and 225 synchronized
+frames across exact origin, west waterfront, and coast crossing at all three
+semantic zooms. Cold readiness was 22.554 seconds and RSS reached 826 MB, both
+failures against the final envelope. Evidence and the complete selected/rejected
+ladder are under
+`track-6-acceptance-atlas/composition-hierarchy-v26-real-ssh-water-route-crossing/`.
+Public gallery iteration 035 exposes V22/V24 rejects, the V23/V25 selected or
+partial candidates, and the three V26 zoom sheets. Full verification passes 38
+files / 204 tests, 18/18 typecheck tasks, and 12/12 build tasks. Production
+remains `vb07c0d4`; Gate A and physical Ghostty acceptance remain open.
+
+The deployed fresh-login invariant was then checked separately with one
+returning account through real SSH. The first capture moved from the canonical
+origin to authoritative `Pos: (12, 0)` before disconnect; the second login with
+the same key rendered `Pos: (0, 0)`. The two retained streams contain 364,400
+and 284,492 bytes with 30 and 62 synchronized frames. This proves the public
+worker login reset, not physical Ghostty operation. Evidence is in
+`track-6-acceptance-atlas/login-origin-reconnect-v1/`.

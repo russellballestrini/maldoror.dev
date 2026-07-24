@@ -44,6 +44,16 @@ describe('regional biome material manifest', () => {
     }
     expect(kit.crossingMaterials.bridge).toHaveLength(4);
     expect(kit.crossingMaterials.ferry).toBeUndefined();
+    expect(kit.routeSurfaceStyles).toEqual({
+      arterial: { textureScaleTiles: 2.6, detailOpacity: 0.8, overviewOpacity: 0.68 },
+      'local-road': { textureScaleTiles: 3.2, detailOpacity: 0.74, overviewOpacity: 0.62 },
+      trail: { textureScaleTiles: 4, detailOpacity: 0.64, overviewOpacity: 0.54 },
+    });
+    expect(kit.crossingSurfaceStyles.bridge).toEqual({
+      textureScaleTiles: 2.4,
+      detailOpacity: 0.96,
+      overviewOpacity: 0.9,
+    });
   });
 
   it('loads six alpha-keyed landmark clusters with explicit collision thresholds', async () => {

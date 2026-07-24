@@ -84,6 +84,7 @@ function routeSample(x: number, y: number): RegionalRouteSample {
   const site = SITES.find(([siteX]) => siteX === x && y === 0);
   return {
     distance: Math.abs(y),
+    halfWidth: 1,
     isRoute: y === 0,
     isCrossing: false,
     isWalkableRoute: y === 0,
@@ -452,6 +453,7 @@ describe('RegionalWorldTileProvider', () => {
   it('orients focal frontage from the landmark route when off-route samples lose direction', () => {
     const northSouthRoute = (x: number, y: number): RegionalRouteSample => ({
       distance: Math.abs(x),
+      halfWidth: 1,
       isRoute: x === 0,
       isCrossing: false,
       isWalkableRoute: x === 0,
@@ -480,6 +482,7 @@ describe('RegionalWorldTileProvider', () => {
   it('uses the tall frontage for equal-axis diagonal routes', () => {
     const diagonalRoute = (x: number, y: number): RegionalRouteSample => ({
       distance: Math.abs(x - y) / Math.SQRT2,
+      halfWidth: 1,
       isRoute: x === y,
       isCrossing: false,
       isWalkableRoute: x === y,
