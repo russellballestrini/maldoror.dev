@@ -411,6 +411,18 @@ Completed foundations:
   tangent-only blue-noise thinning; faithful review rejected both floating
   unsnapped contacts and adjacent duplicate thresholds rather than publishing
   source art as runtime proof;
+- a three-way parcel-geometry comparison rejects isotropic Voronoi cells for
+  weak frontage and uniform strips for repetition; the selected anisotropic
+  hierarchy measures 100% frontage access, 0 sampled overlap, 0.2% route
+  intrusion, 0.783 unique-shape rate, and reserved yards. Monolithic
+  directional parcel sheets were also rejected because full-cell painted
+  ground failed strict contact-band extraction and could not follow curved
+  routes. The selected modular research candidate separates exact 14--19-tile
+  route-material connectors from 3--6-piece collision-aware compounds; 24 new
+  built-in-subscription modules plus 12 explicitly role-reused silhouettes
+  provide 36 family-compatible assets, and all 12 family/axis faithful audits
+  report distinct in-compound components with zero family mismatch, overlap,
+  blocked connector, collision intrusion, or missing connector material;
 - bounded regional predictive preparation now runs in an identical persistent
   worker stack with vector lookahead, coverage hysteresis, one in-flight/latest-
   pending scheduling, seed/version/bounds validation, and a four-viewport LRU;
@@ -419,9 +431,16 @@ Completed foundations:
   uncovered frames and exact checkpoints over 180 frames at 160x46 with render
   p50/p95/p99 4.09/8.32/27.74 ms, event-loop p99 5.21 ms, import p95 4.84 ms,
   and 633.61 MiB peak RSS;
+- after parcel composition, rejected over-wide preparation took 9.25 seconds;
+  collecting derived layers once and proving an exact 18-tile source reach
+  recovered the current 180-frame corridor to 5.41 seconds initial
+  preparation, render p50/p95/p99 4.65/11.90/27.47 ms, event-loop p99 5.89 ms,
+  import p95 5.13 ms, and 734.03 MiB peak RSS with zero misses, mismatches, or
+  worker errors. Immutable decoded-sprite reuse lowers the separate
+  32-coordinate teleport-stress worker peak from 1,455.32 to 1,196.11 MiB;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
-  iterations 012–018 expose selected and rejected research candidates without
+  iterations 012–019 expose selected and rejected research candidates without
   claiming they are live.
 
 Still open and therefore goal-blocking:
@@ -431,12 +450,12 @@ Still open and therefore goal-blocking:
   origin corridor must move into service readiness and authoritative movement/
   camera/zoom integration, production SSH latency, the 5/10/20-presence ladder,
   30-minute run, cgroup behavior, and physical Ghostty remain unproven;
-- the first six-family landmark silhouettes are sparse prototypes, not a
-  complete world layer; the first directional route contacts still need
-  material-matched connector blending, deep parcel/building-group composition,
-  far greater travel-scale entropy,
-  authoritative traversal, stronger landmark framing, and cave/highland/coast
-  interactions before the family layer is production-complete;
+- the first six-family landmark silhouettes and modular parcel compounds are
+  still sparse, axis-aligned research prototypes rather than a complete world
+  layer; the curved shared-station/shared-boundary grammar, waterfronts,
+  squares/gardens, far greater travel-scale entropy, authoritative traversal,
+  stronger landmark framing, and cave/highland/coast/open-water interactions
+  remain before the family layer is production-complete;
 - the complete Phase-0 diagnostic comparison and operator direction approval
   have not passed;
 - schedules, needs, relationships, memories, environmental systems, persistent

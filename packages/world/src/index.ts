@@ -88,6 +88,7 @@ export {
   type RegionalPreparedTerrainTile,
   type RegionalPreparedViewport,
   type RegionalPackedPreparedViewport,
+  type RegionalParcelComponentAsset,
   type RegionalPreparedViewportPayload,
   type RegionalRouteContactAsset,
   type RegionalRouteContactAxis,

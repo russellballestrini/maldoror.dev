@@ -155,6 +155,31 @@ describe('RegionalMaterialCompositor', () => {
     expect(ferry.walkable).toBe(false);
   });
 
+  it('blends parcel access material across the corridor axis without a ground stamp', () => {
+    const noRoute: RegionalRouteSampler = {
+      sample: () => ({
+        ...routeSample('local-road', null),
+        distance: 8,
+        isRoute: false,
+        isWalkableRoute: false,
+        routeKind: null,
+        routeId: null,
+      }),
+    };
+    const composed = routedCompositor(noRoute);
+    const base = composed.getTile(2, 3);
+    const northSouth = composed.getAccessTile(2, 3, 'north-south', 'local-road');
+    const eastWest = composed.getAccessTile(2, 3, 'east-west', 'local-road');
+    const distance = (a: RGB, b: RGB) => Math.hypot(a.r - b.r, a.g - b.g, a.b - b.b);
+    expect(northSouth.walkable).toBe(true);
+    expect(distance(northSouth.pixels[4]![4]!, base.pixels[4]![4]!))
+      .toBeGreaterThan(distance(northSouth.pixels[4]![0]!, base.pixels[4]![0]!));
+    expect(distance(eastWest.pixels[4]![4]!, base.pixels[4]![4]!))
+      .toBeGreaterThan(distance(eastWest.pixels[0]![4]!, base.pixels[0]![4]!));
+    expect(northSouth.id).toContain('north-south:local-road');
+    expect(eastWest.id).toContain('east-west:local-road');
+  });
+
   it('authors only the requested semantic LOD and reuses quantized zoom bands', () => {
     const composed = new RegionalMaterialCompositor({
       worldSeed: 42n,

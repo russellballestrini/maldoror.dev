@@ -113,6 +113,83 @@ export class RegionalMaterialCompositor {
     return this.getTileAtResolution(tileX, tileY, this.sourceSize);
   }
 
+  /** Reconstruct a one-tile-wide parcel access surface from the same route
+   * material field as the regional road graph. Authored masses never own
+   * ground pixels: opacity falls to zero at both cross-axis tile boundaries,
+   * so the connector meets its biome without a baked apron or square stamp. */
+  getAccessTile(
+    tileX: number,
+    tileY: number,
+    accessAxis: 'north-south' | 'east-west',
+    routeKind: RegionalRouteKind,
+  ): Tile {
+    return this.getAccessTileAtResolution(tileX, tileY, this.sourceSize, accessAxis, routeKind);
+  }
+
+  getAccessTileAtResolution(
+    tileX: number,
+    tileY: number,
+    requestedResolution: number,
+    accessAxis: 'north-south' | 'east-west',
+    routeKind: RegionalRouteKind,
+  ): Tile {
+    if (!this.routeMaterials) return this.getTileAtResolution(tileX, tileY, requestedResolution);
+    const resolution = this.selectResolution(requestedResolution);
+    const key = `access:${tileX},${tileY}@${resolution}:${accessAxis}:${routeKind}`;
+    const cached = this.cache.get(key);
+    if (cached) {
+      this.cache.delete(key);
+      this.cache.set(key, cached);
+      return cached;
+    }
+    const base = this.getTileAtResolution(tileX, tileY, resolution);
+    const pixels: PixelGrid = [];
+    const routeTexture = new Float64Array(3);
+    const textureScaleTiles = this.textureScaleForResolution(resolution);
+    for (let y = 0; y < resolution; y++) {
+      const row: RGB[] = [];
+      for (let x = 0; x < resolution; x++) {
+        const worldX = tileX + (x + 0.5) / resolution;
+        const worldY = tileY + (y + 0.5) / resolution;
+        this.sampleTextureField(
+          this.routeMaterials[routeKind],
+          worldX,
+          worldY,
+          0x6b91,
+          textureScaleTiles,
+          resolution,
+          routeTexture,
+        );
+        const crossAxis = accessAxis === 'north-south'
+          ? (x + 0.5) / resolution
+          : (y + 0.5) / resolution;
+        const opacity = smoothstep(0, 0.34, crossAxis) * smoothstep(0, 0.34, 1 - crossAxis);
+        const beneath = base.pixels[y]?.[x] ?? { r: 0, g: 0, b: 0 };
+        row.push({
+          r: linearToSrgb(lerp(srgbToLinear(beneath.r), routeTexture[0]!, opacity)),
+          g: linearToSrgb(lerp(srgbToLinear(beneath.g), routeTexture[1]!, opacity)),
+          b: linearToSrgb(lerp(srgbToLinear(beneath.b), routeTexture[2]!, opacity)),
+        });
+      }
+      pixels.push(row);
+    }
+    const tile: Tile = {
+      id: `regional-access:${tileX},${tileY}@${resolution}:${accessAxis}:${routeKind}`,
+      name: 'Blended regional parcel access',
+      pixels,
+      materialMask: base.materialMask,
+      walkable: true,
+      resolutions: { [String(resolution)]: pixels },
+    };
+    this.cache.set(key, tile);
+    while (this.cache.size > this.maxCachedTiles) {
+      const oldest = this.cache.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.cache.delete(oldest);
+    }
+    return tile;
+  }
+
   /**
    * Compose only the semantic LOD the screen can consume. The requested size
    * is quantized so animated zoom does not create a new full world cache on

@@ -42,6 +42,7 @@ const ASSETS = {
   landmarks: path.join(ROOT, 'assets/biomes/landmarks-manifest.json'),
   ambient: path.join(ROOT, 'assets/biomes/ambient-manifest.json'),
   routeContacts: path.join(ROOT, 'assets/biomes/route-contacts-manifest.json'),
+  parcelComponents: path.join(ROOT, 'assets/biomes/parcel-components-manifest.json'),
 };
 
 fs.mkdirSync(OUTPUT, { recursive: true });

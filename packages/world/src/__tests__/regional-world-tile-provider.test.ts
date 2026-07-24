@@ -16,6 +16,7 @@ import {
   RegionalWorldTileProvider,
   type RegionalAmbientAsset,
   type RegionalLandmarkAsset,
+  type RegionalParcelComponentAsset,
   type RegionalRouteContactAsset,
 } from '../tiles/regional-world-tile-provider.js';
 
@@ -161,6 +162,14 @@ function makeWorld(
       ? [[-1, 0], [1, 0]] as const
       : [[0, -1], [0, 1]] as const,
   })));
+  const parcelComponents: RegionalParcelComponentAsset[] = BIOME_FAMILIES.flatMap((family) =>
+    Array.from({ length: 6 }, (_, variant) => ({
+      id: `parcel:${family}:${variant}`,
+      families: [family],
+      role: 'mass' as const,
+      sprite: sprite(COLOURS[family]),
+      collision: [[0, 0]] as const,
+    })));
   return new RegionalWorldTileProvider({
     worldSeed: 42n,
     field,
@@ -169,6 +178,7 @@ function makeWorld(
     landmarks,
     ambient,
     routeContacts,
+    parcelComponents,
     blockSize,
     maxCachedBlocks,
     ambientCellSize: 4,
@@ -177,6 +187,9 @@ function makeWorld(
     routeContactCellSize: 10,
     routeContactDensity: 1,
     routeContactLandmarkClearance: 4,
+    parcelMinimumLayers: 2,
+    parcelMaximumLayers: 3,
+    parcelLayerSpacing: 5,
   });
 }
 
@@ -209,6 +222,7 @@ describe('RegionalWorldTileProvider', () => {
     expect(world.getTileAtResolution(0, 0, 4).pixels).toHaveLength(4);
     expect(world.getRegionalStats().ambientAssets).toBe(BIOME_FAMILIES.length * 2);
     expect(world.getRegionalStats().routeContactAssets).toBe(BIOME_FAMILIES.length * 2);
+    expect(world.getRegionalStats().parcelComponentAssets).toBe(BIOME_FAMILIES.length * 6);
   });
 
   it('selects authored contact axes from route tangents and keeps the connector open', () => {
@@ -226,6 +240,34 @@ describe('RegionalWorldTileProvider', () => {
       expect(Math.abs(placement.anchorY - placement.siteY)).toBe(3);
       expect(horizontal.isBuildingAt(placement.anchorX, placement.anchorY)).toBe(false);
       expect(horizontal.getTile(placement.siteX, placement.siteY).walkable).toBe(true);
+    }
+    const horizontalComponents = horizontal.getParcelComponentPlacementsInBounds(-24, -24, 224, 24);
+    expect(horizontalComponents.length).toBeGreaterThan(horizontalContacts.length);
+    expect(new Set(horizontalComponents.flatMap((placement) => placement.families)))
+      .toEqual(new Set(BIOME_FAMILIES));
+    for (const component of horizontalComponents) {
+      expect(component.parcelId).toMatch(/^parcel:-?\d+:-?\d+$/);
+      expect(component.routeKind).toBe('local-road');
+    }
+    for (const parcelId of new Set(horizontalComponents.map((component) => component.parcelId))) {
+      const ids = horizontalComponents
+        .filter((component) => component.parcelId === parcelId)
+        .map((component) => component.assetId);
+      expect(new Set(ids).size).toBe(ids.length);
+    }
+    for (const contact of horizontalContacts) {
+      const members = horizontalComponents.filter((component) => component.parcelId === contact.parcelId);
+      if (members.length === 0) continue;
+      const sign = Math.sign(contact.anchorY - contact.siteY) || 1;
+      expect(contact.parcelLayers).toBeGreaterThanOrEqual(2);
+      expect(contact.connectorLength).toBeGreaterThan(0);
+      for (let distance = 0; distance <= contact.connectorLength!; distance++) {
+        const x = contact.siteX;
+        const y = contact.siteY + sign * distance;
+        expect(horizontal.isBuildingAt(x, y), `connector collision at ${x},${y}`).toBe(false);
+        expect(horizontal.getBuildingTileAt(x, y), `connector art at ${x},${y}`).toBeNull();
+        expect(horizontal.getTile(x, y).id).toContain('regional-access:');
+      }
     }
 
     const vertical = makeWorld(32, 32, (x, y) => ({
@@ -283,16 +325,60 @@ describe('RegionalWorldTileProvider', () => {
     }
   });
 
+  it('keeps deep parcel pixels and connectors exact across source block boundaries', () => {
+    const small = makeWorld(16);
+    const large = makeWorld(48);
+    const contacts = small.getRouteContactPlacementsInBounds(-24, -24, 224, 24);
+    const components = small.getParcelComponentPlacementsInBounds(-40, -40, 240, 40);
+    const coordinateKeys = new Set<string>();
+    for (const component of components) {
+      for (let offsetY = -4; offsetY <= 2; offsetY++) {
+        for (let offsetX = -3; offsetX <= 3; offsetX++) {
+          coordinateKeys.add(`${component.anchorX + offsetX},${component.anchorY + offsetY}`);
+        }
+      }
+    }
+    for (const contact of contacts) {
+      const sign = contact.accessAxis === 'north-south'
+        ? Math.sign(contact.anchorY - contact.siteY) || 1
+        : Math.sign(contact.anchorX - contact.siteX) || 1;
+      for (let distance = 0; distance <= (contact.connectorLength ?? 0); distance++) {
+        const x = contact.accessAxis === 'north-south'
+          ? contact.siteX
+          : contact.siteX + sign * distance;
+        const y = contact.accessAxis === 'north-south'
+          ? contact.siteY + sign * distance
+          : contact.siteY;
+        coordinateKeys.add(`${x},${y}`);
+      }
+    }
+    const coordinates = [...coordinateKeys].map((key) => {
+      const [x, y] = key.split(',').map(Number);
+      return [x!, y!] as const;
+    });
+    for (const [x, y] of [...coordinates].reverse()) {
+      large.getBuildingTileAt(x, y);
+      large.isBuildingAt(x, y);
+      large.getTile(x, y);
+    }
+    for (const [x, y] of coordinates) {
+      expect(Boolean(small.getBuildingTileAt(x, y))).toBe(Boolean(large.getBuildingTileAt(x, y)));
+      expect(small.isBuildingAt(x, y)).toBe(large.isBuildingAt(x, y));
+      expect(small.getTile(x, y).id.startsWith('regional-access:'))
+        .toBe(large.getTile(x, y).id.startsWith('regional-access:'));
+    }
+  });
+
   it('bounds derived landmark blocks', () => {
     const world = makeWorld(16, 9);
     for (let x = -320; x <= 320; x += 32) world.getBuildingTileAt(x, 0);
     expect(world.getRegionalStats().cachedBlocks).toBeLessThanOrEqual(9);
   });
 
-  it('builds only source blocks whose manifest extents can reach a query', () => {
+  it('bounds source blocks to the parcel-aware manifest reach', () => {
     const world = makeWorld(32);
     world.getBuildingTileAt(12, 12);
-    expect(world.getRegionalStats().cachedBlocks).toBe(1);
+    expect(world.getRegionalStats().cachedBlocks).toBe(4);
   });
 
   it('primes one bounded viewport without conflating preparation with rendering', () => {

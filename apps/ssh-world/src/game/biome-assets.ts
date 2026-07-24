@@ -6,6 +6,7 @@ import {
   type BiomeFamily,
   type RegionalAmbientAsset,
   type RegionalLandmarkAsset,
+  type RegionalParcelComponentAsset,
   type RegionalRouteContactAsset,
   type RegionalRouteContactAxis,
   type RegionalLandmarkKind,
@@ -56,6 +57,15 @@ export interface RegionalRouteContactKit {
   assets: RegionalRouteContactAsset[];
 }
 
+export interface RegionalParcelComponentKit {
+  manifestPath: string;
+  sourceTileSize: number;
+  minimumLayers: number;
+  maximumLayers: number;
+  layerSpacing: number;
+  assets: RegionalParcelComponentAsset[];
+}
+
 interface BaseMaterialEntry {
   id: string;
   file: string;
@@ -96,6 +106,16 @@ interface AmbientEntry {
 interface RouteContactEntry extends AmbientEntry {
   accessAxis: RegionalRouteContactAxis;
   anchorTile: [number, number];
+}
+
+interface ParcelComponentEntry {
+  id: string;
+  file: string;
+  family: BiomeFamily;
+  role: 'mass';
+  scale: number;
+  spriteTiles: [number, number];
+  collision: Array<[number, number]>;
 }
 
 const ROUTE_KINDS: readonly RegionalRouteKind[] = ['trail', 'local-road', 'arterial'];
@@ -340,6 +360,61 @@ export async function loadRegionalRouteContactKit(manifestPath: string): Promise
   };
 }
 
+/** Load family-compatible silhouette modules for the parcel grammar. Files may
+ * deliberately share provenance with ambient masses, but their parcel role is
+ * explicit here; pixels never infer placement, access, or collision. */
+export async function loadRegionalParcelComponentKit(
+  manifestPath: string,
+): Promise<RegionalParcelComponentKit> {
+  const absoluteManifest = path.resolve(manifestPath);
+  const manifestDirectory = path.dirname(absoluteManifest);
+  const raw = JSON.parse(await fs.promises.readFile(absoluteManifest, 'utf8')) as unknown;
+  if (!isRecord(raw) || raw.version !== 1 || !Number.isInteger(raw.sourceTileSize) ||
+      !Number.isInteger(raw.minimumLayers) || !Number.isInteger(raw.maximumLayers) ||
+      !Number.isInteger(raw.layerSpacing) || !Array.isArray(raw.assets)) {
+    throw new Error(`Invalid regional parcel component manifest: ${absoluteManifest}`);
+  }
+  const sourceTileSize = Number(raw.sourceTileSize);
+  const minimumLayers = Number(raw.minimumLayers);
+  const maximumLayers = Number(raw.maximumLayers);
+  const layerSpacing = Number(raw.layerSpacing);
+  if (sourceTileSize < 16 || sourceTileSize > 192 || minimumLayers < 1 ||
+      maximumLayers < minimumLayers || maximumLayers > 5 || layerSpacing < 4 || layerSpacing > 8) {
+    throw new Error(`Regional parcel component dimensions are invalid: ${absoluteManifest}`);
+  }
+  const entries = raw.assets.map((value, index) => parseParcelComponentEntry(value, index));
+  const ids = new Set(entries.map((entry) => entry.id));
+  if (ids.size !== entries.length) throw new Error('Regional parcel component manifest contains duplicate IDs');
+  for (const family of BIOME_FAMILIES) {
+    if (!entries.some((entry) => entry.family === family)) {
+      throw new Error(`Regional parcel component manifest is missing family: ${family}`);
+    }
+  }
+  const assets: RegionalParcelComponentAsset[] = [];
+  for (const entry of entries) {
+    assets.push({
+      id: entry.id,
+      families: [entry.family],
+      role: entry.role,
+      collision: entry.collision,
+      sprite: await loadRegionalSprite(
+        resolveAssetPath(manifestDirectory, entry.file),
+        sourceTileSize,
+        entry.scale,
+        entry.spriteTiles,
+      ),
+    });
+  }
+  return {
+    manifestPath: absoluteManifest,
+    sourceTileSize,
+    minimumLayers,
+    maximumLayers,
+    layerSpacing,
+    assets,
+  };
+}
+
 function parseEntry(value: unknown, index: number): MaterialEntry {
   if (!isRecord(value) ||
       !BIOME_FAMILIES.includes(value.family as BiomeFamily) ||
@@ -451,6 +526,28 @@ function parseRouteContactEntry(value: unknown, index: number): RouteContactEntr
   };
 }
 
+function parseParcelComponentEntry(value: unknown, index: number): ParcelComponentEntry {
+  if (!isRecord(value) || value.role !== 'mass' ||
+      typeof value.id !== 'string' || value.id.length === 0 ||
+      typeof value.file !== 'string' || value.file.length === 0 ||
+      !BIOME_FAMILIES.includes(value.family as BiomeFamily) ||
+      !isTileDimensions(value.spriteTiles) ||
+      !Array.isArray(value.collision) || value.collision.length === 0 ||
+      !value.collision.every(isCollisionOffset) ||
+      typeof value.scale !== 'number' || value.scale < 0.2 || value.scale > 1) {
+    throw new Error(`Invalid regional parcel component entry at index ${index}`);
+  }
+  return {
+    id: value.id,
+    file: value.file,
+    family: value.family as BiomeFamily,
+    role: 'mass',
+    scale: value.scale,
+    spriteTiles: value.spriteTiles as [number, number],
+    collision: value.collision as Array<[number, number]>,
+  };
+}
+
 function valueRouteKind(value: unknown): RegionalRouteKind | null {
   if (!isRecord(value) || !ROUTE_KINDS.includes(value.routeKind as RegionalRouteKind)) return null;
   return value.routeKind as RegionalRouteKind;
@@ -511,7 +608,24 @@ async function loadTerrainMasterVariants(
   return variants;
 }
 
-async function loadRegionalSprite(
+const REGIONAL_SPRITE_CACHE = new Map<string, Promise<BuildingSprite>>();
+
+function loadRegionalSprite(
+  imagePath: string,
+  tileSize: number,
+  scale: number,
+  spriteTiles: [number, number],
+): Promise<BuildingSprite> {
+  const key = `${path.resolve(imagePath)}@${tileSize}:${scale}:${spriteTiles[0]}x${spriteTiles[1]}`;
+  const cached = REGIONAL_SPRITE_CACHE.get(key);
+  if (cached) return cached;
+  const loading = loadRegionalSpriteUncached(imagePath, tileSize, scale, spriteTiles);
+  REGIONAL_SPRITE_CACHE.set(key, loading);
+  void loading.catch(() => REGIONAL_SPRITE_CACHE.delete(key));
+  return loading;
+}
+
+async function loadRegionalSpriteUncached(
   imagePath: string,
   tileSize: number,
   scale: number,

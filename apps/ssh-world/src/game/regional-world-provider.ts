@@ -8,6 +8,7 @@ import {
   loadRegionalAmbientKit,
   loadRegionalBiomeMaterialKit,
   loadRegionalLandmarkKit,
+  loadRegionalParcelComponentKit,
   loadRegionalRouteContactKit,
   loadRegionalRouteMaterialKit,
 } from './biome-assets.js';
@@ -18,6 +19,7 @@ export interface RegionalWorldAssetPaths {
   landmarks: string;
   ambient: string;
   routeContacts: string;
+  parcelComponents: string;
 }
 
 export interface RegionalWorldProviderOptions {
@@ -39,12 +41,13 @@ export interface LoadedRegionalWorldProvider {
 export async function loadRegionalWorldProvider(
   options: RegionalWorldProviderOptions,
 ): Promise<LoadedRegionalWorldProvider> {
-  const [biomeKit, routeKit, landmarkKit, ambientKit, routeContactKit] = await Promise.all([
+  const [biomeKit, routeKit, landmarkKit, ambientKit, routeContactKit, parcelKit] = await Promise.all([
     loadRegionalBiomeMaterialKit(options.assets.biomeMaterials),
     loadRegionalRouteMaterialKit(options.assets.routeMaterials),
     loadRegionalLandmarkKit(options.assets.landmarks),
     loadRegionalAmbientKit(options.assets.ambient),
     loadRegionalRouteContactKit(options.assets.routeContacts),
+    loadRegionalParcelComponentKit(options.assets.parcelComponents),
   ]);
   const field = new BiomeWorldField(options.worldSeed, {
     blockSize: 16,
@@ -76,6 +79,7 @@ export async function loadRegionalWorldProvider(
     landmarks: landmarkKit.assets,
     ambient: ambientKit.assets,
     routeContacts: routeContactKit.assets,
+    parcelComponents: parcelKit.assets,
     blockSize: landmarkKit.blockSize,
     maxCachedBlocks: 64,
     ambientCellSize: ambientKit.cellSize,
@@ -85,6 +89,9 @@ export async function loadRegionalWorldProvider(
     routeContactDensity: routeContactKit.density,
     routeContactLandmarkClearance: routeContactKit.landmarkClearance,
     maxCachedRouteContactCells: 4096,
+    parcelMinimumLayers: parcelKit.minimumLayers,
+    parcelMaximumLayers: parcelKit.maximumLayers,
+    parcelLayerSpacing: parcelKit.layerSpacing,
     maxPreparedViewports: 4,
   });
   return { field, routes, compositor, world };

@@ -5,6 +5,7 @@ import {
   loadRegionalAmbientKit,
   loadRegionalBiomeMaterialKit,
   loadRegionalLandmarkKit,
+  loadRegionalParcelComponentKit,
   loadRegionalRouteMaterialKit,
   loadRegionalRouteContactKit,
 } from '../game/biome-assets.js';
@@ -95,5 +96,28 @@ describe('regional biome material manifest', () => {
       expect(pixels.some((pixel) => pixel === null)).toBe(true);
       expect(pixels.some((pixel) => pixel !== null && pixel.a !== undefined && pixel.a < 255)).toBe(true);
     }
+  });
+
+  it('loads explicit modular parcel masses for every biome family', async () => {
+    const [kit, ambient] = await Promise.all([
+      loadRegionalParcelComponentKit(path.resolve('assets/biomes/parcel-components-manifest.json')),
+      loadRegionalAmbientKit(path.resolve('assets/biomes/ambient-manifest.json')),
+    ]);
+    expect(kit.sourceTileSize).toBe(48);
+    expect(kit.minimumLayers).toBe(2);
+    expect(kit.maximumLayers).toBe(3);
+    expect(kit.layerSpacing).toBe(5);
+    expect(kit.assets).toHaveLength(36);
+    for (const family of BIOME_FAMILIES) {
+      expect(kit.assets.filter((asset) => asset.families.includes(family))).toHaveLength(6);
+    }
+    for (const asset of kit.assets) {
+      expect(asset.role).toBe('mass');
+      expect(asset.sprite.width).toBe(5);
+      expect(asset.sprite.height).toBe(4);
+      expect(asset.collision.length).toBeGreaterThan(0);
+    }
+    expect(kit.assets.find((asset) => asset.id === 'canal-town-facade-parcel-mass-v1')?.sprite)
+      .toBe(ambient.assets.find((asset) => asset.id === 'canal-town-facade-planter-v2')?.sprite);
   });
 });

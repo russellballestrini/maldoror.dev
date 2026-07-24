@@ -7,6 +7,7 @@ import {
   loadRegionalAmbientKit,
   loadRegionalBiomeMaterialKit,
   loadRegionalLandmarkKit,
+  loadRegionalParcelComponentKit,
   loadRegionalRouteMaterialKit,
   loadRegionalRouteContactKit,
 } from '../../apps/ssh-world/dist/game/biome-assets.js';
@@ -50,12 +51,13 @@ const routes = new RegionalRouteField(WORLD_SEED, field, {
   maxCachedPaths: 512,
   pathStep: 4,
 });
-const [biomeKit, routeKit, landmarkKit, ambientKit, routeContactKit] = await Promise.all([
+const [biomeKit, routeKit, landmarkKit, ambientKit, routeContactKit, parcelKit] = await Promise.all([
   loadRegionalBiomeMaterialKit(path.join(ROOT, 'assets/biomes/manifest.json')),
   loadRegionalRouteMaterialKit(path.join(ROOT, 'assets/routes/manifest.json')),
   loadRegionalLandmarkKit(path.join(ROOT, 'assets/biomes/landmarks-manifest.json')),
   loadRegionalAmbientKit(path.join(ROOT, 'assets/biomes/ambient-manifest.json')),
   loadRegionalRouteContactKit(path.join(ROOT, 'assets/biomes/route-contacts-manifest.json')),
+  loadRegionalParcelComponentKit(path.join(ROOT, 'assets/biomes/parcel-components-manifest.json')),
 ]);
 if (new Set([landmarkKit.blockSize, ambientKit.blockSize, routeContactKit.blockSize]).size !== 1) {
   throw new Error('Regional landmark, ambient, and route-contact block sizes disagree');
@@ -79,6 +81,7 @@ const world = new RegionalWorldTileProvider({
   landmarks: landmarkKit.assets,
   ambient: ambientKit.assets,
   routeContacts: routeContactKit.assets,
+  parcelComponents: parcelKit.assets,
   blockSize: landmarkKit.blockSize,
   maxCachedBlocks: 64,
   ambientCellSize: ambientKit.cellSize,
@@ -87,6 +90,9 @@ const world = new RegionalWorldTileProvider({
   routeContactCellSize: routeContactKit.cellSize,
   routeContactDensity: routeContactKit.density,
   routeContactLandmarkClearance: routeContactKit.landmarkClearance,
+  parcelMinimumLayers: parcelKit.minimumLayers,
+  parcelMaximumLayers: parcelKit.maximumLayers,
+  parcelLayerSpacing: parcelKit.layerSpacing,
 });
 
 function locateLandmarkFamilies() {
@@ -189,17 +195,32 @@ if (process.env.MALDOROR_REGIONAL_CONTACT_ATLAS === '1') {
   }
   const missing = [...wanted].filter((id) => !found.has(id));
   if (missing.length > 0) throw new Error(`Could not locate regional route contacts: ${missing.join(', ')}`);
-  FRAMES = routeContactKit.assets.map((asset) => {
+  const contactTileSize = Number(process.env.MALDOROR_REGIONAL_CONTACT_TILE_SIZE ?? 16);
+  if (![4, 8, 16].includes(contactTileSize)) {
+    throw new Error(`MALDOROR_REGIONAL_CONTACT_TILE_SIZE must be 4, 8, or 16: ${contactTileSize}`);
+  }
+  const contactAssetFilter = process.env.MALDOROR_REGIONAL_CONTACT_ASSET;
+  FRAMES = routeContactKit.assets.filter((asset) =>
+    !contactAssetFilter || asset.id === contactAssetFilter).map((asset) => {
     const placement = found.get(asset.id);
+    const sign = placement.accessAxis === 'north-south'
+      ? Math.sign(placement.anchorY - placement.siteY) || 1
+      : Math.sign(placement.anchorX - placement.siteX) || 1;
+    const offset = contactTileSize < 16 ? Math.round((placement.connectorLength ?? 0) / 2) : 0;
+    const centre = placement.accessAxis === 'north-south'
+      ? [placement.siteX, placement.siteY + sign * offset]
+      : [placement.siteX + sign * offset, placement.siteY];
+    const scaleName = contactTileSize === 16 ? 'walking' : contactTileSize === 8 ? 'district' : 'regional';
     return {
-      name: `${asset.families[0]}-route-contact-${asset.accessAxis}-walking`,
-      centre: [placement.anchorX, placement.anchorY],
-      displayTileSize: 16,
+      name: `${asset.families[0]}-route-contact-${asset.accessAxis}-${scaleName}`,
+      centre,
+      displayTileSize: contactTileSize,
       assetId: asset.id,
       parcelId: placement.parcelId,
       accessAxis: placement.accessAxis,
     };
   });
+  if (FRAMES.length === 0) throw new Error(`Unknown route-contact asset: ${contactAssetFilter}`);
 }
 
 function renderFrame(frame) {
@@ -273,6 +294,73 @@ async function writeOctant(filename, grid) {
   await sharp(image, { raw: { width, height, channels: 3 } }).png().toFile(filename);
 }
 
+function auditParcel(frame) {
+  if (!frame.parcelId || !frame.accessAxis) return null;
+  const contacts = world.getRouteContactPlacementsInBounds(
+    frame.centre[0] - 8,
+    frame.centre[1] - 8,
+    frame.centre[0] + 8,
+    frame.centre[1] + 8,
+  );
+  const contact = contacts.find((placement) => placement.parcelId === frame.parcelId);
+  if (!contact) throw new Error(`Could not resolve parcel audit contact: ${frame.parcelId}`);
+  const components = world.getParcelComponentPlacementsInBounds(
+    contact.siteX - 32,
+    contact.siteY - 32,
+    contact.siteX + 32,
+    contact.siteY + 32,
+  ).filter((placement) => placement.parcelId === contact.parcelId);
+  const assetById = new Map([
+    ...routeContactKit.assets.map((asset) => [asset.id, asset]),
+    ...parcelKit.assets.map((asset) => [asset.id, asset]),
+  ]);
+  const occupied = new Map();
+  for (const placement of [contact, ...components]) {
+    const asset = assetById.get(placement.assetId);
+    if (!asset) throw new Error(`Parcel audit asset is missing: ${placement.assetId}`);
+    for (const [offsetX, offsetY] of asset.collision) {
+      const key = `${placement.anchorX + offsetX},${placement.anchorY + offsetY}`;
+      const owners = occupied.get(key) ?? [];
+      owners.push(`${placement.parcelId}:${placement.assetId}`);
+      occupied.set(key, owners);
+    }
+  }
+  const sign = contact.accessAxis === 'north-south'
+    ? Math.sign(contact.anchorY - contact.siteY) || 1
+    : Math.sign(contact.anchorX - contact.siteX) || 1;
+  let collisionBlocked = 0;
+  let visuallyBlocked = 0;
+  let materialMissing = 0;
+  const connectorLength = contact.connectorLength ?? 0;
+  for (let distance = 0; distance <= connectorLength; distance++) {
+    const x = contact.accessAxis === 'north-south'
+      ? contact.siteX
+      : contact.siteX + sign * distance;
+    const y = contact.accessAxis === 'north-south'
+      ? contact.siteY + sign * distance
+      : contact.siteY;
+    if (world.isBuildingAt(x, y)) collisionBlocked++;
+    if (world.getBuildingTileAt(x, y)) visuallyBlocked++;
+    if (!world.getTile(x, y).id.startsWith('regional-access:')) materialMissing++;
+  }
+  return {
+    parcelId: contact.parcelId,
+    family: contact.families[0],
+    accessAxis: contact.accessAxis,
+    routeKind: contact.routeKind,
+    layers: contact.parcelLayers,
+    connectorLength,
+    componentCount: components.length,
+    componentIds: components.map((placement) => placement.assetId),
+    familyMismatchCount: components.filter((placement) =>
+      !placement.families.includes(contact.families[0])).length,
+    collisionOverlapCells: [...occupied.values()].filter((owners) => owners.length > 1).length,
+    connectorCollisionBlocked: collisionBlocked,
+    connectorVisuallyBlocked: visuallyBlocked,
+    connectorMaterialMissing: materialMissing,
+  };
+}
+
 const metrics = {
   worldSeed: String(WORLD_SEED),
   sourceDimensions: [WIDTH, HEIGHT],
@@ -283,6 +371,8 @@ const metrics = {
   ambientAssets: ambientKit.assets.length,
   routeContactManifest: path.relative(ROOT, routeContactKit.manifestPath),
   routeContactAssets: routeContactKit.assets.length,
+  parcelComponentManifest: path.relative(ROOT, parcelKit.manifestPath),
+  parcelComponentAssets: parcelKit.assets.length,
   frames: [],
 };
 for (const frame of FRAMES) {
@@ -292,6 +382,14 @@ for (const frame of FRAMES) {
   const octantPath = path.join(OUTPUT, `${frame.name}-octant-160x44.png`);
   const colours = await writeSource(sourcePath, grid);
   await writeOctant(octantPath, grid);
+  const halfWidth = Math.ceil(WIDTH / frame.displayTileSize / 2);
+  const halfHeight = Math.ceil(HEIGHT / frame.displayTileSize / 2);
+  const visibleBounds = [
+    frame.centre[0] - halfWidth,
+    frame.centre[1] - halfHeight,
+    frame.centre[0] + halfWidth,
+    frame.centre[1] + halfHeight,
+  ];
   metrics.frames.push({
     ...frame,
     elapsedMs: Number((performance.now() - startedAt).toFixed(2)),
@@ -300,18 +398,10 @@ for (const frame of FRAMES) {
     routeStats: routes.getStats(),
     compositorStats: compositor.getStats(),
     providerStats: world.getRegionalStats(),
-    visibleAmbient: world.getAmbientPlacementsInBounds(
-      frame.centre[0] - Math.ceil(WIDTH / frame.displayTileSize / 2),
-      frame.centre[1] - Math.ceil(HEIGHT / frame.displayTileSize / 2),
-      frame.centre[0] + Math.ceil(WIDTH / frame.displayTileSize / 2),
-      frame.centre[1] + Math.ceil(HEIGHT / frame.displayTileSize / 2),
-    ),
-    visibleRouteContacts: world.getRouteContactPlacementsInBounds(
-      frame.centre[0] - Math.ceil(WIDTH / frame.displayTileSize / 2),
-      frame.centre[1] - Math.ceil(HEIGHT / frame.displayTileSize / 2),
-      frame.centre[0] + Math.ceil(WIDTH / frame.displayTileSize / 2),
-      frame.centre[1] + Math.ceil(HEIGHT / frame.displayTileSize / 2),
-    ),
+    visibleAmbient: world.getAmbientPlacementsInBounds(...visibleBounds),
+    visibleRouteContacts: world.getRouteContactPlacementsInBounds(...visibleBounds),
+    visibleParcelComponents: world.getParcelComponentPlacementsInBounds(...visibleBounds),
+    parcelAudit: auditParcel(frame),
   });
 }
 fs.writeFileSync(path.join(OUTPUT, 'metrics.json'), `${JSON.stringify(metrics, null, 2)}\n`);

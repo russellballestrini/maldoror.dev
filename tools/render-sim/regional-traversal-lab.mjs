@@ -14,6 +14,7 @@ import {
   loadRegionalAmbientKit,
   loadRegionalBiomeMaterialKit,
   loadRegionalLandmarkKit,
+  loadRegionalParcelComponentKit,
   loadRegionalRouteContactKit,
   loadRegionalRouteMaterialKit,
 } from '../../apps/ssh-world/dist/game/biome-assets.js';
@@ -39,6 +40,7 @@ const ASSET_PATHS = {
   landmarks: path.join(ROOT, 'assets/biomes/landmarks-manifest.json'),
   ambient: path.join(ROOT, 'assets/biomes/ambient-manifest.json'),
   routeContacts: path.join(ROOT, 'assets/biomes/route-contacts-manifest.json'),
+  parcelComponents: path.join(ROOT, 'assets/biomes/parcel-components-manifest.json'),
 };
 const FRAME_COUNT = Number(process.env.MALDOROR_TRAVERSAL_FRAMES ?? 32);
 if (!Number.isInteger(FRAME_COUNT) || FRAME_COUNT < 8 || FRAME_COUNT > 160) {
@@ -46,12 +48,13 @@ if (!Number.isInteger(FRAME_COUNT) || FRAME_COUNT < 8 || FRAME_COUNT > 160) {
 }
 
 fs.mkdirSync(OUTPUT, { recursive: true });
-const [biomeKit, routeKit, landmarkKit, ambientKit, routeContactKit] = await Promise.all([
+const [biomeKit, routeKit, landmarkKit, ambientKit, routeContactKit, parcelKit] = await Promise.all([
   loadRegionalBiomeMaterialKit(ASSET_PATHS.biomeMaterials),
   loadRegionalRouteMaterialKit(ASSET_PATHS.routeMaterials),
   loadRegionalLandmarkKit(ASSET_PATHS.landmarks),
   loadRegionalAmbientKit(ASSET_PATHS.ambient),
   loadRegionalRouteContactKit(ASSET_PATHS.routeContacts),
+  loadRegionalParcelComponentKit(ASSET_PATHS.parcelComponents),
 ]);
 
 const pathCoordinates = Array.from({ length: FRAME_COUNT }, (_, index) => ({
@@ -88,6 +91,7 @@ function createWorld() {
     landmarks: landmarkKit.assets,
     ambient: ambientKit.assets,
     routeContacts: routeContactKit.assets,
+    parcelComponents: parcelKit.assets,
     blockSize: landmarkKit.blockSize,
     maxCachedBlocks: 64,
     ambientCellSize: ambientKit.cellSize,
@@ -97,6 +101,9 @@ function createWorld() {
     routeContactDensity: routeContactKit.density,
     routeContactLandmarkClearance: routeContactKit.landmarkClearance,
     maxCachedRouteContactCells: 4096,
+    parcelMinimumLayers: parcelKit.minimumLayers,
+    parcelMaximumLayers: parcelKit.maximumLayers,
+    parcelLayerSpacing: parcelKit.layerSpacing,
   });
   return { field, routes, compositor, world };
 }
