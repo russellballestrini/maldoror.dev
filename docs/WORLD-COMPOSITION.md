@@ -226,8 +226,14 @@ while preserving immediate weather/season transitions and one-second localized
 rain/storm animation. Repeating the live capture retains 90 synchronized frames
 at 19,787 steady bytes, a 98.51% reduction with zero full-world idle repaints.
 
-These are live bounded measurements, not Gate-D completion. The 5/10/20-
-presence ladder, 30-minute run, and physical Ghostty proof remain open.
+These are live bounded measurements, not Gate-D completion. The subsequent
+fixed 144-frame real-SSH atlas at `v4d6bebd` confirms organic material blends
+and correct traveler alpha, but rejects the current composition at Gate A for
+sparsity/repetition, angular route ribbons, rectangular crossing masses, night
+compression, and storm loss of identity. The complete failed sheets and raw
+streams are retained under `track-6-acceptance-atlas/acceptance-atlas-v3-final/`.
+The 5/10/20-presence ladder, 30-minute run, corrective composition pass, and
+physical Ghostty proof remain open.
 
 ## Non-periodic asset placement
 

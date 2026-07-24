@@ -42,20 +42,33 @@ for (const environment of spec.environments) {
   }
 }
 
-const walkingReference = records
-  .filter((record) => record.zoom === 'walking' && record.viewport === 'ghostty-reference')
-  .sort((a, b) => siteIndex(a.siteId) - siteIndex(b.siteId));
-if (walkingReference.length > 0) {
-  const output = path.join(outputDirectory, 'walking-reference-all-environments.png');
-  await composeSheet(walkingReference, output, 4);
-  sheets.push({
-    environment: 'all',
-    zoom: 'walking',
-    viewport: 'ghostty-reference',
-    frames: walkingReference.length,
-    complete: walkingReference.length === spec.sites.length,
-    output,
-  });
+// The environment sheets are convenient capture checks, but Gate A must be
+// reviewed across every predetermined coordinate at each semantic zoom and
+// viewport. Emit the full cross-environment sheets so district/regional or
+// large-terminal failures cannot hide behind a walking-reference montage.
+for (const zoom of spec.zooms) {
+  for (const viewport of spec.viewports) {
+    const group = records
+      .filter((record) => record.zoom === zoom.id && record.viewport === viewport.id)
+      .sort((a, b) => siteIndex(a.siteId) - siteIndex(b.siteId));
+    if (group.length === 0) continue;
+    const legacyWalkingReference = zoom.id === 'walking' && viewport.id === 'ghostty-reference';
+    const output = path.join(
+      outputDirectory,
+      legacyWalkingReference
+        ? 'walking-reference-all-environments.png'
+        : `${zoom.id}--${viewport.id}--all-environments.png`,
+    );
+    await composeSheet(group, output, 4);
+    sheets.push({
+      environment: 'all',
+      zoom: zoom.id,
+      viewport: viewport.id,
+      frames: group.length,
+      complete: group.length === spec.sites.length,
+      output,
+    });
+  }
 }
 
 const report = {

@@ -688,9 +688,32 @@ Completed foundations:
   Full verification is 36 files / 189 tests, 18/18 typecheck tasks, and 12/12
   build tasks. No image generation or metered model call was used. This closes
   production activation, not the remaining atlas/load/life/human-display gates;
+- the fixed acceptance-atlas contract now has a loopback-only executable that
+  exercises the real `ssh2 -> SessionProxy -> WorkerManager -> WorkerSession`
+  path against an owned scratch database. The committed manifest fixes 24
+  distinct walkable coordinates, three strong sites per family, six transition
+  pairs, three semantic zooms, two Ghostty-class viewports, and four assigned
+  day/night/rain/storm environments. Its first 72-frame run honestly exposed a
+  universal black traveler backing: Sharp's default opaque padding had turned
+  the portrait fallback into a square, partial alpha was discarded, and actors
+  bypassed the linear-light compositor. The rejected half-atlas is retained.
+  Explicit transparent padding, preserved coverage, and actor alpha-over remove
+  the cut-out; 9 focused tests and a real-SSH smoke frame prove the correction.
+  Commit `4d6bebd` passed 37 files / 193 tests, 18/18 typecheck tasks, and 12/12
+  build tasks, then hot-reloaded live as `v4d6bebd` with exact NPC checkpoint/
+  restore and zero connected sessions. The fresh final audit retains all 144
+  raw SSH streams, 144 faithful replays, 3,560 synchronized frames, and
+  62,939,851 bytes; all 288 raw/image hashes match. Direct review of complete
+  walking/district/regional sheets nevertheless **rejects Gate A**: composition
+  is too sparse and repetitive, routes remain angular/uniform, coast crossings
+  expose slabs, night crushes hierarchy, and storm erases place identity. The
+  exact rejection and next pass live under
+  `track-6-acceptance-atlas/acceptance-atlas-v3-final/FINDINGS.md`; public gallery
+  iteration 031 exposes the non-cherry-picked sheets. This is audit completion,
+  not visual acceptance. No image generation or metered model call was used;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
-  iterations 012–030 expose selected and rejected research candidates without
+  iterations 012–031 expose selected and rejected research candidates without
   claiming they are live.
 
 Still open and therefore goal-blocking:
@@ -718,9 +741,12 @@ Still open and therefore goal-blocking:
   checks, natural conversations and plans, richer event coordination,
   player-caused persisted world change, coherent fronts, long-horizon geometric
   growth/decay, and production multi-human integration remain open;
-- the 24-coordinate multi-zoom/time/weather atlas, deterministic traversal,
-  load ladder, 30-minute terminal run, and physical Ghostty acceptance all
-  remain open.
+- the 24-coordinate multi-zoom/time/weather atlas is now complete as an honest
+  **failed** visual audit. Gate A remains open until the recorded composition,
+  route/crossing, night/storm, and dynamically enumerated material-boundary
+  failures are corrected and the exact fixed atlas passes on a fresh build.
+  Deterministic traversal, the load ladder, 30-minute terminal run, and physical
+  Ghostty acceptance also remain open.
 
 This ledger records real progress and the remaining distance. It does not
 relax, subdivide, or supersede any proof gate above.

@@ -1,6 +1,6 @@
 # The Maldoror rendering engine
 
-*Current production truth, 2026-07-23. Visual evidence is published at
+*Current production truth, 2026-07-24. Visual evidence is published at
 <https://maldoror.dev/gallery>.*
 
 Maldoror renders an AI-authored world as pure ANSI. The current path is one
@@ -178,3 +178,28 @@ and exact `(17,-11)` to `(0,0)` login test live under
 `/mnt/donto-data/donto-resources/maldoror/rendering-research/track-5-motion-transport/live-regional-deploy-v1/`.
 Public gallery iteration 030 shows the selected faithful frame. Physical
 Ghostty acceptance and sustained concurrency remain open.
+
+### Fixed real-SSH acceptance atlas (2026-07-24)
+
+Build `v4d6bebd` adds a separate loopback-only acceptance executable and an
+owned scratch-Postgres harness. Production has no environment flag that can
+enable fixture restoration. The fixed manifest covers 24 predetermined
+coordinates, all six families, six transition pairs, three semantic zooms, two
+Ghostty-class viewports, and day/clear, night/clear, day/rain, and night/storm.
+Every capture travels through the real SSH/session/worker/render path and
+retains its raw ANSI stream, faithful replay, dimensions, synchronized-frame
+count, and SHA-256.
+
+The completed audit contains 144/144 captures and 3,560 synchronized frames;
+all 288 raw/image hashes match. It is intentionally **rejected**, not accepted.
+The full sheets expose sparse/repeated composition, angular routes, rectangular
+waterfront/crossing masses, crushed night hierarchy, and storm precipitation
+that overwhelms biome identity. They also prove the alpha correction: Sharp
+contain-padding is explicitly transparent, partial coverage survives loading,
+and actors use linear-light alpha-over, eliminating the earlier black traveler
+rectangle.
+
+Evidence and the exact rejection are in
+`/mnt/donto-data/donto-resources/maldoror/rendering-research/track-6-acceptance-atlas/acceptance-atlas-v3-final/`.
+Public gallery iteration 031 exposes the walking, district, and regional review
+sheets. A successful Gate-A atlas and physical Ghostty acceptance remain open.

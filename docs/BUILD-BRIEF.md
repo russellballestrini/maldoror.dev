@@ -216,8 +216,9 @@ octant), `MALDOROR_ASSET_ROOT=<repo-or-release-root>`, and
 `MALDOROR_CANAL_TOWN=0` may additionally expose the legacy
 `MALDOROR_DISTRICT=<png>` experiment. A regional startup error is fatal rather
 than silently showing a different world.
-Current live checkpoint: `v14d6b58` (regional world plus bounded terminal
-atmosphere cadence), activated 2026-07-24 with additive migrations 0008-0009.
+Current live checkpoint: `v4d6bebd` (regional world, bounded terminal
+atmosphere cadence, real-SSH atlas harness, and corrected actor alpha),
+hot-reloaded 2026-07-24 after the additive migrations 0008-0009 activation.
 Worker boot takes ~30-90s under load (module load off sdb) — patience, not a
 hang. `.service`/`.slice` mirrored in `deploy/box/`; `deploy/box/redeploy.sh` =
 full build+tsup+push+restart.
@@ -271,8 +272,11 @@ full build+tsup+push+restart.
 5. **turbo build clobbers the db ESM bundle** (§4).
 6. **A frame drop breaks retained deltas.** Never drop one and continue as if
    the terminal received it; request a keyframe first.
-7. Sprites have a baked-in dark alpha fringe → despeckle at load
-   (`sprite-hygiene.ts`); raise generation alpha threshold.
+7. **Alpha has two distinct failure modes.** Historical opaque fringe pixels
+   still use `sprite-hygiene.ts`, but authored partial alpha must be preserved
+   and composited in linear light. Sharp `fit:'contain'` defaults to opaque
+   black padding unless `background.alpha=0` is explicit; that produced a
+   universal square behind the fallback traveler and is now regression-tested.
 8. **Image protocols are banned** — the user vetoed kitty graphics. Terminal
    glyphs only.
 

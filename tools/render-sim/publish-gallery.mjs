@@ -113,6 +113,11 @@ const sections = iters.map(d => {
   return `<section><h2>${d}</h2>${noteHtml}<div class="grid">${imgs}</div></section>`;
 }).join('\n');
 
+const comparisonPath = path.join(GALLERY, 'COMPARISON.png');
+const comparisonVersion = fs.existsSync(comparisonPath)
+  ? Math.round(fs.statSync(comparisonPath).mtimeMs).toString(36)
+  : 'missing';
+
 fs.writeFileSync(path.join(GALLERY, 'index.html'), `<!doctype html>
 <html lang="en">
 <head>
@@ -196,8 +201,8 @@ fs.writeFileSync(path.join(GALLERY, 'index.html'), `<!doctype html>
 <p>Faithful visual iterations from the terminal world renderer. Every frame below comes through the same provider and pixel pipeline used by the SSH experience; rejected experiments stay visible beside selected checkpoints.</p>
 </header>
 <section><h2>🎯 TARGET vs NOW</h2>
-<div class="grid"><figure style="grid-column:1/-1"><a href="/gallery/COMPARISON.png"><img loading="lazy" src="/gallery/COMPARISON.png" alt="target vs now"></a>
-<figcaption>Goal tracking: TARGET mockup vs the faithfully replayed live 160×46 SSH world.</figcaption></figure></div></section>
+<div class="grid"><figure style="grid-column:1/-1"><a href="/gallery/COMPARISON.png?v=${comparisonVersion}"><img loading="lazy" src="/gallery/COMPARISON.png?v=${comparisonVersion}" alt="target vs now"></a>
+<figcaption>Goal tracking: TARGET mockup vs the current faithfully replayed real-SSH audit frame. The iteration notes state whether the frame is live, isolated, selected, or rejected.</figcaption></figure></div></section>
 <section><h2>🎯 TARGET (mockup)</h2>
 <div class="grid"><figure><a href="/gallery/TARGET.png"><img loading="lazy" src="/gallery/TARGET.png" alt="target mockup"></a>
 <figcaption>The goal: a dense, warm, painterly canal-town rendered as pure ANSI in Ghostty.</figcaption></figure></div></section>
