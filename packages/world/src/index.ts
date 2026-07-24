@@ -104,6 +104,19 @@ export {
   type RegionalParcelSpatialCell,
 } from './tiles/regional-parcel-layout.js';
 export {
+  buildRegionalWaterfrontLayout,
+  rasterizeRegionalWaterfrontLayout,
+  sampleRegionalWaterfrontLayout,
+  type RegionalWaterfrontBounds,
+  type RegionalWaterfrontLayout,
+  type RegionalWaterfrontLayoutCell,
+  type RegionalWaterfrontLayoutConfig,
+  type RegionalWaterfrontLayoutSample,
+  type RegionalWaterfrontPolygon,
+  type RegionalWaterfrontSpatialCell,
+  type RegionalWaterfrontSurfaceRole,
+} from './tiles/regional-waterfront-layout.js';
+export {
   RegionalWorldTileProvider,
   type RegionalAmbientAsset,
   type RegionalAssetPlacement,
@@ -118,10 +131,12 @@ export {
   type RegionalPackedPreparedViewport,
   type RegionalParcelConnectorCell,
   type RegionalParcelComponentAsset,
+  type RegionalParcelProgram,
   type RegionalPreparedViewportPayload,
   type RegionalRouteContactAsset,
   type RegionalRouteContactAxis,
   type RegionalVisualAsset,
+  type RegionalWaterfrontFunction,
   type RegionalWorldBiomeSampler,
   type RegionalWorldRouteSampler,
   type RegionalWorldTileProviderConfig,

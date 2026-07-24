@@ -17,6 +17,7 @@ import {
   buildRegionalParcelPath,
   rasterizeRegionalParcelPath,
 } from '../tiles/regional-parcel-path.js';
+import { buildRegionalWaterfrontLayout } from '../tiles/regional-waterfront-layout.js';
 
 const COLOURS: Record<BiomeFamily, RGB> = {
   'canal-town': { r: 220, g: 150, b: 90 },
@@ -233,6 +234,63 @@ describe('RegionalMaterialCompositor', () => {
     expect(fringeTile.walkable).toBe(false);
     expect(left.pixels[4]![7]).toEqual(right.pixels[4]![0]);
     expect(composed.getPathAccessTileAtResolution(2, 0, 8, path, 'local-road', true)).toBe(left);
+  });
+
+  it('dissolves dry waterfront yards into terrain while retaining walkable piers', () => {
+    const noRoute: RegionalRouteSampler = {
+      sample: () => ({
+        ...routeSample('local-road', null),
+        distance: 8,
+        isRoute: false,
+        isWalkableRoute: false,
+        routeKind: null,
+        routeId: null,
+      }),
+    };
+    const composed = routedCompositor(noRoute);
+    const layout = buildRegionalWaterfrontLayout({
+      id: 'waterfront:test-blend',
+      accessStart: { x: 0, y: -10 },
+      shorePoint: { x: 0, y: 0 },
+      waterNormalX: 0,
+      waterNormalY: 1,
+      seed: 42,
+      isWater: (_x, y) => y >= 0,
+    })!;
+    const distance = (a: RGB, b: RGB) => Math.hypot(a.r - b.r, a.g - b.g, a.b - b.b);
+    const interiorBase = composed.getTileAtResolution(0, -3, 8);
+    const interior = composed.getWaterfrontGroundTileAtResolution(
+      0,
+      -3,
+      8,
+      layout,
+      'local-road',
+    );
+    const fringeBase = composed.getTileAtResolution(7, -3, 8);
+    const fringe = composed.getWaterfrontGroundTileAtResolution(
+      7,
+      -3,
+      8,
+      layout,
+      'local-road',
+    );
+    const interiorDelta = distance(interior.pixels[4]![4]!, interiorBase.pixels[4]![4]!);
+    const fringeDelta = distance(fringe.pixels[4]![3]!, fringeBase.pixels[4]![3]!);
+    expect(interiorDelta).toBeGreaterThan(20);
+    expect(fringeDelta).toBeLessThan(interiorDelta * 0.35);
+    const pier = layout.piers[0]!.polygon.reduce((centre, point) => ({
+      x: centre.x + point.x / 4,
+      y: centre.y + point.y / 4,
+    }), { x: 0, y: 0 });
+    const pierTile = composed.getWaterfrontGroundTileAtResolution(
+      Math.floor(pier.x),
+      Math.floor(pier.y),
+      8,
+      layout,
+      'local-road',
+    );
+    expect(pierTile.id).toContain('regional-waterfront-ground:waterfront:test-blend');
+    expect(pierTile.walkable).toBe(true);
   });
 
   it('authors only the requested semantic LOD and reuses quantized zoom bands', () => {

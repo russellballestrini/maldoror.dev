@@ -120,6 +120,15 @@ describe('regional biome material manifest', () => {
       expect(asset.sprite.height).toBe(4);
       expect(asset.collision.length).toBeGreaterThan(0);
     }
+    const waterfront = kit.assets.filter((asset) => asset.programs?.includes('waterfront'));
+    expect(waterfront).toHaveLength(5);
+    expect(new Set(waterfront.map((asset) => asset.waterfrontFunction))).toEqual(new Set([
+      'boat-shed',
+      'fish-processing',
+      'market',
+      'shelter',
+      'workshop',
+    ]));
     expect(kit.assets.find((asset) => asset.id === 'canal-town-facade-parcel-mass-v1')?.sprite)
       .toBe(ambient.assets.find((asset) => asset.id === 'canal-town-facade-planter-v2')?.sprite);
   });

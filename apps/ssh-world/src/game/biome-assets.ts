@@ -9,6 +9,8 @@ import {
   type RegionalEnvironmentContactAsset,
   type RegionalLandmarkAsset,
   type RegionalParcelComponentAsset,
+  type RegionalParcelProgram,
+  type RegionalWaterfrontFunction,
   type RegionalRouteContactAsset,
   type RegionalRouteContactAxis,
   type RegionalLandmarkKind,
@@ -130,6 +132,8 @@ interface ParcelComponentEntry {
   scale: number;
   spriteTiles: [number, number];
   collision: Array<[number, number]>;
+  programs?: RegionalParcelProgram[];
+  waterfrontFunction?: RegionalWaterfrontFunction;
 }
 
 interface EnvironmentContactEntry {
@@ -147,6 +151,14 @@ const ROUTE_KINDS: readonly RegionalRouteKind[] = ['trail', 'local-road', 'arter
 const CROSSING_KINDS: readonly RegionalCrossingKind[] = ['ford', 'bridge', 'ferry'];
 const LANDMARK_KINDS: readonly RegionalLandmarkKind[] = ['arrival', 'settlement', 'ruin', 'waystation'];
 const ROUTE_CONTACT_AXES: readonly RegionalRouteContactAxis[] = ['north-south', 'east-west'];
+const PARCEL_PROGRAMS: readonly RegionalParcelProgram[] = ['waterfront'];
+const WATERFRONT_FUNCTIONS: readonly RegionalWaterfrontFunction[] = [
+  'boat-shed',
+  'fish-processing',
+  'market',
+  'shelter',
+  'workshop',
+];
 
 /** Load the authored six-family manifest without inferring semantics from file
  * names or pixels. Source masters are cropped into repeatable variants once at
@@ -446,6 +458,8 @@ export async function loadRegionalParcelComponentKit(
       id: entry.id,
       families: [entry.family],
       role: entry.role,
+      programs: entry.programs,
+      waterfrontFunction: entry.waterfrontFunction,
       collision: entry.collision,
       sprite: await loadRegionalSprite(
         resolveAssetPath(manifestDirectory, entry.file),
@@ -641,6 +655,13 @@ function parseParcelComponentEntry(value: unknown, index: number): ParcelCompone
       !isTileDimensions(value.spriteTiles) ||
       !Array.isArray(value.collision) || value.collision.length === 0 ||
       !value.collision.every(isCollisionOffset) ||
+      (value.programs !== undefined && (!Array.isArray(value.programs) ||
+        value.programs.length === 0 ||
+        !value.programs.every((program) => PARCEL_PROGRAMS.includes(program as RegionalParcelProgram)))) ||
+      (value.waterfrontFunction !== undefined &&
+        !WATERFRONT_FUNCTIONS.includes(value.waterfrontFunction as RegionalWaterfrontFunction)) ||
+      (value.waterfrontFunction !== undefined &&
+        (!Array.isArray(value.programs) || !value.programs.includes('waterfront'))) ||
       typeof value.scale !== 'number' || value.scale < 0.2 || value.scale > 1) {
     throw new Error(`Invalid regional parcel component entry at index ${index}`);
   }
@@ -652,6 +673,8 @@ function parseParcelComponentEntry(value: unknown, index: number): ParcelCompone
     scale: value.scale,
     spriteTiles: value.spriteTiles as [number, number],
     collision: value.collision as Array<[number, number]>,
+    programs: value.programs as RegionalParcelProgram[] | undefined,
+    waterfrontFunction: value.waterfrontFunction as RegionalWaterfrontFunction | undefined,
   };
 }
 

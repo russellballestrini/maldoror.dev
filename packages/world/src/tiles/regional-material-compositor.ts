@@ -18,6 +18,10 @@ import {
   distanceToRegionalParcelPath,
   type RegionalParcelPath,
 } from './regional-parcel-path.js';
+import {
+  sampleRegionalWaterfrontLayout,
+  type RegionalWaterfrontLayout,
+} from './regional-waterfront-layout.js';
 
 export interface BiomeSampler {
   sample(worldX: number, worldY: number): BiomeWorldSample;
@@ -259,6 +263,7 @@ export class RegionalMaterialCompositor {
     routeKind: RegionalRouteKind,
     core: boolean,
     parcelLayout?: RegionalParcelLayout,
+    waterfrontLayout?: RegionalWaterfrontLayout,
   ): Tile {
     return this.getPathAccessTileAtResolution(
       tileX,
@@ -268,6 +273,7 @@ export class RegionalMaterialCompositor {
       routeKind,
       core,
       parcelLayout,
+      waterfrontLayout,
     );
   }
 
@@ -279,19 +285,23 @@ export class RegionalMaterialCompositor {
     routeKind: RegionalRouteKind,
     core: boolean,
     parcelLayout?: RegionalParcelLayout,
+    waterfrontLayout?: RegionalWaterfrontLayout,
   ): Tile {
     if (!this.routeMaterials) return this.getTileAtResolution(tileX, tileY, requestedResolution);
     const resolution = this.selectResolution(requestedResolution);
-    const key = `path-access:${path.id}:${parcelLayout?.id ?? 'bare'}:${tileX},${tileY}@${resolution}:${routeKind}:${Number(core)}`;
+    const groundId = waterfrontLayout?.id ?? parcelLayout?.id ?? 'bare';
+    const key = `path-access:${path.id}:${groundId}:${tileX},${tileY}@${resolution}:${routeKind}:${Number(core)}`;
     const cached = this.cache.get(key);
     if (cached) {
       this.cache.delete(key);
       this.cache.set(key, cached);
       return cached;
     }
-    const base = parcelLayout
-      ? this.getParcelGroundTileAtResolution(tileX, tileY, resolution, parcelLayout, routeKind)
-      : this.getTileAtResolution(tileX, tileY, resolution);
+    const base = waterfrontLayout
+      ? this.getWaterfrontGroundTileAtResolution(tileX, tileY, resolution, waterfrontLayout, routeKind)
+      : parcelLayout
+        ? this.getParcelGroundTileAtResolution(tileX, tileY, resolution, parcelLayout, routeKind)
+        : this.getTileAtResolution(tileX, tileY, resolution);
     const pixels: PixelGrid = [];
     const routeTexture = new Float64Array(3);
     const textureScaleTiles = this.textureScaleForResolution(resolution);
@@ -441,6 +451,128 @@ export class RegionalMaterialCompositor {
       pixels,
       materialMask: base.materialMask,
       walkable: base.walkable,
+      resolutions: { [String(resolution)]: pixels },
+    };
+    this.cache.set(key, tile);
+    while (this.cache.size > this.maxCachedTiles) {
+      const oldest = this.cache.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.cache.delete(oldest);
+    }
+    return tile;
+  }
+
+  /** Compose the shore program from continuous masks. Dry aprons and work
+   * yards borrow local route material; over-water fingers borrow authored
+   * bridge timber; slips remain water. Nothing owns a rectangular background. */
+  getWaterfrontGroundTile(
+    tileX: number,
+    tileY: number,
+    layout: RegionalWaterfrontLayout,
+    routeKind: RegionalRouteKind,
+  ): Tile {
+    return this.getWaterfrontGroundTileAtResolution(
+      tileX,
+      tileY,
+      this.sourceSize,
+      layout,
+      routeKind,
+    );
+  }
+
+  getWaterfrontGroundTileAtResolution(
+    tileX: number,
+    tileY: number,
+    requestedResolution: number,
+    layout: RegionalWaterfrontLayout,
+    routeKind: RegionalRouteKind,
+  ): Tile {
+    const resolution = this.selectResolution(requestedResolution);
+    const key = `waterfront-ground:${layout.id}:${tileX},${tileY}@${resolution}:${routeKind}`;
+    const cached = this.cache.get(key);
+    if (cached) {
+      this.cache.delete(key);
+      this.cache.set(key, cached);
+      return cached;
+    }
+    const base = this.getTileAtResolution(tileX, tileY, resolution);
+    const pixels: PixelGrid = [];
+    const routeTexture = new Float64Array(3);
+    const pierTexture = new Float64Array(3);
+    const textureScaleTiles = this.textureScaleForResolution(resolution);
+    const bridgeTextures = this.crossingMaterials?.bridge;
+    for (let y = 0; y < resolution; y++) {
+      const row: RGB[] = [];
+      for (let x = 0; x < resolution; x++) {
+        const worldX = tileX + (x + 0.5) / resolution;
+        const worldY = tileY + (y + 0.5) / resolution;
+        const sample = sampleRegionalWaterfrontLayout(worldX, worldY, layout);
+        const beneath = base.pixels[y]?.[x] ?? { r: 0, g: 0, b: 0 };
+        const surfaceWeight = Math.max(
+          sample.apronWeight,
+          sample.workYardWeight,
+          sample.pierWeight,
+        );
+        if (surfaceWeight <= 0.0001 && sample.edgeWeight <= 0.0001) {
+          row.push(beneath);
+          continue;
+        }
+        let linearR = srgbToLinear(beneath.r);
+        let linearG = srgbToLinear(beneath.g);
+        let linearB = srgbToLinear(beneath.b);
+        if ((sample.apronWeight > 0.0001 || sample.workYardWeight > 0.0001) && this.routeMaterials) {
+          this.sampleTextureField(
+            this.routeMaterials[routeKind],
+            worldX,
+            worldY,
+            0x4f17,
+            textureScaleTiles,
+            resolution,
+            routeTexture,
+          );
+          const dryOpacity = sample.apronWeight * 0.62 + sample.workYardWeight * 0.34;
+          linearR = lerp(linearR, routeTexture[0]!, dryOpacity);
+          linearG = lerp(linearG, routeTexture[1]!, dryOpacity);
+          linearB = lerp(linearB, routeTexture[2]!, dryOpacity);
+        }
+        if (sample.pierWeight > 0.0001 && bridgeTextures) {
+          this.sampleTextureField(
+            bridgeTextures,
+            worldX,
+            worldY,
+            0x79a3,
+            textureScaleTiles,
+            resolution,
+            pierTexture,
+          );
+          const pierOpacity = sample.pierWeight * 0.94;
+          linearR = lerp(linearR, pierTexture[0]!, pierOpacity);
+          linearG = lerp(linearG, pierTexture[1]!, pierOpacity);
+          linearB = lerp(linearB, pierTexture[2]!, pierOpacity);
+        }
+        const edgeOpacity = sample.edgeWeight * 0.56;
+        linearR = lerp(linearR, linearR * 0.48, edgeOpacity);
+        linearG = lerp(linearG, linearG * 0.5, edgeOpacity);
+        linearB = lerp(linearB, linearB * 0.52, edgeOpacity);
+        row.push({
+          r: linearToSrgb(linearR),
+          g: linearToSrgb(linearG),
+          b: linearToSrgb(linearB),
+        });
+      }
+      pixels.push(row);
+    }
+    const centre = sampleRegionalWaterfrontLayout(tileX + 0.5, tileY + 0.5, layout);
+    const tile: Tile = {
+      id: `regional-waterfront-ground:${layout.id}:${tileX},${tileY}@${resolution}`,
+      name: 'Regional working-waterfront terrain',
+      pixels,
+      materialMask: base.materialMask,
+      walkable: base.walkable || Math.max(
+        centre.apronWeight,
+        centre.workYardWeight,
+        centre.pierWeight,
+      ) > 0.08,
       resolutions: { [String(resolution)]: pixels },
     };
     this.cache.set(key, tile);

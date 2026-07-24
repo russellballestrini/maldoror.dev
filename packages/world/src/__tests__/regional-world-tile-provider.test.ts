@@ -99,9 +99,10 @@ function makeWorld(
   blockSize = 32,
   maxCachedBlocks = 32,
   sampleRoute: (x: number, y: number) => RegionalRouteSample = routeSample,
+  sampleBiome: (x: number, y: number) => BiomeWorldSample = (x) => biomeSample(nearestFamily(x)),
 ): RegionalWorldTileProvider {
   const field = {
-    sample: (x: number) => biomeSample(nearestFamily(x)),
+    sample: sampleBiome,
     prewarm: () => undefined,
   };
   const routes = {
@@ -127,6 +128,7 @@ function makeWorld(
       'local-road': [solidTile('rural')],
       arterial: [solidTile('rural')],
     },
+    crossingMaterials: { bridge: [solidTile('mountain')] },
   });
   const landmarkKinds: Record<BiomeFamily, RegionalLandmarkKind[]> = {
     'canal-town': ['arrival', 'settlement'],
@@ -168,6 +170,12 @@ function makeWorld(
       id: `parcel:${family}:${variant}`,
       families: [family],
       role: 'mass' as const,
+      programs: (family === 'canal-town' || family === 'coast') && variant < 2
+        ? ['waterfront'] as const
+        : undefined,
+      waterfrontFunction: (family === 'canal-town' || family === 'coast') && variant < 2
+        ? variant === 0 ? 'workshop' as const : 'boat-shed' as const
+        : undefined,
       sprite: sprite(COLOURS[family]),
       collision: [[0, 0]] as const,
     })));
@@ -370,6 +378,51 @@ describe('RegionalWorldTileProvider', () => {
       const occupied = world.isBuildingAt(placement.anchorX, placement.anchorY);
       expect(occupied || protectedCells.has(`${placement.anchorX},${placement.anchorY}`)).toBe(true);
     }
+  });
+
+  it('turns physically water-terminated thresholds into connected working waterfronts', () => {
+    const waterField = (x: number, y: number): BiomeWorldSample => ({
+      ...biomeSample(nearestFamily(x)),
+      waterDistance: Math.abs(y) >= 10 ? 0 : 10 - Math.abs(y),
+      isWater: Math.abs(y) >= 10,
+    });
+    const world = makeWorld(32, 32, routeSample, waterField);
+    const layouts = world.getWaterfrontLayoutsInBounds(-24, -20, 104, 24);
+    const contacts = world.getRouteContactPlacementsInBounds(-24, -20, 104, 24);
+    expect(layouts.length, JSON.stringify({
+      contacts,
+      parcels: world.getParcelLayoutsInBounds(-24, -20, 104, 24).map((layout) => ({
+        id: layout.id,
+        bounds: layout.bounds,
+      })),
+      stats: world.getRegionalStats(),
+    })).toBeGreaterThan(0);
+    const layout = layouts[0]!;
+    expect(layout.piers).toHaveLength(2);
+    expect(layout.slips).toHaveLength(1);
+    const components = world.getParcelComponentPlacementsInBounds(-40, -24, 120, 28)
+      .filter((placement) => placement.waterfrontId === layout.id);
+    expect(components.length).toBeGreaterThan(0);
+    expect(components.every((placement) => placement.waterfrontFunction)).toBe(true);
+    const pierCentre = layout.piers[0]!.polygon.reduce((sum, point) => ({
+      x: sum.x + point.x / 4,
+      y: sum.y + point.y / 4,
+    }), { x: 0, y: 0 });
+    const pierTile = world.getTile(Math.floor(pierCentre.x), Math.floor(pierCentre.y));
+    expect(pierTile.id).toContain('regional-waterfront-ground:');
+    expect(pierTile.walkable).toBe(true);
+    const access = world.getParcelConnectorCellsInBounds(-40, -24, 120, 28)
+      .filter((cell) => cell.pathId === layout.accessPath.id);
+    expect(access.some((cell) => cell.core)).toBe(true);
+    expect(access.filter((cell) => cell.protected).every((cell) => (
+      !world.isBuildingAt(cell.x, cell.y)
+    ))).toBe(true);
+    expect(world.getRegionalStats()).toMatchObject({
+      cachedWaterfrontPrograms: expect.any(Number),
+      cachedWaterfrontSurfaceCells: expect.any(Number),
+    });
+    expect(world.getRegionalStats().cachedWaterfrontPrograms).toBeGreaterThan(0);
+    expect(world.getRegionalStats().cachedWaterfrontSurfaceCells).toBeGreaterThan(0);
   });
 
   it('places sparse environment contacts only where declarative envelopes match', () => {

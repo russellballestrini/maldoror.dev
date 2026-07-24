@@ -1,27 +1,99 @@
 <!doctype html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>maldoror — render gallery</title>
 <style>
-  :root { color-scheme: dark; }
-  body { background:#0d0d12; color:#cfcfe0; font-family:ui-monospace,monospace; margin:2rem auto; max-width:1200px; padding:0 1rem; }
-  h1 { color:#c864ff; letter-spacing:.1em; }
-  h2 { color:#e0a0ff; border-bottom:1px solid #333; padding-bottom:.3rem; margin-top:3rem; }
-  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:1rem; }
-  figure { margin:0; background:#16161f; border:1px solid #2a2a3a; border-radius:6px; padding:.5rem; }
-  img { width:100%; height:auto; image-rendering:pixelated; display:block; }
-  figcaption { font-size:.75rem; color:#8888a0; padding-top:.4rem; }
-  .notes { background:#14141c; border-left:3px solid #c864ff; padding:.8rem; white-space:pre-wrap; font-size:.85rem; color:#a8a8c0; }
+  :root {
+    color-scheme: dark;
+    --canvas:#0d0d12;
+    --surface:#15151d;
+    --surface-raised:#191923;
+    --line:#333346;
+    --ink:#ececf7;
+    --muted:#aaaabe;
+    --quiet:#8d8da3;
+    --violet:#c864ff;
+    --violet-soft:#e0a0ff;
+  }
+  * { box-sizing:border-box; }
+  body {
+    background:var(--canvas);
+    color:var(--ink);
+    font-family:"DejaVu Sans Mono",ui-monospace,monospace;
+    margin:0 auto;
+    max-width:1440px;
+    padding:clamp(1.25rem,3vw,3rem) clamp(1rem,3vw,2.5rem) 8rem;
+  }
+  header { padding:clamp(1rem,4vw,4.5rem) 0 clamp(2.5rem,6vw,6rem); }
+  h1 {
+    color:var(--violet);
+    font-size:clamp(2rem,5vw,4.75rem);
+    letter-spacing:-.03em;
+    line-height:.96;
+    margin:0 0 1.5rem;
+    text-wrap:balance;
+  }
+  header p { color:var(--muted); line-height:1.65; margin:0; max-width:72ch; text-wrap:pretty; }
+  section { margin-top:clamp(3.5rem,8vw,8rem); }
+  h2 {
+    border-bottom:1px solid var(--line);
+    color:var(--violet-soft);
+    font-size:clamp(1.15rem,2vw,1.7rem);
+    letter-spacing:-.02em;
+    margin:0 0 1.5rem;
+    padding-bottom:.75rem;
+    text-wrap:balance;
+  }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr)); gap:clamp(1rem,2vw,1.75rem); }
+  figure { background:var(--surface); border:1px solid var(--line); border-radius:6px; margin:0; overflow:hidden; }
+  figure a { background:#08080b; display:block; overflow:hidden; }
+  img {
+    display:block;
+    height:auto;
+    image-rendering:pixelated;
+    transition:filter 180ms ease-out,transform 180ms ease-out;
+    width:100%;
+  }
+  figure a:hover img { filter:brightness(1.08); transform:scale(1.008); }
+  figcaption { color:var(--quiet); font-size:.76rem; line-height:1.45; padding:.7rem .8rem .8rem; overflow-wrap:anywhere; }
+  .notes {
+    background:var(--surface-raised);
+    border:1px solid var(--line);
+    border-radius:5px;
+    color:var(--muted);
+    font-family:inherit;
+    font-size:clamp(.78rem,1.1vw,.88rem);
+    line-height:1.6;
+    margin:0 0 1.5rem;
+    max-width:78ch;
+    padding:clamp(.9rem,2vw,1.35rem);
+    white-space:pre-wrap;
+  }
+  code { color:var(--violet-soft); }
+  @media (prefers-reduced-motion:reduce) { img { transition:none; } figure a:hover img { transform:none; } }
 </style>
-<h1>MALDOROR — render engine gallery</h1>
-<p>Ongoing visual iterations of the terminal render engine. Each section is one iteration of the
-headless simulator (<code>tools/render-sim</code>) — the same pipeline the SSH game renders with.</p>
+</head>
+<body>
+<header>
+<h1>MALDOROR<br>render evidence</h1>
+<p>Faithful visual iterations from the terminal world renderer. Every frame below comes through the same provider and pixel pipeline used by the SSH experience; rejected experiments stay visible beside selected checkpoints.</p>
+</header>
 <section><h2>🎯 TARGET vs NOW</h2>
 <div class="grid"><figure style="grid-column:1/-1"><a href="/gallery/COMPARISON.png"><img loading="lazy" src="/gallery/COMPARISON.png" alt="target vs now"></a>
 <figcaption>Goal tracking: TARGET mockup vs the faithfully replayed live 160×46 SSH world.</figcaption></figure></div></section>
 <section><h2>🎯 TARGET (mockup)</h2>
 <div class="grid"><figure><a href="/gallery/TARGET.png"><img loading="lazy" src="/gallery/TARGET.png" alt="target mockup"></a>
 <figcaption>The goal: a dense, warm, painterly canal-town rendered as pure ANSI in Ghostty.</figcaption></figure></div></section>
+<section><h2>024-working-waterfront-program</h2><pre class="notes"># 024-working-waterfront-program
+
+2026-07-24T06:08:00.237Z
+
+SELECTED RESEARCH PROVIDER — NOT LIVE. A route threshold can now become a physical working waterfront through one route-normal service approach, two dry work yards, two wet walkable piers, one water slip, and two explicit maritime functions. The locator evaluates every bounded shoreline transition, so a nearer puddle cannot conceal a farther navigable channel. The first physically valid frame is retained as rejected because outlining every dry polygon made the quay read like a pasted rectangle; the selected regional and district frames feather dry program ownership into reconstructed terrain while preserving crisp constructed pier contacts. Strict audit: dry program 100%, wet piers 95.7%, wet slip 100%, pier walkability 100%, zero missing surface, mismatch, overlap, or blocked/painted access. Two 180-frame repeats retained zero misses/mismatches/errors; render p50/p95/p99 was 4.18/7.38/17.62 and 4.35/9.41/17.00 ms, while 5.786/6.390-second cold leads keep service readiness open. Existing maritime modules retain built-in Codex/ChatGPT subscription provenance; no metered image API was used. Production and TARGET-vs-NOW remain unchanged. Coast diversity, caves, climbable highlands, travel entropy, life, deployment, and physical Ghostty are still open.
+</pre><div class="grid"><figure><a href="/gallery/024-working-waterfront-program/regional-waterfront-v1-outlined-rejected.png"><img loading="lazy" src="/gallery/024-working-waterfront-program/regional-waterfront-v1-outlined-rejected.png" alt="regional-waterfront-v1-outlined-rejected.png"></a><figcaption>regional-waterfront-v1-outlined-rejected.png</figcaption></figure>
+<figure><a href="/gallery/024-working-waterfront-program/regional-waterfront-v2-blended-district.png"><img loading="lazy" src="/gallery/024-working-waterfront-program/regional-waterfront-v2-blended-district.png" alt="regional-waterfront-v2-blended-district.png"></a><figcaption>regional-waterfront-v2-blended-district.png</figcaption></figure>
+<figure><a href="/gallery/024-working-waterfront-program/regional-waterfront-v2-blended-regional.png"><img loading="lazy" src="/gallery/024-working-waterfront-program/regional-waterfront-v2-blended-regional.png" alt="regional-waterfront-v2-blended-regional.png"></a><figcaption>regional-waterfront-v2-blended-regional.png</figcaption></figure></div></section>
 <section><h2>023-shared-parcel-fabric</h2><pre class="notes"># 023-shared-parcel-fabric
 
 2026-07-24T04:53:14.592Z
@@ -161,9 +233,9 @@ Iteration 9 — PLAYABLE DISTRICT SCENE (player composited into an octant distri
 
 district_playable_scene.png: a generated dense canal district, octant-rendered, with the player sprite composited onto walkable stone (with a drop shadow) near the bridge. This is a real game screen in the mockup's world.
 
-MECHANISM: octant-render the district as the backdrop -> derive a walkability layer -> place/move the player on walkable ground -> camera-locked 'room' (codec spec's visual grammar), scroll transitions between districts.
+MECHANISM: octant-render the district as the backdrop -&gt; derive a walkability layer -&gt; place/move the player on walkable ground -&gt; camera-locked 'room' (codec spec's visual grammar), scroll transitions between districts.
 
-HONEST STATUS on walkability: color-exclusion (block water/foliage/dark, walk the rest) places the player on valid ground BUT over-includes rooftops (walkmask_debug.png: terracotta roofs ~ warm plaza -> both green). Reliable collision from a painterly scene needs a proper layer, not a color heuristic: either (a) vision-segment a walkable-ground mask (GPT-4o-vision), or (b) generate ground/water and buildings/props in SEPARATE layers so footprints are exact. That's the next build.
+HONEST STATUS on walkability: color-exclusion (block water/foliage/dark, walk the rest) places the player on valid ground BUT over-includes rooftops (walkmask_debug.png: terracotta roofs ~ warm plaza -&gt; both green). Reliable collision from a painterly scene needs a proper layer, not a color heuristic: either (a) vision-segment a walkable-ground mask (GPT-4o-vision), or (b) generate ground/water and buildings/props in SEPARATE layers so footprints are exact. That's the next build.
 
 SUMMARY: the LOOK is solved (districts + octant = TARGET league). Playability = collision layer + live integration next.
 </pre><div class="grid"><figure><a href="/gallery/009-playable-district-scene/district1_octant.png"><img loading="lazy" src="/gallery/009-playable-district-scene/district1_octant.png" alt="district1_octant.png"></a><figcaption>district1_octant.png</figcaption></figure>
@@ -199,7 +271,7 @@ HONEST NOTE: iterations 6-7 (tile-scatter: blocky rectangular water + props on a
 
 Result: district1_octant / district2_octant / district3_octant = generated dense districts rendered through the REAL octant cell pipeline. They sit in the same league as TARGET — organic winding canals, packed buildings, lush trees/foliage, bridges, boats, lily pads, drop shadows. Octant fidelity was never the problem; the composition was.
 
-ARCHITECTURE (this is the path + the 'infinite' mechanism): generate dense district images in-style -> octant-render as the backdrop -> derive a walkability mask -> player composites on top -> camera-locked 'rooms' with scroll transitions between districts (exactly the codec spec's 'camera locking as visual grammar'). Infinite world = infinite generated districts. See RENDERING-DISTRICTS.md.
+ARCHITECTURE (this is the path + the 'infinite' mechanism): generate dense district images in-style -&gt; octant-render as the backdrop -&gt; derive a walkability mask -&gt; player composites on top -&gt; camera-locked 'rooms' with scroll transitions between districts (exactly the codec spec's 'camera locking as visual grammar'). Infinite world = infinite generated districts. See RENDERING-DISTRICTS.md.
 
 Compare COMPARISON.png (top). Next: walkability mask + player composite + make one district playable.
 </pre><div class="grid"><figure><a href="/gallery/008-district-approach-correction/district1_octant.png"><img loading="lazy" src="/gallery/008-district-approach-correction/district1_octant.png" alt="district1_octant.png"></a><figcaption>district1_octant.png</figcaption></figure>
@@ -255,7 +327,7 @@ Style/materials/assets now clearly the TARGET's family. Remaining to fully match
 
 Iteration 6 — TOWN COMPOSITION (G2). The whole stack composed against the TARGET.
 
-A denser canal-town scene (terrain + stone&lt;->water autotile curbs + water variants + 2 buildings + arched flower BRIDGE + props: lamp posts, planter, umbrella market stall, rowboats + player/NPCs) rendered in OCTANT (the live fidelity mode) and fullres.
+A denser canal-town scene (terrain + stone&lt;-&gt;water autotile curbs + water variants + 2 buildings + arched flower BRIDGE + props: lamp posts, planter, umbrella market stall, rowboats + player/NPCs) rendered in OCTANT (the live fidelity mode) and fullres.
 
 Compare town_fullres.png and town_octant_wide.png against TARGET.png at the top: same art family — warm sandstone plaza, teal canals, terracotta-roof buildings, arched sandstone bridge with flowers, wrought-iron lamp posts, striped market umbrella, wooden rowboats. All generated in mockup style via images.edit with the style anchor (gen-buildings.mjs, gen-props.mjs). Octant renders it as clean SOLID mosaics.
 
@@ -285,7 +357,7 @@ Iteration 5 — TERMINAL CODEC begins: OSC-4 palette-cycled water (the plan of r
 
 Per the architecture spec (terminal-native video codec): animated materials render with a SPATIAL phase field using indexed palette colors; the framebuffer cells NEVER change; each tick rotates the 8 water-palette RGBs via ONE OSC-4 packet, so the glint travels across ALL water for a few hundred bytes.
 
-water_animation_strip.png = 8 palette ticks (top->bottom). Watch the diagonal wave bands sweep. MEASURED: 141 bytes/tick animates 4,480 water cells; truecolor repaint of the same region = ~98,560 bytes/frame => 699x more. Zero cells rewritten.
+water_animation_strip.png = 8 palette ticks (top-&gt;bottom). Watch the diagonal wave bands sweep. MEASURED: 141 bytes/tick animates 4,480 water cells; truecolor repaint of the same region = ~98,560 bytes/frame =&gt; 699x more. Zero cells rewritten.
 
 Module packages/render/src/pixel/palette-cycle.ts (materialPhase, waterPalette, osc4Packet/osc104Restore) — reusable by the codec. Colors matched to the mockup's teal canals.
 
@@ -312,8 +384,8 @@ Iteration 4 — OCTANT MODE (Unicode 16 solid 2x4 mosaics). LIVE.
 The big fidelity jump for pure-terminal rendering. Octants give braille's 2x4 resolution but SOLID fills instead of dots — the screen-door dot texture is gone, terrain/sprites read like real pixel art. Ghostty/kitty/foot/WezTerm/VTE draw these with built-in routines that connect across cells.
 
 - Authoritative 256-entry glyph table generated from Unicode 16 name data (python3 unicodedata): 230 octant glyphs + legacy blocks/quadrants/quarter-blocks; 4 nonexistent single-corner patterns approximate to their containing quadrant. octant-chars.ts.
-- Same 2-color-per-cell model as braille (contrast split -> fg/bg), so it drops into the existing pipeline; merged-SGR emission; flat cells -> solid full block.
-- Auto-selected from the client's TERM (ghostty/kitty/foot/wezterm/contour/vte/rio/alacritty -> octant; else halfblock). MALDOROR_RENDER_MODE overrides; in-game cycle key. Verified live: a ghostty client gets 0 braille, ~36k octant glyphs/session.
+- Same 2-color-per-cell model as braille (contrast split -&gt; fg/bg), so it drops into the existing pipeline; merged-SGR emission; flat cells -&gt; solid full block.
+- Auto-selected from the client's TERM (ghostty/kitty/foot/wezterm/contour/vte/rio/alacritty -&gt; octant; else halfblock). MALDOROR_RENDER_MODE overrides; in-game cycle key. Verified live: a ghostty client gets 0 braille, ~36k octant glyphs/session.
 
 Compare showcase_octant_* vs showcase_braille_* : the dot-grid is gone. This is the fidelity layer; the NEXT layer (see docs/RENDERING-CODEC.md) is a terminal-native codec (scroll-region motion compensation + palette-cycled water + dirty-rect entity repair) so this fidelity streams cheaply over SSH.
 </pre><div class="grid"><figure><a href="/gallery/004-octant-solid-mosaics/showcase_braille_z102.png"><img loading="lazy" src="/gallery/004-octant-solid-mosaics/showcase_braille_z102.png" alt="showcase_braille_z102.png"></a><figcaption>showcase_braille_z102.png</figcaption></figure>
@@ -334,8 +406,8 @@ Compare showcase_octant_* vs showcase_braille_* : the dot-grid is gone. This is 
 
 Iteration 3 — G1 curb refinement + water variants + first BUILDINGS (G2 start).
 
-- Regenerated all 8 stone_to_water transitions with the GENERATED STONE TILE as the images.edit reference + explicit full-length-curb instructions -> continuous curb lines on both axes, stone tone now matches the base tile closely.
-- water__v2/water__v3 variants + NEW spatial-variant mechanism in TileProvider (position-hashed pick among registered &lt;id>__vN tiles — the general lever for infinite asset variety; live in the world package).
+- Regenerated all 8 stone_to_water transitions with the GENERATED STONE TILE as the images.edit reference + explicit full-length-curb instructions -&gt; continuous curb lines on both axes, stone tone now matches the base tile closely.
+- water__v2/water__v3 variants + NEW spatial-variant mechanism in TileProvider (position-hashed pick among registered &lt;id&gt;__vN tiles — the general lever for infinite asset variety; live in the world package).
 - First two multi-tile buildings generated in mockup style (tools/gen-buildings.mjs, style-anchor reference, transparent bg, sliced 2x2 tiles x 10-res pyramid): market shop w/ striped awning + tall shuttered canal house. Placed in the showcase via the engine's own getBuildingTileAt compositing path.
 
 vs TARGET: palette/materials/furniture now clearly the same family. Remaining gaps:
@@ -361,7 +433,7 @@ Iteration 2 — MOCKUP-STYLE CANAL ASSETS (Phase A of the goal loop).
 The TARGET mockup (top of page) is now the goal. This iteration:
 - Generated 11 style-anchored tiles via images.edit with a mockup crop as the style reference: warm sandstone plaza 'stone', teal canal 'water' (lily pads), lush 'grass', + 8 stone_to_water curbed-edge autotile transitions. 43 tiles now in terrain_tiles.
 - NEW showcase scene (hand-authored canal-cross layout echoing the mockup composition) rendered 3 ways: FULLRES (= what the planned kitty-graphics-protocol mode will display in Ghostty), halfblock, braille.
-- stone&lt;->water added to the live autotiler's transition pairs; live world restarted on the new tileset.
+- stone&lt;-&gt;water added to the live autotiler's transition pairs; live world restarted on the new tileset.
 
 Compare showcase_fullres vs TARGET: palette + materials now match (sandstone/teal). Gaps for next iterations:
 - vertical curb continuity (transition tiles read as segmented slabs; regenerate using the generated stone BASE tile as the images.edit reference so tone + curb line match exactly)
@@ -385,12 +457,12 @@ Compare showcase_fullres vs TARGET: palette + materials now match (sandstone/tea
 Iteration 1 — AI TERRAIN + SPRITE DESPECKLE.
 
 Changes since baseline:
-- Generated 20 AI terrain tiles with gpt-image-1-mini (5 base: grass/dirt/sand/water/stone + 15 grass_to_dirt autotile transitions), pixelated to the 10-step resolution pyramid, persisted to data/terrain PNGs + terrain_tiles DB (what the live worker loads at boot). Flat solid-color world -> textured earth, grass tufts, rippled sand.
-- Sprite fringe FIXED: the baked-in dark alpha halo (generation-era threshold 32) is now stripped at load: 2-pass dark-boundary erosion + isolated-speck cleanup on the 256px base before the renderer's downscale (sprite-hygiene.ts, wired into player + NPC loaders; generation threshold raised 32->96 for future assets).
+- Generated 20 AI terrain tiles with gpt-image-1-mini (5 base: grass/dirt/sand/water/stone + 15 grass_to_dirt autotile transitions), pixelated to the 10-step resolution pyramid, persisted to data/terrain PNGs + terrain_tiles DB (what the live worker loads at boot). Flat solid-color world -&gt; textured earth, grass tufts, rippled sand.
+- Sprite fringe FIXED: the baked-in dark alpha halo (generation-era threshold 32) is now stripped at load: 2-pass dark-boundary erosion + isolated-speck cleanup on the 256px base before the renderer's downscale (sprite-hygiene.ts, wired into player + NPC loaders; generation threshold raised 32-&gt;96 for future assets).
 - Sim now mirrors the live zoom-based quantization (4/5-bit + Bayer dithering).
 
 Known issues to iterate:
-- grass_to_dirt TRANSITION tiles don't match the base grass art style (generated without a reference image) -> visible style seam. Next: regenerate transitions via images.edit with the base tile as reference.
+- grass_to_dirt TRANSITION tiles don't match the base grass art style (generated without a reference image) -&gt; visible style seam. Next: regenerate transitions via images.edit with the base tile as reference.
 - Water transitions (grass_to_water) still generating.
 - Water is static; fallback water was animated. Consider animated AI water frames.
 - Bayer dithering gives dirt a subtle woven look at close zoom; try 5-bit or blue-noise.
@@ -416,3 +488,5 @@ Next: AI terrain generation (in progress), sprite despeckle, then visual iterati
 <figure><a href="/gallery/000-baseline/sim_halfblock_z26.png"><img loading="lazy" src="/gallery/000-baseline/sim_halfblock_z26.png" alt="sim_halfblock_z26.png"></a><figcaption>sim_halfblock_z26.png</figcaption></figure>
 <figure><a href="/gallery/000-baseline/sim_halfblock_z51.png"><img loading="lazy" src="/gallery/000-baseline/sim_halfblock_z51.png" alt="sim_halfblock_z51.png"></a><figcaption>sim_halfblock_z51.png</figcaption></figure>
 <figure><a href="/gallery/000-baseline/sim_halfblock_z88.png"><img loading="lazy" src="/gallery/000-baseline/sim_halfblock_z88.png" alt="sim_halfblock_z88.png"></a><figcaption>sim_halfblock_z88.png</figcaption></figure></div></section>
+</body>
+</html>

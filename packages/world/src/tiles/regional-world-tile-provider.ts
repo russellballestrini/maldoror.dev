@@ -29,6 +29,12 @@ import {
   sampleRegionalParcelPath,
   type RegionalParcelPath,
 } from './regional-parcel-path.js';
+import {
+  buildRegionalWaterfrontLayout,
+  rasterizeRegionalWaterfrontLayout,
+  sampleRegionalWaterfrontLayout,
+  type RegionalWaterfrontLayout,
+} from './regional-waterfront-layout.js';
 import { TileProvider, type TileProviderConfig } from './tile-provider.js';
 
 export interface RegionalVisualAsset {
@@ -65,8 +71,20 @@ export interface RegionalRouteContactAsset extends RegionalVisualAsset {
 
 /** Authored silhouette module placed inside a procedural parcel envelope.
  * Threshold art and ground surfaces remain separate semantic layers. */
+export type RegionalParcelProgram = 'waterfront';
+export type RegionalWaterfrontFunction =
+  | 'boat-shed'
+  | 'fish-processing'
+  | 'market'
+  | 'shelter'
+  | 'workshop';
+
 export interface RegionalParcelComponentAsset extends RegionalVisualAsset {
   role: 'mass';
+  /** Optional district programs supported by this mass. Generic parcels may
+   * still reuse it; specialized programs never infer function from its ID. */
+  programs?: readonly RegionalParcelProgram[];
+  waterfrontFunction?: RegionalWaterfrontFunction;
 }
 
 export interface RegionalEnvironmentConstraints {
@@ -102,6 +120,8 @@ export interface RegionalAssetPlacement {
   parcelStation?: number;
   pathTangentX?: number;
   pathTangentY?: number;
+  waterfrontId?: string;
+  waterfrontFunction?: RegionalWaterfrontFunction;
 }
 
 export type RegionalLandmarkPlacement = RegionalAssetPlacement;
@@ -223,6 +243,8 @@ interface Placement {
   parcelStation?: number;
   pathTangentX?: number;
   pathTangentY?: number;
+  waterfrontId?: string;
+  waterfrontFunction?: RegionalWaterfrontFunction;
 }
 
 interface ParcelConnector {
@@ -236,6 +258,11 @@ interface ParcelConnector {
 interface ParcelSurface {
   routeKind: RegionalRouteKind;
   layout: RegionalParcelLayout;
+}
+
+interface WaterfrontSurface {
+  routeKind: RegionalRouteKind;
+  layout: RegionalWaterfrontLayout;
 }
 
 export interface RegionalParcelConnectorCell {
@@ -262,7 +289,9 @@ interface CachedParcelGroup {
   components: Placement[];
   connectors: Map<string, ParcelConnector>;
   surfaces: Map<string, ParcelSurface>;
+  waterfrontSurfaces: Map<string, WaterfrontSurface>;
   layout: RegionalParcelLayout;
+  waterfrontLayout: RegionalWaterfrontLayout | null;
   overlays: Map<string, BuildingTileData>;
   solid: Set<string>;
 }
@@ -281,6 +310,7 @@ interface CollectedDerivedLayers {
   solid: Set<string>;
   connectors: Map<string, ParcelConnector>;
   surfaces: Map<string, ParcelSurface>;
+  waterfrontSurfaces: Map<string, WaterfrontSurface>;
 }
 
 const VISIBLE_TILE_CACHE = new WeakMap<BuildingTileData, boolean>();
@@ -465,6 +495,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     const parcel = this.getParcelLayerBlock(tileX, tileY);
     const connector = parcel.connectors.get(key);
     const surface = parcel.surfaces.get(key);
+    const waterfront = parcel.waterfrontSurfaces.get(key);
     return connector
       ? this.compositor.getPathAccessTile(
         tileX,
@@ -473,8 +504,16 @@ export class RegionalWorldTileProvider extends TileProvider {
         connector.routeKind,
         connector.core,
         surface?.layout,
+        waterfront?.layout,
       )
-      : surface
+      : waterfront
+        ? this.compositor.getWaterfrontGroundTile(
+          tileX,
+          tileY,
+          waterfront.layout,
+          waterfront.routeKind,
+        )
+        : surface
         ? this.compositor.getParcelGroundTile(tileX, tileY, surface.layout, surface.routeKind)
         : this.compositor.getTile(tileX, tileY);
   }
@@ -486,6 +525,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     const parcel = this.getParcelLayerBlock(tileX, tileY);
     const connector = parcel.connectors.get(key);
     const surface = parcel.surfaces.get(key);
+    const waterfront = parcel.waterfrontSurfaces.get(key);
     return connector
       ? this.compositor.getPathAccessTileAtResolution(
         tileX,
@@ -495,8 +535,17 @@ export class RegionalWorldTileProvider extends TileProvider {
         connector.routeKind,
         connector.core,
         surface?.layout,
+        waterfront?.layout,
       )
-      : surface
+      : waterfront
+        ? this.compositor.getWaterfrontGroundTileAtResolution(
+          tileX,
+          tileY,
+          resolution,
+          waterfront.layout,
+          waterfront.routeKind,
+        )
+        : surface
         ? this.compositor.getParcelGroundTileAtResolution(
           tileX,
           tileY,
@@ -582,6 +631,7 @@ export class RegionalWorldTileProvider extends TileProvider {
         const key = positionKey(x, y);
         const connector = derived.connectors.get(key);
         const surface = derived.surfaces.get(key);
+        const waterfront = derived.waterfrontSurfaces.get(key);
         const terrainTile = connector
           ? this.compositor.getPathAccessTileAtResolution(
             x,
@@ -591,8 +641,17 @@ export class RegionalWorldTileProvider extends TileProvider {
             connector.routeKind,
             connector.core,
             surface?.layout,
+            waterfront?.layout,
           )
-          : surface
+          : waterfront
+            ? this.compositor.getWaterfrontGroundTileAtResolution(
+              x,
+              y,
+              normalizedResolution,
+              waterfront.layout,
+              waterfront.routeKind,
+            )
+            : surface
             ? this.compositor.getParcelGroundTileAtResolution(
               x,
               y,
@@ -630,6 +689,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     const solid = new Set<string>();
     const connectors = new Map<string, ParcelConnector>();
     const surfaces = new Map<string, ParcelSurface>();
+    const waterfrontSurfaces = new Map<string, WaterfrontSurface>();
     const firstBlockX = floorDiv(bounds.minX - this.placementMaxOffsetX, this.blockSize);
     const lastBlockX = floorDiv(bounds.maxX - this.placementMinOffsetX, this.blockSize);
     const firstBlockY = floorDiv(bounds.minY - this.placementMaxOffsetY, this.blockSize);
@@ -657,7 +717,8 @@ export class RegionalWorldTileProvider extends TileProvider {
     for (const key of parcel.solid) solid.add(key);
     for (const [key, connector] of parcel.connectors) connectors.set(key, connector);
     for (const [key, surface] of parcel.surfaces) surfaces.set(key, surface);
-    return { overlays, solid, connectors, surfaces };
+    for (const [key, surface] of parcel.waterfrontSurfaces) waterfrontSurfaces.set(key, surface);
+    return { overlays, solid, connectors, surfaces, waterfrontSurfaces };
   }
 
   /** Import a worker-produced rectangle with bounded package-level LRU. The
@@ -885,6 +946,8 @@ export class RegionalWorldTileProvider extends TileProvider {
     cachedParcelComponentPlacements: number;
     cachedParcelConnectorCells: number;
     cachedParcelSurfaceCells: number;
+    cachedWaterfrontPrograms: number;
+    cachedWaterfrontSurfaceCells: number;
     cachedRouteContactCells: number;
     cachedEnvironmentContactCells: number;
     cachedOverlayTiles: number;
@@ -940,6 +1003,13 @@ export class RegionalWorldTileProvider extends TileProvider {
       ),
       cachedParcelSurfaceCells: [...this.parcelGroupCache.values()].reduce(
         (total, group) => total + (group?.surfaces.size ?? 0),
+        0,
+      ),
+      cachedWaterfrontPrograms: [...this.parcelGroupCache.values()].filter(
+        (group) => group?.waterfrontLayout,
+      ).length,
+      cachedWaterfrontSurfaceCells: [...this.parcelGroupCache.values()].reduce(
+        (total, group) => total + (group?.waterfrontSurfaces.size ?? 0),
         0,
       ),
       cachedRouteContactCells: this.routeContactPlacementCache.size,
@@ -1087,6 +1157,8 @@ export class RegionalWorldTileProvider extends TileProvider {
           parcelStation: placement.parcelStation,
           pathTangentX: placement.pathTangentX,
           pathTangentY: placement.pathTangentY,
+          waterfrontId: placement.waterfrontId,
+          waterfrontFunction: placement.waterfrontFunction,
         });
       }
     }
@@ -1133,6 +1205,20 @@ export class RegionalWorldTileProvider extends TileProvider {
     const layouts = new Map<string, RegionalParcelLayout>();
     for (const group of this.getParcelGroupsInBounds(bounds)) {
       if (group.layout.plots.length > 0) layouts.set(group.layout.id, group.layout);
+    }
+    return [...layouts.values()].sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  getWaterfrontLayoutsInBounds(
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number,
+  ): RegionalWaterfrontLayout[] {
+    const bounds = normalizedPreparedBounds(minX, minY, maxX, maxY);
+    const layouts = new Map<string, RegionalWaterfrontLayout>();
+    for (const group of this.getParcelGroupsInBounds(bounds)) {
+      if (group.waterfrontLayout) layouts.set(group.waterfrontLayout.id, group.waterfrontLayout);
     }
     return [...layouts.values()].sort((a, b) => a.id.localeCompare(b.id));
   }
@@ -1303,14 +1389,17 @@ export class RegionalWorldTileProvider extends TileProvider {
     let cached: CachedParcelGroup | null = null;
     if (contact) {
       const parcel = this.buildParcelGroup(contact);
-      if (parcel.connectors.size > 0 || parcel.components.length > 0 || parcel.surfaces.size > 0) {
+      if (parcel.connectors.size > 0 || parcel.components.length > 0 || parcel.surfaces.size > 0 ||
+          parcel.waterfrontSurfaces.size > 0) {
         const rasterized = this.rasterizePlacements(parcel.components);
         cached = {
           contact,
           components: parcel.components,
           connectors: parcel.connectors,
           surfaces: parcel.surfaces,
+          waterfrontSurfaces: parcel.waterfrontSurfaces,
           layout: parcel.layout,
+          waterfrontLayout: parcel.waterfrontLayout,
           overlays: rasterized.overlays,
           solid: rasterized.solid,
         };
@@ -1355,6 +1444,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     const solid = new Set<string>();
     const connectors = new Map<string, ParcelConnector>();
     const surfaces = new Map<string, ParcelSurface>();
+    const waterfrontSurfaces = new Map<string, WaterfrontSurface>();
     const inside = (key: string): boolean => {
       const separator = key.indexOf(',');
       const x = Number(key.slice(0, separator));
@@ -1374,8 +1464,11 @@ export class RegionalWorldTileProvider extends TileProvider {
       for (const [key, surface] of group.surfaces) {
         if (inside(key) && !surfaces.has(key)) surfaces.set(key, surface);
       }
+      for (const [key, surface] of group.waterfrontSurfaces) {
+        if (inside(key) && !waterfrontSurfaces.has(key)) waterfrontSurfaces.set(key, surface);
+      }
     }
-    return { overlays, solid, connectors, surfaces };
+    return { overlays, solid, connectors, surfaces, waterfrontSurfaces };
   }
 
   private getParcelLayerBlock(worldX: number, worldY: number): CollectedDerivedLayers {
@@ -1413,11 +1506,14 @@ export class RegionalWorldTileProvider extends TileProvider {
     components: Placement[];
     connectors: Map<string, ParcelConnector>;
     surfaces: Map<string, ParcelSurface>;
+    waterfrontSurfaces: Map<string, WaterfrontSurface>;
     layout: RegionalParcelLayout;
+    waterfrontLayout: RegionalWaterfrontLayout | null;
   } {
     const components: Placement[] = [];
     const connectors = new Map<string, ParcelConnector>();
     const surfaces = new Map<string, ParcelSurface>();
+    const waterfrontSurfaces = new Map<string, WaterfrontSurface>();
     const emptyLayout = buildRegionalParcelLayout({
       id: `${contact.parcelId ?? 'parcel:missing'}:layout`,
       path: buildRegionalParcelPath({
@@ -1434,7 +1530,30 @@ export class RegionalWorldTileProvider extends TileProvider {
       seed: this.seed32,
     });
     if (!contact.parcelId || !contact.accessAxis || !contact.routeKind ||
-        this.parcelComponents.length === 0) return { components, connectors, surfaces, layout: emptyLayout };
+        this.parcelComponents.length === 0) return {
+          components,
+          connectors,
+          surfaces,
+          waterfrontSurfaces,
+          layout: emptyLayout,
+          waterfrontLayout: null,
+        };
+    const family = contact.asset.families[0];
+    const hasWaterfrontProgram = this.parcelComponents.some((asset) => (
+      family && asset.families.includes(family) && asset.programs?.includes('waterfront')
+    ));
+    const waterfrontCandidate = hasWaterfrontProgram
+      ? this.resolveWaterfrontLayout(contact)
+      : null;
+    if (waterfrontCandidate) return this.buildWaterfrontGroup(
+      contact,
+      components,
+      connectors,
+      surfaces,
+      waterfrontSurfaces,
+      emptyLayout,
+      waterfrontCandidate,
+    );
     const requestedLayers = contact.parcelLayers ?? this.parcelLayerCount(contact.siteX, contact.siteY);
     let layers = requestedLayers;
     let connectorEnd = 3 + layers * this.parcelLayerSpacing + 1;
@@ -1444,7 +1563,14 @@ export class RegionalWorldTileProvider extends TileProvider {
       path = this.selectParcelPath(contact, connectorEnd);
       if (!path) layers--;
     }
-    if (!path) return { components, connectors, surfaces, layout: emptyLayout };
+    if (!path) return this.buildWaterfrontGroup(
+      contact,
+      components,
+      connectors,
+      surfaces,
+      waterfrontSurfaces,
+      emptyLayout,
+    );
     contact.parcelLayers = layers;
     contact.connectorLength = connectorEnd;
     contact.parcelPathId = path.id;
@@ -1524,7 +1650,14 @@ export class RegionalWorldTileProvider extends TileProvider {
         });
       }
     }
-    return { components, connectors, surfaces, layout };
+    return {
+      components,
+      connectors,
+      surfaces,
+      waterfrontSurfaces,
+      layout,
+      waterfrontLayout: null,
+    };
   }
 
   /** Require the complete minimum envelope to remain on traversable terrain
@@ -1550,6 +1683,237 @@ export class RegionalWorldTileProvider extends TileProvider {
       }
     }
     return true;
+  }
+
+  /** Convert a route threshold that legitimately terminates at water into a
+   * working edge instead of rejecting it or bending it back inland. Numeric
+   * shore evidence owns eligibility; manifest program metadata owns function. */
+  private buildWaterfrontGroup(
+    contact: Placement,
+    components: Placement[],
+    connectors: Map<string, ParcelConnector>,
+    surfaces: Map<string, ParcelSurface>,
+    waterfrontSurfaces: Map<string, WaterfrontSurface>,
+    emptyLayout: RegionalParcelLayout,
+    resolvedLayout?: RegionalWaterfrontLayout,
+  ): {
+    components: Placement[];
+    connectors: Map<string, ParcelConnector>;
+    surfaces: Map<string, ParcelSurface>;
+    waterfrontSurfaces: Map<string, WaterfrontSurface>;
+    layout: RegionalParcelLayout;
+    waterfrontLayout: RegionalWaterfrontLayout | null;
+  } {
+    const family = contact.asset.families[0];
+    const programAssets = this.parcelComponents.filter((asset) => (
+      family && asset.families.includes(family) && asset.programs?.includes('waterfront')
+    )).sort((a, b) => a.id.localeCompare(b.id));
+    if (programAssets.length === 0 || !contact.parcelId || !contact.routeKind) {
+      return {
+        components,
+        connectors,
+        surfaces,
+        waterfrontSurfaces,
+        layout: emptyLayout,
+        waterfrontLayout: null,
+      };
+    }
+    const waterfrontLayout = resolvedLayout ?? this.resolveWaterfrontLayout(contact);
+    if (!waterfrontLayout) {
+      return {
+        components,
+        connectors,
+        surfaces,
+        waterfrontSurfaces,
+        layout: emptyLayout,
+        waterfrontLayout: null,
+      };
+    }
+    for (const cell of rasterizeRegionalParcelPath(waterfrontLayout.accessPath)) {
+      connectors.set(positionKey(cell.x, cell.y), {
+        routeKind: contact.routeKind,
+        parcelId: contact.parcelId,
+        path: waterfrontLayout.accessPath,
+        core: cell.core,
+        protected: cell.protected,
+      });
+    }
+    const waterfrontSurface: WaterfrontSurface = {
+      routeKind: contact.routeKind,
+      layout: waterfrontLayout,
+    };
+    for (const cell of rasterizeRegionalWaterfrontLayout(waterfrontLayout)) {
+      waterfrontSurfaces.set(positionKey(cell.x, cell.y), waterfrontSurface);
+    }
+
+    const protectedCells = new Set([...connectors.entries()]
+      .filter(([, connector]) => connector.protected)
+      .map(([key]) => key));
+    const occupied = new Set<string>();
+    const base = Math.floor(this.hashUnit(contact.siteX, contact.siteY, 0x2af3) * programAssets.length);
+    const offsets = [-4.4, 4.4];
+    for (const [index, tangentOffset] of offsets.entries()) {
+      const asset = programAssets[(base + index) % programAssets.length]!;
+      const candidates: Array<{
+        anchorX: number;
+        anchorY: number;
+        collisionKeys: string[];
+        score: number;
+      }> = [];
+      for (let anchorY = Math.floor(waterfrontLayout.bounds.minY);
+        anchorY <= Math.ceil(waterfrontLayout.bounds.maxY); anchorY++) {
+        for (let anchorX = Math.floor(waterfrontLayout.bounds.minX);
+          anchorX <= Math.ceil(waterfrontLayout.bounds.maxX); anchorX++) {
+          const sample = sampleRegionalWaterfrontLayout(
+            anchorX + 0.5,
+            anchorY + 0.5,
+            waterfrontLayout,
+          );
+          if (sample.workYardWeight < 0.35) continue;
+          const collisionKeys = asset.collision.map(([offsetX, offsetY]) => (
+            positionKey(anchorX + offsetX, anchorY + offsetY)
+          ));
+          if (collisionKeys.some((key) => occupied.has(key) || protectedCells.has(key)) ||
+              !this.assetFits(anchorX, anchorY, asset)) continue;
+          const relativeX = anchorX + 0.5 - waterfrontLayout.shorePoint.x;
+          const relativeY = anchorY + 0.5 - waterfrontLayout.shorePoint.y;
+          const tangentDistance = relativeX * waterfrontLayout.shoreTangentX +
+            relativeY * waterfrontLayout.shoreTangentY;
+          const shoreDistance = -(relativeX * waterfrontLayout.waterNormalX +
+            relativeY * waterfrontLayout.waterNormalY);
+          candidates.push({
+            anchorX,
+            anchorY,
+            collisionKeys,
+            score: Math.abs(tangentDistance - tangentOffset) + Math.abs(shoreDistance - 5.7) * 0.18,
+          });
+        }
+      }
+      const selected = candidates.sort((a, b) => (
+        a.score - b.score || a.anchorY - b.anchorY || a.anchorX - b.anchorX
+      ))[0] ?? null;
+      if (!selected) continue;
+      const { anchorX, anchorY, collisionKeys } = selected;
+      for (const key of collisionKeys) occupied.add(key);
+      components.push({
+        asset,
+        kind: 'parcel-component',
+        siteX: contact.siteX,
+        siteY: contact.siteY,
+        anchorX,
+        anchorY,
+        parcelId: contact.parcelId,
+        accessAxis: contact.accessAxis,
+        routeKind: contact.routeKind,
+        parcelLayers: 1,
+        connectorLength: Math.ceil(waterfrontLayout.accessPath.arcLength),
+        parcelPathId: waterfrontLayout.accessPath.id,
+        parcelStation: waterfrontLayout.accessPath.arcLength,
+        pathTangentX: waterfrontLayout.shoreTangentX,
+        pathTangentY: waterfrontLayout.shoreTangentY,
+        waterfrontId: waterfrontLayout.id,
+        waterfrontFunction: asset.waterfrontFunction,
+      });
+    }
+    return {
+      components,
+      connectors,
+      surfaces,
+      waterfrontSurfaces,
+      layout: emptyLayout,
+      waterfrontLayout,
+    };
+  }
+
+  /** Find a dry-to-wet transition in a bounded fan around the authored route
+   * threshold, then estimate the local water gradient. This is a physical
+   * locator, not a family or asset-name lookup. */
+  private resolveWaterfrontLayout(contact: Placement): RegionalWaterfrontLayout | null {
+    if (!contact.parcelId) return null;
+    const { outwardX: unitX, outwardY: unitY } = this.resolveParcelOutwardFrame(contact);
+    const candidates: Array<{
+      shoreX: number;
+      shoreY: number;
+      normalX: number;
+      normalY: number;
+      score: number;
+    }> = [];
+    for (const angle of [0, -0.32, 0.32, -0.62, 0.62]) {
+      const directionX = unitX * Math.cos(angle) - unitY * Math.sin(angle);
+      const directionY = unitX * Math.sin(angle) + unitY * Math.cos(angle);
+      let previous = {
+        x: contact.siteX + 0.5 + directionX * 2,
+        y: contact.siteY + 0.5 + directionY * 2,
+      };
+      if (this.field.sample(Math.floor(previous.x), Math.floor(previous.y)).isWater) continue;
+      let inWater = false;
+      for (let distance = 2.5; distance <= 32; distance += 0.5) {
+        const current = {
+          x: contact.siteX + 0.5 + directionX * distance,
+          y: contact.siteY + 0.5 + directionY * distance,
+        };
+        const water = this.field.sample(Math.floor(current.x), Math.floor(current.y)).isWater;
+        if (!water) {
+          previous = current;
+          inWater = false;
+          continue;
+        }
+        // Measure every distinct dry-to-wet transition. A nearer wet pocket
+        // must not conceal a slightly farther navigable shoreline.
+        if (inWater) continue;
+        inWater = true;
+        const cellX = Math.floor(current.x);
+        const cellY = Math.floor(current.y);
+        const occupancy = (x: number, y: number): number => Number(this.field.sample(x, y).isWater);
+        let normalX = occupancy(cellX + 1, cellY) - occupancy(cellX - 1, cellY);
+        let normalY = occupancy(cellX, cellY + 1) - occupancy(cellX, cellY - 1);
+        const gradientLength = Math.hypot(normalX, normalY);
+        if (gradientLength >= 0.5) {
+          normalX /= gradientLength;
+          normalY /= gradientLength;
+        } else {
+          normalX = directionX;
+          normalY = directionY;
+        }
+        if (normalX * directionX + normalY * directionY < 0) {
+          normalX *= -1;
+          normalY *= -1;
+        }
+        const score = distance + Math.abs(angle) * 4 +
+          this.field.sample(Math.floor(previous.x), Math.floor(previous.y)).slope * 8;
+        candidates.push({
+          // Keep the quay datum on the last proven dry sample. The first
+          // half-tile of each pier crosses the measured cell boundary.
+          shoreX: previous.x,
+          shoreY: previous.y,
+          normalX,
+          normalY,
+          score,
+        });
+      }
+    }
+    for (const candidate of candidates.sort((a, b) => a.score - b.score)) {
+      const layout = buildRegionalWaterfrontLayout({
+        id: `${contact.parcelId}:waterfront`,
+        accessStart: { x: contact.siteX + 0.5, y: contact.siteY + 0.5 },
+        shorePoint: { x: candidate.shoreX, y: candidate.shoreY },
+        waterNormalX: candidate.normalX,
+        waterNormalY: candidate.normalY,
+        seed: this.seed32 ^ stringHash(contact.parcelId),
+        isWater: (worldX, worldY) => this.field.sample(Math.floor(worldX), Math.floor(worldY)).isWater,
+      });
+      if (!layout || layout.piers.length < 2 || layout.slips.length < 1) continue;
+      const dryPolygons = [layout.apron, ...layout.workYards];
+      const drySamples = dryPolygons.flatMap((polygon) => polygon.polygon.map((point) => (
+        !this.field.sample(Math.floor(point.x), Math.floor(point.y)).isWater
+      )));
+      const wetSamples = [...layout.piers, ...layout.slips].flatMap((polygon) => polygon.polygon.slice(2)
+        .map((point) => this.field.sample(Math.floor(point.x), Math.floor(point.y)).isWater));
+      if (drySamples.filter(Boolean).length / Math.max(1, drySamples.length) < 0.88 ||
+          wetSamples.filter(Boolean).length / Math.max(1, wetSamples.length) < 0.75) continue;
+      return layout;
+    }
+    return null;
   }
 
   /** Cap a shared rear station at the first physical obstruction. Adjacent
@@ -1597,19 +1961,7 @@ export class RegionalWorldTileProvider extends TileProvider {
    * it back toward the straight fallback. If no legal successor exists the
    * threshold remains, but no false walkable compound is fabricated. */
   private selectParcelPath(contact: Placement, connectorEnd: number): RegionalParcelPath | null {
-    const route = this.routes.sample(contact.siteX, contact.siteY);
-    const tangentLength = Math.hypot(route.directionX, route.directionY);
-    const tangentX = tangentLength >= 0.25
-      ? route.directionX / tangentLength
-      : contact.accessAxis === 'north-south' ? 1 : 0;
-    const tangentY = tangentLength >= 0.25
-      ? route.directionY / tangentLength
-      : contact.accessAxis === 'north-south' ? 0 : 1;
-    const normalX = -tangentY;
-    const normalY = tangentX;
-    const sideProjection = (contact.anchorX - contact.siteX) * normalX +
-      (contact.anchorY - contact.siteY) * normalY;
-    const outwardSign: -1 | 1 = sideProjection < 0 ? -1 : 1;
+    const { tangentX, tangentY, outwardSign } = this.resolveParcelOutwardFrame(contact);
     const maximumLateral = Math.min(14, connectorEnd * 0.72);
     const preferred = (this.hashUnit(contact.siteX, contact.siteY, 0x53bd) - 0.5) *
       maximumLateral * 2;
@@ -1663,6 +2015,38 @@ export class RegionalWorldTileProvider extends TileProvider {
       }
     }
     return selected;
+  }
+
+  /** One route-relative frame owns both ordinary parcel spines and working
+   * waterfront approaches. Contact sprites retain cardinal authored axes, but
+   * those axes cannot substitute for the continuously turning road normal. */
+  private resolveParcelOutwardFrame(contact: Placement): {
+    tangentX: number;
+    tangentY: number;
+    outwardX: number;
+    outwardY: number;
+    outwardSign: -1 | 1;
+  } {
+    const route = this.routes.sample(contact.siteX, contact.siteY);
+    const tangentLength = Math.hypot(route.directionX, route.directionY);
+    const tangentX = tangentLength >= 0.25
+      ? route.directionX / tangentLength
+      : contact.accessAxis === 'north-south' ? 1 : 0;
+    const tangentY = tangentLength >= 0.25
+      ? route.directionY / tangentLength
+      : contact.accessAxis === 'north-south' ? 0 : 1;
+    const normalX = -tangentY;
+    const normalY = tangentX;
+    const sideProjection = (contact.anchorX - contact.siteX) * normalX +
+      (contact.anchorY - contact.siteY) * normalY;
+    const outwardSign: -1 | 1 = sideProjection < 0 ? -1 : 1;
+    return {
+      tangentX,
+      tangentY,
+      outwardX: normalX * outwardSign,
+      outwardY: normalY * outwardSign,
+      outwardSign,
+    };
   }
 
   private createPlacement(siteX: number, siteY: number): Placement | null {

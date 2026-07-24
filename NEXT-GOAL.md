@@ -505,6 +505,25 @@ Completed foundations:
   5.03/12.15/36.78 ms render p50/p95/p99; their 6.616/6.078-second cold leads
   and broad p99 spread keep service readiness open. Public gallery iteration
   023 exposes the selected result; production is intentionally unchanged;
+- a route threshold can now become a physical working waterfront instead of a
+  decorative shore prop or a fabricated inland parcel. Ordinary parcels and
+  waterfronts share one continuous route-normal frame; the locator evaluates
+  every bounded dry-to-wet transition so a nearer puddle cannot conceal a
+  farther navigable channel. The selected real canal program has one protected
+  22.5-tile service approach, two dry work yards, two 95.7%-wet walkable piers,
+  one fully wet slip, and two manifest-declared maritime functions with zero
+  mismatch, overlap, blocked/painted access, missing material, or missing
+  waterfront surface. Early one-pier/no-slip coast variants, the cardinal-axis
+  orientation error, and the dark outlined quay stamp remain retained rejects;
+  the selected compositor feathers dry program ownership into local terrain
+  while keeping constructed pier contacts crisp. Two independent 180-frame
+  160x46 repeats retained zero misses/mismatches/errors with
+  4.18/7.38/17.62 and 4.35/9.41/17.00 ms render p50/p95/p99; their
+  5.786/6.390-second cold leads keep service readiness open. Full source,
+  comparison, metrics, and primary-source deductions are in
+  `regional-waterfront-v10-blended-canal/FINDINGS.md`; public gallery iteration
+  024 exposes the rejected outline and selected regional/district frames;
+  production is unchanged;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–023 expose selected and rejected research candidates without
@@ -519,9 +538,9 @@ Still open and therefore goal-blocking:
   30-minute run, cgroup behavior, and physical Ghostty remain unproven;
 - the first six-family landmark silhouettes and shared-boundary parcel
   compounds are still sparse research prototypes rather than a complete world
-  layer; working waterfront districts, larger squares/commons, far greater
-  travel-scale entropy, authoritative traversal, stronger landmark framing,
-  cave interiors, climbable highlands, tidal/open-water/boat/island
+  layer; coast-specific waterfront diversity, larger squares/commons, far
+  greater travel-scale entropy, authoritative traversal, stronger landmark
+  framing, cave interiors, climbable highlands, tidal/open-water/boat/island
   interactions, and environmental consequences remain before the family layer
   is production-complete;
 - the complete Phase-0 diagnostic comparison and operator direction approval

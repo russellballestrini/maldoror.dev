@@ -19,6 +19,7 @@ import {
   RegionalRouteField,
   RegionalWorldTileProvider,
   sampleRegionalParcelLayout,
+  sampleRegionalWaterfrontLayout,
 } from '../../packages/world/dist/index.js';
 import { ViewportRenderer } from '../../packages/render/dist/pixel/viewport-renderer.js';
 import { renderOctantGridCells } from '../../packages/render/dist/pixel/pixel-renderer.js';
@@ -43,7 +44,18 @@ if (CENTRE_OVERRIDE) {
   if (centre.length !== 2 || centre.some((value) => !Number.isFinite(value))) {
     throw new Error(`Invalid landmark centre: ${CENTRE_OVERRIDE}`);
   }
-  FRAMES = [{ name: 'custom-walking', centre, displayTileSize: 16 }];
+  const displayTileSize = Number(
+    process.env.MALDOROR_REGIONAL_LANDMARK_DISPLAY_TILE_SIZE ?? '16',
+  );
+  if (![4, 8, 16].includes(displayTileSize)) {
+    throw new Error(`Invalid landmark display tile size: ${displayTileSize}`);
+  }
+  FRAMES = [{
+    name: displayTileSize === 16 ? 'custom-walking' :
+      displayTileSize === 8 ? 'custom-district' : 'custom-regional',
+    centre,
+    displayTileSize,
+  }];
 }
 
 fs.mkdirSync(OUTPUT, { recursive: true });
@@ -201,7 +213,9 @@ if (process.env.MALDOROR_REGIONAL_CONTACT_ATLAS === '1') {
   if (selectedContactAssets.length === 0) {
     throw new Error(`Unknown route-contact asset: ${contactAssetFilter}`);
   }
-  const requireParcel = familyAtlas || process.env.MALDOROR_REGIONAL_CONTACT_REQUIRE_PARCEL === '1';
+  const requireWaterfront = process.env.MALDOROR_REGIONAL_CONTACT_REQUIRE_WATERFRONT === '1';
+  const requireParcel = !requireWaterfront &&
+    (familyAtlas || process.env.MALDOROR_REGIONAL_CONTACT_REQUIRE_PARCEL === '1');
   const wanted = new Set(selectedContactAssets.map((asset) => asset.id));
   const found = new Map();
   const rejectedParcelCandidates = new Map();
@@ -221,7 +235,7 @@ if (process.env.MALDOROR_REGIONAL_CONTACT_ATLAS === '1') {
         const familyAlreadyFound = familyAtlas && [...found.values()]
           .some((candidate) => candidate.families[0] === family);
         if (wanted.has(placement.assetId) && !found.has(placement.assetId) && !familyAlreadyFound) {
-          if (!requireParcel) {
+          if (!requireParcel && !requireWaterfront) {
             found.set(placement.assetId, placement);
             continue;
           }
@@ -233,9 +247,14 @@ if (process.env.MALDOROR_REGIONAL_CONTACT_ATLAS === '1') {
           ];
           const hasCore = world.getParcelConnectorCellsInBounds(...searchBounds)
             .some((cell) => cell.parcelId === placement.parcelId && cell.core);
-          const hasComponent = world.getParcelComponentPlacementsInBounds(...searchBounds)
-            .some((component) => component.parcelId === placement.parcelId);
-          if (hasCore && hasComponent) {
+          const components = world.getParcelComponentPlacementsInBounds(...searchBounds)
+            .filter((component) => component.parcelId === placement.parcelId);
+          const waterfront = world.getWaterfrontLayoutsInBounds(...searchBounds)
+            .find((layout) => layout.id.startsWith(`${placement.parcelId}:`));
+          const validWaterfront = waterfront && waterfront.piers.length >= 2 &&
+            waterfront.slips.length >= 1 &&
+            components.filter((component) => component.waterfrontId === waterfront.id).length >= 2;
+          if (hasCore && (requireWaterfront ? validWaterfront : components.length > 0)) {
             found.set(placement.assetId, placement);
           } else {
             rejectedParcelCandidates.set(
@@ -461,7 +480,13 @@ function auditParcel(frame) {
     contact.siteX + 32,
     contact.siteY + 32,
   ).find((candidate) => candidate.pathId === contact.parcelId);
-  if (!layout) throw new Error(`Could not resolve parcel layout: ${contact.parcelId}`);
+  const waterfront = world.getWaterfrontLayoutsInBounds(
+    contact.siteX - 32,
+    contact.siteY - 32,
+    contact.siteX + 32,
+    contact.siteY + 32,
+  ).find((candidate) => candidate.id.startsWith(`${contact.parcelId}:`));
+  if (!layout && !waterfront) throw new Error(`Could not resolve parcel program: ${contact.parcelId}`);
   const protectedCells = connectorCells.filter((cell) => cell.protected);
   const coreCells = connectorCells.filter((cell) => cell.core);
   const assetById = new Map([
@@ -491,14 +516,14 @@ function auditParcel(frame) {
     if (!world.getTile(cell.x, cell.y).id.startsWith('regional-path-access:')) materialMissing++;
   }
   const componentPathFrameMissing = components.filter((placement) => (
-    placement.parcelPathId !== contact.parcelId ||
+    placement.parcelPathId !== (waterfront?.accessPath.id ?? contact.parcelId) ||
     !Number.isFinite(placement.parcelStation) ||
     !Number.isFinite(placement.pathTangentX) ||
     !Number.isFinite(placement.pathTangentY) ||
     Math.abs(Math.hypot(placement.pathTangentX, placement.pathTangentY) - 1) > 1e-6
   )).length;
   let sharedBoundaryMismatch = 0;
-  for (const side of [-1, 1]) {
+  for (const side of layout ? [-1, 1] : []) {
     const sidePlots = layout.plots.filter((plot) => plot.side === side)
       .sort((a, b) => a.stationIndex - b.stationIndex);
     for (let index = 1; index < sidePlots.length; index++) {
@@ -514,8 +539,8 @@ function auditParcel(frame) {
   let occupiedSamples = 0;
   let overlapSamples = 0;
   let waterIntrusionSamples = 0;
-  for (let y = Math.floor(layout.bounds.minY); y <= Math.ceil(layout.bounds.maxY); y += 0.5) {
-    for (let x = Math.floor(layout.bounds.minX); x <= Math.ceil(layout.bounds.maxX); x += 0.5) {
+  for (let y = Math.floor(layout?.bounds.minY ?? 0); y <= Math.ceil(layout?.bounds.maxY ?? -1); y += 0.5) {
+    for (let x = Math.floor(layout?.bounds.minX ?? 0); x <= Math.ceil(layout?.bounds.maxX ?? -1); x += 0.5) {
       const owners = layout.plots.filter((plot) => pointInPolygon({ x, y }, plot.polygon)).length;
       if (owners === 0) continue;
       occupiedSamples++;
@@ -524,11 +549,11 @@ function auditParcel(frame) {
     }
   }
   const pathIntrusionSamples = coreCells.filter((cell) => (
-    sampleRegionalParcelLayout(cell.x + 0.5, cell.y + 0.5, layout).insideWeight > 0.001
+    layout && sampleRegionalParcelLayout(cell.x + 0.5, cell.y + 0.5, layout).insideWeight > 0.001
   )).length;
   const purposes = Object.fromEntries(['yard', 'garden', 'civic-opening'].map((purpose) => [
     purpose,
-    layout.plots.filter((plot) => plot.purpose === purpose).length,
+    layout?.plots.filter((plot) => plot.purpose === purpose).length ?? 0,
   ]));
   const visited = new Set();
   const queue = coreCells.length > 0 ? [coreCells[0]] : [];
@@ -571,7 +596,7 @@ function auditParcel(frame) {
     connectorCollisionBlocked: collisionBlocked,
     connectorVisuallyBlocked: visuallyBlocked,
     connectorMaterialMissing: materialMissing,
-    layout: {
+    layout: layout ? {
       plotCount: layout.plots.length,
       boundaryCount: layout.boundaries.length,
       purposes,
@@ -587,8 +612,81 @@ function auditParcel(frame) {
       overlapSampleRate: overlapSamples / Math.max(1, occupiedSamples),
       waterIntrusionSampleRate: waterIntrusionSamples / Math.max(1, occupiedSamples),
       protectedPathIntrusionRate: pathIntrusionSamples / Math.max(1, coreCells.length),
-    },
+    } : null,
+    waterfront: waterfront ? auditWaterfront(waterfront, components) : null,
   };
+}
+
+function auditWaterfront(layout, components) {
+  const dry = samplePolygons([...layout.workYards, layout.apron], (x, y) => (
+    !field.sample(Math.floor(x), Math.floor(y)).isWater
+  ));
+  const wetPiers = samplePolygons(layout.piers, (x, y) => (
+    field.sample(Math.floor(x), Math.floor(y)).isWater
+  ));
+  const wetSlips = samplePolygons(layout.slips, (x, y) => (
+    field.sample(Math.floor(x), Math.floor(y)).isWater
+  ));
+  const pierCentres = layout.piers.map((pier) => centroid(pier.polygon));
+  const pierWalkableRate = pierCentres.filter((point) => (
+    world.getTile(Math.floor(point.x), Math.floor(point.y)).walkable
+  )).length / Math.max(1, pierCentres.length);
+  let sampledSurfaceCells = 0;
+  let missingSurfaceCells = 0;
+  for (let y = Math.floor(layout.bounds.minY); y <= Math.ceil(layout.bounds.maxY); y++) {
+    for (let x = Math.floor(layout.bounds.minX); x <= Math.ceil(layout.bounds.maxX); x++) {
+      const sample = sampleRegionalWaterfrontLayout(x + 0.5, y + 0.5, layout);
+      if (Math.max(sample.apronWeight, sample.workYardWeight, sample.pierWeight) <= 0.001) continue;
+      sampledSurfaceCells++;
+      const tileId = world.getTile(x, y).id;
+      if (!tileId.startsWith('regional-waterfront-ground:') &&
+          !tileId.startsWith('regional-path-access:')) missingSurfaceCells++;
+    }
+  }
+  return {
+    id: layout.id,
+    accessPathId: layout.accessPath.id,
+    apronCount: 1,
+    workYardCount: layout.workYards.length,
+    pierCount: layout.piers.length,
+    slipCount: layout.slips.length,
+    dryProgramRate: dry.rate,
+    wetPierRate: wetPiers.rate,
+    wetSlipRate: wetSlips.rate,
+    pierWalkableRate,
+    surfaceMissingRate: missingSurfaceCells / Math.max(1, sampledSurfaceCells),
+    componentCount: components.filter((placement) => placement.waterfrontId === layout.id).length,
+    functions: [...new Set(components
+      .filter((placement) => placement.waterfrontId === layout.id)
+      .map((placement) => placement.waterfrontFunction)
+      .filter(Boolean))].sort(),
+  };
+}
+
+function samplePolygons(polygons, predicate) {
+  let samples = 0;
+  let matches = 0;
+  for (const polygon of polygons) {
+    const minX = Math.floor(Math.min(...polygon.polygon.map((point) => point.x)));
+    const maxX = Math.ceil(Math.max(...polygon.polygon.map((point) => point.x)));
+    const minY = Math.floor(Math.min(...polygon.polygon.map((point) => point.y)));
+    const maxY = Math.ceil(Math.max(...polygon.polygon.map((point) => point.y)));
+    for (let y = minY; y <= maxY; y += 0.5) {
+      for (let x = minX; x <= maxX; x += 0.5) {
+        if (!pointInPolygon({ x, y }, polygon.polygon)) continue;
+        samples++;
+        if (predicate(x, y)) matches++;
+      }
+    }
+  }
+  return { samples, rate: matches / Math.max(1, samples) };
+}
+
+function centroid(points) {
+  return points.reduce((sum, point) => ({
+    x: sum.x + point.x / points.length,
+    y: sum.y + point.y / points.length,
+  }), { x: 0, y: 0 });
 }
 
 function auditEnvironmentContact(frame) {
