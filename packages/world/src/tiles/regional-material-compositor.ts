@@ -11,6 +11,10 @@ import type {
   RegionalRouteSample,
 } from '../routes/regional-route-field.js';
 import {
+  sampleRegionalParcelLayout,
+  type RegionalParcelLayout,
+} from './regional-parcel-layout.js';
+import {
   distanceToRegionalParcelPath,
   type RegionalParcelPath,
 } from './regional-parcel-path.js';
@@ -254,6 +258,7 @@ export class RegionalMaterialCompositor {
     path: RegionalParcelPath,
     routeKind: RegionalRouteKind,
     core: boolean,
+    parcelLayout?: RegionalParcelLayout,
   ): Tile {
     return this.getPathAccessTileAtResolution(
       tileX,
@@ -262,6 +267,7 @@ export class RegionalMaterialCompositor {
       path,
       routeKind,
       core,
+      parcelLayout,
     );
   }
 
@@ -272,17 +278,20 @@ export class RegionalMaterialCompositor {
     path: RegionalParcelPath,
     routeKind: RegionalRouteKind,
     core: boolean,
+    parcelLayout?: RegionalParcelLayout,
   ): Tile {
     if (!this.routeMaterials) return this.getTileAtResolution(tileX, tileY, requestedResolution);
     const resolution = this.selectResolution(requestedResolution);
-    const key = `path-access:${path.id}:${tileX},${tileY}@${resolution}:${routeKind}:${Number(core)}`;
+    const key = `path-access:${path.id}:${parcelLayout?.id ?? 'bare'}:${tileX},${tileY}@${resolution}:${routeKind}:${Number(core)}`;
     const cached = this.cache.get(key);
     if (cached) {
       this.cache.delete(key);
       this.cache.set(key, cached);
       return cached;
     }
-    const base = this.getTileAtResolution(tileX, tileY, resolution);
+    const base = parcelLayout
+      ? this.getParcelGroundTileAtResolution(tileX, tileY, resolution, parcelLayout, routeKind)
+      : this.getTileAtResolution(tileX, tileY, resolution);
     const pixels: PixelGrid = [];
     const routeTexture = new Float64Array(3);
     const textureScaleTiles = this.textureScaleForResolution(resolution);
@@ -325,6 +334,113 @@ export class RegionalMaterialCompositor {
       pixels,
       materialMask: base.materialMask,
       walkable: base.walkable || core,
+      resolutions: { [String(resolution)]: pixels },
+    };
+    this.cache.set(key, tile);
+    while (this.cache.size > this.maxCachedTiles) {
+      const oldest = this.cache.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.cache.delete(oldest);
+    }
+    return tile;
+  }
+
+  /** Compose a compound as continuous terrain, not a painted footprint. Plot
+   * interiors derive from the biome beneath them, civic openings borrow the
+   * local route material, and exact shared boundaries use one world-space SDF.
+   * The result therefore agrees at tile edges, cache boundaries, and LODs. */
+  getParcelGroundTile(
+    tileX: number,
+    tileY: number,
+    layout: RegionalParcelLayout,
+    routeKind: RegionalRouteKind,
+  ): Tile {
+    return this.getParcelGroundTileAtResolution(
+      tileX,
+      tileY,
+      this.sourceSize,
+      layout,
+      routeKind,
+    );
+  }
+
+  getParcelGroundTileAtResolution(
+    tileX: number,
+    tileY: number,
+    requestedResolution: number,
+    layout: RegionalParcelLayout,
+    routeKind: RegionalRouteKind,
+  ): Tile {
+    const resolution = this.selectResolution(requestedResolution);
+    const key = `parcel-ground:${layout.id}:${tileX},${tileY}@${resolution}:${routeKind}`;
+    const cached = this.cache.get(key);
+    if (cached) {
+      this.cache.delete(key);
+      this.cache.set(key, cached);
+      return cached;
+    }
+    const base = this.getTileAtResolution(tileX, tileY, resolution);
+    const pixels: PixelGrid = [];
+    const routeTexture = new Float64Array(3);
+    const textureScaleTiles = this.textureScaleForResolution(resolution);
+    for (let y = 0; y < resolution; y++) {
+      const row: RGB[] = [];
+      for (let x = 0; x < resolution; x++) {
+        const worldX = tileX + (x + 0.5) / resolution;
+        const worldY = tileY + (y + 0.5) / resolution;
+        const sample = sampleRegionalParcelLayout(worldX, worldY, layout);
+        const beneath = base.pixels[y]?.[x] ?? { r: 0, g: 0, b: 0 };
+        if (sample.insideWeight <= 0.0001 && sample.boundaryWeight <= 0.0001) {
+          row.push(beneath);
+          continue;
+        }
+        let linearR = srgbToLinear(beneath.r);
+        let linearG = srgbToLinear(beneath.g);
+        let linearB = srgbToLinear(beneath.b);
+        const patch = 0.5 + Math.sin(worldX * 0.83 + worldY * 0.47) * 0.5;
+        const cultivation = sample.purpose === 'garden' ? 1 : 0.48;
+        const yardOpacity = sample.yardWeight * (0.1 + cultivation * 0.14);
+        linearR = lerp(linearR, linearR * (0.88 + patch * 0.08), yardOpacity);
+        linearG = lerp(
+          linearG,
+          linearG * (0.98 + patch * 0.11) + 0.008 * cultivation,
+          yardOpacity,
+        );
+        linearB = lerp(linearB, linearB * (0.84 + patch * 0.07), yardOpacity);
+        if (sample.civicWeight > 0.0001 && this.routeMaterials) {
+          this.sampleTextureField(
+            this.routeMaterials[routeKind],
+            worldX,
+            worldY,
+            0x3ed7,
+            textureScaleTiles,
+            resolution,
+            routeTexture,
+          );
+          const civicOpacity = sample.civicWeight * 0.34;
+          linearR = lerp(linearR, routeTexture[0]!, civicOpacity);
+          linearG = lerp(linearG, routeTexture[1]!, civicOpacity);
+          linearB = lerp(linearB, routeTexture[2]!, civicOpacity);
+        }
+        const boundaryOpacity = sample.boundaryWeight * 0.64;
+        const boundaryScale = 0.58 + patch * 0.08;
+        linearR = lerp(linearR, linearR * boundaryScale, boundaryOpacity);
+        linearG = lerp(linearG, linearG * boundaryScale, boundaryOpacity);
+        linearB = lerp(linearB, linearB * boundaryScale, boundaryOpacity);
+        row.push({
+          r: linearToSrgb(linearR),
+          g: linearToSrgb(linearG),
+          b: linearToSrgb(linearB),
+        });
+      }
+      pixels.push(row);
+    }
+    const tile: Tile = {
+      id: `regional-parcel-ground:${layout.id}:${tileX},${tileY}@${resolution}`,
+      name: 'Shared-boundary regional parcel terrain',
+      pixels,
+      materialMask: base.materialMask,
+      walkable: base.walkable,
       resolutions: { [String(resolution)]: pixels },
     };
     this.cache.set(key, tile);

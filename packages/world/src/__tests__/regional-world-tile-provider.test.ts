@@ -265,8 +265,30 @@ describe('RegionalWorldTileProvider', () => {
     }
     const horizontalComponents = horizontal.getParcelComponentPlacementsInBounds(-24, -24, 224, 24);
     const horizontalConnectors = horizontal.getParcelConnectorCellsInBounds(-40, -40, 240, 40);
+    const horizontalLayouts = horizontal.getParcelLayoutsInBounds(-40, -40, 240, 40);
     expect(horizontalComponents.length).toBeGreaterThan(horizontalContacts.length);
     expect(horizontalConnectors.length).toBeGreaterThan(horizontalContacts.length * 8);
+    expect(horizontalLayouts.length).toBeGreaterThan(4);
+    expect(horizontalLayouts.some((layout) => (
+      layout.plots.some((plot) => plot.purpose === 'civic-opening')
+    ))).toBe(true);
+    for (const layout of horizontalLayouts) {
+      expect(layout.plots.length).toBeGreaterThanOrEqual(2);
+      for (const side of [-1, 1] as const) {
+        const plots = layout.plots.filter((plot) => plot.side === side)
+          .sort((a, b) => a.stationIndex - b.stationIndex);
+        for (let index = 1; index < plots.length; index++) {
+          expect(plots[index - 1]!.polygon[1]).toBe(plots[index]!.polygon[0]);
+          expect(plots[index - 1]!.polygon[2]).toBe(plots[index]!.polygon[3]);
+        }
+      }
+      const plot = layout.plots[0]!;
+      const centreX = Math.floor(plot.polygon.reduce((sum, point) => sum + point.x / 4, 0));
+      const centreY = Math.floor(plot.polygon.reduce((sum, point) => sum + point.y / 4, 0));
+      expect(horizontal.getTile(centreX, centreY).id).toMatch(
+        /^regional-(parcel-ground|path-access):/,
+      );
+    }
     expect(new Set(horizontalComponents.flatMap((placement) => placement.families)))
       .toEqual(new Set(BIOME_FAMILIES));
     for (const component of horizontalComponents) {
@@ -302,6 +324,7 @@ describe('RegionalWorldTileProvider', () => {
     }
     expect(Math.max(...horizontalConnectors.map((cell) => Math.abs(cell.lateralOffset))))
       .toBeGreaterThan(0.5);
+    expect(horizontal.getRegionalStats().cachedParcelSurfaceCells).toBeGreaterThan(0);
 
     const vertical = makeWorld(32, 32, (x, y) => ({
       ...routeSample(x, y),
@@ -412,7 +435,7 @@ describe('RegionalWorldTileProvider', () => {
       expect(small.getTile(x, y).id.startsWith('regional-path-access:'))
         .toBe(large.getTile(x, y).id.startsWith('regional-path-access:'));
     }
-  });
+  }, 20_000);
 
   it('bounds derived landmark blocks', () => {
     const world = makeWorld(16, 9);

@@ -89,6 +89,21 @@ export {
   type RegionalParcelPathPoint,
 } from './tiles/regional-parcel-path.js';
 export {
+  buildRegionalParcelLayout,
+  rasterizeRegionalParcelLayout,
+  sampleRegionalParcelLayout,
+  type RegionalParcelBoundary,
+  type RegionalParcelBounds,
+  type RegionalParcelDepthSample,
+  type RegionalParcelLayout,
+  type RegionalParcelLayoutCell,
+  type RegionalParcelLayoutConfig,
+  type RegionalParcelLayoutSample,
+  type RegionalParcelPlot,
+  type RegionalParcelPurpose,
+  type RegionalParcelSpatialCell,
+} from './tiles/regional-parcel-layout.js';
+export {
   RegionalWorldTileProvider,
   type RegionalAmbientAsset,
   type RegionalAssetPlacement,

@@ -489,9 +489,25 @@ Completed foundations:
   import p95 9.52 ms, peak RSS 775.70 MiB, with zero misses, mismatches, or
   worker errors. The p99 increase remains an explicit profiling follow-up, not
   a hidden pass;
+- the selected anisotropic parcel comparison is now integrated as a persistent
+  shared-boundary fabric rather than remaining a geometry diagram. Component
+  and plot centers consume the same curved arc-length stations; exact midpoint
+  boundaries, variable constrained depth, open frontage, inset yards/gardens,
+  and sparse civic openings are continuous terrain masks rather than painted
+  square sprites. The faithful six-family audit covers 31 plots with 100%
+  frontage access and yard reserve, 94.4% mean unique-shape signature, two
+  civic openings, and zero shared-boundary mismatch, sampled overlap, water
+  intrusion, or protected-path intrusion. The exhaustive 1,787-coordinate
+  cross-block proof remains exact and measured no slower than its committed
+  baseline under the same extended window. Full evidence is in
+  `regional-parcel-fabric-v2-audited/`. Two identical 180-frame repeats kept
+  zero misses/mismatches/errors with 4.98/10.27/18.59 and
+  5.03/12.15/36.78 ms render p50/p95/p99; their 6.616/6.078-second cold leads
+  and broad p99 spread keep service readiness open. Public gallery iteration
+  023 exposes the selected result; production is intentionally unchanged;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
-  iterations 012–021 expose selected and rejected research candidates without
+  iterations 012–023 expose selected and rejected research candidates without
   claiming they are live.
 
 Still open and therefore goal-blocking:
@@ -501,11 +517,11 @@ Still open and therefore goal-blocking:
   initial origin corridor must move into service readiness and authoritative movement/
   camera/zoom integration, production SSH latency, the 5/10/20-presence ladder,
   30-minute run, cgroup behavior, and physical Ghostty remain unproven;
-- the first six-family landmark silhouettes and curved shared-station parcel
+- the first six-family landmark silhouettes and shared-boundary parcel
   compounds are still sparse research prototypes rather than a complete world
-  layer; shared parcel boundaries, waterfront districts, squares/gardens, far
-  greater travel-scale entropy, authoritative traversal, stronger landmark
-  framing, cave interiors, climbable highlands, tidal/open-water/boat/island
+  layer; working waterfront districts, larger squares/commons, far greater
+  travel-scale entropy, authoritative traversal, stronger landmark framing,
+  cave interiors, climbable highlands, tidal/open-water/boat/island
   interactions, and environmental consequences remain before the family layer
   is production-complete;
 - the complete Phase-0 diagnostic comparison and operator direction approval

@@ -18,6 +18,7 @@ import {
   RegionalMaterialCompositor,
   RegionalRouteField,
   RegionalWorldTileProvider,
+  sampleRegionalParcelLayout,
 } from '../../packages/world/dist/index.js';
 import { ViewportRenderer } from '../../packages/render/dist/pixel/viewport-renderer.js';
 import { renderOctantGridCells } from '../../packages/render/dist/pixel/pixel-renderer.js';
@@ -454,6 +455,13 @@ function auditParcel(frame) {
     contact.siteX + 32,
     contact.siteY + 32,
   ).filter((cell) => cell.parcelId === contact.parcelId);
+  const layout = world.getParcelLayoutsInBounds(
+    contact.siteX - 32,
+    contact.siteY - 32,
+    contact.siteX + 32,
+    contact.siteY + 32,
+  ).find((candidate) => candidate.pathId === contact.parcelId);
+  if (!layout) throw new Error(`Could not resolve parcel layout: ${contact.parcelId}`);
   const protectedCells = connectorCells.filter((cell) => cell.protected);
   const coreCells = connectorCells.filter((cell) => cell.core);
   const assetById = new Map([
@@ -489,6 +497,39 @@ function auditParcel(frame) {
     !Number.isFinite(placement.pathTangentY) ||
     Math.abs(Math.hypot(placement.pathTangentX, placement.pathTangentY) - 1) > 1e-6
   )).length;
+  let sharedBoundaryMismatch = 0;
+  for (const side of [-1, 1]) {
+    const sidePlots = layout.plots.filter((plot) => plot.side === side)
+      .sort((a, b) => a.stationIndex - b.stationIndex);
+    for (let index = 1; index < sidePlots.length; index++) {
+      const previous = sidePlots[index - 1];
+      const current = sidePlots[index];
+      sharedBoundaryMismatch = Math.max(
+        sharedBoundaryMismatch,
+        pointDistance(previous.polygon[1], current.polygon[0]),
+        pointDistance(previous.polygon[2], current.polygon[3]),
+      );
+    }
+  }
+  let occupiedSamples = 0;
+  let overlapSamples = 0;
+  let waterIntrusionSamples = 0;
+  for (let y = Math.floor(layout.bounds.minY); y <= Math.ceil(layout.bounds.maxY); y += 0.5) {
+    for (let x = Math.floor(layout.bounds.minX); x <= Math.ceil(layout.bounds.maxX); x += 0.5) {
+      const owners = layout.plots.filter((plot) => pointInPolygon({ x, y }, plot.polygon)).length;
+      if (owners === 0) continue;
+      occupiedSamples++;
+      if (owners > 1) overlapSamples++;
+      if (field.sample(Math.floor(x), Math.floor(y)).isWater) waterIntrusionSamples++;
+    }
+  }
+  const pathIntrusionSamples = coreCells.filter((cell) => (
+    sampleRegionalParcelLayout(cell.x + 0.5, cell.y + 0.5, layout).insideWeight > 0.001
+  )).length;
+  const purposes = Object.fromEntries(['yard', 'garden', 'civic-opening'].map((purpose) => [
+    purpose,
+    layout.plots.filter((plot) => plot.purpose === purpose).length,
+  ]));
   const visited = new Set();
   const queue = coreCells.length > 0 ? [coreCells[0]] : [];
   if (queue.length > 0) visited.add(`${queue[0].x},${queue[0].y}`);
@@ -530,6 +571,23 @@ function auditParcel(frame) {
     connectorCollisionBlocked: collisionBlocked,
     connectorVisuallyBlocked: visuallyBlocked,
     connectorMaterialMissing: materialMissing,
+    layout: {
+      plotCount: layout.plots.length,
+      boundaryCount: layout.boundaries.length,
+      purposes,
+      frontageAccessRate: layout.plots.length === 0 ? 0 : layout.plots.filter((plot) => (
+        pointDistance(plot.frontageOpening[0], plot.frontageOpening[1]) > 0.5
+      )).length / layout.plots.length,
+      yardReserveRate: layout.plots.length === 0 ? 0 :
+        layout.plots.filter((plot) => plot.yard.length >= 4).length / layout.plots.length,
+      uniqueShapeSignatureRate: layout.plots.length === 0 ? 0 : new Set(layout.plots.map((plot) => (
+        `${Math.round(plot.frontageWidth * 4)},${Math.round(plot.depth * 4)},${plot.purpose}`
+      ))).size / layout.plots.length,
+      sharedBoundaryMismatch,
+      overlapSampleRate: overlapSamples / Math.max(1, occupiedSamples),
+      waterIntrusionSampleRate: waterIntrusionSamples / Math.max(1, occupiedSamples),
+      protectedPathIntrusionRate: pathIntrusionSamples / Math.max(1, coreCells.length),
+    },
   };
 }
 
@@ -629,4 +687,19 @@ console.log(JSON.stringify({ output: OUTPUT, ...metrics }, null, 2));
 
 function rangeContains(value, range) {
   return value >= range[0] && (range[1] >= 999 || value <= range[1]);
+}
+
+function pointDistance(a, b) {
+  return Math.hypot(b.x - a.x, b.y - a.y);
+}
+
+function pointInPolygon(point, polygon) {
+  let inside = false;
+  for (let index = 0, previous = polygon.length - 1; index < polygon.length; previous = index++) {
+    const a = polygon[index];
+    const b = polygon[previous];
+    if ((a.y > point.y) !== (b.y > point.y) &&
+        point.x < (b.x - a.x) * (point.y - a.y) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
 }
