@@ -75,13 +75,22 @@ export interface WorldLifeState {
   weatherUntilWorldMinute: number;
   season: WorldSeason;
   rngState: number;
+  /** Persistent surface reservoir: 0 dry, 1 saturated. */
+  surfaceWetness: number;
+  /** Persistent water disturbance: 0 still, 1 storm-driven. */
+  waterTurbulence: number;
+  /** Slowly responding climate-driven plant state. */
+  vegetationVitality: number;
+  /** Slowly responding litter, weathering, and senescence pressure. */
+  decayPressure: number;
 }
 
 export type NPCLifeEventType =
   | 'activity_changed'
   | 'social_encounter'
   | 'need_became_urgent'
-  | 'weather_changed';
+  | 'weather_changed'
+  | 'season_changed';
 
 /** Append-only fact emitted by the life simulation and de-duplicated on replay. */
 export interface NPCLifeEvent {

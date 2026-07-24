@@ -64,6 +64,13 @@
       "when": 1784884949930,
       "tag": "0008_handy_wolfpack",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784887077639,
+      "tag": "0009_peaceful_shaman",
+      "breakpoints": true
     }
   ]
 }

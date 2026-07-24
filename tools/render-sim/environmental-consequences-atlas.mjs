@@ -1,4 +1,4 @@
-/** Four-state real regional-provider atmosphere atlas for gallery inspection. */
+/** Real regional-provider atlas for persisted wetness, phenology, and lamps. */
 import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
@@ -22,10 +22,26 @@ const assets = {
   environmentContacts: path.join(ROOT, 'assets/biomes/environment-contacts-manifest.json'),
 };
 const states = [
-  { label: 'DAWN / MIST', worldMinute: 390, weather: 'mist', weatherIntensity: 0.7 },
-  { label: 'NOON / CLEAR', worldMinute: 720, weather: 'clear', weatherIntensity: 0.12 },
-  { label: 'DUSK / RAIN', worldMinute: 1080, weather: 'rain', weatherIntensity: 0.72 },
-  { label: 'MIDNIGHT / STORM', worldMinute: 0, weather: 'storm', weatherIntensity: 0.92 },
+  {
+    label: 'SUMMER NOON / DRY', worldMinute: 720, weather: 'clear', weatherIntensity: 0.12,
+    season: 'summer', surfaceWetness: 0.02, waterTurbulence: 0.05,
+    vegetationVitality: 0.84, decayPressure: 0.1,
+  },
+  {
+    label: 'AUTUMN NOON / RAIN HAS PASSED', worldMinute: 720, weather: 'clear', weatherIntensity: 0.12,
+    season: 'autumn', surfaceWetness: 0.92, waterTurbulence: 0.66,
+    vegetationVitality: 0.5, decayPressure: 0.82,
+  },
+  {
+    label: 'WINTER DUSK / DAMP', worldMinute: 1080, weather: 'mist', weatherIntensity: 0.32,
+    season: 'winter', surfaceWetness: 0.48, waterTurbulence: 0.2,
+    vegetationVitality: 0.28, decayPressure: 0.58,
+  },
+  {
+    label: 'SPRING MIDNIGHT / AUTHORED LIGHTS', worldMinute: 0, weather: 'clear', weatherIntensity: 0.12,
+    season: 'spring', surfaceWetness: 0.18, waterTurbulence: 0.08,
+    vegetationVitality: 0.92, decayPressure: 0.16,
+  },
 ];
 
 fs.mkdirSync(OUTPUT, { recursive: true });
@@ -64,18 +80,11 @@ for (const [index, state] of states.entries()) {
   currentLife = {
     worldId: 'primary',
     worldSeed: WORLD_SEED.toString(),
-    worldMinute: state.worldMinute,
-    weather: state.weather,
-    weatherIntensity: state.weatherIntensity,
     weatherUntilWorldMinute: state.worldMinute + 100,
-    season: 'summer',
     rngState: 1234567,
-    surfaceWetness: state.weather === 'rain' || state.weather === 'storm' ? 0.82 : 0.14,
-    waterTurbulence: state.weather === 'storm' ? 0.9 : state.weather === 'rain' ? 0.48 : 0.08,
-    vegetationVitality: 0.72,
-    decayPressure: 0.1,
+    ...state,
   };
-  frames.push(await pngFromGrid(renderer().renderToBuffer(world, 31 + index).buffer));
+  frames.push(await pngFromGrid(renderer().renderToBuffer(world, 71 + index).buffer));
 }
 
 const labelHeight = 34;
@@ -88,17 +97,19 @@ for (const [index, state] of states.entries()) {
   const row = Math.floor(index / 2);
   const left = gap + column * (WIDTH + gap);
   const top = gap + row * (HEIGHT + labelHeight + gap);
-  const label = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${labelHeight}"><rect width="100%" height="100%" fill="#171220"/><text x="12" y="23" fill="#e1c8dd" font-family="DejaVu Sans Mono, monospace" font-size="14">${state.label}</text></svg>`);
+  const label = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${labelHeight}"><rect width="100%" height="100%" fill="#171220"/><text x="12" y="23" fill="#e1c8dd" font-family="DejaVu Sans Mono, monospace" font-size="13">${state.label}</text></svg>`);
   composites.push({ input: label, left, top });
   composites.push({ input: frames[index], left, top: top + labelHeight });
 }
-const target = path.join(OUTPUT, 'living-atmosphere-four-state-atlas.png');
+const target = path.join(OUTPUT, 'environmental-consequences-four-state-atlas.png');
 await sharp({
-  create: {
-    width: atlasWidth,
-    height: atlasHeight,
-    channels: 3,
-    background: '#0c0912',
-  },
+  create: { width: atlasWidth, height: atlasHeight, channels: 3, background: '#0c0912' },
 }).composite(composites).png().toFile(target);
-console.log(JSON.stringify({ target, states, coordinate: [0, 0], dimensions: [atlasWidth, atlasHeight] }, null, 2));
+
+console.log(JSON.stringify({
+  target,
+  coordinate: [0, 0],
+  dimensions: [atlasWidth, atlasHeight],
+  declaredLights: world.getLightSourcesInBounds(-16, -16, 16, 16).length,
+  states,
+}, null, 2));

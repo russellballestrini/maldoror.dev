@@ -114,6 +114,52 @@ describe('deterministic NPC life simulation', () => {
     expect([result.state.destinationX, result.state.destinationY]).toEqual([3, 4]);
   });
 
+  it('retains rain as wet surfaces and disturbed water after the weather itself changes', () => {
+    let world: WorldLifeState = {
+      ...createInitialWorldLifeState(WORLD_SEED, 800),
+      weather: 'storm',
+      weatherIntensity: 0.9,
+      weatherUntilWorldMinute: 2000,
+    };
+    for (let minute = 0; minute < 90; minute++) world = advanceWorldLifeMinute(world).state;
+    const saturated = world.surfaceWetness;
+    const disturbed = world.waterTurbulence;
+
+    world = {
+      ...world,
+      weather: 'clear',
+      weatherIntensity: 0.2,
+      weatherUntilWorldMinute: 3000,
+    };
+    world = advanceWorldLifeMinute(world).state;
+
+    expect(saturated).toBeGreaterThan(0.65);
+    expect(disturbed).toBeGreaterThan(0.7);
+    expect(world.surfaceWetness).toBeLessThan(saturated);
+    expect(world.surfaceWetness).toBeGreaterThan(0.6);
+    expect(world.waterTurbulence).toBeGreaterThan(0.65);
+  });
+
+  it('records a season boundary while vegetation and decay respond gradually', () => {
+    const boundary = 30 * 1440;
+    const world: WorldLifeState = {
+      ...createInitialWorldLifeState(WORLD_SEED, boundary - 1),
+      season: 'spring',
+      weatherUntilWorldMinute: boundary + 500,
+    };
+    const result = advanceWorldLifeMinute(world);
+
+    expect(result.state.season).toBe('summer');
+    expect(result.state.vegetationVitality).not.toBe(world.vegetationVitality);
+    expect(result.state.decayPressure).not.toBe(world.decayPressure);
+    expect(result.events).toContainEqual(expect.objectContaining({
+      eventType: 'season_changed',
+      worldMinute: boundary,
+      cause: expect.objectContaining({ previousSeason: 'spring' }),
+      consequence: expect.objectContaining({ season: 'summer' }),
+    }));
+  });
+
   it('records a social encounter once per cooldown and changes the persistent need state', () => {
     const world = createInitialWorldLifeState(WORLD_SEED, 1030);
     const person = resident('neighbour', 11, 10);

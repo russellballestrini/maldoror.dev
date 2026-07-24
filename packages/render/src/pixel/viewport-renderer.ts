@@ -7,9 +7,10 @@ import type {
   Direction,
   BuildingDirection,
   WorldLifeState,
+  WorldLightSource,
 } from '@maldoror/protocol';
 import type { PackedPixelGrid, PixelGrid as ProtocolPixelGrid } from '@maldoror/protocol';
-import { materialPhase } from './palette-cycle.js';
+import { materialPhase, PHASES } from './palette-cycle.js';
 import { resamplePixelGrid } from './pixel-resampler.js';
 import { TILE_SIZE, RESOLUTIONS } from '@maldoror/protocol';
 import {
@@ -47,7 +48,7 @@ export interface ViewportRenderResult {
   buffer: PixelGrid;
   overlays: TextOverlay[];
   brightnessGrid?: number[][];  // Cell-level brightness for lighting
-  /** 0 = truecolor/default, 1 = water palette band. */
+  /** 0 = ordinary scene, 1..8 = water, 9..16 = foliage, 255 = actor. */
   materialGrid?: Uint8Array[];
 }
 
@@ -135,6 +136,9 @@ const CAMERA_TO_BUILDING_DIRECTION: Record<CameraRotation, BuildingDirection> = 
 // keeping feet and collision on the authoritative world tile.
 const ENTITY_RENDER_SCALE = 1.25;
 const PACKED_PIXEL_CACHE = new WeakMap<PackedPixelGrid, ProtocolPixelGrid>();
+const WATER_MATERIAL_BASE = 1;
+const FOLIAGE_MATERIAL_BASE = WATER_MATERIAL_BASE + PHASES;
+const ACTOR_MATERIAL = 255;
 
 /**
  * Rotate a point around the origin by camera angle
@@ -151,6 +155,20 @@ function rotatePoint(x: number, y: number, angle: CameraRotation): { x: number; 
 
 function clampByte(value: number): number {
   return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function nightLightFactor(worldMinute: number): number {
+  const minuteOfDay = ((worldMinute % 1440) + 1440) % 1440;
+  const solar = Math.max(0, Math.sin(((minuteOfDay - 360) / 720) * Math.PI));
+  const transition = Math.max(0, Math.min(1, solar / 0.24));
+  return 1 - transition * transition * (3 - 2 * transition);
+}
+
+function foliageSeasonColor(season: WorldLifeState['season']): RGB {
+  if (season === 'spring') return { r: 91, g: 139, b: 74 };
+  if (season === 'summer') return { r: 73, g: 119, b: 57 };
+  if (season === 'autumn') return { r: 174, g: 105, b: 48 };
+  return { r: 127, g: 133, b: 123 };
 }
 
 /**
@@ -429,7 +447,19 @@ export class ViewportRenderer {
     // 5. The persistent world clock grades the whole scene. Overlays remain
     // crisp UI, while terrain, architecture, and inhabitants share one sky.
     const worldLife = world.getWorldLifeState?.();
-    if (worldLife) this.applyWorldAtmosphere(buffer, worldLife, tick);
+    if (worldLife) {
+      const bounds = this.getVisibleTileBounds(pixelWidth, pixelHeight);
+      const lightReach = 9;
+      const lights = nightLightFactor(worldLife.worldMinute) > 0.01
+        ? world.getLightSourcesInBounds?.(
+            bounds.startTileX - lightReach,
+            bounds.startTileY - lightReach,
+            bounds.endTileX + lightReach,
+            bounds.endTileY + lightReach,
+          ) ?? []
+        : [];
+      this.applyWorldAtmosphere(buffer, materialGrid, worldLife, tick, lights);
+    }
 
     // 6. Generate brightness grid if world supports it
     let brightnessGrid: number[][] | undefined;
@@ -471,8 +501,10 @@ export class ViewportRenderer {
 
   private applyWorldAtmosphere(
     buffer: PixelGrid,
+    materialGrid: Uint8Array[],
     world: WorldLifeState,
     tick: number,
+    lights: readonly WorldLightSource[],
   ): void {
     const minuteOfDay = ((world.worldMinute % 1440) + 1440) % 1440;
     const solar = Math.max(0, Math.sin(((minuteOfDay - 360) / 720) * Math.PI));
@@ -507,26 +539,77 @@ export class ViewportRenderer {
     }
 
     const gradeCache = new Map<number, RGB>();
+    const seasonalFoliage = foliageSeasonColor(world.season);
     for (let y = 0; y < buffer.length; y++) {
       const row = buffer[y]!;
       for (let x = 0; x < row.length; x++) {
         const pixel = row[x];
         if (!pixel) continue;
+        const material = materialGrid[y]?.[x] ?? 0;
+        const isWater = material >= WATER_MATERIAL_BASE && material < FOLIAGE_MATERIAL_BASE;
+        const isFoliage = material >= FOLIAGE_MATERIAL_BASE && material < FOLIAGE_MATERIAL_BASE + PHASES;
+        const isActor = material === ACTOR_MATERIAL;
+        const category = isWater || isFoliage ? material : isActor ? 33 : 0;
         // Tile and sprite caches may share RGB object identities across many
         // buffer cells. Never mutate a cached authored sample in place.
-        const key = (pixel.r << 16) | (pixel.g << 8) | pixel.b;
+        const key = category * 0x1000000 + (pixel.r << 16) + (pixel.g << 8) + pixel.b;
         let graded = gradeCache.get(key);
         if (!graded) {
+          let sourceR = pixel.r;
+          let sourceG = pixel.g;
+          let sourceB = pixel.b;
+          if (isFoliage) {
+            const seasonalMix = 0.08 + world.decayPressure * 0.16;
+            sourceR = sourceR * (1 - seasonalMix) + seasonalFoliage.r * seasonalMix;
+            sourceG = sourceG * (1 - seasonalMix) + seasonalFoliage.g * seasonalMix;
+            sourceB = sourceB * (1 - seasonalMix) + seasonalFoliage.b * seasonalMix;
+            const vitalityScale = 0.78 + world.vegetationVitality * 0.3;
+            sourceR *= vitalityScale;
+            sourceG *= vitalityScale;
+            sourceB *= vitalityScale;
+          }
+          if (isWater) {
+            const phase = material - WATER_MATERIAL_BASE;
+            const wave = phase / Math.max(1, PHASES - 1) - 0.5;
+            const disturbance = 1 + wave * world.waterTurbulence * 0.16;
+            sourceR *= disturbance * 0.98;
+            sourceG *= disturbance;
+            sourceB *= disturbance * 1.04;
+          }
+          if (!isWater && !isActor) {
+            const wetDarkening = 1 - world.surfaceWetness * 0.19;
+            sourceR *= wetDarkening;
+            sourceG *= wetDarkening;
+            sourceB *= wetDarkening;
+          }
           graded = {
-            r: clampByte(pixel.r * redScale * (1 - haze) + hazeR * haze),
-            g: clampByte(pixel.g * greenScale * (1 - haze) + hazeG * haze),
-            b: clampByte(pixel.b * blueScale * (1 - haze) + hazeB * haze),
+            r: clampByte(sourceR * redScale * (1 - haze) + hazeR * haze),
+            g: clampByte(sourceG * greenScale * (1 - haze) + hazeG * haze),
+            b: clampByte(sourceB * blueScale * (1 - haze) + hazeB * haze),
           };
           gradeCache.set(key, graded);
         }
         row[x] = graded;
+
+        if (!isWater && !isActor && world.surfaceWetness > 0.18) {
+          const worldPixel = this.screenPixelToWorldPixel(x, y, buffer);
+          const hash = (
+            Math.imul(Math.floor(worldPixel.x), 73856093)
+            ^ Math.imul(Math.floor(worldPixel.y), 19349663)
+          ) >>> 0;
+          if (hash % 1000 < Math.round(world.surfaceWetness * 17)) {
+            const strength = 0.06 + world.surfaceWetness * 0.13;
+            row[x] = {
+              r: clampByte(graded.r + (202 - graded.r) * strength),
+              g: clampByte(graded.g + (218 - graded.g) * strength),
+              b: clampByte(graded.b + (226 - graded.b) * strength),
+            };
+          }
+        }
       }
     }
+
+    this.applyLocalLights(buffer, lights, nightLightFactor(world.worldMinute), world.surfaceWetness);
 
     if (world.weather !== 'rain' && world.weather !== 'storm') return;
     const density = world.weather === 'storm' ? 23 : 11;
@@ -550,6 +633,68 @@ export class ViewportRenderer {
             r: clampByte(pixel.r * (1 - strength) + 160 * strength),
             g: clampByte(pixel.g * (1 - strength) + 190 * strength),
             b: clampByte(pixel.b * (1 - strength) + 220 * strength),
+          };
+        }
+      }
+    }
+  }
+
+  private screenPixelToWorldPixel(
+    screenX: number,
+    screenY: number,
+    buffer: PixelGrid,
+  ): { x: number; y: number } {
+    const offsetX = screenX + 0.5 - (buffer[0]?.length ?? 0) / 2;
+    const offsetY = screenY + 0.5 - buffer.length / 2;
+    const inverse = ((360 - this.cameraRotation) % 360) as CameraRotation;
+    const worldOffset = rotatePoint(offsetX, offsetY, inverse);
+    return {
+      x: this.cameraCenterX + worldOffset.x,
+      y: this.cameraCenterY + worldOffset.y,
+    };
+  }
+
+  private applyLocalLights(
+    buffer: PixelGrid,
+    sources: readonly WorldLightSource[],
+    nightFactor: number,
+    surfaceWetness: number,
+  ): void {
+    if (nightFactor <= 0.01 || sources.length === 0) return;
+    const screenCenterX = (buffer[0]?.length ?? 0) / 2;
+    const screenCenterY = buffer.length / 2;
+    const nearest = [...sources]
+      .sort((a, b) => {
+        const ad = Math.hypot(a.x * this.tileRenderSize - this.cameraCenterX, a.y * this.tileRenderSize - this.cameraCenterY);
+        const bd = Math.hypot(b.x * this.tileRenderSize - this.cameraCenterX, b.y * this.tileRenderSize - this.cameraCenterY);
+        return ad - bd || a.id.localeCompare(b.id);
+      })
+      .slice(0, 48);
+
+    for (const source of nearest) {
+      const worldX = (source.x + 0.5) * this.tileRenderSize;
+      const worldY = (source.y + 0.5) * this.tileRenderSize;
+      const offset = this.worldToScreen(worldX, worldY, this.cameraCenterX, this.cameraCenterY);
+      const centerX = screenCenterX + offset.x;
+      const centerY = screenCenterY + offset.y;
+      const radius = Math.max(5, Math.min(140, source.radius * this.tileRenderSize));
+      const minimumX = Math.max(0, Math.floor(centerX - radius));
+      const maximumX = Math.min((buffer[0]?.length ?? 0) - 1, Math.ceil(centerX + radius));
+      const minimumY = Math.max(0, Math.floor(centerY - radius));
+      const maximumY = Math.min(buffer.length - 1, Math.ceil(centerY + radius));
+      const wetBounce = 1 + surfaceWetness * 0.12;
+      for (let y = minimumY; y <= maximumY; y++) {
+        for (let x = minimumX; x <= maximumX; x++) {
+          const distance = Math.hypot(x - centerX, y - centerY);
+          if (distance >= radius) continue;
+          const normalized = 1 - distance / radius;
+          const strength = Math.min(0.52, normalized * normalized * source.intensity * nightFactor * wetBounce);
+          const pixel = buffer[y]?.[x];
+          if (!pixel || strength <= 0.002) continue;
+          buffer[y]![x] = {
+            r: clampByte(pixel.r + (255 - pixel.r) * (source.color.r / 255) * strength),
+            g: clampByte(pixel.g + (255 - pixel.g) * (source.color.g / 255) * strength),
+            b: clampByte(pixel.b + (255 - pixel.b) * (source.color.b / 255) * strength),
           };
         }
       }
@@ -671,14 +816,24 @@ export class ViewportRenderer {
                 const materialOwnership = usePackedMaterialMask
                   ? tile.packedMaterialMask?.[py * this.tileRenderSize + px] ?? 0
                   : scaledMaterialMask?.[py]?.[px] ?? 0;
-                const isWater = usePackedMaterialMask || scaledMaterialMask
+                const ownsMaterial = usePackedMaterialMask || scaledMaterialMask
                   ? (materialOwnership & 1) === 1
-                  : tile.material === 'water';
-                materialGrid[bufferY]![bufferX] = isWater
-                  ? materialPhase(
+                  : Boolean(tile.material);
+                // MaterialMask bit 0 is the established water-ownership
+                // contract. Older packed providers legitimately omit the
+                // tile-wide material label, so a present mask must continue
+                // to imply water unless the tile explicitly opts into the
+                // newer foliage semantic band.
+                const materialBase = tile.material === 'foliage'
+                  ? FOLIAGE_MATERIAL_BASE
+                  : tile.material === 'water' || usePackedMaterialMask || scaledMaterialMask
+                    ? WATER_MATERIAL_BASE
+                    : 0;
+                materialGrid[bufferY]![bufferX] = ownsMaterial && materialBase > 0
+                  ? materialBase + materialPhase(
                       Math.floor((worldTileX * this.tileRenderSize + px) / 2),
                       Math.floor((worldTileY * this.tileRenderSize + py) / 4),
-                    ) + 1
+                    )
                   : 0;
               }
             }
@@ -1063,7 +1218,7 @@ export class ViewportRenderer {
           if (targetX < 0 || targetX >= (buffer[targetY]?.length ?? 0)) continue;
 
           buffer[targetY]![targetX] = pixel;
-          materialGrid[targetY]![targetX] = 0;
+          materialGrid[targetY]![targetX] = ACTOR_MATERIAL;
         }
       }
 
@@ -1152,7 +1307,7 @@ export class ViewportRenderer {
         if (targetY >= 0 && targetY < buffer.length &&
             targetX >= 0 && targetX < (buffer[targetY]?.length ?? 0)) {
           buffer[targetY]![targetX] = placeholderColor;
-          materialGrid[targetY]![targetX] = 0;
+          materialGrid[targetY]![targetX] = ACTOR_MATERIAL;
         }
       }
     }
@@ -1183,7 +1338,7 @@ export class ViewportRenderer {
         if (targetY >= 0 && targetY < buffer.length &&
             targetX >= 0 && targetX < (buffer[targetY]?.length ?? 0)) {
           buffer[targetY]![targetX] = placeholderColor;
-          materialGrid[targetY]![targetX] = 0;
+          materialGrid[targetY]![targetX] = ACTOR_MATERIAL;
         }
       }
     }

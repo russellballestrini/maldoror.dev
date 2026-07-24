@@ -1,4 +1,4 @@
-import type { Tile, Sprite, PlayerVisualState, PixelGrid, RGB, WorldDataProvider, Pixel, DirectionFrames, BuildingSprite, BuildingTile, BuildingDirection, NPCVisualState, WorldLifeState } from '@maldoror/protocol';
+import type { Tile, Sprite, PlayerVisualState, PixelGrid, RGB, WorldDataProvider, Pixel, DirectionFrames, BuildingSprite, BuildingTile, BuildingDirection, NPCVisualState, WorldLifeState, WorldLightSource } from '@maldoror/protocol';
 import { CHUNK_SIZE_TILES, BASE_SIZE, RESOLUTIONS, isPositionInBuilding, getBuildingTileIndex } from '@maldoror/protocol';
 import { BASE_TILES, getTileById, hasAITile } from './base-tiles.js';
 import { getRoadTileVariant } from './road-tiles.js';
@@ -226,6 +226,15 @@ export class TileProvider implements WorldDataProvider {
 
   getWorldLifeState(): WorldLifeState | null {
     return this.worldLifeState ? { ...this.worldLifeState } : null;
+  }
+
+  getLightSourcesInBounds(
+    _minX: number,
+    _minY: number,
+    _maxX: number,
+    _maxY: number,
+  ): WorldLightSource[] {
+    return [];
   }
 
   private markVisualChange(): void {

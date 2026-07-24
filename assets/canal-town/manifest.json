@@ -53,7 +53,7 @@
     { "id": "flowering-shrub", "file": "sprites/flowering-shrub.png", "roles": ["foliage"], "scale": 0.56, "collision": [[0,0]] },
     { "id": "stone-planter", "file": "sprites/stone-planter.png", "roles": ["foliage", "street-large"], "scale": 0.58, "collision": [[0,0]] },
     { "id": "flower-pots", "file": "sprites/flower-pots.png", "roles": ["street-small"], "scale": 0.42, "collision": [] },
-    { "id": "canal-lamp", "file": "sprites/canal-lamp.png", "roles": ["street-small"], "scale": 0.60, "collision": [[0,0]] },
+    { "id": "canal-lamp", "file": "sprites/canal-lamp.png", "roles": ["street-small"], "scale": 0.60, "collision": [[0,0]], "emitsLight": true },
     { "id": "market-stall", "file": "sprites/market-stall.png", "roles": ["street-large"], "scale": 0.72, "collision": [[0,0]] },
     { "id": "rowboat", "file": "sprites/rowboat.png", "roles": ["water"], "scale": 0.56, "collision": [] },
     { "id": "lily-cluster", "file": "sprites/lily-cluster.png", "roles": ["water-detail"], "scale": 0.52, "collision": [] },

@@ -11,6 +11,7 @@
   "assets": [
     {
       "id": "canal-town-waterfront-cluster-v2",
+      "emitsLight": true,
       "file": "landmarks/canal-town-waterfront-cluster-v2.png",
       "family": "canal-town",
       "landmarkKinds": ["arrival", "settlement"],
@@ -29,6 +30,7 @@
     },
     {
       "id": "coast-marsh-beacon-cluster-v2",
+      "emitsLight": true,
       "file": "landmarks/coast-marsh-beacon-cluster-v2.png",
       "family": "coast",
       "landmarkKinds": ["waystation"],
@@ -38,6 +40,7 @@
     },
     {
       "id": "rural-orchard-farmstead-cluster-v2",
+      "emitsLight": true,
       "file": "landmarks/rural-orchard-farmstead-cluster-v2.png",
       "family": "rural",
       "landmarkKinds": ["settlement", "waystation"],

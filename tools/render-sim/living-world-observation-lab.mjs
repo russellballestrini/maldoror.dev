@@ -123,6 +123,12 @@ function step(simulation) {
     simulation.samples.push({
       worldMinute: simulation.world.worldMinute,
       weather: simulation.world.weather,
+      environment: {
+        surfaceWetness: simulation.world.surfaceWetness,
+        waterTurbulence: simulation.world.waterTurbulence,
+        vegetationVitality: simulation.world.vegetationVitality,
+        decayPressure: simulation.world.decayPressure,
+      },
       residents: simulation.residents.map((resident) => ({
         id: resident.id,
         role: resident.life.role,
@@ -199,6 +205,10 @@ const shelterDuringRisk = uninterrupted.samples.flatMap((sample) => (
     ? sample.residents.filter((resident) => resident.activity === 'shelter')
     : []
 )).length;
+const environmentalRange = (key) => {
+  const values = uninterrupted.samples.map((sample) => sample.environment[key]);
+  return { minimum: Math.min(...values), maximum: Math.max(...values), final: values.at(-1) };
+};
 
 const report = {
   configuration: {
@@ -223,6 +233,12 @@ const report = {
     uniqueEncounterPairs: new Set(encounters.map((event) => `${event.npcId}:${event.targetId}`)).size,
     humanEncounters: humanEncounters.length,
     shelterSamplesDuringEnvironmentalRisk: shelterDuringRisk,
+    environmentalConsequences: {
+      surfaceWetness: environmentalRange('surfaceWetness'),
+      waterTurbulence: environmentalRange('waterTurbulence'),
+      vegetationVitality: environmentalRange('vegetationVitality'),
+      decayPressure: environmentalRange('decayPressure'),
+    },
   },
   residents: uninterrupted.residents.map((resident) => ({
     id: resident.id,
@@ -243,6 +259,10 @@ if (!report.restartEquivalence.exact) {
 }
 if (roles.length !== 6 || activities.length < 6 || weatherStates.length < 3) {
   throw new Error('Living-world observation did not exercise the expected state space');
+}
+if (report.coverage.environmentalConsequences.surfaceWetness.maximum < 0.5 ||
+    report.coverage.environmentalConsequences.waterTurbulence.maximum < 0.35) {
+  throw new Error('Weather did not leave a measurable persistent environmental consequence');
 }
 
 fs.writeFileSync(path.join(OUTPUT, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
@@ -321,6 +341,7 @@ const findings = `# Deterministic living-world observation v1
 - Weather observed: ${weatherStates.join(', ')}.
 - Append-only facts: ${uninterrupted.events.length}; social encounters: ${encounters.length}; human encounters: ${humanEncounters.length}.
 - Environmental risk produced ${shelterDuringRisk} sampled shelter responses.
+- Surface wetness ranged ${report.coverage.environmentalConsequences.surfaceWetness.minimum.toFixed(3)}–${report.coverage.environmentalConsequences.surfaceWetness.maximum.toFixed(3)} and water disturbance ${report.coverage.environmentalConsequences.waterTurbulence.minimum.toFixed(3)}–${report.coverage.environmentalConsequences.waterTurbulence.maximum.toFixed(3)}; neither snaps back when precipitation stops.
 - External model/API calls: **0**.
 - The companion interleaved 160x46 bounded profile is in \`atmosphere-performance.json\`; it rotates scenario order every frame so JIT, GC, and scheduler noise are not assigned systematically to one weather state.
 
@@ -331,6 +352,9 @@ const findings = `# Deterministic living-world observation v1
 - **Continuous utility, not brittle name/keyword scripts.** The Game AI Pro utility architecture scores normalized considerations and selects the best action. Maldoror scores schedule, need pressure, exposure, weather, role, and activity inertia: https://www.gameaipro.com/GameAIPro3/GameAIPro3_Chapter13_Choosing_Effective_Utility-Based_Considerations.pdf
 - **Observation, memory, relationships, and planning are separate load-bearing systems.** The Generative Agents ablation found observation, planning, and reflection each mattered; the Humanoid Agents extension adds basic needs and relationship closeness. Maldoror keeps cheap embodied utility always on, emits append-only observations, persists directed familiarity, and reserves optional language cognition for a separate non-metered-safe layer: https://arxiv.org/abs/2304.03442 and https://arxiv.org/abs/2310.05418
 - **One atmosphere affects the entire scene.** Bruneton and Neyret identify sky colour as an hour cue and aerial perspective as a distance cue. The terminal renderer therefore grades terrain, buildings, and inhabitants together rather than tinting isolated assets: https://onlinelibrary.wiley.com/doi/pdf/10.1111/j.1467-8659.2008.01245.x
+- **Rain is a coupled appearance system, not falling lines.** Tatarchuk and Isidoro combine rainfall with wet materials, ripples, splashes, glow, and reflections. Maldoror keeps the affordable terminal subset: persistent wetness, surface darkening/specular response, water disturbance, rain streaks, and wet light bounce: https://diglib.eg.org/items/b4d11d22-3e3d-4ac5-b33c-6b091143add1
+- **Wet materials darken and become more specular for different physical reasons.** Jensen, Legakis, and Dorsey separate absorbed-water darkening from the smoother reflective surface layer. The ANSI pass preserves that distinction as broad darkening plus sparse world-anchored glints instead of a uniform blue overlay: https://diglib.eg.org/items/67f592b4-f58f-4893-8f63-2cbd81534558
+- **Phenology responds to integrated climate controls.** Stöckli et al. model seasonal plant state through time-integrated temperature, light, and moisture controls. Maldoror likewise evolves vitality and decay slowly from season and retained moisture rather than swapping four static palettes at calendar boundaries: https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2010JG001545
 
 ## Scope boundary
 

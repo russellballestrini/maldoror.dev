@@ -617,20 +617,32 @@ Completed foundations:
   states, 574 facts, 90 social encounters, ten human encounters, persistent
   directed relationships, and 44 sampled shelter responses; a restart after
   613 minutes produces the exact same SHA-256 state/event digest as the
-  uninterrupted run (`95027fa...64db`). The same persistent clock now grades
+  uninterrupted run (`c3610219...e068`). The same persistent clock now grades
   terrain, structures, and actors together through day/night, mist, rain,
   storm, cold, and heat, with deterministic diagonal precipitation and
   walking-scale role/activity labels in both worker transports. The atmosphere
-  pass never mutates shared cached samples; an interleaved 160x46 profile puts
-  current clear/storm p95 overhead at 0.344/0.469 ms. Research, sources, raw
-  facts, timeline, performance, and the real-provider four-state atlas are in
-  `living-world-research/deterministic-life-v1/`. Full verification is 33 files
-  / 172 tests, all 18 typecheck tasks, all 12 build tasks, migration replay,
-  and clean diff validation. Public gallery iteration 028 exposes the timeline
-  and atmosphere atlas. The last remaining production-worker fallback that
-  could relocate a fresh login away from `(0,0)` was removed; the canonical
-  arrival island/route tests remain the walkability proof. This is an
-  accelerated local proof, not Gate C, and production remains unchanged;
+  pass never mutates shared cached samples. A second additive migration now
+  persists surface wetness, independent water turbulence, vegetation vitality,
+  and decay pressure. Rain fills a retained reservoir; drying, water settling,
+  phenology, and decay evolve at separate rates instead of snapping with the
+  weather label. The renderer uses explicit material ownership to darken and
+  sparsely glint wet rough surfaces, disturb only water, and alter only authored
+  foliage. Declarative landmark/route/ambient light metadata produces bounded
+  night pools and wet bounce without filename or colour inference. The full-day
+  observation records wetness 0.000-0.791, water disturbance 0.080-0.664, and
+  gradual vitality/decay movement while retaining the exact restart digest.
+  An interleaved 160x46 profile puts clear/storm/wet-night-with-36-lights p95
+  atmosphere overhead at 0.572/1.919/9.074 ms (0.931/2.278/9.433 ms total).
+  Research, sources, raw facts, timeline, performance, and both real-provider
+  four-state atlases are in `living-world-research/deterministic-life-v1/`.
+  Full verification is 33 files / 180 tests, all 18 typecheck tasks, all 12
+  build tasks, complete 0000-0009 scratch migration replay, and clean diff
+  validation. Public gallery iterations 028-029 expose the timeline, atmosphere,
+  and persistent environmental-consequence atlases. The last remaining
+  production-worker fallback that could relocate a fresh login away from
+  `(0,0)` was removed; the canonical arrival island/route tests remain the
+  walkability proof. This is an accelerated local proof, not Gate C, and
+  production remains unchanged;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–028 expose selected and rejected research candidates without
@@ -649,18 +661,19 @@ Still open and therefore goal-blocking:
   greater travel-scale entropy across route topology, hydrology, biome fields,
   ambient clusters, landmarks, and parcel programs, authoritative traversal,
   stronger landmark framing, multiple cave/highland programs and production
-  cave transitions, tidal/open-water/boat/island interactions, and
-  environmental consequences remain before the family layer is
+  cave transitions, tidal/open-water/boat/island interactions, and richer
+  terrain-scale physical consequences remain before the family layer is
   production-complete;
 - the complete Phase-0 diagnostic comparison and operator direction approval
   have not passed;
-- the deterministic schedule/need/role/relationship/memory/consequence core and
-  clock-driven atmosphere now have restart-exact accelerated evidence, but the
-  additive migration is not deployed and Gate C has not passed: uninterrupted
-  physical 60-minute observation with two real human clients, reconnect and
-  newcomer checks, natural conversations and plans, richer event coordination,
-  seasonal appearance, water state, growth/decay, lanterns, and persistent
-  environmental consequences remain open;
+- the deterministic schedule/need/role/relationship/memory core plus the first
+  persistent wetness, water-state, phenology/decay, and authored-light
+  consequences now have restart-exact accelerated evidence. The additive
+  migrations are not deployed and Gate C has not passed: uninterrupted physical
+  60-minute observation with two real human clients, reconnect and newcomer
+  checks, natural conversations and plans, richer event coordination,
+  player-caused persisted world change, coherent fronts, long-horizon geometric
+  growth/decay, and production-provider integration remain open;
 - the 24-coordinate multi-zoom/time/weather atlas, deterministic traversal,
   load ladder, 30-minute terminal run, production deployment, and physical
   Ghostty acceptance all remain open.

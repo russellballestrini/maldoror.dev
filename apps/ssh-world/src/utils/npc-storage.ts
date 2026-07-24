@@ -331,6 +331,10 @@ export async function loadWorldLifeState(worldId = 'primary'): Promise<WorldLife
     weatherUntilWorldMinute: record.weatherUntilWorldMinute,
     season: record.season,
     rngState: record.rngState,
+    surfaceWetness: record.surfaceWetness,
+    waterTurbulence: record.waterTurbulence,
+    vegetationVitality: record.vegetationVitality,
+    decayPressure: record.decayPressure,
   };
 }
 
@@ -449,6 +453,10 @@ export async function persistNPCRuntimeStates(
         weatherUntilWorldMinute: worldState.weatherUntilWorldMinute,
         season: worldState.season,
         rngState: worldState.rngState,
+        surfaceWetness: worldState.surfaceWetness,
+        waterTurbulence: worldState.waterTurbulence,
+        vegetationVitality: worldState.vegetationVitality,
+        decayPressure: worldState.decayPressure,
         updatedAt: new Date(),
       }).onConflictDoUpdate({
         target: schema.worldLifeState.worldId,
@@ -460,6 +468,10 @@ export async function persistNPCRuntimeStates(
           weatherUntilWorldMinute: worldState.weatherUntilWorldMinute,
           season: worldState.season,
           rngState: worldState.rngState,
+          surfaceWetness: worldState.surfaceWetness,
+          waterTurbulence: worldState.waterTurbulence,
+          vegetationVitality: worldState.vegetationVitality,
+          decayPressure: worldState.decayPressure,
           updatedAt: new Date(),
         },
       });

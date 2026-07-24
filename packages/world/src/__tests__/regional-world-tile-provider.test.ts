@@ -146,6 +146,7 @@ function makeWorld(
     landmarkKinds: landmarkKinds[family],
     sprite: sprite(COLOURS[family]),
     collision: [[-1, 0], [1, 0]],
+    emitsLight: family === 'canal-town',
   }));
   const ambient: RegionalAmbientAsset[] = BIOME_FAMILIES.flatMap((family) => [0, 1].map((variant) => ({
     id: `ambient:${family}:${variant}`,
@@ -241,6 +242,19 @@ function overlayColoursNear(world: RegionalWorldTileProvider, centreX: number): 
 }
 
 describe('RegionalWorldTileProvider', () => {
+  it('projects declarative emitting placements into deterministic bounded lights', () => {
+    const world = makeWorld();
+    const first = world.getLightSourcesInBounds(-10, -10, 10, 10);
+    const replay = world.getLightSourcesInBounds(-10, -10, 10, 10);
+
+    expect(first).toEqual(replay);
+    expect(first).toContainEqual(expect.objectContaining({
+      id: expect.stringContaining('landmark:canal-town'),
+      radius: 5.5,
+    }));
+    expect(world.getLightSourcesInBounds(5000, 5000, 5001, 5001)).toHaveLength(0);
+  });
+
   it('places manifest-compatible family landmarks while preserving route thresholds', () => {
     const world = makeWorld();
     for (const [siteX, family] of SITES) {

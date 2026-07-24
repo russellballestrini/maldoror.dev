@@ -23,6 +23,7 @@
   "assets": [
     {
       "id": "canal-town-route-contact-north-south-v1",
+      "emitsLight": true,
       "file": "route-contacts/canal-town-route-contact-north-south-v1.png",
       "family": "canal-town",
       "accessAxis": "north-south",
@@ -92,6 +93,7 @@
     },
     {
       "id": "canal-town-route-contact-east-west-v1",
+      "emitsLight": true,
       "file": "route-contacts/canal-town-route-contact-east-west-v1.png",
       "family": "canal-town",
       "accessAxis": "east-west",

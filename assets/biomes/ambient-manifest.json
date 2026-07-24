@@ -12,7 +12,7 @@
     "derivation": "pnpm assets:derive-ambient"
   },
   "assets": [
-    { "id": "canal-town-facade-planter-v2", "file": "ambient/canal-town-facade-planter-v2.png", "family": "canal-town", "routeDistance": [2, 14], "scale": 0.95, "spriteTiles": [5, 4], "collision": [[-1, 0], [0, 0]] },
+    { "id": "canal-town-facade-planter-v2", "file": "ambient/canal-town-facade-planter-v2.png", "family": "canal-town", "routeDistance": [2, 14], "scale": 0.95, "spriteTiles": [5, 4], "collision": [[-1, 0], [0, 0]], "emitsLight": true },
     { "id": "forest-twin-canopy-v2", "file": "ambient/forest-twin-canopy-v2.png", "family": "forest", "routeDistance": [2, 999], "scale": 0.95, "spriteTiles": [5, 4], "collision": [[-1, 0], [0, 0], [1, 0]] },
     { "id": "coast-wind-pine-reeds-v2", "file": "ambient/coast-wind-pine-reeds-v2.png", "family": "coast", "routeDistance": [2, 999], "scale": 0.95, "spriteTiles": [5, 4], "collision": [[-1, 0], [0, 0], [1, 0]] },
     { "id": "rural-orchard-hedge-gate-v2", "file": "ambient/rural-orchard-hedge-gate-v2.png", "family": "rural", "routeDistance": [2, 18], "scale": 0.95, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [1, 0], [2, 0]] },

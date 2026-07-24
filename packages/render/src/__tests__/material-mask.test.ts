@@ -121,4 +121,42 @@ describe('ViewportRenderer material masks', () => {
     expect(materialGrid.flatMap((row) => [...row]).filter((value) => value > 0)).toHaveLength(1);
     expect(materialGrid[0]![0]).toBeGreaterThan(0);
   });
+
+  it('encodes explicitly authored packed foliage outside the water phase band', () => {
+    const tile: Tile = {
+      id: 'packed-foliage-transition',
+      name: 'packed foliage transition',
+      pixels: [],
+      packedPixels: {
+        width: 2,
+        height: 2,
+        data: new Uint8Array([
+          38, 84, 46, 255, 100, 92, 64, 255,
+          100, 92, 64, 255, 100, 92, 64, 255,
+        ]),
+      },
+      material: 'foliage',
+      packedMaterialMask: new Uint8Array([1, 0, 0, 0]),
+      walkable: true,
+    };
+    const world: WorldDataProvider = {
+      getTile: () => tile,
+      getPlayers: () => [],
+      getPlayerSprite: () => null,
+      getLocalPlayerId: () => 'local',
+    };
+    const renderer = new ViewportRenderer({
+      widthTiles: 1,
+      heightTiles: 1,
+      pixelWidth: 2,
+      pixelHeight: 2,
+      tileRenderSize: 2,
+      dataResolution: 2,
+    });
+    renderer.setCamera(0, 0);
+
+    const materialGrid = renderer.renderToBuffer(world, 0).materialGrid!;
+    expect(materialGrid[0]![0]).toBeGreaterThan(8);
+    expect(materialGrid[0]![1]).toBe(0);
+  });
 });

@@ -153,6 +153,17 @@ export interface BuildingTileData {
   packedPixels?: PackedPixelGrid;
 }
 
+/** Declarative world-space light. Providers expose authored semantics; the
+ * renderer never guesses lamps from filenames or pixel colours. */
+export interface WorldLightSource {
+  id: string;
+  x: number;
+  y: number;
+  radius: number;
+  intensity: number;
+  color: RGB;
+}
+
 /**
  * Building direction type for camera rotation support
  * north = 0° (camera at default), east = 90° CW, south = 180°, west = 270° CW
@@ -180,6 +191,12 @@ export interface WorldDataProvider {
   getNPCs?(): NPCVisualState[];
   getNPCSprite?(npcId: string): Sprite | null;
   getWorldLifeState?(): WorldLifeState | null;
+  getLightSourcesInBounds?(
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number,
+  ): WorldLightSource[];
   // Road methods (optional for backwards compatibility)
   hasRoadAt?(x: number, y: number): boolean;
   getRoadTileAt?(x: number, y: number): Tile | null;

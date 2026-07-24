@@ -82,6 +82,10 @@ export function createInitialWorldLifeState(
     weatherUntilWorldMinute: normalizedMinute + 90,
     season: seasonForMinute(normalizedMinute),
     rngState: stableLifeHash(worldSeed, worldId, 'weather') || 0x6d2b79f5,
+    surfaceWetness: 0.12,
+    waterTurbulence: 0.08,
+    vegetationVitality: 0.72,
+    decayPressure: 0.1,
   };
 }
 
@@ -160,15 +164,18 @@ export function createDailySchedule(input: {
 
 /** Advance exactly one canonical minute. Replaying from a checkpoint is exact. */
 export function advanceWorldLifeMinute(world: WorldLifeState): WorldLifeMinuteResult {
+  const previousSeason = world.season;
   const next: WorldLifeState = {
     ...world,
     worldMinute: world.worldMinute + 1,
     season: seasonForMinute(world.worldMinute + 1),
   };
   const events: NPCLifeEvent[] = [];
+  let weatherChanged = false;
+  let previousWeather = world.weather;
 
   if (next.worldMinute >= world.weatherUntilWorldMinute) {
-    const previousWeather = world.weather;
+    previousWeather = world.weather;
     const first = nextXorshift(world.rngState);
     const second = nextXorshift(first);
     const third = nextXorshift(second);
@@ -176,6 +183,12 @@ export function advanceWorldLifeMinute(world: WorldLifeState): WorldLifeMinuteRe
     next.weather = chooseWeather(first / 0x100000000, next.season);
     next.weatherIntensity = round6(0.2 + (second / 0x100000000) * 0.78);
     next.weatherUntilWorldMinute = next.worldMinute + 75 + (third % 166);
+    weatherChanged = true;
+  }
+
+  advanceEnvironmentMinute(next);
+
+  if (weatherChanged) {
     events.push({
       dedupeKey: `weather:${next.worldId}:${next.worldMinute}`,
       eventType: 'weather_changed',
@@ -189,11 +202,90 @@ export function advanceWorldLifeMinute(world: WorldLifeState): WorldLifeMinuteRe
         weather: next.weather,
         intensity: next.weatherIntensity,
         untilWorldMinute: next.weatherUntilWorldMinute,
+        surfaceWetness: next.surfaceWetness,
+        waterTurbulence: next.waterTurbulence,
+      },
+    });
+  }
+
+  if (next.season !== previousSeason) {
+    events.push({
+      dedupeKey: `season:${next.worldId}:${next.worldMinute}:${next.season}`,
+      eventType: 'season_changed',
+      worldMinute: next.worldMinute,
+      npcId: null,
+      targetId: null,
+      x: null,
+      y: null,
+      cause: {
+        previousSeason,
+        surfaceWetness: world.surfaceWetness,
+        vegetationVitality: world.vegetationVitality,
+        decayPressure: world.decayPressure,
+      },
+      consequence: {
+        season: next.season,
+        vegetationVitality: next.vegetationVitality,
+        decayPressure: next.decayPressure,
       },
     });
   }
 
   return { state: next, events };
+}
+
+function advanceEnvironmentMinute(world: WorldLifeState): void {
+  const wetness = world.surfaceWetness ?? 0.12;
+  const turbulence = world.waterTurbulence ?? 0.08;
+  const vitality = world.vegetationVitality ?? 0.72;
+  const decay = world.decayPressure ?? 0.1;
+  const rainInput = world.weather === 'storm'
+    ? 0.008 * world.weatherIntensity
+    : world.weather === 'rain'
+      ? 0.0045 * world.weatherIntensity
+      : world.weather === 'mist'
+        ? 0.00035 * world.weatherIntensity
+        : 0;
+  const drying = world.weather === 'heat_haze'
+    ? 0.0038 * world.weatherIntensity
+    : world.weather === 'clear'
+      ? 0.0012
+      : world.weather === 'cold_snap'
+        ? 0.00025
+        : 0.00045;
+  world.surfaceWetness = round6(clamp01(wetness + rainInput - drying));
+
+  const turbulenceTarget = world.weather === 'storm'
+    ? 0.92 * world.weatherIntensity
+    : world.weather === 'rain'
+      ? 0.48 * world.weatherIntensity
+      : world.weather === 'heat_haze'
+        ? 0.16
+        : 0.08;
+  world.waterTurbulence = round6(clamp01(
+    turbulence + (turbulenceTarget - turbulence) * 0.038,
+  ));
+
+  const seasonalVitality = {
+    spring: 0.92,
+    summer: 0.78,
+    autumn: 0.5,
+    winter: 0.28,
+  }[world.season];
+  const moistureSupport = 0.82 + world.surfaceWetness * 0.22;
+  const vitalityTarget = clamp01(seasonalVitality * moistureSupport);
+  world.vegetationVitality = round6(clamp01(
+    vitality + (vitalityTarget - vitality) * 0.0008,
+  ));
+
+  const seasonalDecay = {
+    spring: 0.16,
+    summer: 0.24,
+    autumn: 0.76,
+    winter: 0.54,
+  }[world.season];
+  const decayTarget = clamp01(seasonalDecay + world.surfaceWetness * 0.14);
+  world.decayPressure = round6(clamp01(decay + (decayTarget - decay) * 0.00065));
 }
 
 /**

@@ -904,7 +904,10 @@ export function renderOctantGridCells(
         for (let dy = 0; dy < 4; dy++) {
           for (let dx = 0; dx < 2; dx++) {
             const encodedPhase = materialGrid[y + dy]?.[x + dx] ?? 0;
-            if (encodedPhase > 0) {
+            // Only 1..PHASES belongs to the water palette. Higher bands carry
+            // foliage/actor semantics for the atmosphere pass and must never
+            // be recoloured as canal highlights.
+            if (encodedPhase >= 1 && encodedPhase <= PHASES) {
               waterSamples++;
               const phaseIndex = encodedPhase - 1;
               phaseCounts[phaseIndex] = (phaseCounts[phaseIndex] ?? 0) + 1;

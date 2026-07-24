@@ -26,6 +26,7 @@ const assets: CanalTownAsset[] = [
   { id: 'bridge', roles: ['bridge'], sprite: sprite({ r: 220, g: 220, b: 190 }), collision: [] },
   { id: 'street-small', roles: ['street-small'], sprite: sprite({ r: 120, g: 90, b: 60 }), collision: [[0, 0]] },
   { id: 'street-large', roles: ['street-large'], sprite: sprite({ r: 190, g: 150, b: 90 }), collision: [[0, 0]] },
+  { id: 'canal-lamp', roles: ['street-small'], sprite: sprite({ r: 250, g: 180, b: 80 }), collision: [[0, 0]], emitsLight: true },
 ];
 
 function provider(seed = 42n): CanalTownTileProvider {
@@ -107,6 +108,17 @@ describe('CanalTownTileProvider', () => {
       expect(world.getTile(0, y)?.walkable, `terrain at 0,${y}`).toBe(true);
       expect(world.isBuildingAt(0, y), `arrival cross at 0,${y}`).toBe(false);
     }
+  });
+
+  it('exposes bounded light sources only from declarative emitting assets', () => {
+    const world = provider();
+    const first = world.getLightSourcesInBounds(-16, -16, 16, 16);
+    const replay = world.getLightSourcesInBounds(-16, -16, 16, 16);
+
+    expect(first.length).toBeGreaterThan(0);
+    expect(first).toEqual(replay);
+    expect(first.every((light) => light.id.startsWith('canal-lamp:'))).toBe(true);
+    expect(world.getLightSourcesInBounds(5000, 5000, 5001, 5001)).toHaveLength(0);
   });
 
   it('places manifest assets deterministically with independent collision masks', () => {

@@ -4,6 +4,7 @@ import type {
   BuildingTileData,
   PixelGrid,
   Tile,
+  WorldLightSource,
 } from '@maldoror/protocol';
 import {
   BIOME_FAMILIES,
@@ -55,6 +56,8 @@ export interface RegionalVisualAsset {
   /** Solid offsets relative to the sprite's declared anchor (bottom-centre by
    * default). Open thresholds remain absent for entrances and gates. */
   collision: ReadonlyArray<readonly [number, number]>;
+  /** Authored semantic light source, independent of ID and raster colours. */
+  emitsLight?: boolean;
 }
 
 export interface RegionalLandmarkAsset extends RegionalVisualAsset {
@@ -1181,6 +1184,37 @@ export class RegionalWorldTileProvider extends TileProvider {
     }
     return placements.sort((a, b) => a.anchorY - b.anchorY || a.anchorX - b.anchorX ||
       a.assetId.localeCompare(b.assetId));
+  }
+
+  override getLightSourcesInBounds(
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number,
+  ): WorldLightSource[] {
+    const lights = new Map<string, WorldLightSource>();
+    const firstBlockX = floorDiv(Math.floor(minX), this.blockSize) - 1;
+    const lastBlockX = floorDiv(Math.floor(maxX), this.blockSize) + 1;
+    const firstBlockY = floorDiv(Math.floor(minY), this.blockSize) - 1;
+    const lastBlockY = floorDiv(Math.floor(maxY), this.blockSize) + 1;
+    for (let blockY = firstBlockY; blockY <= lastBlockY; blockY++) {
+      for (let blockX = firstBlockX; blockX <= lastBlockX; blockX++) {
+        for (const placement of this.getBlock(blockX, blockY).placements) {
+          if (!placement.asset.emitsLight || placement.anchorX < minX || placement.anchorX > maxX ||
+              placement.anchorY < minY || placement.anchorY > maxY) continue;
+          const id = `${placement.asset.id}:${placement.anchorX},${placement.anchorY}`;
+          lights.set(id, {
+            id,
+            x: placement.anchorX,
+            y: placement.anchorY - 0.35,
+            radius: placement.kind === 'landmark' ? 5.5 : 4.25,
+            intensity: placement.kind === 'landmark' ? 0.82 : 0.74,
+            color: { r: 255, g: 177, b: 88 },
+          });
+        }
+      }
+    }
+    return [...lights.values()].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
   }
 
   getRouteContactPlacementsInBounds(

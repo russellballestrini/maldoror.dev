@@ -143,6 +143,10 @@ describe('NPCManager persistent body state', () => {
       weatherUntilWorldMinute: 720,
       season: 'spring',
       rngState: 123456,
+      surfaceWetness: 0.2,
+      waterTurbulence: 0.1,
+      vegetationVitality: 0.72,
+      decayPressure: 0.1,
     });
     const manager = new NPCManager({ worldSeed: '42', tickRate: 3 });
     await manager.loadFromDB();

@@ -15,13 +15,14 @@ const pixels = Array.from({ length: 4 }, (_, y) => (
 ));
 const tile = { id: 'benchmark-material', name: 'benchmark material', walkable: true, pixels };
 
-function world(life) {
+function world(life, lights = []) {
   return {
     getTile: () => tile,
     getPlayers: () => [],
     getPlayerSprite: () => null,
     getLocalPlayerId: () => 'benchmark',
     ...(life ? { getWorldLifeState: () => life } : {}),
+    getLightSourcesInBounds: () => lights,
   };
 }
 
@@ -35,6 +36,10 @@ function life(weather) {
     weatherUntilWorldMinute: 900,
     season: 'summer',
     rngState: 1234567,
+    surfaceWetness: weather === 'storm' ? 0.88 : 0.12,
+    waterTurbulence: weather === 'storm' ? 0.82 : 0.08,
+    vegetationVitality: 0.72,
+    decayPressure: 0.1,
   };
 }
 
@@ -71,6 +76,20 @@ const scenarios = [
   scenario('no-atmosphere', world(null)),
   scenario('clear-day-night-grade', world(life('clear'))),
   scenario('storm-grade-and-streaks', world(life('storm'))),
+  scenario('wet-night-with-36-lights', world({
+    ...life('clear'),
+    worldMinute: 0,
+    surfaceWetness: 0.9,
+    season: 'autumn',
+    decayPressure: 0.8,
+  }, Array.from({ length: 36 }, (_, index) => ({
+    id: `benchmark-light-${index}`,
+    x: (index % 9) * 5 - 20,
+    y: Math.floor(index / 9) * 5 - 8,
+    radius: 5.5,
+    intensity: 0.9,
+    color: { r: 255, g: 177, b: 88 },
+  })))),
 ];
 for (let frame = 0; frame < 30; frame++) {
   for (const current of scenarios) current.renderer.renderToBuffer(current.source, frame);
@@ -85,15 +104,17 @@ for (let frame = 0; frame < FRAMES; frame++) {
     current.timings.push(performance.now() - started);
   }
 }
-const [baseline, clear, storm] = scenarios.map(summarize);
+const [baseline, clear, storm, wetNightLights] = scenarios.map(summarize);
 const report = {
   viewportPixels: { width: 160, height: 46 },
   baseline,
   clear,
   storm,
+  wetNightLights,
   p95OverheadMs: {
     clear: Number((clear.p95Ms - baseline.p95Ms).toFixed(3)),
     storm: Number((storm.p95Ms - baseline.p95Ms).toFixed(3)),
+    wetNightLights: Number((wetNightLights.p95Ms - baseline.p95Ms).toFixed(3)),
   },
 };
 fs.mkdirSync(OUTPUT, { recursive: true });

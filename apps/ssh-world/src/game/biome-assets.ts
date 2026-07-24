@@ -108,6 +108,7 @@ interface LandmarkEntry {
   scale: number;
   spriteTiles: [number, number];
   collision: Array<[number, number]>;
+  emitsLight?: boolean;
 }
 
 interface AmbientEntry {
@@ -118,6 +119,7 @@ interface AmbientEntry {
   scale: number;
   spriteTiles: [number, number];
   collision: Array<[number, number]>;
+  emitsLight?: boolean;
 }
 
 interface RouteContactEntry extends AmbientEntry {
@@ -135,6 +137,7 @@ interface ParcelComponentEntry {
   collision: Array<[number, number]>;
   programs?: RegionalParcelProgram[];
   waterfrontFunction?: RegionalWaterfrontFunction;
+  emitsLight?: boolean;
 }
 
 interface EnvironmentContactEntry {
@@ -147,6 +150,7 @@ interface EnvironmentContactEntry {
   collision: Array<[number, number]>;
   constraints: RegionalEnvironmentConstraints;
   program?: RegionalEnvironmentProgramKind;
+  emitsLight?: boolean;
 }
 
 const ROUTE_KINDS: readonly RegionalRouteKind[] = ['trail', 'local-road', 'arterial'];
@@ -300,6 +304,7 @@ export async function loadRegionalLandmarkKit(manifestPath: string): Promise<Reg
       families: [entry.family],
       landmarkKinds: entry.landmarkKinds,
       collision: entry.collision,
+      emitsLight: entry.emitsLight,
       sprite: await loadRegionalSprite(
         resolveAssetPath(manifestDirectory, entry.file),
         sourceTileSize,
@@ -347,6 +352,7 @@ export async function loadRegionalAmbientKit(manifestPath: string): Promise<Regi
       families: [entry.family],
       routeDistance: entry.routeDistance,
       collision: entry.collision,
+      emitsLight: entry.emitsLight,
       sprite: await loadRegionalSprite(
         resolveAssetPath(manifestDirectory, entry.file),
         sourceTileSize,
@@ -409,6 +415,7 @@ export async function loadRegionalRouteContactKit(manifestPath: string): Promise
       routeDistance: entry.routeDistance,
       spriteAnchor: entry.anchorTile,
       collision: entry.collision,
+      emitsLight: entry.emitsLight,
       sprite: await loadRegionalSprite(
         resolveAssetPath(manifestDirectory, entry.file),
         sourceTileSize,
@@ -467,6 +474,7 @@ export async function loadRegionalParcelComponentKit(
       programs: entry.programs,
       waterfrontFunction: entry.waterfrontFunction,
       collision: entry.collision,
+      emitsLight: entry.emitsLight,
       sprite: await loadRegionalSprite(
         resolveAssetPath(manifestDirectory, entry.file),
         sourceTileSize,
@@ -520,6 +528,7 @@ export async function loadRegionalEnvironmentContactKit(
       constraints: entry.constraints,
       program: entry.program,
       collision: entry.collision,
+      emitsLight: entry.emitsLight,
       sprite: await loadRegionalSprite(
         resolveAssetPath(manifestDirectory, entry.file),
         sourceTileSize,
@@ -600,6 +609,7 @@ function parseLandmarkEntry(value: unknown, index: number): LandmarkEntry {
       !isTileDimensions(value.spriteTiles) ||
       !Array.isArray(value.collision) || value.collision.length === 0 ||
       !value.collision.every(isCollisionOffset) ||
+      (value.emitsLight !== undefined && typeof value.emitsLight !== 'boolean') ||
       typeof value.scale !== 'number' || value.scale < 0.2 || value.scale > 1) {
     throw new Error(`Invalid regional landmark entry at index ${index}`);
   }
@@ -611,6 +621,7 @@ function parseLandmarkEntry(value: unknown, index: number): LandmarkEntry {
     scale: value.scale,
     spriteTiles: value.spriteTiles as [number, number],
     collision: value.collision as Array<[number, number]>,
+    emitsLight: value.emitsLight as boolean | undefined,
   };
 }
 
@@ -623,6 +634,7 @@ function parseAmbientEntry(value: unknown, index: number): AmbientEntry {
       !isTileDimensions(value.spriteTiles) ||
       !Array.isArray(value.collision) || value.collision.length === 0 ||
       !value.collision.every(isCollisionOffset) ||
+      (value.emitsLight !== undefined && typeof value.emitsLight !== 'boolean') ||
       typeof value.scale !== 'number' || value.scale < 0.2 || value.scale > 1) {
     throw new Error(`Invalid regional ambient entry at index ${index}`);
   }
@@ -634,6 +646,7 @@ function parseAmbientEntry(value: unknown, index: number): AmbientEntry {
     scale: value.scale,
     spriteTiles: value.spriteTiles as [number, number],
     collision: value.collision as Array<[number, number]>,
+    emitsLight: value.emitsLight as boolean | undefined,
   };
 }
 
@@ -669,6 +682,7 @@ function parseParcelComponentEntry(value: unknown, index: number): ParcelCompone
         !WATERFRONT_FUNCTIONS.includes(value.waterfrontFunction as RegionalWaterfrontFunction)) ||
       (value.waterfrontFunction !== undefined &&
         (!Array.isArray(value.programs) || !value.programs.includes('waterfront'))) ||
+      (value.emitsLight !== undefined && typeof value.emitsLight !== 'boolean') ||
       typeof value.scale !== 'number' || value.scale < 0.2 || value.scale > 1) {
     throw new Error(`Invalid regional parcel component entry at index ${index}`);
   }
@@ -682,6 +696,7 @@ function parseParcelComponentEntry(value: unknown, index: number): ParcelCompone
     collision: value.collision as Array<[number, number]>,
     programs: value.programs as RegionalParcelProgram[] | undefined,
     waterfrontFunction: value.waterfrontFunction as RegionalWaterfrontFunction | undefined,
+    emitsLight: value.emitsLight as boolean | undefined,
   };
 }
 
@@ -694,6 +709,7 @@ function parseEnvironmentContactEntry(value: unknown, index: number): Environmen
       !isTileDimensions(value.spriteTiles) ||
       !Array.isArray(value.collision) || value.collision.length === 0 ||
       !value.collision.every(isCollisionOffset) ||
+      (value.emitsLight !== undefined && typeof value.emitsLight !== 'boolean') ||
       typeof value.scale !== 'number' || value.scale < 0.2 || value.scale > 1 ||
       (value.program !== undefined &&
         !ENVIRONMENT_PROGRAMS.includes(value.program as RegionalEnvironmentProgramKind)) ||
@@ -727,6 +743,7 @@ function parseEnvironmentContactEntry(value: unknown, index: number): Environmen
       nearbyWaterRadius: Number(constraints.nearbyWaterRadius),
     },
     program: value.program as RegionalEnvironmentProgramKind | undefined,
+    emitsLight: value.emitsLight as boolean | undefined,
   };
 }
 

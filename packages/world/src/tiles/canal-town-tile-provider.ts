@@ -4,6 +4,7 @@ import type {
   BuildingTileData,
   PixelGrid,
   Tile,
+  WorldLightSource,
 } from '@maldoror/protocol';
 import { getTileById } from './base-tiles.js';
 import { TileProvider, type TileProviderConfig } from './tile-provider.js';
@@ -31,6 +32,8 @@ export interface CanalTownAsset {
   sprite: BuildingSprite;
   /** Solid tile offsets relative to the sprite anchor (bottom-centre). */
   collision: ReadonlyArray<readonly [number, number]>;
+  /** Explicit authored light semantics; never inferred from asset IDs/pixels. */
+  emitsLight?: boolean;
 }
 
 export interface CanalTownTerrainConfig {
@@ -72,6 +75,7 @@ interface PlacementPolicy {
 interface CachedBlock {
   overlays: Map<string, BuildingTileData>;
   solid: Set<string>;
+  lights: WorldLightSource[];
   accessedAt: number;
 }
 
@@ -200,6 +204,29 @@ export class CanalTownTileProvider extends TileProvider {
       cachedOverlayTiles: [...this.blockCache.values()].reduce((total, block) => total + block.overlays.size, 0),
       cachedSolidTiles: [...this.blockCache.values()].reduce((total, block) => total + block.solid.size, 0),
     };
+  }
+
+  override getLightSourcesInBounds(
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number,
+  ): WorldLightSource[] {
+    const lights = new Map<string, WorldLightSource>();
+    const firstBlockX = floorDiv(Math.floor(minX), this.blockSize) - 1;
+    const lastBlockX = floorDiv(Math.floor(maxX), this.blockSize) + 1;
+    const firstBlockY = floorDiv(Math.floor(minY), this.blockSize) - 1;
+    const lastBlockY = floorDiv(Math.floor(maxY), this.blockSize) + 1;
+    for (let blockY = firstBlockY; blockY <= lastBlockY; blockY++) {
+      for (let blockX = firstBlockX; blockX <= lastBlockX; blockX++) {
+        const block = this.getProceduralBlock(blockX * this.blockSize, blockY * this.blockSize);
+        for (const light of block.lights) {
+          if (light.x < minX || light.x > maxX || light.y < minY || light.y > maxY) continue;
+          lights.set(light.id, light);
+        }
+      }
+    }
+    return [...lights.values()].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
   }
 
   override destroy(): void {
@@ -457,7 +484,17 @@ export class CanalTownTileProvider extends TileProvider {
       }
     }
 
-    return { overlays, solid, accessedAt: Date.now() };
+    const lights = placements
+      .filter((placement) => placement.asset.emitsLight)
+      .map((placement): WorldLightSource => ({
+        id: `${placement.asset.id}:${placement.anchorX},${placement.anchorY}`,
+        x: placement.anchorX,
+        y: placement.anchorY - 0.35,
+        radius: 4.25,
+        intensity: 0.76,
+        color: { r: 255, g: 179, b: 92 },
+      }));
+    return { overlays, solid, lights, accessedAt: Date.now() };
   }
 
   private assetFits(

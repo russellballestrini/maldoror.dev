@@ -37,6 +37,7 @@
     "research:living-world": "pnpm --filter @maldoror/ssh-world build && node tools/render-sim/living-world-observation-lab.mjs",
     "research:atmosphere-performance": "pnpm --filter @maldoror/render build && node tools/render-sim/world-atmosphere-benchmark.mjs",
     "research:living-atmosphere-atlas": "pnpm --filter @maldoror/ssh-world build && pnpm --filter @maldoror/render build && node tools/render-sim/living-world-gallery-atlas.mjs",
+    "research:environment-atlas": "pnpm --filter @maldoror/ssh-world build && pnpm --filter @maldoror/render build && node tools/render-sim/environmental-consequences-atlas.mjs",
     "research:texture-reconstruction": "node tools/render-sim/texture-reconstruction-lab.mjs",
     "clean": "turbo run clean && rm -rf node_modules",
     "db:generate": "pnpm --filter @maldoror/db generate",

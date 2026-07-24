@@ -19,6 +19,7 @@ interface ManifestAsset {
   collision: Array<[number, number]>;
   spriteTiles: [number, number];
   collisionRect?: [number, number];
+  emitsLight?: boolean;
 }
 
 interface CanalTownManifest {
@@ -123,6 +124,7 @@ export async function loadCanalTownKit(
       collision: entry.collisionRect
         ? rectangularCollision(entry.collisionRect[0], entry.collisionRect[1])
         : entry.collision,
+      emitsLight: entry.emitsLight,
       sprite: await loadManifestSprite(
         imagePath,
         manifest.sourceTileSize,
@@ -252,6 +254,9 @@ function parseManifest(manifestPath: string): CanalTownManifest {
     if (collisionRect !== undefined && !isTileDimensions(collisionRect)) {
       throw new Error(`Invalid collisionRect for canal asset ${value.id}`);
     }
+    if (value.emitsLight !== undefined && typeof value.emitsLight !== 'boolean') {
+      throw new Error(`Invalid emitsLight for canal asset ${value.id}`);
+    }
     return {
       id: value.id,
       file: value.file,
@@ -260,6 +265,7 @@ function parseManifest(manifestPath: string): CanalTownManifest {
       collision: value.collision as Array<[number, number]>,
       spriteTiles: spriteTiles as [number, number],
       collisionRect: collisionRect as [number, number] | undefined,
+      emitsLight: value.emitsLight,
     };
   });
 

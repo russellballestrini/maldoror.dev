@@ -47,6 +47,7 @@ describe('regional biome material manifest', () => {
     expect(kit.blockSize).toBe(32);
     expect(kit.assets).toHaveLength(6);
     expect(new Set(kit.assets.flatMap((asset) => asset.families))).toEqual(new Set(BIOME_FAMILIES));
+    expect(kit.assets.filter((asset) => asset.emitsLight)).toHaveLength(3);
     for (const asset of kit.assets) {
       expect(asset.sprite.width).toBe(6);
       expect(asset.sprite.height).toBe(5);
@@ -66,6 +67,8 @@ describe('regional biome material manifest', () => {
     expect(kit.density).toBeCloseTo(0.86);
     expect(kit.assets).toHaveLength(12);
     expect(new Set(kit.assets.flatMap((asset) => asset.families))).toEqual(new Set(BIOME_FAMILIES));
+    expect(kit.assets.filter((asset) => asset.emitsLight).map((asset) => asset.id))
+      .toEqual(['canal-town-facade-planter-v2']);
     for (const asset of kit.assets) {
       expect(asset.sprite.width).toBe(5);
       expect(asset.sprite.height).toBe(4);
@@ -85,6 +88,7 @@ describe('regional biome material manifest', () => {
     expect(kit.cellSize).toBe(10);
     expect(kit.density).toBe(1);
     expect(kit.assets).toHaveLength(12);
+    expect(kit.assets.filter((asset) => asset.emitsLight)).toHaveLength(2);
     for (const family of BIOME_FAMILIES) {
       const familyAssets = kit.assets.filter((asset) => asset.families.includes(family));
       expect(new Set(familyAssets.map((asset) => asset.accessAxis)))

@@ -31,6 +31,10 @@ export const worldLifeState = pgTable('world_life_state', {
   weatherUntilWorldMinute: integer('weather_until_world_minute').notNull(),
   season: varchar('season', { length: 16 }).$type<WorldSeason>().notNull(),
   rngState: bigint('rng_state', { mode: 'number' }).notNull(),
+  surfaceWetness: real('surface_wetness').notNull().default(0.12),
+  waterTurbulence: real('water_turbulence').notNull().default(0.08),
+  vegetationVitality: real('vegetation_vitality').notNull().default(0.72),
+  decayPressure: real('decay_pressure').notNull().default(0.1),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
