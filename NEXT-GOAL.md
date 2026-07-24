@@ -710,7 +710,18 @@ Completed foundations:
   exact rejection and next pass live under
   `track-6-acceptance-atlas/acceptance-atlas-v3-final/FINDINGS.md`; public gallery
   iteration 031 exposes the non-cherry-picked sheets. This is audit completion,
-  not visual acceptance. No image generation or metered model call was used;
+  not visual acceptance. A first corrective pass then used the exact rejected
+  `forest-west-deep` real-SSH fixture plus a clear-night guard. Raising the
+  moonlit navigation floor, separating the storm grade, reducing night-streak
+  dominance, and broadening declarative lamp falloff raised forest-storm median
+  luminance 23.01 -> 28.79 while cutting cool-streak coverage 6.11% -> 3.16%;
+  the clear-night guard raised both median and contrast without losing its night
+  read. Both raw streams, faithful frames, hashes, metrics, and the explicitly
+  selected sub-gate live under
+  `track-6-acceptance-atlas/atmosphere-legibility-v1*/`. The correction passes
+  37 files / 193 tests, 18/18 typecheck tasks, and 12/12 build tasks. It closes
+  the crushed-night / precipitation-dominance defect only; Gate A remains open.
+  No image generation or metered model call was used;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–031 expose selected and rejected research candidates without
@@ -743,8 +754,10 @@ Still open and therefore goal-blocking:
   growth/decay, and production multi-human integration remain open;
 - the 24-coordinate multi-zoom/time/weather atlas is now complete as an honest
   **failed** visual audit. Gate A remains open until the recorded composition,
-  route/crossing, night/storm, and dynamically enumerated material-boundary
-  failures are corrected and the exact fixed atlas passes on a fresh build.
+  route/crossing, and dynamically enumerated material-boundary failures are
+  corrected and the exact fixed atlas passes on a fresh build. The selected
+  night/storm correction still requires that fresh complete-atlas proof; it is
+  not a substitute for it.
   Deterministic traversal, the load ladder, 30-minute terminal run, and physical
   Ghostty acceptance also remain open.
 

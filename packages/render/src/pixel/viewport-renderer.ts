@@ -508,7 +508,11 @@ export class ViewportRenderer {
   ): void {
     const minuteOfDay = ((world.worldMinute % 1440) + 1440) % 1440;
     const solar = Math.max(0, Math.sin(((minuteOfDay - 360) / 720) * Math.PI));
-    const daylight = 0.34 + 0.66 * (solar * solar * (3 - 2 * solar));
+    // Preserve a moonlit navigation floor before weather grading. The old
+    // 0.34 floor made clear nights lose route hierarchy and a subsequent storm
+    // grade collapsed almost every biome into the same near-black frame.
+    const nightFloor = 0.46;
+    const daylight = nightFloor + (1 - nightFloor) * (solar * solar * (3 - 2 * solar));
     let redScale = daylight;
     let greenScale = daylight;
     let blueScale = daylight;
@@ -525,7 +529,9 @@ export class ViewportRenderer {
       haze = 0.05 + world.weatherIntensity * 0.08;
       hazeR = 78; hazeG = 101; hazeB = 128;
     } else if (world.weather === 'storm') {
-      redScale *= 0.62; greenScale *= 0.72; blueScale *= 0.88;
+      // Storms stay cooler and darker than clear weather, but keep enough
+      // separated value range for paths, terrain and silhouettes to survive.
+      redScale *= 0.72; greenScale *= 0.8; blueScale *= 0.94;
       haze = 0.08 + world.weatherIntensity * 0.1;
       hazeR = 55; hazeG = 67; hazeB = 93;
     } else if (world.weather === 'cold_snap') {
@@ -612,8 +618,15 @@ export class ViewportRenderer {
     this.applyLocalLights(buffer, lights, nightLightFactor(world.worldMinute), world.surfaceWetness);
 
     if (world.weather !== 'rain' && world.weather !== 'storm') return;
-    const density = world.weather === 'storm' ? 23 : 11;
+    const storm = world.weather === 'storm';
+    const density = storm ? 17 : 11;
     const streakLength = world.weather === 'storm' ? 3 : 2;
+    const night = nightLightFactor(world.worldMinute);
+    const precipitation = night > 0.5
+      ? { r: 110, g: 140, b: 174 }
+      : { r: 160, g: 190, b: 220 };
+    const initialStrength = storm ? 0.34 : 0.44;
+    const strengthFalloff = storm ? 0.07 : 0.09;
     const phase = tick + world.worldMinute * 3;
     for (let y = 0; y < buffer.length; y++) {
       const row = buffer[y]!;
@@ -628,11 +641,11 @@ export class ViewportRenderer {
           const streakX = x - Math.floor((offset + 1) / 2);
           const pixel = buffer[streakY]?.[streakX];
           if (!pixel) continue;
-          const strength = 0.44 - offset * 0.09;
+          const strength = initialStrength - offset * strengthFalloff;
           buffer[streakY]![streakX] = {
-            r: clampByte(pixel.r * (1 - strength) + 160 * strength),
-            g: clampByte(pixel.g * (1 - strength) + 190 * strength),
-            b: clampByte(pixel.b * (1 - strength) + 220 * strength),
+            r: clampByte(pixel.r * (1 - strength) + precipitation.r * strength),
+            g: clampByte(pixel.g * (1 - strength) + precipitation.g * strength),
+            b: clampByte(pixel.b * (1 - strength) + precipitation.b * strength),
           };
         }
       }
@@ -688,7 +701,14 @@ export class ViewportRenderer {
           const distance = Math.hypot(x - centerX, y - centerY);
           if (distance >= radius) continue;
           const normalized = 1 - distance / radius;
-          const strength = Math.min(0.52, normalized * normalized * source.intensity * nightFactor * wetBounce);
+          // A soft inverse falloff keeps the source legible over the moonlit
+          // navigation floor without turning the pool into a hard-edged disc.
+          // Squaring the falloff made most of a lamp's declared radius
+          // visually inert once the night floor was raised.
+          const strength = Math.min(
+            0.58,
+            Math.pow(normalized, 1.8) * source.intensity * nightFactor * wetBounce,
+          );
           const pixel = buffer[y]?.[x];
           if (!pixel || strength <= 0.002) continue;
           buffer[y]![x] = {

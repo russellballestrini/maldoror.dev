@@ -67,6 +67,7 @@ describe('persistent world atmosphere', () => {
     const noon = renderer().renderToBuffer(world(state(720, 'clear')), 0).buffer;
     const midnight = renderer().renderToBuffer(world(state(0, 'clear')), 0).buffer;
     expect(meanLuminance(midnight)).toBeLessThan(meanLuminance(noon) * 0.5);
+    expect(meanLuminance(midnight)).toBeGreaterThan(meanLuminance(noon) * 0.4);
     expect(terrain.pixels[0]![0]).toEqual(authoredSample);
   });
 
@@ -74,10 +75,15 @@ describe('persistent world atmosphere', () => {
     const first = renderer().renderToBuffer(world(state(780, 'storm')), 31).buffer;
     const replay = renderer().renderToBuffer(world(state(780, 'storm')), 31).buffer;
     const clear = renderer().renderToBuffer(world(state(780, 'clear')), 31).buffer;
+    const visible = first.flat().filter((pixel) => pixel !== null);
+    const strongCoolStreaks = visible.filter(
+      (pixel) => pixel!.b > pixel!.r + 20 && pixel!.b > pixel!.g + 8,
+    );
 
     expect(first).toEqual(replay);
     expect(first).not.toEqual(clear);
     expect(first.flat().filter((pixel) => pixel?.b && pixel.b > pixel.r).length).toBeGreaterThan(0);
+    expect(strongCoolStreaks.length / visible.length).toBeLessThan(0.1);
   });
 
   it('carries prior rain into darker, sparsely reflective dry-weather surfaces', () => {

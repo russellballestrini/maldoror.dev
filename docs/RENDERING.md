@@ -203,3 +203,23 @@ Evidence and the exact rejection are in
 `/mnt/donto-data/donto-resources/maldoror/rendering-research/track-6-acceptance-atlas/acceptance-atlas-v3-final/`.
 Public gallery iteration 031 exposes the walking, district, and regional review
 sheets. A successful Gate-A atlas and physical Ghostty acceptance remain open.
+
+### Night and storm hierarchy correction (2026-07-24)
+
+The first Gate-A correction targets the exact rejected
+`forest-west-deep` night-storm fixture rather than a new favourable coordinate.
+The moonlit floor now preserves navigation values before weather grading;
+storms retain a cool, darker state with less dominant precipitation; and
+declarative lamps use a soft bounded falloff that remains visible over that
+floor. A separate clear-night capture guards against flattening night into day.
+
+In faithful real-SSH scene pixels, the forest-storm median rises from 23.01 to
+28.79 while cool-streak coverage falls from 6.11% to 3.16%. The clear-night
+guard raises median luminance from 33.92 to 45.83 and standard deviation from
+9.14 to 12.45, preserving rather than compressing material contrast. Raw
+streams, faithful frames, hashes, and the decision are retained under
+`/mnt/donto-data/donto-resources/maldoror/rendering-research/track-6-acceptance-atlas/atmosphere-legibility-v1*/`.
+
+This is a selected corrective sub-gate. It does not pass Gate A; the complete
+fixed atlas must be recaptured after the remaining composition, route,
+waterfront, and material-boundary defects are corrected.
