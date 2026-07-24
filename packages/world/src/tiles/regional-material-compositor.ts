@@ -42,6 +42,10 @@ export interface RegionalRouteSampler {
 export interface RegionalRouteSurfaceStyle {
   /** World-tile span of the source master at walking scale. */
   textureScaleTiles: number;
+  /** Fraction of the authoritative route half-width painted at near scale. */
+  detailWidthScale: number;
+  /** Narrower semantic cross-section used for district/regional maps. */
+  overviewWidthScale: number;
   /** Material ownership at walking/near zoom after place material is retained. */
   detailOpacity: number;
   /** Reduced map-scale ownership so infrastructure does not erase place. */
@@ -985,6 +989,8 @@ export class RegionalMaterialCompositor {
     const materialMask: MaterialMask = [];
     const textureSamples = Array.from({ length: BIOME_FAMILIES.length }, () => new Float64Array(3));
     const quayTexture = new Float64Array(3);
+    const routeTexture = new Float64Array(3);
+    const bridgeStructureTexture = new Float64Array(3);
     for (let y = 0; y < size; y++) {
       const row: RGB[] = [];
       const materialRow = new Uint8Array(size);
@@ -1098,19 +1104,20 @@ export class RegionalMaterialCompositor {
           const surfaceStyle = routeLayer.sample.crossingKind
             ? this.crossingSurfaceStyles?.[routeLayer.sample.crossingKind]
             : this.routeSurfaceStyles?.[routeLayer.sample.routeKind!];
-          const routeTexture = new Float64Array(3);
           let textureX = worldX;
           let textureY = worldY;
+          let routeTangentX = 0;
+          let routeTangentY = 0;
           if (routeLayer.sample.crossingKind === 'bridge') {
             const directionLength = Math.hypot(
               routeLayer.sample.directionX,
               routeLayer.sample.directionY,
             );
             if (directionLength > 0.1) {
-              const tangentX = routeLayer.sample.directionX / directionLength;
-              const tangentY = routeLayer.sample.directionY / directionLength;
-              textureX = worldX * -tangentY + worldY * tangentX;
-              textureY = worldX * tangentX + worldY * tangentY;
+              routeTangentX = routeLayer.sample.directionX / directionLength;
+              routeTangentY = routeLayer.sample.directionY / directionLength;
+              textureX = worldX * -routeTangentY + worldY * routeTangentX;
+              textureY = worldX * routeTangentX + worldY * routeTangentY;
             }
           }
           this.sampleTextureField(
@@ -1126,21 +1133,90 @@ export class RegionalMaterialCompositor {
           const authoredOpacity = surfaceStyle
             ? (size <= 8 ? surfaceStyle.overviewOpacity : surfaceStyle.detailOpacity)
             : 1;
+          const authoredWidth = surfaceStyle
+            ? (size <= 8 ? surfaceStyle.overviewWidthScale : surfaceStyle.detailWidthScale)
+            : 1;
+          const bankContact = routeLayer.sample.crossingKind === 'bridge'
+            ? bridgeBankContact(waterCoverage)
+            : 0;
           const shapedCoverage = routeLayer.sample.crossingKind === 'bridge'
-            ? bridgeShapeCoverage(routeLayer.opacity, routeLayer.normalizedDistance)
-            : routeLayer.opacity;
+            ? bridgeShapeCoverage(
+                routeLayer.opacity,
+                routeLayer.normalizedDistance,
+                bankContact,
+                authoredWidth,
+              )
+            : routeShapeCoverage(
+                routeLayer.opacity,
+                routeLayer.normalizedDistance,
+                authoredWidth,
+              );
           const opacity = shapedCoverage * crossingOpacity * authoredOpacity;
           linear = linear.map((value, channel) => lerp(value, routeTexture[channel]!, opacity));
           if (routeLayer.sample.crossingKind === 'bridge') {
-            // The bridge is a constructed cross-section, not a timber-filled
-            // route rectangle. Erode the interpolated footprint into a narrow
-            // deck, retain side beams near its physical edges, and add sparse
-            // transverse support rhythm in the route-aligned frame.
+            // A bridge is a deck plus load-bearing substructure, not a timber-
+            // filled route rectangle. Continuous hydrology locates both bank
+            // seats; normalized route distance owns the transverse section;
+            // the route-aligned longitudinal frame places sparse pier rhythm.
+            // The same deck coverage below remains the walkability authority.
             const edgeBeam = smoothstep(0.56, 0.7, routeLayer.normalizedDistance) *
               (1 - smoothstep(0.82, 0.94, routeLayer.normalizedDistance));
             const supportDistance = Math.abs(textureY / 3 - Math.round(textureY / 3)) * 3;
             const supportBeam = 1 - smoothstep(0.06, 0.18, supportDistance);
-            const constructionShade = Math.min(0.22, edgeBeam * 0.16 + supportBeam * shapedCoverage * 0.08);
+            const wetStructure = smoothstep(0.38, 0.78, waterCoverage);
+            const outerSupportZone = smoothstep(0.82, 0.94, routeLayer.normalizedDistance) *
+              (1 - smoothstep(1.08, 1.24, routeLayer.normalizedDistance));
+            const abutmentWeight = bridgeAbutmentCoverage(
+              routeLayer.opacity,
+              routeLayer.normalizedDistance,
+              bankContact,
+            );
+            const pierWeight = routeLayer.opacity * wetStructure * outerSupportZone * supportBeam;
+            const structureWeight = abutmentWeight;
+            const structureTextures = this.routeMaterials.arterial;
+            if (structureWeight > 0.0001 && structureTextures) {
+              const structureStyle = this.routeSurfaceStyles?.arterial;
+              this.sampleTextureField(
+                structureTextures,
+                textureX,
+                textureY,
+                0x2ab7,
+                structureStyle?.textureScaleTiles ?? textureScaleTiles,
+                size,
+                bridgeStructureTexture,
+              );
+              linear = linear.map((value, channel) => (
+                lerp(value, bridgeStructureTexture[channel]!, structureWeight * 0.9)
+              ));
+            }
+            const normalX = -routeTangentY;
+            const normalY = routeTangentX;
+            const lightNormal = normalX * -0.58 + normalY * -0.82;
+            const signedSide = Math.max(
+              -1,
+              Math.min(1, routeLayer.normalizedSignedDistance / 0.45),
+            );
+            const lightFacing = signedSide * lightNormal;
+            const railZone = smoothstep(0.58, 0.72, routeLayer.normalizedDistance) *
+              (1 - smoothstep(0.92, 1.04, routeLayer.normalizedDistance));
+            const railWeight = routeLayer.opacity * wetStructure * railZone;
+            linear = linear.map((value, channel) => (
+              lerp(value, routeTexture[channel]!, railWeight * 0.84)
+            ));
+            if (lightFacing < 0) {
+              linear = linear.map((value) => value * (1 - railWeight * -lightFacing * 0.1));
+            }
+            const shadowSide = smoothstep(0.08, 0.72, -lightFacing);
+            const sideShadow = routeLayer.opacity * wetStructure * shadowSide *
+              smoothstep(0.84, 0.96, routeLayer.normalizedDistance) *
+              (1 - smoothstep(1.12, 1.34, routeLayer.normalizedDistance));
+            const constructionShade = Math.min(
+              0.28,
+              edgeBeam * 0.16 +
+                supportBeam * shapedCoverage * (size <= 8 ? 0.04 : 0.08) +
+                pierWeight * (size <= 8 ? 0.08 : 0.16) +
+                sideShadow * (size <= 8 ? 0.1 : 0.16),
+            );
             linear = linear.map((value) => value * (1 - constructionShade));
           }
         }
@@ -1149,8 +1225,22 @@ export class RegionalMaterialCompositor {
           g: linearToSrgb(linear[1]!),
           b: linearToSrgb(linear[2]!),
         });
+        const bridgeBankWeight = bridgeBankContact(waterCoverage);
+        const bridgeSurfaceStyle = routeLayer?.sample.crossingKind === 'bridge'
+          ? this.crossingSurfaceStyles?.bridge
+          : undefined;
+        const bridgeWidthScale = bridgeSurfaceStyle
+          ? (size <= 8
+              ? bridgeSurfaceStyle.overviewWidthScale
+              : bridgeSurfaceStyle.detailWidthScale)
+          : 1;
         const bridgeCoverage = routeLayer?.sample.crossingKind === 'bridge'
-          ? bridgeShapeCoverage(routeLayer.opacity, routeLayer.normalizedDistance)
+          ? bridgeShapeCoverage(
+              routeLayer.opacity,
+              routeLayer.normalizedDistance,
+              bridgeBankWeight,
+              bridgeWidthScale,
+            )
           : 0;
         if (waterCoverage >= 0.5 && bridgeCoverage < 0.5) materialRow[x] = 1;
       }
@@ -1546,7 +1636,12 @@ function selectRouteLayer(
   samples: readonly [RegionalRouteSample, RegionalRouteSample, RegionalRouteSample, RegionalRouteSample],
   u: number,
   v: number,
-): { sample: RegionalRouteSample; opacity: number; normalizedDistance: number } | null {
+): {
+  sample: RegionalRouteSample;
+  opacity: number;
+  normalizedDistance: number;
+  normalizedSignedDistance: number;
+} | null {
   const cornerWeights = [
     (1 - u) * (1 - v),
     u * (1 - v),
@@ -1573,10 +1668,19 @@ function selectRouteLayer(
     u,
     v,
   );
+  const normalizedSignedDistance = bilerp(
+    normalizedRouteSignedDistance(samples[0]),
+    normalizedRouteSignedDistance(samples[1]),
+    normalizedRouteSignedDistance(samples[2]),
+    normalizedRouteSignedDistance(samples[3]),
+    u,
+    v,
+  );
   return {
     sample: samples[selectedIndex]!,
     opacity: smoothstep(0.02, 0.42, coverage),
     normalizedDistance,
+    normalizedSignedDistance,
   };
 }
 
@@ -1585,9 +1689,46 @@ function normalizedRouteDistance(sample: RegionalRouteSample): number {
   return sample.distance / sample.halfWidth;
 }
 
-function bridgeShapeCoverage(routeCoverage: number, normalizedDistance: number): number {
-  const crossSection = 1 - smoothstep(0.72, 0.94, normalizedDistance);
+function normalizedRouteSignedDistance(sample: RegionalRouteSample): number {
+  if (sample.halfWidth <= 0 || !Number.isFinite(sample.signedDistance)) return 2;
+  return sample.signedDistance / sample.halfWidth;
+}
+
+function bridgeBankContact(waterCoverage: number): number {
+  return smoothstep(0.08, 0.32, waterCoverage) *
+    (1 - smoothstep(0.68, 0.92, waterCoverage));
+}
+
+function bridgeShapeCoverage(
+  routeCoverage: number,
+  normalizedDistance: number,
+  bankContact = 0,
+  widthScale = 1,
+): number {
+  const sectionCore = lerp(0.76, 0.98, bankContact) * widthScale;
+  const sectionEdge = lerp(0.94, 1.2, bankContact) * widthScale;
+  const crossSection = 1 - smoothstep(sectionCore, sectionEdge, normalizedDistance);
   return smoothstep(0.18, 0.7, routeCoverage) * crossSection;
+}
+
+function routeShapeCoverage(
+  routeCoverage: number,
+  normalizedDistance: number,
+  widthScale: number,
+): number {
+  const core = widthScale * 0.76;
+  const edge = widthScale;
+  return smoothstep(0.04, 0.46, routeCoverage) *
+    (1 - smoothstep(core, edge, normalizedDistance));
+}
+
+function bridgeAbutmentCoverage(
+  routeCoverage: number,
+  normalizedDistance: number,
+  bankContact: number,
+): number {
+  const transverseSeat = 1 - smoothstep(0.94, 1.2, normalizedDistance);
+  return smoothstep(0.16, 0.62, routeCoverage) * transverseSeat * bankContact;
 }
 
 function prepareTexture(tile: Tile): PreparedTexture {

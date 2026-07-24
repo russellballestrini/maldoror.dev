@@ -103,17 +103,28 @@ sample equality across cache block sizes and traversal order.
 
 Route surfaces are a separate authored semantic manifest: worn stone for
 arterials, packed earth for local roads, forest floor for trails, and timber
-for bridges. The manifest owns world-space texture scale and separate detail/
-overview opacity for every class. The route sample carries its authoritative
-half-width even through the one-tile influence apron, so the compositor can
-interpolate a cross-section instead of reconstructing shape from a binary mask.
+for bridges. The manifest owns world-space texture scale plus separate detail/
+overview opacity **and width** for every class. Width and opacity are distinct
+controls: fading an over-wide map road only creates a muddy over-wide road.
+The route sample carries its authoritative half-width even through the
+one-tile influence apron, so the compositor can interpolate a cross-section
+instead of reconstructing shape from a binary mask.
 `RegionalMaterialCompositor` masks those materials over the same route answers;
 bridge coverage clears water ownership and is walkable, while a ferry retains
 water ownership and remains non-walkable. Bridge texture axes use the route
-tangent instead of a fixed screen direction. A bridge narrows its visible deck
-from normalized centreline distance and uses that identical shaped coverage for
-the material mask; the first edge/support shading is retained, but bank-aware
-approaches, piers, and a non-bar silhouette remain open.
+tangent instead of a fixed screen direction. Route distance remains the exact
+endpoint-capped Euclidean distance to the winning curve segment; a separate
+signed value records which side of the local tangent owns the sample. The
+rejected infinite-line V28 implementation leaked ownership beyond endpoints
+and created false parcels, so sign must never replace authoritative distance.
+
+A bridge narrows its visible deck from normalized centreline distance and uses
+that identical shaped coverage for the material mask. Continuous hydrology
+selects stone bank seats; the signed cross-section and route-aligned frame add
+timber rails, asymmetric relief, shadow, and sparse support cadence. These cues
+survive all three semantic zooms, but the selected V32 result is still a basis:
+terrain-shaped approaches, span-aware piers, crossing-family diversity, and a
+non-bar silhouette remain open.
 
 Hydrology owns visible wet pixels before any cultural-family overlay. A strong
 canal-town or ruins weight can influence dry constructed ground, but cannot

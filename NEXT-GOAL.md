@@ -804,6 +804,31 @@ Completed foundations:
   Public gallery iteration 035 exposes the retained visual ladder without
   changing live TARGET-vs-NOW. Evidence and primary-source rationale are in
   `track-6-acceptance-atlas/composition-hierarchy-v26-real-ssh-water-route-crossing/FINDINGS.md`;
+- V27-V33 turn the bridge from one painted deck into the first explicit
+  structural cross-section and separately author route width at semantic LOD.
+  Continuous water coverage now locates stone bank seats; a signed local route
+  normal drives timber rail relief and side shadow; a route-aligned frame adds
+  sparse support cadence. V28 is retained as a severe rejection because it
+  confused infinite-line normal distance with endpoint-capped route distance,
+  extended road ownership beyond endpoints, and spawned a false parcel blob.
+  V29 keeps Euclidean segment distance authoritative and stores sign
+  separately, restoring the exact V27 placement counts. V32 gives arterial,
+  local, trail, and bridge surfaces independent manifest-authored near/map
+  width as well as opacity, so district/regional approaches stay connected
+  without becoming tan carpets. The 9/9 V33 real-SSH audit at the unchanged
+  origin, west waterfront, and coast crossing retains 2,566,848 raw bytes and
+  225 synchronized frames with every position/zoom/OCTANT assertion passing.
+  Cold readiness is still 10.081s, worker RSS still reaches 819MB, and repeated
+  high-heap warnings keep performance failed. Full verification is 38 files /
+  206 tests, 18/18 typecheck tasks, and 12/12 builds. The selected bridge is
+  structurally clearer but still too rectilinear and austere for Gate A;
+  approach shaping, span-aware supports, crossing-family diversity, full-atlas
+  recapture, load, and physical Ghostty remain open. Production remains
+  `vb07c0d4`; no image generation or metered model call was used. Evidence and
+  primary-source deductions are in
+  `track-6-acceptance-atlas/composition-hierarchy-v32-semantic-route-width-bridge/FINDINGS.md`
+  and
+  `track-6-acceptance-atlas/composition-hierarchy-v33-real-ssh-structural-crossing/FINDINGS.md`;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
@@ -846,8 +871,9 @@ Still open and therefore goal-blocking:
   corrected and the exact fixed atlas passes on a fresh build. The selected
   night/storm and water/route/quay corrections still require that fresh
   complete-atlas proof; neither is a substitute for it. The selected
-  distance-shaped bridge is only a mechanical basis and remains visually
-  rejected until the crossing/landing/support defects recorded in V26 close.
+  V32 structural bridge is only a selected sub-gate and remains visually short
+  of acceptance until terrain-shaped landings, span-aware supports, approach
+  wear, and crossing-family diversity close, followed by the fresh full atlas.
   Deterministic traversal, the load ladder, 30-minute terminal run, and physical
   Ghostty acceptance also remain open.
 

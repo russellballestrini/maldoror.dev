@@ -1,0 +1,5 @@
+# 036-structural-crossing-and-semantic-route-width
+
+2026-07-24T17:23:27.594Z
+
+SELECTED CROSS-SECTION/ROUTE-WIDTH SUB-GATE; RESEARCH ONLY, NOT LIVE, NOT GATE A. V27-V31 add hydrology-located stone bank seats, timber rails, route-aligned support cadence, and signed one-light-direction relief. V28 is retained as a severe rejection: infinite-line normal distance leaked route authority beyond endpoints and spawned the false parcel blob. V29 restores endpoint-capped Euclidean distance and carries sign separately. V32 independently authors near/map route widths so district/regional approaches stay thin and connected instead of becoming tan carpets. V33 verifies the exact origin, west waterfront, and unchanged coast crossing through 9/9 real-SSH frames at three zooms: 2,566,848 raw bytes and 225 synchronized frames. Cold readiness 10.081s, 819MB worker RSS, and high-heap warnings remain failures. The bridge is clearer but still rectilinear and austere; terrain-shaped approaches, span-aware supports, crossing diversity, full atlas, load, and physical Ghostty remain open. Production and TARGET-vs-NOW remain vb07c0d4. No image generation or metered model API was used.

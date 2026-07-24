@@ -65,6 +65,25 @@ describe('RegionalRouteField', () => {
     for (const [x, y] of coordinates) expect(coarse.sample(x!, y!)).toEqual(fine.sample(x!, y!));
   });
 
+  it('keeps signed cross-sections endpoint-capped instead of extending route lines', () => {
+    const biomes = new BiomeWorldField(SEED, { blockSize: 16 });
+    const routes = new RegionalRouteField(SEED, biomes, { blockSize: 16, pathStep: 4 });
+
+    // The arrival arterial leaves the origin toward the opposite quadrant.
+    // An infinite-line normal would falsely claim this point behind its
+    // endpoint; Euclidean segment distance correctly leaves it uninfluenced.
+    const beyondArrivalEndpoint = routes.sample(-8, -8);
+    expect(beyondArrivalEndpoint.distance).toBe(Number.POSITIVE_INFINITY);
+    expect(beyondArrivalEndpoint.signedDistance).toBe(Number.POSITIVE_INFINITY);
+    expect(beyondArrivalEndpoint.isRoute).toBe(false);
+
+    for (const [x, y] of [[0, -8], [2, -6], [4, 4], [8, 8]]) {
+      const sample = routes.sample(x!, y!);
+      expect(Number.isFinite(sample.distance)).toBe(true);
+      expect(Math.abs(sample.signedDistance)).toBeCloseTo(sample.distance, 5);
+    }
+  });
+
   it('produces sparse routes, multiple hierarchy levels and explicit crossings', () => {
     const biomes = new BiomeWorldField(SEED, { blockSize: 16, maxCachedBlocks: 96 });
     const routes = new RegionalRouteField(SEED, biomes, {

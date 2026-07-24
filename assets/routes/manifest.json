@@ -17,6 +17,8 @@
       "file": "materials/arterial-stone-master-v1.png",
       "variants": 4,
       "textureScaleTiles": 2.6,
+      "detailWidthScale": 0.94,
+      "overviewWidthScale": 0.62,
       "detailOpacity": 0.8,
       "overviewOpacity": 0.68,
       "walkable": true
@@ -27,6 +29,8 @@
       "file": "materials/local-earth-master-v1.png",
       "variants": 4,
       "textureScaleTiles": 3.2,
+      "detailWidthScale": 0.88,
+      "overviewWidthScale": 0.55,
       "detailOpacity": 0.74,
       "overviewOpacity": 0.62,
       "walkable": true
@@ -37,6 +41,8 @@
       "file": "materials/trail-floor-master-v1.png",
       "variants": 4,
       "textureScaleTiles": 4.0,
+      "detailWidthScale": 0.74,
+      "overviewWidthScale": 0.46,
       "detailOpacity": 0.64,
       "overviewOpacity": 0.54,
       "walkable": true,
@@ -50,6 +56,8 @@
       "file": "materials/bridge-timber-master-v1.png",
       "variants": 4,
       "textureScaleTiles": 2.4,
+      "detailWidthScale": 0.96,
+      "overviewWidthScale": 0.78,
       "detailOpacity": 0.96,
       "overviewOpacity": 0.9,
       "walkable": true

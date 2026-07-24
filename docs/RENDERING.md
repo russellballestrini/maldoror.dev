@@ -361,3 +361,38 @@ the same key rendered `Pos: (0, 0)`. The two retained streams contain 364,400
 and 284,492 bytes with 30 and 62 synchronized frames. This proves the public
 worker login reset, not physical Ghostty operation. Evidence is in
 `track-6-acceptance-atlas/login-origin-reconnect-v1/`.
+
+### Structural bridge cross-section and semantic route width (2026-07-24)
+
+V27-V32 continue at the exact V26 coast crossing rather than selecting a new
+site. The renderer now treats the crossing as deck plus substructure: continuous
+water coverage locates stone bank seats, the signed local route cross-section
+adds one-light-direction rail relief and side shadow, and the route-aligned
+longitudinal frame supplies sparse timber support cadence. The visible deck and
+walkability/material mask retain the same shaped coverage.
+
+V28 is an important retained rejection. Its first signed-distance pass used
+distance to an infinite tangent line as route authority. That extended paths
+beyond their actual endpoints and spawned a false parcel mass. V29 restores
+endpoint-capped Euclidean distance as authority and carries the side sign
+separately; the exact provider placement counts return to the pre-defect state.
+
+The route manifest now authors detail and overview width independently from
+opacity for every route class. Walking scale preserves construction width;
+district and regional scales use a narrower semantic cross-section so routes
+remain connected and legible without becoming broad tan carpets. A regression
+compares the painted overview fraction against the detail fraction.
+
+V33 verifies this state through 9/9 fresh scratch real-SSH captures at exact
+origin, west waterfront, and coast crossing over walking/district/regional
+zoom. It retains 2,566,848 raw bytes and 225 synchronized frames with all
+position, zoom, and OCTANT assertions. Cold worker readiness was 10.081 seconds
+and worker RSS reached 819 MB; repeated coordinator heap warnings remain an
+explicit performance failure. Evidence is under
+`track-6-acceptance-atlas/composition-hierarchy-v33-real-ssh-structural-crossing/`.
+
+This selects the cross-section and route-width architecture, not the bridge as
+finished art. The centre is still rectilinear, approaches lack terrain-shaped
+taper and wear, support locations are cadence-based rather than span-aware, and
+only one bridge vocabulary exists. Production remains `vb07c0d4`; Gate A and
+physical Ghostty acceptance remain open.

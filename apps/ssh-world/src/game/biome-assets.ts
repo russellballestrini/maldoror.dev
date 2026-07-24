@@ -105,6 +105,8 @@ interface RouteMaterialEntry extends BaseMaterialEntry {
   routeKind?: RegionalRouteKind;
   crossingKind?: RegionalCrossingKind;
   textureScaleTiles: number;
+  detailWidthScale: number;
+  overviewWidthScale: number;
   detailOpacity: number;
   overviewOpacity: number;
 }
@@ -307,6 +309,8 @@ export async function loadRegionalRouteMaterialKit(manifestPath: string): Promis
     const variants = await loadTerrainMasterVariants(imagePath, samplingTextureSize, entry);
     const style = {
       textureScaleTiles: entry.textureScaleTiles,
+      detailWidthScale: entry.detailWidthScale,
+      overviewWidthScale: entry.overviewWidthScale,
       detailOpacity: entry.detailOpacity,
       overviewOpacity: entry.overviewOpacity,
     };
@@ -657,6 +661,8 @@ function parseRouteEntry(value: unknown, index: number, role: 'route' | 'crossin
       !Number.isInteger(value.variants) || Number(value.variants) < 1 || Number(value.variants) > 16 ||
       typeof value.walkable !== 'boolean' ||
       typeof value.textureScaleTiles !== 'number' || value.textureScaleTiles < 1 || value.textureScaleTiles > 24 ||
+      typeof value.detailWidthScale !== 'number' || value.detailWidthScale < 0.25 || value.detailWidthScale > 1.25 ||
+      typeof value.overviewWidthScale !== 'number' || value.overviewWidthScale < 0.25 || value.overviewWidthScale > 1.25 ||
       typeof value.detailOpacity !== 'number' || value.detailOpacity < 0.2 || value.detailOpacity > 1 ||
       typeof value.overviewOpacity !== 'number' || value.overviewOpacity < 0.2 || value.overviewOpacity > 1) {
     throw new Error(`Invalid regional ${role} material entry at index ${index}`);
@@ -674,6 +680,8 @@ function parseRouteEntry(value: unknown, index: number, role: 'route' | 'crossin
     walkable: value.walkable,
     material: material as Tile['material'],
     textureScaleTiles: value.textureScaleTiles,
+    detailWidthScale: value.detailWidthScale,
+    overviewWidthScale: value.overviewWidthScale,
     detailOpacity: value.detailOpacity,
     overviewOpacity: value.overviewOpacity,
   };

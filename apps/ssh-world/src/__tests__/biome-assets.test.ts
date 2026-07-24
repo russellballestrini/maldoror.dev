@@ -45,12 +45,32 @@ describe('regional biome material manifest', () => {
     expect(kit.crossingMaterials.bridge).toHaveLength(4);
     expect(kit.crossingMaterials.ferry).toBeUndefined();
     expect(kit.routeSurfaceStyles).toEqual({
-      arterial: { textureScaleTiles: 2.6, detailOpacity: 0.8, overviewOpacity: 0.68 },
-      'local-road': { textureScaleTiles: 3.2, detailOpacity: 0.74, overviewOpacity: 0.62 },
-      trail: { textureScaleTiles: 4, detailOpacity: 0.64, overviewOpacity: 0.54 },
+      arterial: {
+        textureScaleTiles: 2.6,
+        detailWidthScale: 0.94,
+        overviewWidthScale: 0.62,
+        detailOpacity: 0.8,
+        overviewOpacity: 0.68,
+      },
+      'local-road': {
+        textureScaleTiles: 3.2,
+        detailWidthScale: 0.88,
+        overviewWidthScale: 0.55,
+        detailOpacity: 0.74,
+        overviewOpacity: 0.62,
+      },
+      trail: {
+        textureScaleTiles: 4,
+        detailWidthScale: 0.74,
+        overviewWidthScale: 0.46,
+        detailOpacity: 0.64,
+        overviewOpacity: 0.54,
+      },
     });
     expect(kit.crossingSurfaceStyles.bridge).toEqual({
       textureScaleTiles: 2.4,
+      detailWidthScale: 0.96,
+      overviewWidthScale: 0.78,
       detailOpacity: 0.96,
       overviewOpacity: 0.9,
     });

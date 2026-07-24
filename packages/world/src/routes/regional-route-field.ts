@@ -7,6 +7,9 @@ export type RegionalCrossingKind = 'ford' | 'bridge' | 'ferry';
 
 export interface RegionalRouteSample {
   distance: number;
+  /** Signed centreline offset in the local route-normal frame. The sign is
+   * stable for an edge and enables asymmetric cross-section lighting. */
+  signedDistance: number;
   /** Half-width of the nearest route centreline, including the one-tile
    * influence apron just outside authoritative route ownership. */
   halfWidth: number;
@@ -80,6 +83,7 @@ interface RoutePath {
 
 interface CachedRouteBlock {
   distance: Float32Array;
+  signedDistance: Float32Array;
   halfWidth: Float32Array;
   kind: Uint8Array;
   crossing: Uint8Array;
@@ -170,6 +174,7 @@ export class RegionalRouteField {
     const crossingKind = CROSSING_BY_CODE[block.crossing[index]!] ?? null;
     return {
       distance: block.distance[index]!,
+      signedDistance: block.signedDistance[index]!,
       halfWidth: block.halfWidth[index]!,
       isRoute: kind !== null,
       isCrossing: crossingKind !== null,
@@ -259,6 +264,8 @@ export class RegionalRouteField {
     const size = this.blockSize * this.blockSize;
     const distance = new Float32Array(size);
     distance.fill(Number.POSITIVE_INFINITY);
+    const signedDistance = new Float32Array(size);
+    signedDistance.fill(Number.POSITIVE_INFINITY);
     const halfWidth = new Float32Array(size);
     const kind = new Uint8Array(size);
     const crossing = new Uint8Array(size);
@@ -298,6 +305,7 @@ export class RegionalRouteField {
         originX,
         originY,
         distance,
+        signedDistance,
         halfWidth,
         kind,
         crossing,
@@ -328,6 +336,7 @@ export class RegionalRouteField {
     }
     return {
       distance,
+      signedDistance,
       halfWidth,
       kind,
       crossing,
@@ -345,6 +354,7 @@ export class RegionalRouteField {
     originX: number,
     originY: number,
     distance: Float32Array,
+    signedDistance: Float32Array,
     halfWidth: Float32Array,
     kind: Uint8Array,
     crossing: Uint8Array,
@@ -369,10 +379,21 @@ export class RegionalRouteField {
         for (let localX = minX; localX <= maxX; localX++) {
           const worldX = originX + localX;
           const worldY = originY + localY;
-          const value = segmentDistance(worldX, worldY, start.x, start.y, end.x, end.y);
+          const value = segmentDistance(
+            worldX,
+            worldY,
+            start.x,
+            start.y,
+            end.x,
+            end.y,
+          );
+          const rawSide = (worldX - start.x) * -tangentY +
+            (worldY - start.y) * tangentX;
+          const signedOffset = rawSide < 0 ? -value : value;
           const index = gridIndex(localX, localY, this.blockSize);
           if (value >= distance[index]!) continue;
           distance[index] = value;
+          signedDistance[index] = signedOffset;
           halfWidth[index] = path.edge.width;
           if (value <= path.edge.width) {
             kind[index] = routeCode;
@@ -855,7 +876,14 @@ function pathIntersectsBounds(
   return false;
 }
 
-function segmentDistance(px: number, py: number, x0: number, y0: number, x1: number, y1: number): number {
+function segmentDistance(
+  px: number,
+  py: number,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+): number {
   const dx = x1 - x0;
   const dy = y1 - y0;
   const lengthSquared = dx * dx + dy * dy;

@@ -79,6 +79,7 @@ function routeSample(
 ): RegionalRouteSample {
   return {
     distance: 0,
+    signedDistance: 0,
     halfWidth: 1,
     isRoute: true,
     isCrossing: crossingKind !== null,
@@ -219,6 +220,7 @@ describe('RegionalMaterialCompositor', () => {
       sample: (_x, y) => ({
         ...routeSample('local-road', y === 0 ? 'bridge' : null),
         distance: Math.abs(y),
+        signedDistance: y,
         halfWidth: 1,
         isRoute: y === 0,
         isCrossing: y === 0,
@@ -234,6 +236,62 @@ describe('RegionalMaterialCompositor', () => {
     expect(bridge.materialMask?.[7]?.[4]).toBe(1);
     expect(bridge.pixels[0]![4]).not.toEqual(COLOURS.coast);
     expect(bridge.pixels[7]![4]).toEqual(COLOURS.coast);
+  });
+
+  it('uses manifest width scales to keep overview roads narrower than detail roads', () => {
+    const routes: RegionalRouteSampler = {
+      sample: (_x, y) => ({
+        ...routeSample('local-road', null),
+        distance: Math.abs(y),
+        signedDistance: y,
+        halfWidth: 1,
+        isRoute: Math.abs(y) <= 1,
+      }),
+    };
+    const makeCompositor = (size: number) => new RegionalMaterialCompositor({
+      worldSeed: 42n,
+      field: { sample: () => sample([0, 0, 1, 0, 0, 0], true) },
+      routes,
+      materials: Object.fromEntries(BIOME_FAMILIES.map((family) => [
+        family,
+        [solidTile(family, size)],
+      ])) as Record<BiomeFamily, Tile[]>,
+      routeMaterials: {
+        arterial: [solidColourTile('route:arterial', { r: 190, g: 180, b: 165 }, size)],
+        'local-road': [solidColourTile('route:local', { r: 150, g: 105, b: 60 }, size)],
+        trail: [solidColourTile('route:trail', { r: 80, g: 55, b: 35 }, size)],
+      },
+      routeSurfaceStyles: {
+        arterial: {
+          textureScaleTiles: 2,
+          detailWidthScale: 1,
+          overviewWidthScale: 0.4,
+          detailOpacity: 1,
+          overviewOpacity: 1,
+        },
+        'local-road': {
+          textureScaleTiles: 2,
+          detailWidthScale: 1,
+          overviewWidthScale: 0.4,
+          detailOpacity: 1,
+          overviewOpacity: 1,
+        },
+        trail: {
+          textureScaleTiles: 2,
+          detailWidthScale: 1,
+          overviewWidthScale: 0.4,
+          detailOpacity: 1,
+          overviewOpacity: 1,
+        },
+      },
+    });
+    const paintedFraction = (tile: Tile) => tile.pixels.flat()
+      .filter((pixel) => pixel !== null && pixel.r > COLOURS.coast.r + 20).length /
+      (tile.pixels.length * tile.pixels[0]!.length);
+    const detail = makeCompositor(12).getTile(0, 0);
+    const overview = makeCompositor(8).getTile(0, 0);
+
+    expect(paintedFraction(overview)).toBeLessThan(paintedFraction(detail) * 0.72);
   });
 
   it('blends parcel access material across the corridor axis without a ground stamp', () => {
