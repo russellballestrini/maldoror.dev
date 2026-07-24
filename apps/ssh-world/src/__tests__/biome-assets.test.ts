@@ -15,7 +15,7 @@ describe('regional biome material manifest', () => {
   it('loads all six authored families into shared bounded source tiles', async () => {
     const kit = await loadRegionalBiomeMaterialKit(path.resolve('assets/biomes/manifest.json'));
     expect(kit.sourceTileSize).toBe(96);
-    expect(kit.tiles).toHaveLength(30);
+    expect(kit.tiles).toHaveLength(31);
     for (const family of BIOME_FAMILIES) {
       expect(kit.materials[family]).toHaveLength(4);
       expect(kit.overviewMaterials[family]).toHaveLength(1);
@@ -25,6 +25,11 @@ describe('regional biome material manifest', () => {
       }
       expect(kit.overviewMaterials[family].every((tile) => tile.pixels.length === 128)).toBe(true);
     }
+    expect(kit.landmarkFabricMaterials['canal-town']).toHaveLength(1);
+    expect(kit.landmarkFabricMaterials['canal-town']?.every((tile) => (
+      tile.walkable && tile.pixels.length === 96 && tile.pixels[0]?.length === 96
+    ))).toBe(true);
+    expect(Object.keys(kit.landmarkFabricMaterials)).toEqual(['canal-town']);
     expect(kit.materials.coast.every((tile) => tile.material === 'water' && !tile.walkable)).toBe(true);
   });
 
@@ -138,6 +143,10 @@ describe('regional biome material manifest', () => {
     expect(new Set(focal
       .filter((asset) => asset.frontageAxis === 'north-south')
       .map((asset) => asset.compositionSide))).toEqual(new Set([-1, 1]));
+    expect(focal.every((asset) => (
+      asset.frontageStations !== undefined && asset.frontageStations.length >= 1 &&
+      asset.frontageStations.every((station) => station >= -0.85 && station <= 0.85)
+    ))).toBe(true);
     const waterfront = kit.assets.filter((asset) => asset.programs?.includes('waterfront'));
     expect(waterfront).toHaveLength(5);
     expect(new Set(waterfront.map((asset) => asset.waterfrontFunction))).toEqual(new Set([

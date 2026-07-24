@@ -13,6 +13,7 @@ import type {
 } from '../routes/regional-route-field.js';
 import { RegionalMaterialCompositor } from '../tiles/regional-material-compositor.js';
 import { rasterizeRegionalEnvironmentProgramLayout } from '../tiles/regional-environment-program-layout.js';
+import { rasterizeRegionalLandmarkFabricLayout } from '../tiles/regional-landmark-fabric-layout.js';
 import {
   RegionalWorldTileProvider,
   type RegionalAmbientAsset,
@@ -179,6 +180,9 @@ function makeWorld(
         : undefined,
       compositionSide: family === 'canal-town' && variant >= 4
         ? variant === 4 || variant === 6 ? -1 as const : 1 as const
+        : undefined,
+      frontageStations: family === 'canal-town' && variant >= 4
+        ? variant === 4 ? [-0.3, 0.35] as const : [variant === 5 ? -0.24 : 0.31] as const
         : undefined,
       programs: (family === 'canal-town' || family === 'coast') && variant < 2
         ? ['waterfront'] as const
@@ -431,6 +435,18 @@ describe('RegionalWorldTileProvider', () => {
     expect(Math.max(...usage.values())).toBeLessThanOrEqual(Math.ceil(entourage.length / 3));
     expect(world.isBuildingAt(0, 0)).toBe(false);
     expect(world.getTile(0, 0).walkable).toBe(true);
+    const fabrics = world.getLandmarkFabricLayoutsInBounds(-22, -22, 22, 22)
+      .filter((layout) => layout.id.includes(':0:0:arrival'));
+    expect(fabrics).toHaveLength(1);
+    expect(fabrics[0]?.aprons).toHaveLength(4);
+    expect(fabrics[0]?.aprons.map((apron) => apron.role).sort())
+      .toEqual(['approach', 'approach', 'threshold', 'threshold']);
+    const fabricCell = rasterizeRegionalLandmarkFabricLayout(fabrics[0]!)
+      .find((cell) => cell.x === Math.floor(fabrics[0]!.aprons[0]!.centreX) &&
+        cell.y === Math.floor(fabrics[0]!.aprons[0]!.centreY));
+    expect(fabricCell).toBeDefined();
+    expect(world.getTileAtResolution(fabricCell!.x, fabricCell!.y, 4).id)
+      .toContain('regional-landmark-fabric:landmark-fabric:0:0:arrival');
   });
 
   it('orients focal frontage from the landmark route when off-route samples lose direction', () => {

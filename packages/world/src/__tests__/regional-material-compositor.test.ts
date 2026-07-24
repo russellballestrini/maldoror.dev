@@ -26,6 +26,7 @@ import {
   buildRegionalWaterfrontLayout,
   sampleRegionalWaterfrontLayout,
 } from '../tiles/regional-waterfront-layout.js';
+import { buildRegionalLandmarkFabricLayout } from '../tiles/regional-landmark-fabric-layout.js';
 
 const COLOURS: Record<BiomeFamily, RGB> = {
   'canal-town': { r: 220, g: 150, b: 90 },
@@ -326,6 +327,92 @@ describe('RegionalMaterialCompositor', () => {
       layout,
       'local-road',
     ).walkable).toBe(true);
+  });
+
+  it('preserves authored landmark-paver contrast instead of averaging unrelated phases', () => {
+    const noRoute: RegionalRouteSampler = {
+      sample: () => ({
+        ...routeSample('local-road', null),
+        distance: 8,
+        isRoute: false,
+        isWalkableRoute: false,
+        routeKind: null,
+        routeId: null,
+      }),
+    };
+    const checkerPixels = Array.from({ length: 8 }, (_, y) => Array.from({ length: 8 }, (_, x) => (
+      (x + y) % 2 === 0 ? { r: 230, g: 215, b: 175 } : { r: 75, g: 66, b: 52 }
+    )));
+    const checker: Tile = {
+      id: 'landmark:checker-pavers',
+      name: 'landmark:checker-pavers',
+      walkable: true,
+      pixels: checkerPixels,
+      resolutions: { '8': checkerPixels },
+    };
+    const composed = new RegionalMaterialCompositor({
+      worldSeed: 42n,
+      field: { sample: () => sample([0, 0, 0, 1, 0, 0]) },
+      routes: noRoute,
+      materials: Object.fromEntries(BIOME_FAMILIES.map((family) => [
+        family,
+        [solidTile(family)],
+      ])) as Record<BiomeFamily, Tile[]>,
+      routeMaterials: {
+        trail: [solidColourTile('route:trail', { r: 80, g: 70, b: 55 })],
+        'local-road': [solidColourTile('route:local-road', { r: 110, g: 100, b: 85 })],
+        arterial: [solidColourTile('route:arterial', { r: 130, g: 120, b: 105 })],
+      },
+      landmarkFabricMaterials: { 'canal-town': [checker] },
+    });
+    const layout = buildRegionalLandmarkFabricLayout({
+      id: 'landmark:test-authored-pavers',
+      materialFamily: 'canal-town',
+      siteX: 0,
+      siteY: 0,
+      seed: 42,
+      focals: [{
+        id: 'east-frontage',
+        frontageAxis: 'north-south',
+        compositionSide: 1,
+        frontageStations: [0],
+        minX: 2,
+        minY: -4,
+        maxX: 6,
+        maxY: 4,
+      }],
+    })!;
+    const tile = composed.getLandmarkFabricGroundTileAtResolution(1, 0, 8, layout, 'local-road');
+    const reds = tile.pixels.flat().map((pixel) => pixel!.r);
+    expect(Math.max(...reds) - Math.min(...reds)).toBeGreaterThan(35);
+    expect(tile.id).toContain('regional-landmark-fabric:landmark:test-authored-pavers');
+    expect(tile.walkable).toBe(true);
+
+    const waterComposed = new RegionalMaterialCompositor({
+      worldSeed: 42n,
+      field: { sample: () => sample([0, 0, 1, 0, 0, 0], true) },
+      routes: noRoute,
+      materials: Object.fromEntries(BIOME_FAMILIES.map((family) => [
+        family,
+        [solidTile(family)],
+      ])) as Record<BiomeFamily, Tile[]>,
+      routeMaterials: {
+        trail: [solidColourTile('route:trail', { r: 80, g: 70, b: 55 })],
+        'local-road': [solidColourTile('route:local-road', { r: 110, g: 100, b: 85 })],
+        arterial: [solidColourTile('route:arterial', { r: 130, g: 120, b: 105 })],
+      },
+      landmarkFabricMaterials: { 'canal-town': [checker] },
+    });
+    const waterBase = waterComposed.getTileAtResolution(1, 0, 8);
+    const waterThreshold = waterComposed.getLandmarkFabricGroundTileAtResolution(
+      1,
+      0,
+      8,
+      layout,
+      'local-road',
+    );
+    expect(waterThreshold.pixels).toEqual(waterBase.pixels);
+    expect(waterThreshold.walkable).toBe(false);
   });
 
   it('carves cave darkness and contour trails from blended terrain instead of square stamps', () => {

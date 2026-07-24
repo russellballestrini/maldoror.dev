@@ -109,6 +109,7 @@ export async function loadRegionalWorldKit(
     field,
     materials: biomeKit.materials,
     overviewMaterials: biomeKit.overviewMaterials,
+    landmarkFabricMaterials: biomeKit.landmarkFabricMaterials,
     routes,
     routeMaterials: routeKit.routeMaterials,
     crossingMaterials: routeKit.crossingMaterials,

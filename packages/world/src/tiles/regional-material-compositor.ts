@@ -26,6 +26,10 @@ import {
   sampleRegionalEnvironmentProgramLayout,
   type RegionalEnvironmentProgramLayout,
 } from './regional-environment-program-layout.js';
+import {
+  sampleRegionalLandmarkFabricLayout,
+  type RegionalLandmarkFabricLayout,
+} from './regional-landmark-fabric-layout.js';
 
 export interface BiomeSampler {
   sample(worldX: number, worldY: number): BiomeWorldSample;
@@ -48,6 +52,10 @@ export interface RegionalMaterialCompositorConfig {
   /** Separately authored broad-value materials for district/regional zoom.
    * These are not mipmaps of walking art: their semantic detail is different. */
   overviewMaterials?: Readonly<Record<BiomeFamily, readonly Tile[]>>;
+  /** Optional family-specific constructed ground for focal settlement fabric.
+   * Missing families fall back to their route surface until an authored
+   * vocabulary exists. */
+  landmarkFabricMaterials?: Readonly<Partial<Record<BiomeFamily, readonly Tile[]>>>;
   routes?: RegionalRouteSampler;
   routeMaterials?: Readonly<Record<RegionalRouteKind, readonly Tile[]>>;
   crossingMaterials?: Readonly<Partial<Record<RegionalCrossingKind, readonly Tile[]>>>;
@@ -101,6 +109,7 @@ export class RegionalMaterialCompositor {
   private readonly routes?: RegionalRouteSampler;
   private readonly materials: Readonly<Record<BiomeFamily, readonly PreparedTexture[]>>;
   private readonly overviewMaterials?: Readonly<Record<BiomeFamily, readonly PreparedTexture[]>>;
+  private readonly landmarkFabricMaterials?: Readonly<Partial<Record<BiomeFamily, readonly PreparedTexture[]>>>;
   private readonly routeMaterials?: Readonly<Record<RegionalRouteKind, readonly PreparedTexture[]>>;
   private readonly crossingMaterials?: Readonly<Partial<Record<RegionalCrossingKind, readonly PreparedTexture[]>>>;
   private readonly maxCachedTiles: number;
@@ -146,6 +155,16 @@ export class RegionalMaterialCompositor {
         return [family, sources.map(prepareTexture)];
       })) as unknown as Readonly<Record<BiomeFamily, readonly PreparedTexture[]>>;
     }
+    if (config.landmarkFabricMaterials) {
+      this.landmarkFabricMaterials = Object.fromEntries(
+        Object.entries(config.landmarkFabricMaterials).map(([family, sources]) => {
+          if (!sources || sources.length === 0) {
+            throw new Error(`Regional landmark-fabric material family is empty: ${family}`);
+          }
+          return [family, sources.map(prepareTexture)];
+        }),
+      ) as Readonly<Partial<Record<BiomeFamily, readonly PreparedTexture[]>>>;
+    }
     if (Boolean(config.routes) !== Boolean(config.routeMaterials)) {
       throw new Error('Regional routes and route materials must be configured together');
     }
@@ -165,6 +184,7 @@ export class RegionalMaterialCompositor {
     const prepared = [
       ...BIOME_FAMILIES.flatMap((family) => this.materials[family]),
       ...BIOME_FAMILIES.flatMap((family) => this.overviewMaterials?.[family] ?? []),
+      ...BIOME_FAMILIES.flatMap((family) => this.landmarkFabricMaterials?.[family] ?? []),
       ...ROUTE_KINDS.flatMap((kind) => this.routeMaterials?.[kind] ?? []),
       ...Object.values(this.crossingMaterials ?? {}).flatMap((textures) => textures ?? []),
     ];
@@ -455,6 +475,153 @@ export class RegionalMaterialCompositor {
       pixels,
       materialMask: base.materialMask,
       walkable: base.walkable,
+      resolutions: { [String(resolution)]: pixels },
+    };
+    this.cache.set(key, tile);
+    while (this.cache.size > this.maxCachedTiles) {
+      const oldest = this.cache.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.cache.delete(oldest);
+    }
+    return tile;
+  }
+
+  /** Join authored settlement entrances to circulation with continuous
+   * world-space paving. The focal layout owns geometry; this compositor only
+   * reconstructs stone in linear light, retains biome beneath soft edges, and
+   * respects water ownership from the composed material mask. */
+  getLandmarkFabricGroundTile(
+    tileX: number,
+    tileY: number,
+    layout: RegionalLandmarkFabricLayout,
+    routeKind: RegionalRouteKind,
+  ): Tile {
+    return this.getLandmarkFabricGroundTileAtResolution(
+      tileX,
+      tileY,
+      this.sourceSize,
+      layout,
+      routeKind,
+    );
+  }
+
+  getLandmarkFabricGroundTileAtResolution(
+    tileX: number,
+    tileY: number,
+    requestedResolution: number,
+    layout: RegionalLandmarkFabricLayout,
+    routeKind: RegionalRouteKind,
+  ): Tile {
+    const resolution = this.selectResolution(requestedResolution);
+    const key = `landmark-fabric:${layout.id}:${tileX},${tileY}@${resolution}:${routeKind}`;
+    const cached = this.cache.get(key);
+    if (cached) {
+      this.cache.delete(key);
+      this.cache.set(key, cached);
+      return cached;
+    }
+    const base = this.getTileAtResolution(tileX, tileY, resolution);
+    if (!this.routeMaterials) {
+      this.cache.set(key, base);
+      return base;
+    }
+    const routeTexture = new Float64Array(3);
+    const authoredFabric = this.landmarkFabricMaterials?.[layout.materialFamily];
+    const fabricTextures = authoredFabric ?? this.routeMaterials[routeKind];
+    const textureScaleTiles = this.textureScaleForResolution(resolution);
+    // Landmark stone is scale-authored for terminal walking detail. Sampling
+    // one deterministic mapping preserves mortar contrast; the general
+    // four-corner variant blend is valuable for open terrain but averages four
+    // unrelated paver phases into a jointless wash on narrow frontages.
+    const fabricTextureScaleTiles = authoredFabric ? 1.6 : textureScaleTiles;
+    const authoredFabricHash = authoredFabric
+      ? this.hash(Math.floor(layout.siteX), Math.floor(layout.siteY), 0x2d71)
+      : 0;
+    const authoredFabricTexture = authoredFabric
+      ? authoredFabric[authoredFabricHash % authoredFabric.length]!
+      : null;
+    const authoredFabricLevel = authoredFabricTexture
+      ? selectTextureLevelIndex(authoredFabricTexture, resolution, fabricTextureScaleTiles)
+      : 0;
+    const pixels: PixelGrid = [];
+    let maximumPavingWeight = 0;
+    for (let y = 0; y < resolution; y++) {
+      const row: RGB[] = [];
+      for (let x = 0; x < resolution; x++) {
+        const worldX = tileX + (x + 0.5) / resolution;
+        const worldY = tileY + (y + 0.5) / resolution;
+        const sample = sampleRegionalLandmarkFabricLayout(worldX, worldY, layout);
+        const beneath = base.pixels[y]?.[x] ?? { r: 0, g: 0, b: 0 };
+        const waterOwned = base.materialMask?.[y]?.[x] === 1;
+        if (sample.pavingWeight <= 0.0001 || waterOwned) {
+          row.push(beneath);
+          continue;
+        }
+        maximumPavingWeight = Math.max(maximumPavingWeight, sample.pavingWeight);
+        if (authoredFabricTexture) {
+          sampleMappedTexture(
+            authoredFabricTexture,
+            authoredFabricLevel,
+            worldX,
+            worldY,
+            fabricTextureScaleTiles,
+            authoredFabricHash,
+            routeTexture,
+            0,
+          );
+        } else {
+          this.sampleTextureField(
+            fabricTextures,
+            worldX,
+            worldY,
+            0x2d71,
+            fabricTextureScaleTiles,
+            resolution,
+            routeTexture,
+          );
+        }
+        const patch = valueNoise(worldX * 0.63, worldY * 0.63, this.seed32 ^ 0x7b51);
+        const grain = valueNoise(worldX * 2.17, worldY * 2.17, this.seed32 ^ 0xc317);
+        // Door thresholds read as worn warm limestone while narrow approaches
+        // retain more of the terrain beneath. Both originate from the same
+        // texture field, so the join cannot become a pasted sprite apron.
+        const beneathR = srgbToLinear(beneath.r);
+        const beneathG = srgbToLinear(beneath.g);
+        const beneathB = srgbToLinear(beneath.b);
+        const sourceMix = authoredFabric ? 0.22 : 0.46;
+        const warmth = authoredFabric
+          ? sample.thresholdWeight * 0.008 + (patch + 1) * 0.0015
+          : 0.012 + sample.thresholdWeight * 0.052 + (patch + 1) * 0.005;
+        const paverScale = authoredFabric
+          ? 0.78 + sample.thresholdWeight * 0.025 + grain * 0.01
+          : 1.06 + sample.thresholdWeight * 0.08 + grain * 0.02;
+        const paverR = clamp01(lerp(routeTexture[0]!, beneathR, sourceMix) * paverScale + warmth);
+        const paverG = clamp01(lerp(routeTexture[1]!, beneathG, sourceMix) * (paverScale + 0.005) + warmth * 0.55);
+        const paverB = clamp01(lerp(routeTexture[2]!, beneathB, sourceMix) * (paverScale - 0.02) + warmth * 0.16);
+        const opacity = sample.pavingWeight * (authoredFabric
+          ? 0.46 + sample.thresholdWeight * 0.27 + sample.approachWeight * 0.03
+          : 0.7 + sample.thresholdWeight * 0.18);
+        let linearR = lerp(beneathR, paverR, opacity);
+        let linearG = lerp(beneathG, paverG, opacity);
+        let linearB = lerp(beneathB, paverB, opacity);
+        const edgeShade = sample.edgeWeight * 0.11;
+        linearR *= 1 - edgeShade;
+        linearG *= 1 - edgeShade * 0.88;
+        linearB *= 1 - edgeShade * 0.72;
+        row.push({
+          r: linearToSrgb(linearR),
+          g: linearToSrgb(linearG),
+          b: linearToSrgb(linearB),
+        });
+      }
+      pixels.push(row);
+    }
+    const tile: Tile = {
+      id: `regional-landmark-fabric:${layout.id}:${tileX},${tileY}@${resolution}`,
+      name: 'Continuous regional landmark entrance fabric',
+      pixels,
+      materialMask: base.materialMask,
+      walkable: base.walkable || maximumPavingWeight > 0.08,
       resolutions: { [String(resolution)]: pixels },
     };
     this.cache.set(key, tile);

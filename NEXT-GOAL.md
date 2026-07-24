@@ -753,6 +753,26 @@ Completed foundations:
   canal/quay continuity, block edge spacing, district density, horizontal
   companions, five other biome vocabularies, and a fresh complete atlas remain
   open;
+- the focal-grounding pass now retains V12-V19 as explicit visual failures and
+  selects V20's semantic-entry architecture. Bounds-derived brown wash, giant
+  plates, cloudy islands, synchronized H sidewalks, phase-averaged mortar, and
+  the final readable-material/wrong-ladder candidate are all preserved rather
+  than hidden. Two limestone sources were generated through built-in
+  Codex/ChatGPT subscription image generation with no metered project API; V1
+  remains rejected and V2 is selected because broad stones and dark joints
+  survive 12-pixel ANSI reconstruction. The focal manifest now declares
+  normalized entrance stations. Runtime creates only small thresholds and
+  narrow approaches at those stations, because the focal sprites already own
+  their edge sidewalks; it performs no filename or pixel inference. Six fresh
+  scratch real-SSH origin captures cover walking/district/regional at 160x46
+  and 210x60 with 2,171,890 raw bytes and 150 synchronized frames. Full
+  verification passes 38 files / 200 tests, 18/18 typecheck tasks, 12/12 build
+  tasks, and exact V2 derivation. Evidence is under
+  `track-6-acceptance-atlas/composition-hierarchy-v20-authored-entry-thresholds/`;
+  public gallery iteration 034 exposes the rejections, selected source, and
+  three-scale result. This selects one rendering/composition sub-gate only: it
+  is not live, not Gate A, and cold readiness (21.891s at 817MB RSS) remains a
+  performance failure;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–031 expose selected and rejected research candidates without
@@ -766,10 +786,11 @@ Still open and therefore goal-blocking:
   long-run cgroup behavior, and physical Ghostty remain unproven;
 - the first six-family landmark silhouettes and shared-boundary parcel
   compounds now include a selected two-sided canal-town focal core, but remain
-  sparse research prototypes rather than a complete world layer. The core still
-  lacks continuous paving/canal/quay ground contact and thins immediately at
-  district scale; the other five families lack equivalent connected focal
-  vocabularies. Coast-specific waterfront diversity, larger squares/commons, far
+  sparse research prototypes rather than a complete world layer. The core now
+  has selected entrance-level constructed grounding but still lacks continuous
+  canal/quay composition, larger squares/commons, dense secondary frontage, and
+  equivalent focal vocabularies for the other five families. Coast-specific
+  waterfront diversity, far
   greater travel-scale entropy across route topology, hydrology, biome fields,
   ambient clusters, landmarks, and parcel programs, authoritative traversal,
   stronger landmark framing, multiple cave/highland programs and production

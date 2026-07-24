@@ -43,6 +43,12 @@ import {
   type RegionalEnvironmentProgramKind,
   type RegionalEnvironmentProgramLayout,
 } from './regional-environment-program-layout.js';
+import {
+  buildRegionalLandmarkFabricLayout,
+  rasterizeRegionalLandmarkFabricLayout,
+  type RegionalLandmarkFabricLayout,
+  type RegionalLandmarkFocalFootprint,
+} from './regional-landmark-fabric-layout.js';
 import { TileProvider, type TileProviderConfig } from './tile-provider.js';
 
 export interface RegionalVisualAsset {
@@ -99,6 +105,8 @@ export interface RegionalParcelComponentAsset extends RegionalVisualAsset {
   frontageAxis?: RegionalRouteContactAxis;
   /** Side of the route occupied by this focal's building mass. */
   compositionSide?: -1 | 1;
+  /** Normalized authored access stations along the visible frontage. */
+  frontageStations?: readonly number[];
   /** Optional district programs supported by this mass. Generic parcels may
    * still reuse it; specialized programs never infer function from its ID. */
   programs?: readonly RegionalParcelProgram[];
@@ -298,6 +306,11 @@ interface EnvironmentProgramSurface {
   layout: RegionalEnvironmentProgramLayout;
 }
 
+interface LandmarkFabricSurface {
+  routeKind: RegionalRouteKind;
+  layout: RegionalLandmarkFabricLayout;
+}
+
 interface CachedEnvironmentProgram {
   placement: Placement;
   layout: RegionalEnvironmentProgramLayout;
@@ -321,6 +334,7 @@ export interface RegionalParcelConnectorCell {
 interface CachedBlock {
   overlays: Map<string, BuildingTileData>;
   solid: Set<string>;
+  landmarkFabricSurfaces: Map<string, LandmarkFabricSurface>;
   placements: Placement[];
   accessedAt: number;
 }
@@ -352,6 +366,7 @@ interface CollectedDerivedLayers {
   connectors: Map<string, ParcelConnector>;
   surfaces: Map<string, ParcelSurface>;
   waterfrontSurfaces: Map<string, WaterfrontSurface>;
+  landmarkFabricSurfaces: Map<string, LandmarkFabricSurface>;
   environmentSurfaces: Map<string, EnvironmentProgramSurface>;
   environmentWalkable: Set<string>;
   environmentSolid: Set<string>;
@@ -548,6 +563,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     const connector = parcel.connectors.get(key);
     const surface = parcel.surfaces.get(key);
     const waterfront = parcel.waterfrontSurfaces.get(key);
+    const landmarkFabric = parcel.landmarkFabricSurfaces.get(key);
     const environment = parcel.environmentSurfaces.get(key);
     return environment
       ? this.compositor.getEnvironmentProgramGroundTile(
@@ -573,6 +589,13 @@ export class RegionalWorldTileProvider extends TileProvider {
           waterfront.layout,
           waterfront.routeKind,
         )
+        : landmarkFabric
+        ? this.compositor.getLandmarkFabricGroundTile(
+          tileX,
+          tileY,
+          landmarkFabric.layout,
+          landmarkFabric.routeKind,
+        )
         : surface
         ? this.compositor.getParcelGroundTile(tileX, tileY, surface.layout, surface.routeKind)
         : this.compositor.getTile(tileX, tileY);
@@ -586,6 +609,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     const connector = parcel.connectors.get(key);
     const surface = parcel.surfaces.get(key);
     const waterfront = parcel.waterfrontSurfaces.get(key);
+    const landmarkFabric = parcel.landmarkFabricSurfaces.get(key);
     const environment = parcel.environmentSurfaces.get(key);
     return environment
       ? this.compositor.getEnvironmentProgramGroundTileAtResolution(
@@ -613,6 +637,14 @@ export class RegionalWorldTileProvider extends TileProvider {
           resolution,
           waterfront.layout,
           waterfront.routeKind,
+        )
+        : landmarkFabric
+        ? this.compositor.getLandmarkFabricGroundTileAtResolution(
+          tileX,
+          tileY,
+          resolution,
+          landmarkFabric.layout,
+          landmarkFabric.routeKind,
         )
         : surface
         ? this.compositor.getParcelGroundTileAtResolution(
@@ -701,6 +733,7 @@ export class RegionalWorldTileProvider extends TileProvider {
         const connector = derived.connectors.get(key);
         const surface = derived.surfaces.get(key);
         const waterfront = derived.waterfrontSurfaces.get(key);
+        const landmarkFabric = derived.landmarkFabricSurfaces.get(key);
         const environment = derived.environmentSurfaces.get(key);
         const terrainTile = environment
           ? this.compositor.getEnvironmentProgramGroundTileAtResolution(
@@ -728,6 +761,14 @@ export class RegionalWorldTileProvider extends TileProvider {
               normalizedResolution,
               waterfront.layout,
               waterfront.routeKind,
+            )
+            : landmarkFabric
+            ? this.compositor.getLandmarkFabricGroundTileAtResolution(
+              x,
+              y,
+              normalizedResolution,
+              landmarkFabric.layout,
+              landmarkFabric.routeKind,
             )
             : surface
             ? this.compositor.getParcelGroundTileAtResolution(
@@ -771,6 +812,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     const connectors = new Map<string, ParcelConnector>();
     const surfaces = new Map<string, ParcelSurface>();
     const waterfrontSurfaces = new Map<string, WaterfrontSurface>();
+    const landmarkFabricSurfaces = new Map<string, LandmarkFabricSurface>();
     const environmentSurfaces = new Map<string, EnvironmentProgramSurface>();
     const environmentWalkable = new Set<string>();
     const environmentSolid = new Set<string>();
@@ -791,6 +833,11 @@ export class RegionalWorldTileProvider extends TileProvider {
           if (inside(key) && !overlays.has(key)) overlays.set(key, tile);
         }
         for (const key of block.solid) if (inside(key)) solid.add(key);
+        for (const [key, surface] of block.landmarkFabricSurfaces) {
+          if (inside(key) && !landmarkFabricSurfaces.has(key)) {
+            landmarkFabricSurfaces.set(key, surface);
+          }
+        }
       }
     }
     const parcel = this.collectParcelLayers(bounds);
@@ -818,6 +865,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       connectors,
       surfaces,
       waterfrontSurfaces,
+      landmarkFabricSurfaces,
       environmentSurfaces,
       environmentWalkable,
       environmentSolid,
@@ -1356,6 +1404,28 @@ export class RegionalWorldTileProvider extends TileProvider {
     return [...layouts.values()].sort((a, b) => a.id.localeCompare(b.id));
   }
 
+  getLandmarkFabricLayoutsInBounds(
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number,
+  ): RegionalLandmarkFabricLayout[] {
+    const bounds = normalizedPreparedBounds(minX, minY, maxX, maxY);
+    const layouts = new Map<string, RegionalLandmarkFabricLayout>();
+    const firstBlockX = floorDiv(bounds.minX, this.blockSize);
+    const lastBlockX = floorDiv(bounds.maxX, this.blockSize);
+    const firstBlockY = floorDiv(bounds.minY, this.blockSize);
+    const lastBlockY = floorDiv(bounds.maxY, this.blockSize);
+    for (let blockY = firstBlockY; blockY <= lastBlockY; blockY++) {
+      for (let blockX = firstBlockX; blockX <= lastBlockX; blockX++) {
+        for (const surface of this.getBlock(blockX, blockY).landmarkFabricSurfaces.values()) {
+          layouts.set(surface.layout.id, surface.layout);
+        }
+      }
+    }
+    return [...layouts.values()].sort((a, b) => a.id.localeCompare(b.id));
+  }
+
   getWaterfrontLayoutsInBounds(
     minX: number,
     minY: number,
@@ -1494,6 +1564,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     const originX = blockX * this.blockSize;
     const originY = blockY * this.blockSize;
     const placements: Placement[] = [];
+    const landmarkFabricSurfaces = new Map<string, LandmarkFabricSurface>();
     const landmarkSites = this.routes.getLandmarkSites?.(
       originX - LANDMARK_ENTOURAGE_REACH,
       originY - LANDMARK_ENTOURAGE_REACH,
@@ -1508,10 +1579,19 @@ export class RegionalWorldTileProvider extends TileProvider {
             site.y >= originY && site.y < originY + this.blockSize) {
           placements.push(placement);
         }
-        placements.push(...this.buildLandmarkEntourage(placement).filter((support) => (
+        const entourage = this.buildLandmarkEntourage(placement);
+        placements.push(...entourage.filter((support) => (
           support.anchorX >= originX && support.anchorX < originX + this.blockSize &&
           support.anchorY >= originY && support.anchorY < originY + this.blockSize
         )));
+        const fabric = this.createLandmarkFabricSurface(placement, entourage);
+        if (fabric) {
+          for (const cell of rasterizeRegionalLandmarkFabricLayout(fabric.layout)) {
+            if (cell.x < originX || cell.x >= originX + this.blockSize ||
+                cell.y < originY || cell.y >= originY + this.blockSize) continue;
+            landmarkFabricSurfaces.set(positionKey(cell.x, cell.y), fabric);
+          }
+        }
       }
     } else {
       for (let y = originY; y < originY + this.blockSize; y++) {
@@ -1526,7 +1606,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     placements.push(...this.buildRouteContactPlacements(originX, originY));
 
     const { overlays, solid } = this.rasterizePlacements(placements);
-    return { overlays, solid, placements, accessedAt: ++this.accessClock };
+    return { overlays, solid, landmarkFabricSurfaces, placements, accessedAt: ++this.accessClock };
   }
 
   private rasterizePlacements(placements: readonly Placement[]): {
@@ -1746,6 +1826,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     const connectors = new Map<string, ParcelConnector>();
     const surfaces = new Map<string, ParcelSurface>();
     const waterfrontSurfaces = new Map<string, WaterfrontSurface>();
+    const landmarkFabricSurfaces = new Map<string, LandmarkFabricSurface>();
     const environmentSurfaces = new Map<string, EnvironmentProgramSurface>();
     const environmentWalkable = new Set<string>();
     const environmentSolid = new Set<string>();
@@ -1786,6 +1867,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       connectors,
       surfaces,
       waterfrontSurfaces,
+      landmarkFabricSurfaces,
       environmentSurfaces,
       environmentWalkable,
       environmentSolid,
@@ -1810,6 +1892,9 @@ export class RegionalWorldTileProvider extends TileProvider {
       maxX: minX + this.blockSize - 1,
       maxY: minY + this.blockSize - 1,
     });
+    for (const [surfaceKey, surface] of this.getBlock(blockX, blockY).landmarkFabricSurfaces) {
+      layers.landmarkFabricSurfaces.set(surfaceKey, surface);
+    }
     this.parcelLayerCache.set(key, layers);
     while (this.parcelLayerCache.size > this.maxCachedBlocks) {
       const oldest = this.parcelLayerCache.keys().next().value as string | undefined;
@@ -2477,6 +2562,49 @@ export class RegionalWorldTileProvider extends TileProvider {
     return supports;
   }
 
+  /** Derive walkable settlement ground from the placed focal contract. Large
+   * art establishes the enclosing mass; a separate continuous material layer
+   * joins only its declared entrance stations to circulation. This prevents
+   * collision, traversal, or ground ownership from being guessed from pixels. */
+  private createLandmarkFabricSurface(
+    landmark: Placement,
+    entourage: readonly Placement[],
+  ): LandmarkFabricSurface | null {
+    const focals: RegionalLandmarkFocalFootprint[] = [];
+    for (const placement of entourage) {
+      if (!isFocalCompositionAsset(placement.asset) ||
+          placement.asset.frontageAxis === undefined ||
+          placement.asset.compositionSide === undefined ||
+          placement.asset.frontageStations === undefined) continue;
+      const bounds = visibleSpriteWorldBounds(placement);
+      if (!bounds) continue;
+      focals.push({
+        id: placement.asset.id,
+        frontageAxis: placement.asset.frontageAxis,
+        compositionSide: placement.asset.compositionSide,
+        frontageStations: placement.asset.frontageStations,
+        minX: bounds.minX,
+        minY: bounds.minY,
+        maxX: bounds.maxX + 1,
+        maxY: bounds.maxY + 1,
+      });
+    }
+    if (focals.length === 0) return null;
+    const route = this.routes.sample(landmark.siteX, landmark.siteY);
+    const layout = buildRegionalLandmarkFabricLayout({
+      id: `landmark-fabric:${landmark.siteX}:${landmark.siteY}:${landmark.landmarkKind ?? 'site'}`,
+      materialFamily: landmark.asset.families[0] ?? this.field.sample(
+        landmark.siteX,
+        landmark.siteY,
+      ).primary,
+      siteX: landmark.siteX + 0.5,
+      siteY: landmark.siteY + 0.5,
+      seed: this.seed32 ^ stringHash(`${landmark.siteX},${landmark.siteY}`),
+      focals,
+    });
+    return layout ? { routeKind: route.routeKind ?? 'local-road', layout } : null;
+  }
+
   /** Select support masses from the complete authored non-programmed family
    * vocabulary. The landmark supplies local cultural identity while the
    * candidate biome preserves ecotone influence. A usage penalty makes a
@@ -3078,8 +3206,34 @@ function positionKey(x: number, y: number): string {
   return `${x},${y}`;
 }
 
-function isFocalCompositionAsset(asset: RegionalVisualAsset): boolean {
+function isFocalCompositionAsset(asset: RegionalVisualAsset): asset is RegionalParcelComponentAsset {
   return 'compositionRole' in asset && asset.compositionRole === 'focal';
+}
+
+function visibleSpriteWorldBounds(placement: Placement): {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+} | null {
+  const [anchorOffsetX, anchorOffsetY] = getSpriteAnchor(placement.asset);
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (let tileY = 0; tileY < placement.asset.sprite.height; tileY++) {
+    for (let tileX = 0; tileX < placement.asset.sprite.width; tileX++) {
+      const tile = placement.asset.sprite.tiles[tileY]?.[tileX];
+      if (!tile || !hasVisiblePixels(tile)) continue;
+      const worldX = placement.anchorX + tileX - anchorOffsetX;
+      const worldY = placement.anchorY + tileY - anchorOffsetY;
+      minX = Math.min(minX, worldX);
+      minY = Math.min(minY, worldY);
+      maxX = Math.max(maxX, worldX);
+      maxY = Math.max(maxY, worldY);
+    }
+  }
+  return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
 }
 
 /** Large unrotated blocks use their authored screen-space frontage rather than

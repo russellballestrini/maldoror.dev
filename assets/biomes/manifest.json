@@ -19,12 +19,23 @@
     "prompt": "generated/regional-overview-materials-atlas-v1-source.md",
     "sha256": "66b78392908421c825bfecf0d76242aa270857c74cff14dd7709c1852bc589db"
   },
+  "landmarkFabricGeneration": {
+    "date": "2026-07-24",
+    "mode": "Codex built-in image generation on ChatGPT subscription",
+    "meteredApiSpend": false,
+    "source": "generated/canal-town-limestone-plaza-v2-terminal-source.png",
+    "prompt": "generated/canal-town-limestone-plaza-v2-terminal-source.md",
+    "sourceSha256": "c50c7f7ba02b4084b30b2911f3e380f4436b5eb8084a10c80c1f027dd5fec595",
+    "derivedSha256": "9d4454cf0efa5f53010eb1de2596ee11961507c1771771a159d2fe717a2ffbae"
+  },
   "materialMasters": [
     {
       "family": "canal-town",
       "role": "paving",
       "id": "regional-canal-town-paving",
       "file": "materials/canal-town-paving-master-v1.png",
+      "landmarkFabricFile": "settlement-materials/canal-town-limestone-plaza-master-v2-terminal.png",
+      "landmarkFabricVariants": 1,
       "overviewFile": "overview-materials/canal-town-overview-master-v1.png",
       "overviewVariants": 1,
       "variants": 4,

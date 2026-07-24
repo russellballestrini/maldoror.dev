@@ -179,6 +179,29 @@ group, service yard, garden program, or ownership/schedule layer grows behind
 the threshold yet. Those are explicit next constraints, not reasons to hide the
 faithful failures or deploy the regional provider early.
 
+## Focal entrances and constructed ground
+
+Large focal sprites own their visible building mass and already-painted edge
+sidewalks. Constructed ground is a separate continuous layer, but it no longer
+derives a full frontage from sprite bounds. Each focal manifest entry declares
+its frontage axis, route side, and one or more normalized entrance stations.
+The provider resolves the placed visible bounds, then builds only a small
+threshold and narrow rounded approach at those stations. The route surface
+keeps ownership of the arterial core; physical water keeps its material mask.
+
+This replaces a retained V12-V19 rejection ladder: duplicated facade bands and
+cross-axis courts read as an H or ladder even after their texture became
+correct. The selected V20 topology lets the authored sprite paving remain
+dominant, uses terrain as negative space, and places scale-authored limestone
+only where pedestrian access explains it. Geometry, material family,
+walkability, and station semantics are manifest/world owned; filenames and
+source pixels are never interpreted at runtime.
+
+The V20 six-capture real-SSH proof covers three semantic zooms and two
+viewports at exact `(0,0)`. It is a selected research architecture, not a claim
+that the surrounding canal-town district or the other five families are
+composition-complete.
+
 ## Predictive regional cache transport
 
 Cold regional composition remains intentionally expensive: it solves physical

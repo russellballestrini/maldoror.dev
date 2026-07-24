@@ -269,3 +269,44 @@ This is a selected composition sub-gate, not Gate A. The blocks still sit near
 the walking viewport edges; paving, canal/quay continuity, district density,
 horizontal counterparts, and five biome-specific focal vocabularies remain
 open. Production is unchanged at `vb07c0d4`.
+
+### Scale-authored landmark paving and semantic entrances (2026-07-24)
+
+V12-V19 prove why a seamless texture alone is not enough. Route-derived brown
+wash, procedural joints over coarse arterial stone, oversized pale plates,
+cloudy SDF islands, synchronized H sidewalks, and a readable material under a
+wrong ladder grammar are all retained as visual rejections. The general terrain
+sampler also averaged four unrelated paver phases on narrow surfaces, erasing
+mortar contrast. Landmark paving now uses one deterministic scale-authored
+mapping rather than that open-terrain blend.
+
+Two untouched limestone sources were generated through the built-in
+Codex/ChatGPT subscription path with no metered project API. V1 is retained as
+a rejected fine-frequency source. Selected V2 deliberately uses broad stones,
+dark joints, strong mid-scale value groups, and one full-master variant so its
+construction survives 12-pixel tiles and ANSI octant fitting. Exact prompts,
+source hashes, derived hashes, and the deterministic 192x192 derivation live in
+`assets/biomes/generated/` and
+`tools/render-sim/derive-landmark-fabric-materials.mjs`. Reproduce it with:
+
+```
+pnpm assets:derive-landmark-fabric-materials
+```
+
+The focal sprites already contain their own edge sidewalks. V20 therefore
+removes full facade bands and encodes normalized entrance stations in the
+parcel manifest. The continuous world layer emits only a small worn threshold
+and one narrow approach at each authored station; it does not inspect filenames
+or pixels, paints no water, and leaves most terrain untouched. Six exact-origin
+real-SSH captures retain walking/district/regional zooms at both Ghostty
+viewports: 2,171,890 raw bytes and 150 synchronized frames. Full verification
+passes 38 files / 200 tests, 18/18 typecheck tasks, 12/12 build tasks, and exact
+V2 derivation. Evidence is under
+`track-6-acceptance-atlas/composition-hierarchy-v20-authored-entry-thresholds/`;
+gallery iteration 034 exposes rejections, source, and selected three-scale
+frames.
+
+This selects an entrance-grounding architecture and material tier only. It is
+not deployed, does not pass Gate A, and does not close canal/quay continuity,
+civic-space composition, the five remaining family vocabularies, performance,
+the fresh full atlas, or physical Ghostty acceptance.

@@ -26,6 +26,7 @@ export interface RegionalBiomeMaterialKit {
   tiles: Tile[];
   materials: Record<BiomeFamily, Tile[]>;
   overviewMaterials: Record<BiomeFamily, Tile[]>;
+  landmarkFabricMaterials: Partial<Record<BiomeFamily, Tile[]>>;
 }
 
 export interface RegionalRouteMaterialKit {
@@ -93,6 +94,8 @@ interface MaterialEntry extends BaseMaterialEntry {
   family: BiomeFamily;
   overviewFile: string;
   overviewVariants: number;
+  landmarkFabricFile?: string;
+  landmarkFabricVariants?: number;
 }
 
 interface RouteMaterialEntry extends BaseMaterialEntry {
@@ -135,6 +138,7 @@ interface ParcelComponentEntry {
   compositionRole?: 'focal';
   frontageAxis?: RegionalRouteContactAxis;
   compositionSide?: -1 | 1;
+  frontageStations?: number[];
   scale: number;
   spriteTiles: [number, number];
   collision: Array<[number, number]>;
@@ -218,6 +222,7 @@ export async function loadRegionalBiomeMaterialKit(manifestPath: string): Promis
     mountain: [],
     ruins: [],
   };
+  const landmarkFabricMaterials: Partial<Record<BiomeFamily, Tile[]>> = {};
   const tiles: Tile[] = [];
   for (const entry of entries) {
     const imagePath = resolveAssetPath(manifestDirectory, entry.file);
@@ -232,8 +237,30 @@ export async function loadRegionalBiomeMaterialKit(manifestPath: string): Promis
     materials[entry.family].push(...variants);
     overviewMaterials[entry.family].push(...overviewVariants);
     tiles.push(...variants, ...overviewVariants);
+    if (entry.landmarkFabricFile && entry.landmarkFabricVariants) {
+      const landmarkFabricPath = resolveAssetPath(manifestDirectory, entry.landmarkFabricFile);
+      const landmarkFabricVariants = await loadTerrainMasterVariants(
+        landmarkFabricPath,
+        samplingTextureSize,
+        {
+          ...entry,
+          id: `${entry.id}-landmark-fabric`,
+          file: entry.landmarkFabricFile,
+          variants: entry.landmarkFabricVariants,
+        },
+      );
+      landmarkFabricMaterials[entry.family] = landmarkFabricVariants;
+      tiles.push(...landmarkFabricVariants);
+    }
   }
-  return { manifestPath: absoluteManifest, sourceTileSize, tiles, materials, overviewMaterials };
+  return {
+    manifestPath: absoluteManifest,
+    sourceTileSize,
+    tiles,
+    materials,
+    overviewMaterials,
+    landmarkFabricMaterials,
+  };
 }
 
 /** Load authored route surfaces from explicit route/crossing semantics. */
@@ -477,6 +504,7 @@ export async function loadRegionalParcelComponentKit(
       compositionRole: entry.compositionRole,
       frontageAxis: entry.frontageAxis,
       compositionSide: entry.compositionSide,
+      frontageStations: entry.frontageStations,
       programs: entry.programs,
       waterfrontFunction: entry.waterfrontFunction,
       collision: entry.collision,
@@ -565,6 +593,15 @@ function parseEntry(value: unknown, index: number): MaterialEntry {
       typeof value.walkable !== 'boolean') {
     throw new Error(`Invalid regional material entry at index ${index}`);
   }
+  const hasLandmarkFabric = value.landmarkFabricFile !== undefined ||
+    value.landmarkFabricVariants !== undefined;
+  if (hasLandmarkFabric && (
+    typeof value.landmarkFabricFile !== 'string' || value.landmarkFabricFile.length === 0 ||
+    !Number.isInteger(value.landmarkFabricVariants) ||
+    Number(value.landmarkFabricVariants) < 1 || Number(value.landmarkFabricVariants) > 16
+  )) {
+    throw new Error(`Invalid regional landmark-fabric material at index ${index}`);
+  }
   const material = value.material;
   if (material !== undefined && !['water', 'foliage', 'specular', 'fire'].includes(String(material))) {
     throw new Error(`Invalid regional material mask at index ${index}`);
@@ -575,6 +612,10 @@ function parseEntry(value: unknown, index: number): MaterialEntry {
     file: value.file,
     overviewFile: value.overviewFile,
     overviewVariants: Number(value.overviewVariants),
+    landmarkFabricFile: value.landmarkFabricFile as string | undefined,
+    landmarkFabricVariants: value.landmarkFabricVariants === undefined
+      ? undefined
+      : Number(value.landmarkFabricVariants),
     variants: Number(value.variants),
     walkable: value.walkable,
     material: material as Tile['material'],
@@ -683,6 +724,19 @@ function parseParcelComponentEntry(value: unknown, index: number): ParcelCompone
         !ROUTE_CONTACT_AXES.includes(value.frontageAxis as RegionalRouteContactAxis)) ||
       (value.compositionSide !== undefined && value.compositionSide !== -1 &&
         value.compositionSide !== 1) ||
+      (value.frontageStations !== undefined && (!Array.isArray(value.frontageStations) ||
+        value.frontageStations.length === 0 || value.frontageStations.length > 4 ||
+        !value.frontageStations.every((station) => (
+          typeof station === 'number' && Number.isFinite(station) && station >= -0.85 && station <= 0.85
+        )))) ||
+      (value.compositionRole === 'focal' && (
+        value.frontageAxis === undefined || value.compositionSide === undefined ||
+        value.frontageStations === undefined
+      )) ||
+      (value.compositionRole !== 'focal' && (
+        value.frontageAxis !== undefined || value.compositionSide !== undefined ||
+        value.frontageStations !== undefined
+      )) ||
       !isTileDimensions(value.spriteTiles) ||
       !Array.isArray(value.collision) || value.collision.length === 0 ||
       !value.collision.every(isCollisionOffset) ||
@@ -705,6 +759,7 @@ function parseParcelComponentEntry(value: unknown, index: number): ParcelCompone
     compositionRole: value.compositionRole as 'focal' | undefined,
     frontageAxis: value.frontageAxis as RegionalRouteContactAxis | undefined,
     compositionSide: value.compositionSide as -1 | 1 | undefined,
+    frontageStations: value.frontageStations as number[] | undefined,
     scale: value.scale,
     spriteTiles: value.spriteTiles as [number, number],
     collision: value.collision as Array<[number, number]>,

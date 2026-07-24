@@ -122,6 +122,20 @@ export {
   type RegionalParcelSpatialCell,
 } from './tiles/regional-parcel-layout.js';
 export {
+  buildRegionalLandmarkFabricLayout,
+  rasterizeRegionalLandmarkFabricLayout,
+  sampleRegionalLandmarkFabricLayout,
+  type RegionalLandmarkFabricApron,
+  type RegionalLandmarkFabricAxis,
+  type RegionalLandmarkFabricBounds,
+  type RegionalLandmarkFabricCell,
+  type RegionalLandmarkFabricLayout,
+  type RegionalLandmarkFabricLayoutConfig,
+  type RegionalLandmarkFabricSample,
+  type RegionalLandmarkFabricSpatialCell,
+  type RegionalLandmarkFocalFootprint,
+} from './tiles/regional-landmark-fabric-layout.js';
+export {
   buildRegionalWaterfrontLayout,
   rasterizeRegionalWaterfrontLayout,
   sampleRegionalWaterfrontLayout,
