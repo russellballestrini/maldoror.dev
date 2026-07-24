@@ -63,4 +63,29 @@ describe('PixelGameRenderer zoom animation', () => {
 
     expect(renderer.getCameraTilePosition()).toEqual({ x: 83, y: 42 });
   });
+
+  it('reports target LOD and rotation-aware bounds for off-thread preparation', () => {
+    const renderer = new PixelGameRenderer({
+      stream: new PassThrough(),
+      cols: 160,
+      rows: 46,
+      renderMode: 'octant',
+      zoomLevel: 30,
+      paletteAnimation: false,
+    });
+
+    expect(renderer.getWorldPreparationGeometry()).toEqual({
+      resolution: 12,
+      viewportRadiusX: 16,
+      viewportRadiusY: 10,
+    });
+    renderer.rotateCameraClockwise();
+    expect(renderer.getWorldPreparationGeometry()).toEqual({
+      resolution: 12,
+      viewportRadiusX: 10,
+      viewportRadiusY: 16,
+    });
+    renderer.zoomOut();
+    expect(renderer.getWorldPreparationGeometry().resolution).toBe(9);
+  });
 });

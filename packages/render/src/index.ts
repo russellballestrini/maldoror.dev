@@ -65,6 +65,7 @@ export {
   setBuildVersion,
   getBuildVersion,
   type PixelGameRendererConfig,
+  type WorldPreparationGeometry,
   type GameWorldAdapter,
   type RenderMode,
   type PerfOptimizations,

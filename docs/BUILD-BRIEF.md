@@ -209,9 +209,13 @@ Env: `/etc/donto/maldoror.env` (root:ajax 640). Keys: `DATABASE_URL`
 `WORKER_STARTUP_TIMEOUT_MS=300000`, `NODE_OPTIONS` (heap capped ~1.2G — the
 service is in `maldoror.slice` with **MemoryMax 1.6G — do not exceed** or it
 OOM-kills). Optional: `MALDOROR_RENDER_MODE` (force normal/halfblock/braille/
-octant), `MALDOROR_DISTRICT=<png>` (legacy experiment: district as world;
-also set `MALDOROR_CANAL_TOWN=0`, because the generated canal-town is the
-production default and deliberately takes precedence).
+octant), `MALDOROR_ASSET_ROOT=<repo-or-release-root>`, and
+`MALDOROR_REGIONAL_STARTUP_TIMEOUT_MS` (regional generator startup, default
+120000). The regional six-family world is the source default. Setting
+`MALDOROR_REGIONAL_WORLD=0` selects the explicit rollback lane, where
+`MALDOROR_CANAL_TOWN=0` may additionally expose the legacy
+`MALDOROR_DISTRICT=<png>` experiment. A regional startup error is fatal rather
+than silently showing a different world.
 Worker boot takes ~30-90s under load (module load off sdb) — patience, not a
 hang. `.service`/`.slice` mirrored in `deploy/box/`; `deploy/box/redeploy.sh` =
 full build+tsup+push+restart.

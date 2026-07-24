@@ -237,7 +237,7 @@ export class TileProvider implements WorldDataProvider {
     return [];
   }
 
-  private markVisualChange(): void {
+  protected markVisualChange(): void {
     this.visualRevision++;
   }
 

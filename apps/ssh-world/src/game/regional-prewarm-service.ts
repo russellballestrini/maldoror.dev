@@ -8,6 +8,10 @@ import type {
 } from './regional-prewarm-protocol.js';
 export type { RegionalPrewarmBounds } from './regional-prewarm-protocol.js';
 
+/** Must match the packed provider's validated wire-area ceiling. Kept local so
+ * source-only unit tests do not depend on a prebuilt workspace package. */
+export const REGIONAL_PREWARM_MAX_REQUEST_AREA = 8192;
+
 export interface RegionalPrewarmServiceStartup {
   startupMs: number;
   rssMiB: number;
@@ -18,6 +22,14 @@ export interface RegionalPrewarmServiceResult {
   generationMs: number;
   roundTripMs: number;
   rssMiB: number;
+}
+
+export interface RegionalPrewarmServiceStats {
+  requestsStarted: number;
+  cacheHits: number;
+  inFlightHits: number;
+  cachedResults: number;
+  cachedBytes: number;
 }
 
 export interface RegionalPrewarmGenerator {
@@ -45,6 +57,8 @@ export interface RegionalPredictivePrewarmerOptions {
   lookaheadTiles?: number;
   /** Extra material retained behind and beside the moving viewport. */
   fringeTiles?: number;
+  /** Hard payload-area limit shared with the regional provider. */
+  maxRequestArea?: number;
   onError?: (error: Error) => void;
 }
 
@@ -74,6 +88,13 @@ export class RegionalPrewarmService {
   private readonly pending = new Map<number, PendingRequest>();
   private nextRequestId = 1;
   private stopped = false;
+  private readonly resultCache = new Map<string, RegionalPrewarmServiceResult>();
+  private readonly sharedRequests = new Map<string, Promise<RegionalPrewarmServiceResult>>();
+  private requestsStarted = 0;
+  private cacheHits = 0;
+  private inFlightHits = 0;
+  private static readonly MAX_CACHED_RESULTS = 8;
+  private static readonly MAX_CACHED_BYTES = 192 * 1024 * 1024;
 
   private constructor(worker: Worker) {
     this.worker = worker;
@@ -121,6 +142,64 @@ export class RegionalPrewarmService {
 
   prepare(bounds: RegionalPrewarmBounds, resolution: number): Promise<RegionalPrewarmServiceResult> {
     if (this.stopped) return Promise.reject(new Error('Regional prewarm service is stopped'));
+    const normalized = normalizeBounds(bounds);
+    const normalizedResolution = positiveInteger(Math.round(resolution), 'resolution');
+    const key = `${normalized.minX},${normalized.minY},${normalized.maxX},${normalized.maxY}@${normalizedResolution}`;
+    const cached = this.resultCache.get(key);
+    if (cached) {
+      this.resultCache.delete(key);
+      this.resultCache.set(key, cached);
+      this.cacheHits++;
+      return Promise.resolve(cached);
+    }
+    const shared = this.sharedRequests.get(key);
+    if (shared) {
+      this.inFlightHits++;
+      return shared;
+    }
+    const request = this.prepareUncached(normalized, normalizedResolution)
+      .then((result) => {
+        this.resultCache.set(key, result);
+        while (this.resultCache.size > RegionalPrewarmService.MAX_CACHED_RESULTS ||
+            this.cachedResultBytes() > RegionalPrewarmService.MAX_CACHED_BYTES) {
+          const oldest = this.resultCache.keys().next().value as string | undefined;
+          if (oldest === undefined) break;
+          this.resultCache.delete(oldest);
+        }
+        return result;
+      })
+      .finally(() => this.sharedRequests.delete(key));
+    this.sharedRequests.set(key, request);
+    return request;
+  }
+
+  getStats(): RegionalPrewarmServiceStats {
+    return {
+      requestsStarted: this.requestsStarted,
+      cacheHits: this.cacheHits,
+      inFlightHits: this.inFlightHits,
+      cachedResults: this.resultCache.size,
+      cachedBytes: this.cachedResultBytes(),
+    };
+  }
+
+  private cachedResultBytes(): number {
+    let bytes = 0;
+    for (const result of this.resultCache.values()) {
+      const viewport = result.viewport;
+      if (viewport.version !== 2) continue;
+      bytes += viewport.terrainRgba.byteLength + viewport.terrainMaterial.byteLength +
+        viewport.terrainWalkable.byteLength + viewport.overlayCoordinates.byteLength +
+        viewport.overlayRgba.byteLength + viewport.solid.byteLength;
+    }
+    return bytes;
+  }
+
+  private prepareUncached(
+    bounds: RegionalPrewarmBounds,
+    resolution: number,
+  ): Promise<RegionalPrewarmServiceResult> {
+    this.requestsStarted++;
     const requestId = this.nextRequestId++;
     return new Promise((resolve, reject) => {
       this.pending.set(requestId, { startedAt: performance.now(), resolve, reject });
@@ -136,6 +215,8 @@ export class RegionalPrewarmService {
     const forced = new Promise<void>((resolve) => setTimeout(resolve, 2_000));
     await Promise.race([exited, forced]);
     if (this.worker.threadId !== -1) await this.worker.terminate();
+    this.resultCache.clear();
+    this.sharedRequests.clear();
     this.failAll(new Error('Regional prewarm service stopped'));
   }
 
@@ -192,6 +273,7 @@ export class RegionalPredictivePrewarmer {
   private readonly viewportRadiusY: number;
   private readonly lookaheadTiles: number;
   private readonly fringeTiles: number;
+  private readonly maxRequestArea: number;
   private readonly onError?: (error: Error) => void;
   private inFlight: PredictedRequest | null = null;
   private pending: PredictedRequest | null = null;
@@ -217,6 +299,10 @@ export class RegionalPredictivePrewarmer {
     this.viewportRadiusY = positiveInteger(options.viewportRadiusY, 'viewportRadiusY');
     this.lookaheadTiles = positiveInteger(options.lookaheadTiles ?? 32, 'lookaheadTiles');
     this.fringeTiles = nonNegativeInteger(options.fringeTiles ?? 4, 'fringeTiles');
+    this.maxRequestArea = positiveInteger(
+      options.maxRequestArea ?? REGIONAL_PREWARM_MAX_REQUEST_AREA,
+      'maxRequestArea',
+    );
     this.onError = options.onError;
   }
 
@@ -226,25 +312,14 @@ export class RegionalPredictivePrewarmer {
     const magnitude = Math.hypot(velocityX, velocityY);
     const directionX = magnitude > 1e-9 ? velocityX / magnitude : 0;
     const directionY = magnitude > 1e-9 ? velocityY / magnitude : 0;
-    const futureX = x + directionX * this.lookaheadTiles;
-    const futureY = y + directionY * this.lookaheadTiles;
-    const requiredFutureX = x + directionX * this.lookaheadTiles * 0.55;
-    const requiredFutureY = y + directionY * this.lookaheadTiles * 0.55;
-    const request: PredictedRequest = {
-      resolution: this.resolution,
-      requiredBounds: {
-        minX: Math.floor(Math.min(x, requiredFutureX) - this.viewportRadiusX),
-        minY: Math.floor(Math.min(y, requiredFutureY) - this.viewportRadiusY),
-        maxX: Math.ceil(Math.max(x, requiredFutureX) + this.viewportRadiusX),
-        maxY: Math.ceil(Math.max(y, requiredFutureY) + this.viewportRadiusY),
-      },
-      bounds: {
-        minX: Math.floor(Math.min(x, futureX) - this.viewportRadiusX - this.fringeTiles),
-        minY: Math.floor(Math.min(y, futureY) - this.viewportRadiusY - this.fringeTiles),
-        maxX: Math.ceil(Math.max(x, futureX) + this.viewportRadiusX + this.fringeTiles),
-        maxY: Math.ceil(Math.max(y, futureY) + this.viewportRadiusY + this.fringeTiles),
-      },
-    };
+    const request = this.fitRequest(x, y, directionX, directionY);
+    if (!request) {
+      this.stats.failures++;
+      this.onError?.(new Error(
+        `Visible regional viewport exceeds prepared-area limit ${this.maxRequestArea}`,
+      ));
+      return;
+    }
     if (this.isCovered(request)) {
       this.stats.coverageHits++;
       return;
@@ -278,6 +353,55 @@ export class RegionalPredictivePrewarmer {
     this.stopped = true;
     this.pending = null;
     this.resolveIdleIfNeeded();
+  }
+
+  private fitRequest(
+    x: number,
+    y: number,
+    directionX: number,
+    directionY: number,
+  ): PredictedRequest | null {
+    const build = (scale: number): PredictedRequest => {
+      const lookahead = this.lookaheadTiles * scale;
+      const fringe = this.fringeTiles * scale;
+      const futureX = x + directionX * lookahead;
+      const futureY = y + directionY * lookahead;
+      const requiredFutureX = x + directionX * lookahead * 0.55;
+      const requiredFutureY = y + directionY * lookahead * 0.55;
+      return {
+        resolution: this.resolution,
+        requiredBounds: {
+          minX: Math.floor(Math.min(x, requiredFutureX) - this.viewportRadiusX),
+          minY: Math.floor(Math.min(y, requiredFutureY) - this.viewportRadiusY),
+          maxX: Math.ceil(Math.max(x, requiredFutureX) + this.viewportRadiusX),
+          maxY: Math.ceil(Math.max(y, requiredFutureY) + this.viewportRadiusY),
+        },
+        bounds: {
+          minX: Math.floor(Math.min(x, futureX) - this.viewportRadiusX - fringe),
+          minY: Math.floor(Math.min(y, futureY) - this.viewportRadiusY - fringe),
+          maxX: Math.ceil(Math.max(x, futureX) + this.viewportRadiusX + fringe),
+          maxY: Math.ceil(Math.max(y, futureY) + this.viewportRadiusY + fringe),
+        },
+      };
+    };
+    const minimum = build(0);
+    if (boundsArea(minimum.bounds) > this.maxRequestArea) return null;
+    const preferred = build(1);
+    if (boundsArea(preferred.bounds) <= this.maxRequestArea) return preferred;
+    let lower = 0;
+    let upper = 1;
+    let fitted = minimum;
+    for (let iteration = 0; iteration < 18; iteration++) {
+      const middle = (lower + upper) / 2;
+      const candidate = build(middle);
+      if (boundsArea(candidate.bounds) <= this.maxRequestArea) {
+        lower = middle;
+        fitted = candidate;
+      } else {
+        upper = middle;
+      }
+    }
+    return fitted;
   }
 
   private start(request: PredictedRequest): void {
@@ -338,4 +462,17 @@ function positiveInteger(value: number, name: string): number {
 function nonNegativeInteger(value: number, name: string): number {
   if (!Number.isInteger(value) || value < 0) throw new Error(`${name} must be a non-negative integer`);
   return value;
+}
+
+function normalizeBounds(bounds: RegionalPrewarmBounds): RegionalPrewarmBounds {
+  return {
+    minX: Math.floor(Math.min(bounds.minX, bounds.maxX)),
+    minY: Math.floor(Math.min(bounds.minY, bounds.maxY)),
+    maxX: Math.floor(Math.max(bounds.minX, bounds.maxX)),
+    maxY: Math.floor(Math.max(bounds.minY, bounds.maxY)),
+  };
+}
+
+function boundsArea(bounds: RegionalPrewarmBounds): number {
+  return (bounds.maxX - bounds.minX + 1) * (bounds.maxY - bounds.minY + 1);
 }

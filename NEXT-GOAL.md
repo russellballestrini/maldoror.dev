@@ -643,6 +643,30 @@ Completed foundations:
   `(0,0)` was removed; the canonical arrival island/route tests remain the
   walkability proof. This is an accelerated local proof, not Gate C, and
   production remains unchanged;
+- the regional field, routes, seamless material compositor, hierarchical
+  parcels, landmarks, environment programs, and physical consequences now own
+  the authoritative SSH-worker source path instead of remaining a render-lab
+  island. One worker-owned semantic kit and persistent off-thread generator
+  serve isolated per-session providers; the exact origin package is prepared
+  before worker readiness, and input never opens without exact visible
+  coverage. Player movement, free camera, resize, rotation, render-mode change,
+  and target zoom all drive one coverage-aware scheduler. Repeated and in-flight
+  generation requests deduplicate; generator results are bounded by eight
+  entries and 192 MiB, while sessions retain six viewports and never clear the
+  shared compositor on disconnect. Intermediate animated zoom consumes the
+  nearest prepared semantic LOD rather than escaping to synchronous generation.
+  The authored traveler remains the default identity without loading the
+  retired canal world. A production-topology lab with one shared kit, one
+  generator, and two sessions reaches exact origin readiness in 9.147 seconds,
+  serves the identical package in 0.085 ms, proves actor isolation and
+  shared-cache ownership, and crosses 13 movement frames with zero coverage
+  misses at 5.261/13.868/13.868 ms render p50/p95/p99. It retains 2.78 MiB of
+  generator payload and peaks at 776.02 MiB RSS. The exact two-session origin
+  hash is `e3cd83a3...ffe8f`; no model call occurs. Full raw evidence is in
+  `track-5-motion-transport/regional-runtime-readiness-v1/report.json`. Full
+  verification is 34 files / 184 tests, all 18 typecheck tasks, all 12 build
+  tasks, and clean diff validation. This is source readiness, not production
+  activation; production remains unchanged;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–028 expose selected and rejected research candidates without
@@ -650,11 +674,10 @@ Completed foundations:
 
 Still open and therefore goal-blocking:
 
-- the regional field/compositor/routes are not the live provider; predictive
-  cache transport is now a measured research seam, but the current 5.997-second
-  initial origin corridor must move into service readiness and authoritative movement/
-  camera/zoom integration, production SSH latency, the 5/10/20-presence ladder,
-  30-minute run, cgroup behavior, and physical Ghostty remain unproven;
+- the regional stack is now the authoritative source provider with exact-origin
+  readiness and movement/camera/zoom transport, but it is not yet activated in
+  the running production service. Production SSH latency, the 5/10/20-presence
+  ladder, 30-minute run, cgroup behavior, and physical Ghostty remain unproven;
 - the first six-family landmark silhouettes and shared-boundary parcel
   compounds are still sparse research prototypes rather than a complete world
   layer; coast-specific waterfront diversity, larger squares/commons, far

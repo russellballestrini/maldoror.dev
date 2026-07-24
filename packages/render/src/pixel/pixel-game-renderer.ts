@@ -134,6 +134,12 @@ export interface PixelGameRendererConfig {
   paletteAnimation?: boolean; // OSC-4 material animation (Ghostty-first)
 }
 
+export interface WorldPreparationGeometry {
+  resolution: number;
+  viewportRadiusX: number;
+  viewportRadiusY: number;
+}
+
 /**
  * Adapter to provide world data to the ViewportRenderer
  */
@@ -290,6 +296,10 @@ export class PixelGameRenderer {
    * Uses exponential scaling so each zoom step feels perceptually even
    */
   private getCurrentTileSize(): number {
+    return this.getTileSizeForZoom(this.zoomLevel);
+  }
+
+  private getTileSizeForZoom(zoomLevel: number): number {
     const MIN_TILE_SIZE = 4;   // At 0% zoom, tiles are 4 pixels on screen
 
     // Calculate max tile size to fill viewport height (so character is fully visible at 100%)
@@ -313,7 +323,7 @@ export class PixelGameRenderer {
     // Each 10% step multiplies tile size by constant factor
     // Formula: min * (max/min)^(zoom/100)
     const ratio = maxTileSize / MIN_TILE_SIZE;
-    const exponent = this.zoomLevel / 100;
+    const exponent = zoomLevel / 100;
     return Math.round(MIN_TILE_SIZE * Math.pow(ratio, exponent));
   }
 
@@ -1261,6 +1271,22 @@ export class PixelGameRenderer {
 
   getTargetZoomLevel(): number {
     return this.zoomTargetLevel;
+  }
+
+  /** Exact target-LOD geometry consumed by the off-thread regional prewarmer. */
+  getWorldPreparationGeometry(): WorldPreparationGeometry {
+    const { availableCols, availableRows } = this.getViewportArea();
+    const { pixelWidth, pixelHeight } = this.calculatePixelDimensions(availableCols, availableRows);
+    const resolution = this.getTileSizeForZoom(this.zoomTargetLevel);
+    const rotation = this.viewportRenderer.getCameraRotation();
+    const swap = rotation === 90 || rotation === 270;
+    const worldPixelWidth = swap ? pixelHeight : pixelWidth;
+    const worldPixelHeight = swap ? pixelWidth : pixelHeight;
+    return {
+      resolution,
+      viewportRadiusX: Math.ceil(worldPixelWidth / resolution / 2) + 2,
+      viewportRadiusY: Math.ceil(worldPixelHeight / resolution / 2) + 2,
+    };
   }
 
   /**

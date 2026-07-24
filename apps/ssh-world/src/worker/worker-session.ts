@@ -26,6 +26,7 @@ import {
   bg,
   type PerfOptimizations,
   type ChatEntry,
+  type WorldPreparationGeometry,
 } from '@maldoror/render';
 import { getChatMessages, addChatMessage } from '../server/stats-server.js';
 
@@ -38,7 +39,14 @@ const PERF_OPTIMIZATIONS: PerfOptimizations = {
   foveated: true,       // Zone-based update rates (peripheral at 4Hz, core at 60Hz)
   enablePerfStats: false, // Set to true to log perf stats every 10s
 };
-import { CanalTownTileProvider, TileProvider, DistrictTileProvider, createPlaceholderSprite } from '@maldoror/world';
+import {
+  CanalTownTileProvider,
+  TileProvider,
+  DistrictTileProvider,
+  RegionalWorldTileProvider,
+  createPlaceholderSprite,
+  type RegionalPreparedViewportPayload,
+} from '@maldoror/world';
 import type { PixelGrid } from '@maldoror/protocol';
 import type { Direction, AnimationFrame, PlayerVisualState, NPCVisualState, Sprite } from '@maldoror/protocol';
 import type { DirectionalBuildingSprite } from '@maldoror/ai';
@@ -57,6 +65,11 @@ import { saveBuildingToDisk, loadAllBuildingDirections } from '../utils/building
 import { VirtualStream } from './virtual-stream.js';
 import type { SessionState } from './game-worker.js';
 import type { LoadedCanalTownKit } from '../game/canal-town-assets.js';
+import type { LoadedRegionalWorldKit } from '../game/regional-world-provider.js';
+import {
+  RegionalPredictivePrewarmer,
+  type RegionalPrewarmService,
+} from '../game/regional-prewarm-service.js';
 import { LOGIN_ORIGIN } from '../game/login-origin.js';
 
 /**
@@ -88,6 +101,10 @@ export interface WorkerSessionConfig {
   worldSeed: bigint;
   providerConfig: ProviderConfig;
   canalTownKit: LoadedCanalTownKit | null;
+  regionalWorldKit: LoadedRegionalWorldKit | null;
+  regionalPrewarmService: RegionalPrewarmService | null;
+  regionalOriginViewport: RegionalPreparedViewportPayload | null;
+  regionalDefaultAvatar: Sprite | null;
   sendOutput: (sessionId: string, output: string, keyframe?: boolean) => void;
   sendUserId: (sessionId: string, userId: string) => void;
   sendEnded: (sessionId: string) => void;
@@ -109,6 +126,10 @@ export class WorkerSession {
   private worldSeed: bigint;
   private providerConfig: ProviderConfig;
   private canalTownKit: LoadedCanalTownKit | null;
+  private regionalWorldKit: LoadedRegionalWorldKit | null;
+  private regionalPrewarmService: RegionalPrewarmService | null;
+  private regionalOriginViewport: RegionalPreparedViewportPayload | null;
+  private regionalDefaultAvatar: Sprite | null;
   private sendUserId: (sessionId: string, userId: string) => void;
   private sendEnded: (sessionId: string) => void;
   private sendOutput: (sessionId: string, output: string, keyframe?: boolean) => void;
@@ -122,6 +143,9 @@ export class WorkerSession {
   private chatComponent: ChatComponent | null = null;
   private chatVisible: boolean = false; // hidden by default; toggle with ` or c
   private tileProvider: TileProvider | null = null;
+  private regionalTileProvider: RegionalWorldTileProvider | null = null;
+  private regionalPrewarmer: RegionalPredictivePrewarmer | null = null;
+  private regionalPrewarmGeometryKey = '';
   private destroyed: boolean = false;
   private inputPaused: boolean = false;
   private tickInterval: NodeJS.Timeout | null = null;
@@ -184,6 +208,10 @@ export class WorkerSession {
     this.worldSeed = config.worldSeed;
     this.providerConfig = config.providerConfig;
     this.canalTownKit = config.canalTownKit;
+    this.regionalWorldKit = config.regionalWorldKit;
+    this.regionalPrewarmService = config.regionalPrewarmService;
+    this.regionalOriginViewport = config.regionalOriginViewport;
+    this.regionalDefaultAvatar = config.regionalDefaultAvatar;
     this.sendUserId = config.sendUserId;
     this.sendEnded = config.sendEnded;
     this.sendOutput = config.sendOutput;
@@ -252,6 +280,7 @@ export class WorkerSession {
     this.helpModal?.updateScreenSize(cols, rows);
     this.playerListModal?.updateScreenSize(cols, rows);
     this.reloadOverlay?.updateScreenSize(cols, rows);
+    void this.observeRegionalWorld(0, 0);
   }
 
   async start(): Promise<void> {
@@ -338,12 +367,19 @@ export class WorkerSession {
     }
     boot?.markPreviousDone();
 
-    // Initialize tile provider. If MALDOROR_DISTRICT points at a district PNG,
-    // the world IS that dense mockup-style canal town (DistrictTileProvider):
-    // the player walks around a painting-quality scene rendered in octant.
+    // Initialize the authoritative world provider. Regional field/material,
+    // routes, parcels, authored landmarks, and prepared viewports now own the
+    // default runtime. Canal/district providers remain explicit rollback lanes.
     boot?.updateStep('Generating world chunks...', 'loading');
-    const createDefaultProvider = (): TileProvider => this.canalTownKit
-      ? new CanalTownTileProvider({
+    const createDefaultProvider = (): TileProvider => {
+      if (this.regionalWorldKit) {
+        const regional = this.regionalWorldKit.createSessionWorld();
+        if (this.regionalOriginViewport) regional.importPreparedViewport(this.regionalOriginViewport);
+        this.regionalTileProvider = regional;
+        return regional;
+      }
+      return this.canalTownKit
+        ? new CanalTownTileProvider({
           worldSeed: this.worldSeed,
           chunkCacheSize: 64,
           assets: this.canalTownKit.assets,
@@ -351,16 +387,13 @@ export class WorkerSession {
           blockSize: this.canalTownKit.blockSize,
           materialCompositor: this.canalTownKit.materialCompositor,
           cornerTerrain: this.canalTownKit.cornerTerrain,
-        })
-      : new TileProvider({ worldSeed: this.worldSeed, chunkCacheSize: 64 });
-    // The generated canal-town is the production world. MALDOROR_DISTRICT is
-    // retained as an opt-in legacy/set-piece experiment, but a stale district
-    // path must not silently override the canonical provider after its kit has
-    // loaded. Operators can still select the experiment explicitly by setting
-    // MALDOROR_CANAL_TOWN=0 alongside MALDOROR_DISTRICT.
-    const districtPath = this.canalTownKit ? undefined : process.env.MALDOROR_DISTRICT;
-    if (this.canalTownKit && process.env.MALDOROR_DISTRICT) {
-      console.log('[World] Canal-town kit active; ignoring legacy MALDOROR_DISTRICT override');
+          })
+        : new TileProvider({ worldSeed: this.worldSeed, chunkCacheSize: 64 });
+    };
+    const hasCanonicalWorld = Boolean(this.regionalWorldKit || this.canalTownKit);
+    const districtPath = hasCanonicalWorld ? undefined : process.env.MALDOROR_DISTRICT;
+    if (hasCanonicalWorld && process.env.MALDOROR_DISTRICT) {
+      console.log('[World] Canonical world kit active; ignoring legacy MALDOROR_DISTRICT override');
     }
     if (districtPath) {
       const dtp = new DistrictTileProvider({ worldSeed: this.worldSeed, chunkCacheSize: 64 });
@@ -416,7 +449,7 @@ export class WorkerSession {
       );
       this.currentPrompt = avatar.prompt || '';
     } else {
-      const placeholderSprite = this.canalTownKit?.defaultAvatar ??
+      const placeholderSprite = this.regionalDefaultAvatar ?? this.canalTownKit?.defaultAvatar ??
         createPlaceholderSprite({ r: 100, g: 150, b: 255 });
       this.tileProvider.setPlayerSprite(this.userId!, placeholderSprite);
     }
@@ -456,9 +489,9 @@ export class WorkerSession {
     // (each district tile is a scene-slice; at full zoom you'd see one tile).
     if (this.districtMode) {
       this.renderer.setZoomLevel(20);
-    } else if (this.canalTownKit) {
-      // Town-scale framing: at a typical 160x46 Ghostty viewport this resolves
-      // to ~12 screen pixels per tile, exposing one whole dense canal block.
+    } else if (this.regionalWorldKit || this.canalTownKit) {
+      // Walking-scale framing: at a typical 160x46 Ghostty viewport this
+      // resolves to 12 screen pixels per tile.
       this.renderer.setZoomLevel(30);
     }
     boot?.markPreviousDone();
@@ -529,15 +562,22 @@ export class WorkerSession {
     });
     boot?.markPreviousDone();
 
-    // Clean up boot screen and start game
-    boot?.hide();
-
     // Restore renderer state if hot-reloading
     if (isRestoring && this.restoredState) {
       this.renderer.setZoomLevel(this.restoredState.zoomLevel);
       this.renderer.setRenderMode(this.restoredState.renderMode as 'normal' | 'halfblock' | 'braille' | 'octant');
       this.renderer.setCameraMode(this.restoredState.cameraMode as 'follow' | 'free');
     }
+
+    if (this.regionalTileProvider) {
+      boot?.updateStep('Priming the regional world...', 'loading');
+      await this.observeRegionalWorld(0, 0, true);
+      boot?.markPreviousDone();
+    }
+
+    // Clean up boot screen and start game only after the first authoritative
+    // viewport is present. Cold world generation never runs behind input.
+    boot?.hide();
 
     // Show entrance screen (skip for hot-reload)
     if (!isRestoring) {
@@ -577,7 +617,65 @@ export class WorkerSession {
    * back to the 100% single-tile view. */
   private applyDefaultWorldFraming(renderer: PixelGameRenderer): void {
     if (this.districtMode) renderer.setZoomLevel(20);
-    else if (this.canalTownKit) renderer.setZoomLevel(30);
+    else if (this.regionalWorldKit || this.canalTownKit) renderer.setZoomLevel(30);
+  }
+
+  private ensureRegionalPrewarmer(
+    geometry: WorldPreparationGeometry,
+  ): RegionalPredictivePrewarmer | null {
+    if (!this.regionalTileProvider || !this.regionalPrewarmService) return null;
+    const key = `${geometry.resolution}:${geometry.viewportRadiusX}:${geometry.viewportRadiusY}`;
+    if (this.regionalPrewarmer && this.regionalPrewarmGeometryKey === key) {
+      return this.regionalPrewarmer;
+    }
+    this.regionalPrewarmer?.stop();
+    this.regionalPrewarmGeometryKey = key;
+    this.regionalPrewarmer = new RegionalPredictivePrewarmer({
+      generator: this.regionalPrewarmService,
+      target: this.regionalTileProvider,
+      resolution: geometry.resolution,
+      viewportRadiusX: geometry.viewportRadiusX,
+      viewportRadiusY: geometry.viewportRadiusY,
+      lookaheadTiles: 32,
+      fringeTiles: 4,
+      onError: (error) => {
+        console.error(`[WorkerSession] Regional prewarm failed for ${this.sessionId.slice(0, 8)}:`, error);
+      },
+    });
+    return this.regionalPrewarmer;
+  }
+
+  private async observeRegionalWorld(
+    velocityX: number,
+    velocityY: number,
+    requireCoverage = false,
+    centerX = this.playerX,
+    centerY = this.playerY,
+  ): Promise<void> {
+    if (!this.renderer || !this.regionalTileProvider) return;
+    const geometry = this.renderer.getWorldPreparationGeometry();
+    const prewarmer = this.ensureRegionalPrewarmer(geometry);
+    if (!prewarmer) {
+      if (requireCoverage) throw new Error('Regional prewarm service is unavailable');
+      return;
+    }
+    prewarmer.observe(centerX, centerY, velocityX, velocityY);
+    if (!requireCoverage) return;
+    await prewarmer.whenIdle();
+    if (!this.regionalTileProvider.hasPreparedViewportCoverage(
+      Math.floor(centerX - geometry.viewportRadiusX),
+      Math.floor(centerY - geometry.viewportRadiusY),
+      Math.ceil(centerX + geometry.viewportRadiusX),
+      Math.ceil(centerY + geometry.viewportRadiusY),
+      geometry.resolution,
+    )) {
+      throw new Error(`Regional viewport preparation failed at ${centerX},${centerY}`);
+    }
+  }
+
+  private observeRegionalCamera(): Promise<void> {
+    const center = this.renderer?.getCameraTilePosition();
+    return this.observeRegionalWorld(0, 0, false, center?.x, center?.y);
   }
 
   private tick(): void {
@@ -765,12 +863,15 @@ export class WorkerSession {
         break;
       case 'zoom_in':
         this.renderer?.zoomIn();
+        void this.observeRegionalCamera();
         break;
       case 'zoom_out':
         this.renderer?.zoomOut();
+        void this.observeRegionalCamera();
         break;
       case 'cycle_render_mode':
         this.renderer?.cycleRenderMode();
+        void this.observeRegionalCamera();
         break;
       case 'regenerate_avatar':
         this.openAvatarScreen();
@@ -814,10 +915,12 @@ export class WorkerSession {
       case 'rotate_camera_cw':
         this.renderer?.rotateCameraClockwise();
         this.renderer?.invalidate();
+        void this.observeRegionalCamera();
         break;
       case 'rotate_camera_ccw':
         this.renderer?.rotateCameraCounterClockwise();
         this.renderer?.invalidate();
+        void this.observeRegionalCamera();
         break;
       case 'show_help':
         if (this.helpModal && !this.helpModal.isVisible()) {
@@ -924,6 +1027,7 @@ export class WorkerSession {
     }
     this.renderer.panCameraByTiles(dx, dy);
     this.renderer.invalidate();
+    void this.observeRegionalCamera();
   }
 
   private getWorldDirection(screenDirection: Direction): Direction {
@@ -1427,6 +1531,7 @@ export class WorkerSession {
     });
 
     this.gameServer.updatePlayerPosition(this.userId!, this.playerX, this.playerY);
+    void this.observeRegionalWorld(dx, dy);
 
     this.updateMoveAnimation();
   }
@@ -1561,6 +1666,8 @@ export class WorkerSession {
     if (this.renderer) {
       this.renderer.cleanup();
     }
+    this.regionalPrewarmer?.stop();
+    this.regionalPrewarmer = null;
 
     // Save state and disconnect from game server
     if (this.userId) {
@@ -1578,6 +1685,10 @@ export class WorkerSession {
 
       await this.gameServer.playerDisconnect(this.userId);
     }
+
+    this.tileProvider?.destroy();
+    this.tileProvider = null;
+    this.regionalTileProvider = null;
 
     // Close the virtual stream
     this.stream.end();

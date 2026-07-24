@@ -11,8 +11,18 @@ import type { NPCCreateData } from '../utils/npc-storage.js';
 import type { ProviderConfig } from '@maldoror/ai';
 import { WorkerSession } from './worker-session.js';
 import { loadAllTerrainTilesFromDisk } from '../utils/terrain-storage.js';
-import { setTerrainTiles } from '@maldoror/world';
-import { loadCanalTownKit, type LoadedCanalTownKit } from '../game/canal-town-assets.js';
+import { setTerrainTiles, type RegionalPreparedViewportPayload } from '@maldoror/world';
+import {
+  loadCanalTownDefaultAvatar,
+  loadCanalTownKit,
+  type LoadedCanalTownKit,
+} from '../game/canal-town-assets.js';
+import {
+  defaultRegionalWorldAssetPaths,
+  loadRegionalWorldKit,
+  type LoadedRegionalWorldKit,
+} from '../game/regional-world-provider.js';
+import { RegionalPrewarmService } from '../game/regional-prewarm-service.js';
 
 // Message types for IPC
 export interface WorkerInitMessage {
@@ -320,8 +330,17 @@ let gameServer: GameServer | null = null;
 let worldSeed: bigint = 0n;
 let providerConfig: ProviderConfig = { provider: 'openai', model: 'gpt-image-1-mini' };
 let canalTownKit: LoadedCanalTownKit | null = null;
+let regionalWorldKit: LoadedRegionalWorldKit | null = null;
+let regionalPrewarmService: RegionalPrewarmService | null = null;
+let regionalOriginViewport: RegionalPreparedViewportPayload | null = null;
+let regionalDefaultAvatar: Sprite | null = null;
 const workerSessions: Map<string, WorkerSession> = new Map();
 let shuttingDown = false;
+
+const REGIONAL_ORIGIN_PREWARM = {
+  bounds: { minX: -20, minY: -20, maxX: 20, maxY: 20 },
+  resolution: 12,
+} as const;
 
 function send(message: WorkerToMainMessage): void {
   if (process.send) {
@@ -350,6 +369,15 @@ async function shutdownWorker(reason: 'ipc' | 'SIGTERM'): Promise<void> {
     await session.destroy();
   }
   workerSessions.clear();
+
+  if (regionalPrewarmService) {
+    await regionalPrewarmService.stop();
+    regionalPrewarmService = null;
+  }
+  regionalWorldKit?.clearSharedCaches();
+  regionalWorldKit = null;
+  regionalOriginViewport = null;
+  regionalDefaultAvatar = null;
 
   if (gameServer) {
     let lastError: unknown;
@@ -394,23 +422,46 @@ process.on('message', async (msg: MainToWorkerMessage) => {
           send({ type: 'npc_created_broadcast', npc });
         });
 
-        // Disk PNGs are the deploy artifact and can be loaded at one bounded
-        // source resolution; parsing every JSON pyramid from Postgres used most
-        // of the worker cgroup before the first player arrived.
-        const terrainTiles = await loadAllTerrainTilesFromDisk();
-        if (terrainTiles.size > 0) {
-          setTerrainTiles(Array.from(terrainTiles.values()));
-          console.log(`[Worker] Loaded ${terrainTiles.size} AI terrain tiles from disk`);
-        }
-
-        if (process.env.MALDOROR_CANAL_TOWN !== '0') {
-          canalTownKit = await loadCanalTownKit(undefined, worldSeed);
-          setTerrainTiles(canalTownKit.terrainTiles);
-          console.log(
-            `[Worker] Loaded ${canalTownKit.assets.length} canal-town assets + ` +
-            `${canalTownKit.terrainTiles.length} rasterized terrain tiles from ${canalTownKit.manifestPath} ` +
-            `(RSS ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB)`,
+        if (process.env.MALDOROR_REGIONAL_WORLD !== '0') {
+          const assets = defaultRegionalWorldAssetPaths(process.env.MALDOROR_ASSET_ROOT);
+          const loadedAt = performance.now();
+          [regionalWorldKit, regionalDefaultAvatar] = await Promise.all([
+            loadRegionalWorldKit({ worldSeed, assets }),
+            loadCanalTownDefaultAvatar(),
+          ]);
+          const started = await RegionalPrewarmService.start(
+            { worldSeed: String(worldSeed), assets },
+            Number(process.env.MALDOROR_REGIONAL_STARTUP_TIMEOUT_MS ?? 120_000),
           );
+          regionalPrewarmService = started.service;
+          const origin = await regionalPrewarmService.prepare(
+            REGIONAL_ORIGIN_PREWARM.bounds,
+            REGIONAL_ORIGIN_PREWARM.resolution,
+          );
+          regionalOriginViewport = origin.viewport;
+          console.log(
+            `[Worker] Regional world ready in ${Math.round(performance.now() - loadedAt)}ms; ` +
+            `generator startup ${Math.round(started.startup.startupMs)}ms, origin ` +
+            `${Math.round(origin.generationMs)}ms at ${origin.viewport.resolution}px, ` +
+            `RSS ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB`,
+          );
+        } else {
+          // Explicit rollback lane for the former provider. It is never a
+          // silent fallback from a regional startup failure.
+          const terrainTiles = await loadAllTerrainTilesFromDisk();
+          if (terrainTiles.size > 0) {
+            setTerrainTiles(Array.from(terrainTiles.values()));
+            console.log(`[Worker] Loaded ${terrainTiles.size} AI terrain tiles from disk`);
+          }
+          if (process.env.MALDOROR_CANAL_TOWN !== '0') {
+            canalTownKit = await loadCanalTownKit(undefined, worldSeed);
+            setTerrainTiles(canalTownKit.terrainTiles);
+            console.log(
+              `[Worker] Loaded ${canalTownKit.assets.length} canal-town assets + ` +
+              `${canalTownKit.terrainTiles.length} rasterized terrain tiles from ${canalTownKit.manifestPath} ` +
+              `(RSS ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB)`,
+            );
+          }
         }
 
         // Load NPCs from database
@@ -568,6 +619,10 @@ process.on('message', async (msg: MainToWorkerMessage) => {
           worldSeed,
           providerConfig,
           canalTownKit,
+          regionalWorldKit,
+          regionalPrewarmService,
+          regionalOriginViewport,
+          regionalDefaultAvatar,
           sendOutput: sendSessionOutput,
           sendUserId: sendSessionUserId,
           sendEnded: sendSessionEnded,

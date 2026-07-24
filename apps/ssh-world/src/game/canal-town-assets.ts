@@ -146,6 +146,18 @@ export async function loadCanalTownKit(
   };
 }
 
+/** Load only the authored fallback avatar from the canal manifest. The
+ * regional runtime reuses this identity asset without constructing the retired
+ * canal terrain, placement, and material stack. */
+export async function loadCanalTownDefaultAvatar(manifestOverride?: string): Promise<Sprite> {
+  const manifestPath = findManifestPath(manifestOverride);
+  const manifest = parseManifest(manifestPath);
+  return loadDefaultAvatar(
+    resolveAssetPath(path.dirname(manifestPath), manifest.defaultAvatar),
+    manifest.sourceTileSize,
+  );
+}
+
 function findManifestPath(override?: string): string {
   const candidates = [
     override,

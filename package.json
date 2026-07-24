@@ -31,6 +31,7 @@
     "research:regional-routes": "node tools/render-sim/regional-route-lab.mjs",
     "research:regional-traversal": "node tools/render-sim/regional-traversal-lab.mjs",
     "research:regional-predictive-traversal": "node tools/render-sim/regional-predictive-traversal-lab.mjs",
+    "research:regional-runtime-readiness": "pnpm --filter @maldoror/world build && pnpm --filter @maldoror/render build && pnpm --filter @maldoror/ssh-world build && node tools/render-sim/regional-runtime-readiness-lab.mjs",
     "research:regional-parcels": "node tools/render-sim/regional-parcel-model-lab.mjs",
     "research:placement-entropy": "node tools/render-sim/regional-placement-entropy-lab.mjs",
     "research:macro-entropy": "pnpm --filter @maldoror/world build && node tools/render-sim/regional-macro-entropy-lab.mjs",

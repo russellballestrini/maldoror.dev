@@ -612,6 +612,21 @@ describe('RegionalWorldTileProvider', () => {
     expect(target.getRegionalStats().cachedBlocks).toBe(0);
   });
 
+  it('uses the nearest prepared semantic LOD during animated zoom', () => {
+    const source = makeWorld(32, 32);
+    const prepared = source.prepareViewport(-4, -3, 4, 3, 4);
+    const target = makeWorld(32, 32);
+    target.importPreparedViewport(structuredClone(prepared));
+
+    const intermediate = target.getTileAtResolution(0, 0, 5);
+    expect(intermediate).toEqual(source.getTileAtResolution(0, 0, 4));
+    expect(intermediate.pixels).toHaveLength(4);
+    expect(target.getRegionalStats()).toMatchObject({
+      cachedBlocks: 0,
+      preparedViewports: 1,
+    });
+  });
+
   it('rejects cross-seed or incomplete prepared viewports', () => {
     const source = makeWorld();
     const prepared = source.prepareViewport(0, 0, 1, 1, 4);

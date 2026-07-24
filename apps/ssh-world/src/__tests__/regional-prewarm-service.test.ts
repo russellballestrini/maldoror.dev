@@ -107,6 +107,33 @@ describe('RegionalPredictivePrewarmer', () => {
       failures: 0,
     });
   });
+
+  it('fits low-zoom predictive reach inside the provider payload-area limit', async () => {
+    const generator = new ImmediateGenerator();
+    const target = new Target();
+    const errors: Error[] = [];
+    const scheduler = new RegionalPredictivePrewarmer({
+      generator,
+      target,
+      resolution: 4,
+      viewportRadiusX: 42,
+      viewportRadiusY: 24,
+      lookaheadTiles: 32,
+      fringeTiles: 4,
+      maxRequestArea: 8192,
+      onError: (error) => errors.push(error),
+    });
+
+    scheduler.observe(0, 0, 1, 1);
+    await scheduler.whenIdle();
+
+    const bounds = generator.requests[0]!;
+    const area = (bounds.maxX - bounds.minX + 1) * (bounds.maxY - bounds.minY + 1);
+    expect(area).toBeLessThanOrEqual(8192);
+    expect(area).toBeGreaterThan((42 * 2 + 1) * (24 * 2 + 1));
+    expect(errors).toEqual([]);
+    expect(target.imported).toHaveLength(1);
+  });
 });
 
 function createScheduler(

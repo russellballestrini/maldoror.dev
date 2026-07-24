@@ -55,12 +55,13 @@ whole master to each tile was retained as a rejected wallpaper experiment.
 The output carries a per-pixel water ownership mask and uses a bounded tile
 cache.
 
-The current production canal provider has not yet been replaced by the
-regional compositor. The port and real-material octant labs now establish the
-semantic/material layers, route agreement, semantic LOD, and first sparse
-family-specific landmark/collision seam. Predictive cold-block streaming,
-dense local parcel composition, interactions, and full faithful atlas proof
-are still required before a live switch.
+The authoritative worker source now selects the regional compositor by
+default. One worker-owned kit shares immutable raster assets and bounded
+physical, route, and material caches; each SSH session owns isolated players,
+NPCs, user structures, roads, and prepared-view LRU state. The former canal
+provider is an explicit environment-controlled rollback lane, never a silent
+startup fallback. This source transition is not itself a deployment or visual
+acceptance claim.
 
 ## Regional route hierarchy
 
@@ -192,9 +193,13 @@ The first structured-clone implementation is rejected. Although its imported
 frames were exact and fast, deserializing RGB object graphs stalled the main
 event loop for 1.237 seconds. The selected V2 package transfers six typed
 planes: terrain RGBA/material/walkability, sparse overlay coordinates/RGBA, and
-collision. Packages are seed-, version-, bounds-, resolution-, and length-
-validated into a four-rectangle LRU. The renderer lazily memoizes only packed
-tiles that become visible, keeping arrival work bounded.
+collision. Packages are seed-, version-, bounds-, resolution-, and
+length-validated into a per-session six-rectangle LRU. The persistent generator
+deduplicates equal in-flight requests and keeps a second LRU bounded by both
+eight entries and 192 MiB. The renderer lazily memoizes only packed tiles that
+become visible, keeping arrival work bounded. During a short animated zoom, the
+nearest prepared semantic LOD remains authoritative until the exact target LOD
+arrives; there is no synchronous intermediate-resolution escape hatch.
 
 The retained 180-frame, 15 Hz, 160x46 lab has zero coverage misses and exact
 checkpoint hashes. Render p50/p95/p99 is 4.09/8.32/27.74 ms; event-loop delay is
@@ -203,9 +208,19 @@ checkpoint hashes. Render p50/p95/p99 is 4.09/8.32/27.74 ms; event-loop delay is
 1.635 seconds versus worker-primed render p99 at 42.28 ms. Raw measurements and
 the rejected design live in mounted Track 5 `FINDINGS.md`.
 
-These are research measurements, not Gate-D completion. The exact origin must
-be ready before accepting logins, the scheduler still needs live movement/zoom
-integration, and SSH/load/30-minute/physical-Ghostty proofs remain open.
+The retained production-topology readiness run constructs one shared kit, one
+persistent generator, and two isolated session providers. The exact origin is
+ready in 9.147 seconds, an identical repeat is served in 0.085 ms, both sessions
+produce the same origin hash, and destroying one session preserves shared
+caches. Thirteen movement frames have zero coverage misses and render at
+5.261/13.868/13.868 ms p50/p95/p99; the generator retains 2.78 MiB and measured
+peak RSS is 776.02 MiB. The authoritative session now observes player motion,
+free-camera motion, resize, rotation, render-mode changes, and zoom; input opens
+only after exact visible coverage exists.
+
+These are local source/runtime measurements, not Gate-D completion. Production
+SSH activation, the 5/10/20-presence ladder, 30-minute run, and physical Ghostty
+proof remain open.
 
 ## Non-periodic asset placement
 
@@ -229,7 +244,7 @@ curbs, wet contact, reflections, collision, and terminal animation phases.
 
 ## Current limits
 
-This is a researched production candidate, not the end-state world or a
+This is a source-integrated production candidate, not the end-state world or a
 Phase-0 art-direction approval.
 The rebuilt origin now has coherent canal topology, dense side walls, legible
 crossing-scale negative space, and constructed water contacts in faithful ANSI

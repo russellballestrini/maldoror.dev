@@ -194,7 +194,7 @@ export interface RegionalPreparedViewport {
 
 /** Transferable counterpart of RegionalPreparedViewport. Terrain and overlay
  * rasters are tile-major RGBA; material and collision ownership are compact
- * byte planes. Only five ArrayBuffers cross the worker boundary. */
+ * byte planes. Only six ArrayBuffers cross the worker boundary. */
 export interface RegionalPackedPreparedViewport {
   version: 2;
   worldSeed: string;
@@ -238,6 +238,10 @@ export interface RegionalWorldTileProviderConfig extends TileProviderConfig {
   environmentContactLandmarkClearance?: number;
   maxCachedEnvironmentContactCells?: number;
   maxPreparedViewports?: number;
+  /** Runtime session providers share immutable assets and field/compositor
+   * caches owned by the worker. Research providers own their compositor by
+   * default and clear it when destroyed. */
+  clearSharedCachesOnDestroy?: boolean;
 }
 
 interface Placement {
@@ -347,7 +351,7 @@ interface CollectedDerivedLayers {
 const VISIBLE_TILE_CACHE = new WeakMap<BuildingTileData, boolean>();
 const LANDMARK_ANCHOR_REACH = 7;
 const PARCEL_SIDE_OFFSET = 3;
-const MAX_PREPARED_VIEWPORT_AREA = 8192;
+export const REGIONAL_MAX_PREPARED_VIEWPORT_AREA = 8192;
 const ENVIRONMENT_PROGRAM_REACH = 40;
 
 /**
@@ -387,6 +391,7 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly environmentContactLandmarkClearance: number;
   private readonly maxCachedEnvironmentContactCells: number;
   private readonly maxPreparedViewports: number;
+  private readonly clearSharedCachesOnDestroy: boolean;
   private readonly placementMinOffsetX: number;
   private readonly placementMaxOffsetX: number;
   private readonly placementMinOffsetY: number;
@@ -440,6 +445,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       config.maxCachedEnvironmentContactCells ?? 4096,
     );
     this.maxPreparedViewports = Math.max(1, Math.min(16, config.maxPreparedViewports ?? 4));
+    this.clearSharedCachesOnDestroy = config.clearSharedCachesOnDestroy ?? true;
     for (const asset of this.landmarks) {
       if (asset.families.length === 0 || asset.landmarkKinds.length === 0) {
         throw new Error(`Regional landmark has no semantic compatibility: ${asset.id}`);
@@ -874,6 +880,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       if (oldest === undefined) break;
       this.preparedViewports.delete(oldest);
     }
+    this.markVisualChange();
   }
 
   private importPackedPreparedViewport(payload: RegionalPackedPreparedViewport): void {
@@ -1407,7 +1414,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     this.environmentContactPlacementCache.clear();
     this.environmentProgramCache.clear();
     this.preparedViewports.clear();
-    this.compositor.clear();
+    if (this.clearSharedCachesOnDestroy) this.compositor.clear();
     super.destroy();
   }
 
@@ -1419,14 +1426,24 @@ export class RegionalWorldTileProvider extends TileProvider {
     const tileX = Math.floor(worldX);
     const tileY = Math.floor(worldY);
     const candidates = [...this.preparedViewports.values()];
+    let nearest: ImportedPreparedViewport | null = null;
+    let nearestDistance = Number.POSITIVE_INFINITY;
     for (let index = candidates.length - 1; index >= 0; index--) {
       const viewport = candidates[index]!;
-      if (resolution !== undefined && viewport.resolution !== resolution) continue;
       if (tileX < viewport.bounds.minX || tileX > viewport.bounds.maxX ||
           tileY < viewport.bounds.minY || tileY > viewport.bounds.maxY) continue;
-      return viewport;
+      if (resolution === undefined || viewport.resolution === resolution) return viewport;
+      // During a short animated zoom, keep consuming an already prepared
+      // semantic LOD and let the renderer resample it while the exact target
+      // package is generated off-thread. This prevents an intermediate zoom
+      // size from falling through to synchronous world generation.
+      const distance = Math.abs(Math.log(viewport.resolution / resolution));
+      if (distance < nearestDistance) {
+        nearest = viewport;
+        nearestDistance = distance;
+      }
     }
-    return null;
+    return nearest;
   }
 
   private blocksNear(worldX: number, worldY: number): CachedBlock[] {
@@ -2838,8 +2855,8 @@ function preparedArea(bounds: RegionalPreparedViewport['bounds']): number {
 
 function validatePreparedArea(bounds: RegionalPreparedViewport['bounds']): void {
   const area = preparedArea(bounds);
-  if (!Number.isSafeInteger(area) || area < 1 || area > MAX_PREPARED_VIEWPORT_AREA) {
-    throw new Error(`Regional viewport area must be in 1..${MAX_PREPARED_VIEWPORT_AREA}: ${area}`);
+  if (!Number.isSafeInteger(area) || area < 1 || area > REGIONAL_MAX_PREPARED_VIEWPORT_AREA) {
+    throw new Error(`Regional viewport area must be in 1..${REGIONAL_MAX_PREPARED_VIEWPORT_AREA}: ${area}`);
   }
 }
 
