@@ -1,0 +1,5 @@
+# 033-connected-two-sided-street-fabric
+
+2026-07-24T14:06:04.287Z
+
+SELECTED COMPOSITION SUB-GATE — NOT LIVE, NOT GATE A. V3 shows the rejected detached-prop frontage. V10 introduces one complete authored 10x14 urban block. V11 adds a distinct opposite-side market and courtyard block, producing the first two-sided street wall without mirroring. Both raster sources were generated through the built-in Codex and ChatGPT subscription workflow with no metered API, then soft-alpha keyed and assigned explicit frontage axis, composition side, collision, light, and footprint semantics. Real SSH proof retains walking, district, and regional origin captures at 160x46 and 210x60: 2,170,860 raw bytes and 150 synchronized frames, each asserting exact position 0,0, requested zoom, and OCTANT mode. The production seed resolves both legal focal anchors deterministically and keeps the arterial open. The target remains far away: paving, canal and quay continuity, edge spacing, district density, horizontal companions, five other biome vocabularies, full atlas, life, load, deployment, and physical Ghostty acceptance are open.

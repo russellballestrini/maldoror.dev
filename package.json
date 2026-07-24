@@ -25,6 +25,7 @@
     "assets:derive-ambient": "node tools/render-sim/derive-regional-ambient.mjs",
     "assets:derive-route-contacts": "node tools/render-sim/derive-regional-route-contacts.mjs",
     "assets:derive-parcel-components": "node tools/render-sim/derive-regional-parcel-components.mjs",
+    "assets:derive-canal-town-focals": "node tools/render-sim/derive-canal-town-focal-blocks.mjs",
     "assets:derive-environment-contacts": "node tools/render-sim/derive-regional-environment-contacts.mjs",
     "research:regional-materials": "node tools/render-sim/regional-material-lab.mjs",
     "research:regional-landmarks": "node tools/render-sim/regional-landmark-lab.mjs",

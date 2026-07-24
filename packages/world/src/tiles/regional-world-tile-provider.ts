@@ -91,6 +91,14 @@ export type RegionalWaterfrontFunction =
 
 export interface RegionalParcelComponentAsset extends RegionalVisualAsset {
   role: 'mass';
+  /** A rare authored urban-fabric anchor that should establish the local
+   * composition before smaller support masses are placed. Omitted assets are
+   * ordinary supports; this semantic is manifest-owned, never pixel-inferred. */
+  compositionRole?: 'focal';
+  /** Screen-space route axis this unrotated frontage was authored to face. */
+  frontageAxis?: RegionalRouteContactAxis;
+  /** Side of the route occupied by this focal's building mass. */
+  compositionSide?: -1 | 1;
   /** Optional district programs supported by this mass. Generic parcels may
    * still reuse it; specialized programs never infer function from its ID. */
   programs?: readonly RegionalParcelProgram[];
@@ -247,6 +255,7 @@ export interface RegionalWorldTileProviderConfig extends TileProviderConfig {
 interface Placement {
   asset: RegionalVisualAsset;
   kind: 'landmark' | 'ambient' | 'environment-contact' | 'route-contact' | 'parcel-component';
+  landmarkKind?: RegionalLandmarkKind;
   siteX: number;
   siteY: number;
   anchorX: number;
@@ -350,6 +359,7 @@ interface CollectedDerivedLayers {
 
 const VISIBLE_TILE_CACHE = new WeakMap<BuildingTileData, boolean>();
 const LANDMARK_ANCHOR_REACH = 7;
+const LANDMARK_ENTOURAGE_REACH = 18;
 const PARCEL_SIDE_OFFSET = 3;
 export const REGIONAL_MAX_PREPARED_VIEWPORT_AREA = 8192;
 const ENVIRONMENT_PROGRAM_REACH = 40;
@@ -485,6 +495,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       ...this.landmarks,
       ...this.ambient,
       ...this.routeContacts,
+      ...this.parcelComponents,
       ...this.environmentContacts,
     ];
     const extentX = placementAssets.flatMap((asset) => {
@@ -1484,15 +1495,23 @@ export class RegionalWorldTileProvider extends TileProvider {
     const originY = blockY * this.blockSize;
     const placements: Placement[] = [];
     const landmarkSites = this.routes.getLandmarkSites?.(
-      originX,
-      originY,
-      originX + this.blockSize - 1,
-      originY + this.blockSize - 1,
+      originX - LANDMARK_ENTOURAGE_REACH,
+      originY - LANDMARK_ENTOURAGE_REACH,
+      originX + this.blockSize - 1 + LANDMARK_ENTOURAGE_REACH,
+      originY + this.blockSize - 1 + LANDMARK_ENTOURAGE_REACH,
     );
     if (landmarkSites) {
       for (const site of landmarkSites) {
         const placement = this.createPlacement(site.x, site.y);
-        if (placement) placements.push(placement);
+        if (!placement) continue;
+        if (site.x >= originX && site.x < originX + this.blockSize &&
+            site.y >= originY && site.y < originY + this.blockSize) {
+          placements.push(placement);
+        }
+        placements.push(...this.buildLandmarkEntourage(placement).filter((support) => (
+          support.anchorX >= originX && support.anchorX < originX + this.blockSize &&
+          support.anchorY >= originY && support.anchorY < originY + this.blockSize
+        )));
       }
     } else {
       for (let y = originY; y < originY + this.blockSize; y++) {
@@ -2362,7 +2381,153 @@ export class RegionalWorldTileProvider extends TileProvider {
     const asset = this.selectAsset(siteX, siteY, biome, route.landmarkKind);
     if (!asset) return null;
     const anchor = this.findConstrainedAnchor(siteX, siteY, route, asset);
-    return anchor ? { asset, kind: 'landmark', siteX, siteY, ...anchor } : null;
+    return anchor ? {
+      asset,
+      kind: 'landmark',
+      landmarkKind: route.landmarkKind,
+      siteX,
+      siteY,
+      ...anchor,
+    } : null;
+  }
+
+  /** Turn a landmark into the parent of a compact local composition instead
+   * of leaving one isolated sprite in an empty field. Candidate supports form
+   * staggered frontage stations on both sides of the landmark's route frame,
+   * then pass the same continuous family, route-distance, terrain, and
+   * collision rules as ordinary ambient masses. The landmark site owns the
+   * semantic group; support anchors own cache blocks, making the result
+   * traversal-independent. */
+  private buildLandmarkEntourage(landmark: Placement): Placement[] {
+    if (landmark.kind !== 'landmark' || !landmark.landmarkKind || this.ambient.length === 0) return [];
+    const profile = landmarkEntourageProfile(landmark.landmarkKind);
+    const amount = profile.minimum + Math.floor(
+      this.hashUnit(landmark.siteX, landmark.siteY, 0x61d3) *
+      (profile.maximum - profile.minimum + 1),
+    );
+    const route = this.routes.sample(landmark.siteX, landmark.siteY);
+    const directionLength = Math.hypot(route.directionX, route.directionY);
+    const tangentX = directionLength > 0.1 ? route.directionX / directionLength : 1;
+    const tangentY = directionLength > 0.1 ? route.directionY / directionLength : 0;
+    const normalX = -tangentY;
+    const normalY = tangentX;
+    const sidePhase = this.hashUnit(landmark.siteX, landmark.siteY, 0x8b17) < 0.5 ? 0 : 1;
+    const reserved = new Set<string>();
+    const assetUsage = new Map<string, number>();
+    reserveVisibleFootprint(landmark, reserved, 1);
+    const supports: Placement[] = [];
+    const attempts = amount * 5;
+    const maximumStation = Math.max(1, Math.floor(profile.tangentReach / profile.stationSpacing));
+    const stationCount = maximumStation * 2 + 1;
+    for (let attempt = 0; attempt < attempts && supports.length < amount; attempt++) {
+      const pairIndex = Math.floor(attempt / 2);
+      const stationOrdinal = pairIndex % stationCount;
+      const stationMagnitude = Math.ceil(stationOrdinal / 2);
+      const stationIndex = stationOrdinal === 0
+        ? 0
+        : stationOrdinal % 2 === 1 ? stationMagnitude : -stationMagnitude;
+      const side = (attempt + sidePhase) % 2 === 0 ? -1 : 1;
+      const alongJitter = (
+        this.hashUnit(landmark.siteX + attempt, landmark.siteY - attempt, 0x37c9) - 0.5
+      ) * profile.stationJitter;
+      const setbackJitter = (
+        this.hashUnit(landmark.siteX - attempt, landmark.siteY + attempt, 0x4ad1) - 0.5
+      ) * profile.setbackJitter;
+      const along = stationIndex * profile.stationSpacing + alongJitter;
+      const outward = side * (profile.frontageOffset + setbackJitter);
+      let anchorX = Math.round(landmark.siteX + tangentX * along + normalX * outward);
+      let anchorY = Math.round(landmark.siteY + tangentY * along + normalY * outward);
+      const supportRoute = this.routes.sample(anchorX, anchorY);
+      const biome = this.field.sample(anchorX, anchorY);
+      const asset = this.selectEntourageAsset(
+        anchorX,
+        anchorY,
+        landmark,
+        biome,
+        supportRoute,
+        assetUsage,
+        supports.filter((placement) => isFocalCompositionAsset(placement.asset)).length <
+          profile.focalCount && attempt < Math.max(8, stationCount * 4),
+        side,
+      );
+      if (asset && isFocalCompositionAsset(asset)) {
+        const focalSearchIndex = Math.floor(attempt / 2);
+        ({ anchorX, anchorY } = centredFocalAnchor(
+          landmark,
+          asset,
+          side,
+          Math.floor(focalSearchIndex / 5),
+          symmetricSearchOffset(focalSearchIndex % 5),
+        ));
+      }
+      if (!asset || !this.assetFits(anchorX, anchorY, asset) ||
+          visibleFootprintIntersects(asset, anchorX, anchorY, reserved)) continue;
+      const support: Placement = {
+        asset,
+        kind: 'ambient',
+        siteX: landmark.siteX,
+        siteY: landmark.siteY,
+        anchorX,
+        anchorY,
+      };
+      supports.push(support);
+      assetUsage.set(asset.id, (assetUsage.get(asset.id) ?? 0) + 1);
+      reserveVisibleFootprint(support, reserved, 0);
+    }
+    return supports;
+  }
+
+  /** Select support masses from the complete authored non-programmed family
+   * vocabulary. The landmark supplies local cultural identity while the
+   * candidate biome preserves ecotone influence. A usage penalty makes a
+   * repeated silhouette lose to an equally compatible unused alternative;
+   * this is data-driven over the manifest rather than an ID-specific table. */
+  private selectEntourageAsset(
+    worldX: number,
+    worldY: number,
+    landmark: Placement,
+    biome: BiomeWorldSample,
+    route: RegionalRouteSample,
+    assetUsage: ReadonlyMap<string, number>,
+    preferFocal: boolean,
+    side: -1 | 1,
+  ): RegionalVisualAsset | null {
+    const parentBiome = this.field.sample(landmark.siteX, landmark.siteY);
+    const parentRoute = this.routes.sample(landmark.siteX, landmark.siteY);
+    const candidates: RegionalVisualAsset[] = [
+      ...this.ambient.filter((asset) => {
+        const [minimumRouteDistance, maximumRouteDistance] = asset.routeDistance;
+        return route.distance >= minimumRouteDistance &&
+          (maximumRouteDistance >= 999 || route.distance <= maximumRouteDistance);
+      }),
+      ...this.parcelComponents.filter((asset) => !asset.programs || asset.programs.length === 0),
+    ];
+    let selected: RegionalVisualAsset | null = null;
+    let selectedScore = Number.NEGATIVE_INFINITY;
+    for (const asset of candidates) {
+      if (!asset.families.some((family) => landmark.asset.families.includes(family))) continue;
+      if (!frontageMatchesRoute(asset, parentRoute)) continue;
+      if ('compositionSide' in asset && asset.compositionSide !== undefined &&
+          asset.compositionSide !== side) continue;
+      const parentCompatibility = Math.max(...asset.families.map((family) => (
+        parentBiome.weights[BIOME_FAMILIES.indexOf(family)] ?? 0
+      )));
+      const localCompatibility = Math.max(...asset.families.map((family) => (
+        biome.weights[BIOME_FAMILIES.indexOf(family)] ?? 0
+      )));
+      const variation = this.hashUnit(worldX, worldY, stringHash(asset.id)) * 0.09;
+      const repetitionPenalty = (assetUsage.get(asset.id) ?? 0) * 0.24;
+      const focal = isFocalCompositionAsset(asset);
+      if (focal && (assetUsage.get(asset.id) ?? 0) > 0) continue;
+      const hierarchyBias = preferFocal ? (focal ? 2 : 0) : (focal ? -2 : 0);
+      const score = parentCompatibility * 0.68 + localCompatibility * 0.32 +
+        variation + hierarchyBias - repetitionPenalty;
+      if (score > selectedScore) {
+        selected = asset;
+        selectedScore = score;
+      }
+    }
+    return selected;
   }
 
   private buildAmbientPlacements(originX: number, originY: number): Placement[] {
@@ -2831,8 +2996,133 @@ export class RegionalWorldTileProvider extends TileProvider {
   }
 }
 
+interface LandmarkEntourageProfile {
+  focalCount: number;
+  minimum: number;
+  maximum: number;
+  stationSpacing: number;
+  tangentReach: number;
+  frontageOffset: number;
+  stationJitter: number;
+  setbackJitter: number;
+}
+
+function landmarkEntourageProfile(kind: RegionalLandmarkKind): LandmarkEntourageProfile {
+  switch (kind) {
+    case 'arrival':
+      return {
+        focalCount: 2,
+        minimum: 10, maximum: 14, stationSpacing: 5.5, tangentReach: 17,
+        frontageOffset: 6.5, stationJitter: 2.4, setbackJitter: 2,
+      };
+    case 'settlement':
+      return {
+        focalCount: 1,
+        minimum: 7, maximum: 11, stationSpacing: 5.8, tangentReach: 16,
+        frontageOffset: 6.5, stationJitter: 2.6, setbackJitter: 2.2,
+      };
+    case 'ruin':
+      return {
+        focalCount: 1,
+        minimum: 5, maximum: 8, stationSpacing: 6.2, tangentReach: 15,
+        frontageOffset: 6.8, stationJitter: 3.2, setbackJitter: 2.8,
+      };
+    case 'waystation':
+      return {
+        focalCount: 1,
+        minimum: 3, maximum: 6, stationSpacing: 6.4, tangentReach: 13,
+        frontageOffset: 6.6, stationJitter: 3, setbackJitter: 2.6,
+      };
+  }
+}
+
+function visibleFootprintIntersects(
+  asset: RegionalVisualAsset,
+  anchorX: number,
+  anchorY: number,
+  reserved: ReadonlySet<string>,
+): boolean {
+  const [offsetX, offsetY] = getSpriteAnchor(asset);
+  for (let tileY = 0; tileY < asset.sprite.height; tileY++) {
+    for (let tileX = 0; tileX < asset.sprite.width; tileX++) {
+      const tile = asset.sprite.tiles[tileY]?.[tileX];
+      if (!tile || !hasVisiblePixels(tile)) continue;
+      if (reserved.has(positionKey(anchorX + tileX - offsetX, anchorY + tileY - offsetY))) return true;
+    }
+  }
+  return false;
+}
+
+function reserveVisibleFootprint(
+  placement: Placement,
+  reserved: Set<string>,
+  halo: number,
+): void {
+  const [offsetX, offsetY] = getSpriteAnchor(placement.asset);
+  for (let tileY = 0; tileY < placement.asset.sprite.height; tileY++) {
+    for (let tileX = 0; tileX < placement.asset.sprite.width; tileX++) {
+      const tile = placement.asset.sprite.tiles[tileY]?.[tileX];
+      if (!tile || !hasVisiblePixels(tile)) continue;
+      const worldX = placement.anchorX + tileX - offsetX;
+      const worldY = placement.anchorY + tileY - offsetY;
+      for (let offsetY = -halo; offsetY <= halo; offsetY++) {
+        for (let offsetX = -halo; offsetX <= halo; offsetX++) {
+          reserved.add(positionKey(worldX + offsetX, worldY + offsetY));
+        }
+      }
+    }
+  }
+}
+
 function positionKey(x: number, y: number): string {
   return `${x},${y}`;
+}
+
+function isFocalCompositionAsset(asset: RegionalVisualAsset): boolean {
+  return 'compositionRole' in asset && asset.compositionRole === 'focal';
+}
+
+/** Large unrotated blocks use their authored screen-space frontage rather than
+ * a bottom-edge route station. This keeps the complete silhouette beside the
+ * route and near the landmark while ordinary support props retain the curved
+ * route frame. */
+function centredFocalAnchor(
+  landmark: Placement,
+  asset: RegionalVisualAsset,
+  side: -1 | 1,
+  extraSeparation: number,
+  parallelNudge: number,
+): { anchorX: number; anchorY: number } {
+  const frontageAxis = 'frontageAxis' in asset ? asset.frontageAxis : undefined;
+  const [spriteAnchorX, spriteAnchorY] = getSpriteAnchor(asset);
+  const relativeCentreX = (asset.sprite.width - 1) / 2 - spriteAnchorX;
+  const relativeCentreY = (asset.sprite.height - 1) / 2 - spriteAnchorY;
+  const crossOffset = frontageAxis === 'north-south'
+    ? asset.sprite.width / 2 + landmark.asset.sprite.width / 2 + 1
+    : asset.sprite.height / 2 + landmark.asset.sprite.height / 2 + 1;
+  const separatedOffset = crossOffset + extraSeparation;
+  const desiredCentreX = landmark.siteX +
+    (frontageAxis === 'north-south' ? side * separatedOffset : parallelNudge);
+  const desiredCentreY = landmark.siteY +
+    (frontageAxis === 'north-south' ? parallelNudge : side * separatedOffset);
+  return {
+    anchorX: Math.round(desiredCentreX - relativeCentreX),
+    anchorY: Math.round(desiredCentreY - relativeCentreY),
+  };
+}
+
+function symmetricSearchOffset(index: number): number {
+  if (index <= 0) return 0;
+  const magnitude = Math.ceil(index / 2);
+  return index % 2 === 1 ? -magnitude : magnitude;
+}
+
+function frontageMatchesRoute(asset: RegionalVisualAsset, route: RegionalRouteSample): boolean {
+  if (!('frontageAxis' in asset) || asset.frontageAxis === undefined) return true;
+  const routeAxis: RegionalRouteContactAxis = Math.abs(route.directionX) > Math.abs(route.directionY)
+    ? 'east-west'
+    : 'north-south';
+  return asset.frontageAxis === routeAxis;
 }
 
 function normalizedPreparedBounds(

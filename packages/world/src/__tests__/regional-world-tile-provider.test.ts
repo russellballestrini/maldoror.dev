@@ -169,10 +169,17 @@ function makeWorld(
       : [[0, -1], [0, 1]] as const,
   })));
   const parcelComponents: RegionalParcelComponentAsset[] = BIOME_FAMILIES.flatMap((family) =>
-    Array.from({ length: 6 }, (_, variant) => ({
+    Array.from({ length: family === 'canal-town' ? 7 : 6 }, (_, variant) => ({
       id: `parcel:${family}:${variant}`,
       families: [family],
       role: 'mass' as const,
+      compositionRole: family === 'canal-town' && variant >= 4 ? 'focal' as const : undefined,
+      frontageAxis: family === 'canal-town' && variant >= 4
+        ? variant === 4 ? 'east-west' as const : 'north-south' as const
+        : undefined,
+      compositionSide: family === 'canal-town' && variant >= 4
+        ? variant === 4 || variant === 6 ? -1 as const : 1 as const
+        : undefined,
       programs: (family === 'canal-town' || family === 'coast') && variant < 2
         ? ['waterfront'] as const
         : undefined,
@@ -272,7 +279,7 @@ describe('RegionalWorldTileProvider', () => {
     expect(world.getTileAtResolution(0, 0, 4).pixels).toHaveLength(4);
     expect(world.getRegionalStats().ambientAssets).toBe(BIOME_FAMILIES.length * 2);
     expect(world.getRegionalStats().routeContactAssets).toBe(BIOME_FAMILIES.length * 2);
-    expect(world.getRegionalStats().parcelComponentAssets).toBe(BIOME_FAMILIES.length * 6);
+    expect(world.getRegionalStats().parcelComponentAssets).toBe(BIOME_FAMILIES.length * 6 + 1);
     expect(world.getRegionalStats().environmentContactAssets).toBe(2);
   });
 
@@ -387,9 +394,12 @@ describe('RegionalWorldTileProvider', () => {
     expect(placements.length).toBeGreaterThan(4);
     expect(new Set(placements.flatMap((placement) => placement.families))).toEqual(new Set(BIOME_FAMILIES));
     for (const family of BIOME_FAMILIES) {
-      expect(new Set(placements
+      const assetIds = new Set(placements
         .filter((placement) => placement.families.includes(family))
-        .map((placement) => placement.assetId)).size).toBe(2);
+        .map((placement) => placement.assetId));
+      expect(assetIds).toContain(`ambient:${family}:0`);
+      expect(assetIds).toContain(`ambient:${family}:1`);
+      expect(assetIds.size).toBeGreaterThan(2);
     }
     const protectedCells = new Set(world.getParcelConnectorCellsInBounds(-32, -48, 232, 48)
       .filter((cell) => cell.protected)
@@ -399,6 +409,79 @@ describe('RegionalWorldTileProvider', () => {
       const occupied = world.isBuildingAt(placement.anchorX, placement.anchorY);
       expect(occupied || protectedCells.has(`${placement.anchorX},${placement.anchorY}`)).toBe(true);
     }
+  });
+
+  it('builds a compact route-open entourage around the arrival landmark', () => {
+    const world = makeWorld();
+    const entourage = world.getAmbientPlacementsInBounds(-22, -22, 22, 22)
+      .filter((placement) => placement.siteX === 0 && placement.siteY === 0);
+
+    expect(entourage.length).toBeGreaterThanOrEqual(8);
+    expect(new Set(entourage.map((placement) => `${placement.anchorX},${placement.anchorY}`)).size)
+      .toBe(entourage.length);
+    expect(entourage.every((placement) => placement.families.includes('canal-town'))).toBe(true);
+    expect(entourage.some((placement) => placement.assetId === 'parcel:canal-town:4')).toBe(true);
+    expect(entourage.some((placement) => placement.assetId === 'parcel:canal-town:5')).toBe(false);
+    expect(entourage.every((placement) => Math.abs(placement.anchorY) >= 2)).toBe(true);
+    const usage = new Map<string, number>();
+    for (const placement of entourage) {
+      usage.set(placement.assetId, (usage.get(placement.assetId) ?? 0) + 1);
+    }
+    expect(usage.size).toBeGreaterThanOrEqual(4);
+    expect(Math.max(...usage.values())).toBeLessThanOrEqual(Math.ceil(entourage.length / 3));
+    expect(world.isBuildingAt(0, 0)).toBe(false);
+    expect(world.getTile(0, 0).walkable).toBe(true);
+  });
+
+  it('orients focal frontage from the landmark route when off-route samples lose direction', () => {
+    const northSouthRoute = (x: number, y: number): RegionalRouteSample => ({
+      distance: Math.abs(x),
+      isRoute: x === 0,
+      isCrossing: false,
+      isWalkableRoute: x === 0,
+      crossingKind: null,
+      routeKind: x === 0 ? 'local-road' : null,
+      routeId: x === 0 ? 'north-south-test-route' : null,
+      directionX: 0,
+      directionY: x === 0 ? 1 : 0,
+      landmarkKind: x === 0 && y === 0 ? 'arrival' : null,
+      landmarkDistance: x === 0 && y === 0 ? 0 : Number.POSITIVE_INFINITY,
+    });
+    const world = makeWorld(32, 32, northSouthRoute);
+    const entourage = world.getAmbientPlacementsInBounds(-22, -22, 22, 22)
+      .filter((placement) => placement.siteX === 0 && placement.siteY === 0);
+
+    const focal = entourage.find((placement) => placement.assetId === 'parcel:canal-town:5');
+    const opposite = entourage.find((placement) => placement.assetId === 'parcel:canal-town:6');
+    expect(focal).toBeDefined();
+    expect(opposite).toBeDefined();
+    expect(focal?.anchorY).toBe(1);
+    expect(Math.abs(focal?.anchorX ?? 0)).toBe(4);
+    expect((focal?.anchorX ?? 0) * (opposite?.anchorX ?? 0)).toBeLessThan(0);
+    expect(entourage.some((placement) => placement.assetId === 'parcel:canal-town:4')).toBe(false);
+  });
+
+  it('uses the tall frontage for equal-axis diagonal routes', () => {
+    const diagonalRoute = (x: number, y: number): RegionalRouteSample => ({
+      distance: Math.abs(x - y) / Math.SQRT2,
+      isRoute: x === y,
+      isCrossing: false,
+      isWalkableRoute: x === y,
+      crossingKind: null,
+      routeKind: x === y ? 'arterial' : null,
+      routeId: x === y ? 'diagonal-test-route' : null,
+      directionX: x === y ? -Math.SQRT1_2 : 0,
+      directionY: x === y ? -Math.SQRT1_2 : 0,
+      landmarkKind: x === 0 && y === 0 ? 'arrival' : null,
+      landmarkDistance: x === 0 && y === 0 ? 0 : Number.POSITIVE_INFINITY,
+    });
+    const world = makeWorld(32, 32, diagonalRoute);
+    const entourage = world.getAmbientPlacementsInBounds(-22, -22, 22, 22)
+      .filter((placement) => placement.siteX === 0 && placement.siteY === 0);
+
+    expect(entourage.some((placement) => placement.assetId === 'parcel:canal-town:5')).toBe(true);
+    expect(entourage.some((placement) => placement.assetId === 'parcel:canal-town:6')).toBe(true);
+    expect(entourage.some((placement) => placement.assetId === 'parcel:canal-town:4')).toBe(false);
   });
 
   it('turns physically water-terminated thresholds into connected working waterfronts', () => {

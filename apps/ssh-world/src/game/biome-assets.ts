@@ -132,6 +132,9 @@ interface ParcelComponentEntry {
   file: string;
   family: BiomeFamily;
   role: 'mass';
+  compositionRole?: 'focal';
+  frontageAxis?: RegionalRouteContactAxis;
+  compositionSide?: -1 | 1;
   scale: number;
   spriteTiles: [number, number];
   collision: Array<[number, number]>;
@@ -471,6 +474,9 @@ export async function loadRegionalParcelComponentKit(
       id: entry.id,
       families: [entry.family],
       role: entry.role,
+      compositionRole: entry.compositionRole,
+      frontageAxis: entry.frontageAxis,
+      compositionSide: entry.compositionSide,
       programs: entry.programs,
       waterfrontFunction: entry.waterfrontFunction,
       collision: entry.collision,
@@ -672,6 +678,11 @@ function parseParcelComponentEntry(value: unknown, index: number): ParcelCompone
       typeof value.id !== 'string' || value.id.length === 0 ||
       typeof value.file !== 'string' || value.file.length === 0 ||
       !BIOME_FAMILIES.includes(value.family as BiomeFamily) ||
+      (value.compositionRole !== undefined && value.compositionRole !== 'focal') ||
+      (value.frontageAxis !== undefined &&
+        !ROUTE_CONTACT_AXES.includes(value.frontageAxis as RegionalRouteContactAxis)) ||
+      (value.compositionSide !== undefined && value.compositionSide !== -1 &&
+        value.compositionSide !== 1) ||
       !isTileDimensions(value.spriteTiles) ||
       !Array.isArray(value.collision) || value.collision.length === 0 ||
       !value.collision.every(isCollisionOffset) ||
@@ -691,6 +702,9 @@ function parseParcelComponentEntry(value: unknown, index: number): ParcelCompone
     file: value.file,
     family: value.family as BiomeFamily,
     role: 'mass',
+    compositionRole: value.compositionRole as 'focal' | undefined,
+    frontageAxis: value.frontageAxis as RegionalRouteContactAxis | undefined,
+    compositionSide: value.compositionSide as -1 | 1 | undefined,
     scale: value.scale,
     spriteTiles: value.spriteTiles as [number, number],
     collision: value.collision as Array<[number, number]>,
@@ -910,12 +924,12 @@ async function loadRegionalSpriteUncached(
 
 function isCollisionOffset(value: unknown): value is [number, number] {
   return Array.isArray(value) && value.length === 2 &&
-    value.every((part) => Number.isInteger(part) && Number(part) >= -4 && Number(part) <= 4);
+    value.every((part) => Number.isInteger(part) && Number(part) >= -8 && Number(part) <= 8);
 }
 
 function isTileDimensions(value: unknown): value is [number, number] {
   return Array.isArray(value) && value.length === 2 &&
-    value.every((part) => Number.isInteger(part) && Number(part) >= 1 && Number(part) <= 8);
+    value.every((part) => Number.isInteger(part) && Number(part) >= 1 && Number(part) <= 16);
 }
 
 function isRouteDistance(value: unknown): value is [number, number] {

@@ -114,16 +114,30 @@ describe('regional biome material manifest', () => {
     expect(kit.minimumLayers).toBe(2);
     expect(kit.maximumLayers).toBe(3);
     expect(kit.layerSpacing).toBe(5);
-    expect(kit.assets).toHaveLength(36);
+    expect(kit.assets).toHaveLength(39);
     for (const family of BIOME_FAMILIES) {
-      expect(kit.assets.filter((asset) => asset.families.includes(family))).toHaveLength(6);
+      expect(kit.assets.filter((asset) => asset.families.includes(family))).toHaveLength(
+        family === 'canal-town' ? 9 : 6,
+      );
     }
     for (const asset of kit.assets) {
       expect(asset.role).toBe('mass');
-      expect(asset.sprite.width).toBe(5);
-      expect(asset.sprite.height).toBe(4);
+      expect(asset.sprite.width).toBeGreaterThanOrEqual(5);
+      expect(asset.sprite.width).toBeLessThanOrEqual(16);
+      expect(asset.sprite.height).toBeGreaterThanOrEqual(4);
+      expect(asset.sprite.height).toBeLessThanOrEqual(14);
       expect(asset.collision.length).toBeGreaterThan(0);
     }
+    const focal = kit.assets.filter((asset) => asset.compositionRole === 'focal');
+    expect(focal).toHaveLength(3);
+    expect(new Set(focal.map((asset) => asset.frontageAxis)))
+      .toEqual(new Set(['east-west', 'north-south']));
+    expect(focal.find((asset) => asset.frontageAxis === 'east-west')?.sprite.width).toBe(16);
+    expect(focal.filter((asset) => asset.frontageAxis === 'north-south'))
+      .toHaveLength(2);
+    expect(new Set(focal
+      .filter((asset) => asset.frontageAxis === 'north-south')
+      .map((asset) => asset.compositionSide))).toEqual(new Set([-1, 1]));
     const waterfront = kit.assets.filter((asset) => asset.programs?.includes('waterfront'));
     expect(waterfront).toHaveLength(5);
     expect(new Set(waterfront.map((asset) => asset.waterfrontFunction))).toEqual(new Set([

@@ -729,6 +729,30 @@ Completed foundations:
   steady bytes. Public gallery iteration 032 exposes the exact rejected/selected
   storm pair and this current live frame. No image generation or metered model
   call was used;
+- the first composition correction after the failed atlas has now replaced the
+  arrival's isolated-prop grammar with two distinct connected urban blocks.
+  Three authored source assets were generated through the built-in
+  Codex/ChatGPT subscription workflow with no metered API, soft-alpha keyed,
+  hash-pinned, and made reproducible through
+  `pnpm assets:derive-canal-town-focals`. Their runtime semantics explicitly own
+  focal hierarchy, screen frontage axis, composition side, footprint,
+  collision, walkable frontage, and light; neither filenames nor pixels decide
+  placement. Eleven retained iterations rejected repeated pairs, ornamental
+  radial scatter, frontage-only props, crushed 8x4 reconstruction, wrong route
+  orientation, clipped tall sprites, false collision, one-dimensional anchor
+  search, and a one-sided settlement before selecting the two-sided street
+  wall. The production seed resolves the two focal anchors at `(10,6)` and
+  `(-10,6)` while preserving the exact `(0,0)` arterial. Six real-SSH origin
+  captures cover walking/district/regional at 160x46 and 210x60 with 2,170,860
+  raw bytes and 150 synchronized frames. Full verification passes 37 files / 196
+  tests, all 18 typecheck tasks, all 12 build tasks, and exact alpha/hash
+  reproduction. Evidence is in
+  `track-6-acceptance-atlas/composition-hierarchy-v11-two-sided-street-wall/`;
+  public gallery iteration 033 exposes V3 -> V10 -> V11 plus the three zooms.
+  This is a selected composition sub-gate, not Gate A and not deployed: paving,
+  canal/quay continuity, block edge spacing, district density, horizontal
+  companions, five other biome vocabularies, and a fresh complete atlas remain
+  open;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–031 expose selected and rejected research candidates without
@@ -741,8 +765,11 @@ Still open and therefore goal-blocking:
   six-second production capture. The 5/10/20-presence ladder, 30-minute run,
   long-run cgroup behavior, and physical Ghostty remain unproven;
 - the first six-family landmark silhouettes and shared-boundary parcel
-  compounds are still sparse research prototypes rather than a complete world
-  layer; coast-specific waterfront diversity, larger squares/commons, far
+  compounds now include a selected two-sided canal-town focal core, but remain
+  sparse research prototypes rather than a complete world layer. The core still
+  lacks continuous paving/canal/quay ground contact and thins immediately at
+  district scale; the other five families lack equivalent connected focal
+  vocabularies. Coast-specific waterfront diversity, larger squares/commons, far
   greater travel-scale entropy across route topology, hydrology, biome fields,
   ambient clusters, landmarks, and parcel programs, authoritative traversal,
   stronger landmark framing, multiple cave/highland programs and production

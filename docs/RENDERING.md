@@ -232,3 +232,40 @@ in 8.37 seconds at 671 MB RSS and restored both persistent NPCs. A fresh public
 SSH capture at exact `(0,0)` retained 32 synchronized frames, 309,531 total
 bytes, and 6,713 steady bytes. Gallery iteration 032 exposes that live frame and
 the exact rejected/selected night-storm pair.
+
+### Connected focal-block composition (2026-07-24)
+
+The first post-atlas composition pass rejects placement-only density as
+insufficient. V1-V3 proved that more isolated 5x4 masses still read as props;
+V4-V10 then established a larger focal-asset contract, authoritative route-axis
+selection, full-silhouette centering, explicit walkable-frontage collision, and
+a nearest-legal symmetric anchor search. The selected V11 arrival uses two
+distinct 10x14 canal-town blocks on opposite sides of the arterial. It does not
+mirror one source or infer function from image pixels.
+
+The source PNGs were created through the built-in Codex/ChatGPT image-generation
+subscription, not a metered API. Exact prompts, source and derived SHA-256,
+alpha metrics, and runtime semantics live under `assets/biomes/generated/` and
+`assets/biomes/parcel-components-manifest.json`. Reproduce and validate all
+three alpha-keyed assets with:
+
+```
+pnpm assets:derive-canal-town-focals
+```
+
+The V11 real-SSH proof retains walking, district, and regional captures at
+160x46 and 210x60: 2,170,860 raw bytes and 150 synchronized frames. The exact
+fresh-login origin remains `(0,0)` and both focal placements preserve arterial
+access. Evidence and the complete eleven-step rejection ladder are in
+`/mnt/donto-data/donto-resources/maldoror/rendering-research/track-6-acceptance-atlas/composition-hierarchy-v11-two-sided-street-wall/`.
+Gallery iteration 033 exposes V3, one-sided V10, selected two-sided V11, and all
+three reference zooms.
+
+Repository verification passes 37 files / 196 tests, all 18 typecheck tasks,
+all 12 build tasks, and exact SHA-256/alpha reproduction for the three derived
+focal assets.
+
+This is a selected composition sub-gate, not Gate A. The blocks still sit near
+the walking viewport edges; paving, canal/quay continuity, district density,
+horizontal counterparts, and five biome-specific focal vocabularies remain
+open. Production is unchanged at `vb07c0d4`.
