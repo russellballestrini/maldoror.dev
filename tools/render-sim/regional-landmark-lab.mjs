@@ -190,8 +190,21 @@ if (process.env.MALDOROR_REGIONAL_AMBIENT_ATLAS === '1') {
 }
 
 if (process.env.MALDOROR_REGIONAL_CONTACT_ATLAS === '1') {
-  const wanted = new Set(routeContactKit.assets.map((asset) => asset.id));
+  const contactAssetFilter = process.env.MALDOROR_REGIONAL_CONTACT_ASSET;
+  const familyAtlas = process.env.MALDOROR_REGIONAL_CONTACT_FAMILY_ATLAS === '1';
+  if (familyAtlas && contactAssetFilter) {
+    throw new Error('Family contact atlas and single-asset filter are mutually exclusive');
+  }
+  const selectedContactAssets = routeContactKit.assets.filter((asset) =>
+    !contactAssetFilter || asset.id === contactAssetFilter);
+  if (selectedContactAssets.length === 0) {
+    throw new Error(`Unknown route-contact asset: ${contactAssetFilter}`);
+  }
+  const requireParcel = familyAtlas || process.env.MALDOROR_REGIONAL_CONTACT_REQUIRE_PARCEL === '1';
+  const wanted = new Set(selectedContactAssets.map((asset) => asset.id));
   const found = new Map();
+  const rejectedParcelCandidates = new Map();
+  const rejectedParcelExamples = new Map();
   let previousRadius = 0;
   for (const radius of [128, 256, 384, 512, 768]) {
     const strips = [
@@ -203,31 +216,85 @@ if (process.env.MALDOROR_REGIONAL_CONTACT_ATLAS === '1') {
     for (const bounds of strips) {
       if (bounds[0] > bounds[2] || bounds[1] > bounds[3]) continue;
       for (const placement of world.getRouteContactPlacementsInBounds(...bounds)) {
-        if (wanted.has(placement.assetId) && !found.has(placement.assetId)) {
-          found.set(placement.assetId, placement);
+        const family = placement.families[0];
+        const familyAlreadyFound = familyAtlas && [...found.values()]
+          .some((candidate) => candidate.families[0] === family);
+        if (wanted.has(placement.assetId) && !found.has(placement.assetId) && !familyAlreadyFound) {
+          if (!requireParcel) {
+            found.set(placement.assetId, placement);
+            continue;
+          }
+          const searchBounds = [
+            placement.siteX - 24,
+            placement.siteY - 24,
+            placement.siteX + 24,
+            placement.siteY + 24,
+          ];
+          const hasCore = world.getParcelConnectorCellsInBounds(...searchBounds)
+            .some((cell) => cell.parcelId === placement.parcelId && cell.core);
+          const hasComponent = world.getParcelComponentPlacementsInBounds(...searchBounds)
+            .some((component) => component.parcelId === placement.parcelId);
+          if (hasCore && hasComponent) {
+            found.set(placement.assetId, placement);
+          } else {
+            rejectedParcelCandidates.set(
+              placement.assetId,
+              (rejectedParcelCandidates.get(placement.assetId) ?? 0) + 1,
+            );
+            const examples = rejectedParcelExamples.get(placement.assetId) ?? [];
+            if (examples.length < 8) examples.push({
+              site: [placement.siteX, placement.siteY],
+              anchor: [placement.anchorX, placement.anchorY],
+              layers: placement.parcelLayers,
+            });
+            rejectedParcelExamples.set(placement.assetId, examples);
+          }
         }
       }
     }
-    if (found.size === wanted.size) break;
+    const complete = familyAtlas
+      ? new Set([...found.values()].map((placement) => placement.families[0])).size === BIOME_FAMILIES.length
+      : found.size === wanted.size;
+    if (complete) break;
     previousRadius = radius;
   }
-  const missing = [...wanted].filter((id) => !found.has(id));
-  if (missing.length > 0) throw new Error(`Could not locate regional route contacts: ${missing.join(', ')}`);
+  const missing = familyAtlas
+    ? BIOME_FAMILIES.filter((family) => ![...found.values()]
+      .some((placement) => placement.families[0] === family))
+    : [...wanted].filter((id) => !found.has(id));
+  if (missing.length > 0) {
+    const rejections = familyAtlas
+      ? missing.join(', ')
+      : missing.map((id) => JSON.stringify({
+        assetId: id,
+        count: rejectedParcelCandidates.get(id) ?? 0,
+        examples: rejectedParcelExamples.get(id) ?? [],
+      })).join(', ');
+    throw new Error(`Could not locate viable regional route contacts: ${rejections}`);
+  }
   const contactTileSize = Number(process.env.MALDOROR_REGIONAL_CONTACT_TILE_SIZE ?? 16);
   if (![4, 8, 16].includes(contactTileSize)) {
     throw new Error(`MALDOROR_REGIONAL_CONTACT_TILE_SIZE must be 4, 8, or 16: ${contactTileSize}`);
   }
-  const contactAssetFilter = process.env.MALDOROR_REGIONAL_CONTACT_ASSET;
-  FRAMES = routeContactKit.assets.filter((asset) =>
-    !contactAssetFilter || asset.id === contactAssetFilter).map((asset) => {
+  const frameAssets = familyAtlas
+    ? selectedContactAssets.filter((asset) => found.has(asset.id))
+    : selectedContactAssets;
+  FRAMES = frameAssets.map((asset) => {
     const placement = found.get(asset.id);
-    const sign = placement.accessAxis === 'north-south'
-      ? Math.sign(placement.anchorY - placement.siteY) || 1
-      : Math.sign(placement.anchorX - placement.siteX) || 1;
-    const offset = contactTileSize < 16 ? Math.round((placement.connectorLength ?? 0) / 2) : 0;
-    const centre = placement.accessAxis === 'north-south'
-      ? [placement.siteX, placement.siteY + sign * offset]
-      : [placement.siteX + sign * offset, placement.siteY];
+    const connectorCells = world.getParcelConnectorCellsInBounds(
+      placement.siteX - 32,
+      placement.siteY - 32,
+      placement.siteX + 32,
+      placement.siteY + 32,
+    ).filter((cell) => cell.parcelId === placement.parcelId && cell.core);
+    const centre = contactTileSize === 16 || connectorCells.length === 0
+      ? [placement.siteX, placement.siteY]
+      : [
+        Math.round((Math.min(...connectorCells.map((cell) => cell.x)) +
+          Math.max(...connectorCells.map((cell) => cell.x))) / 2),
+        Math.round((Math.min(...connectorCells.map((cell) => cell.y)) +
+          Math.max(...connectorCells.map((cell) => cell.y))) / 2),
+      ];
     const scaleName = contactTileSize === 16 ? 'walking' : contactTileSize === 8 ? 'district' : 'regional';
     return {
       name: `${asset.families[0]}-route-contact-${asset.accessAxis}-${scaleName}`,
@@ -236,9 +303,9 @@ if (process.env.MALDOROR_REGIONAL_CONTACT_ATLAS === '1') {
       assetId: asset.id,
       parcelId: placement.parcelId,
       accessAxis: placement.accessAxis,
+      rejectedParcelCandidates: rejectedParcelCandidates.get(asset.id) ?? 0,
     };
   });
-  if (FRAMES.length === 0) throw new Error(`Unknown route-contact asset: ${contactAssetFilter}`);
 }
 
 if (process.env.MALDOROR_REGIONAL_ENVIRONMENT_ATLAS === '1') {
@@ -381,6 +448,14 @@ function auditParcel(frame) {
     contact.siteX + 32,
     contact.siteY + 32,
   ).filter((placement) => placement.parcelId === contact.parcelId);
+  const connectorCells = world.getParcelConnectorCellsInBounds(
+    contact.siteX - 32,
+    contact.siteY - 32,
+    contact.siteX + 32,
+    contact.siteY + 32,
+  ).filter((cell) => cell.parcelId === contact.parcelId);
+  const protectedCells = connectorCells.filter((cell) => cell.protected);
+  const coreCells = connectorCells.filter((cell) => cell.core);
   const assetById = new Map([
     ...routeContactKit.assets.map((asset) => [asset.id, asset]),
     ...parcelKit.assets.map((asset) => [asset.id, asset]),
@@ -396,23 +471,36 @@ function auditParcel(frame) {
       occupied.set(key, owners);
     }
   }
-  const sign = contact.accessAxis === 'north-south'
-    ? Math.sign(contact.anchorY - contact.siteY) || 1
-    : Math.sign(contact.anchorX - contact.siteX) || 1;
   let collisionBlocked = 0;
   let visuallyBlocked = 0;
   let materialMissing = 0;
   const connectorLength = contact.connectorLength ?? 0;
-  for (let distance = 0; distance <= connectorLength; distance++) {
-    const x = contact.accessAxis === 'north-south'
-      ? contact.siteX
-      : contact.siteX + sign * distance;
-    const y = contact.accessAxis === 'north-south'
-      ? contact.siteY + sign * distance
-      : contact.siteY;
-    if (world.isBuildingAt(x, y)) collisionBlocked++;
-    if (world.getBuildingTileAt(x, y)) visuallyBlocked++;
-    if (!world.getTile(x, y).id.startsWith('regional-access:')) materialMissing++;
+  for (const cell of protectedCells) {
+    if (world.isBuildingAt(cell.x, cell.y)) collisionBlocked++;
+    if (world.getBuildingTileAt(cell.x, cell.y)) visuallyBlocked++;
+  }
+  for (const cell of connectorCells) {
+    if (!world.getTile(cell.x, cell.y).id.startsWith('regional-path-access:')) materialMissing++;
+  }
+  const componentPathFrameMissing = components.filter((placement) => (
+    placement.parcelPathId !== contact.parcelId ||
+    !Number.isFinite(placement.parcelStation) ||
+    !Number.isFinite(placement.pathTangentX) ||
+    !Number.isFinite(placement.pathTangentY) ||
+    Math.abs(Math.hypot(placement.pathTangentX, placement.pathTangentY) - 1) > 1e-6
+  )).length;
+  const visited = new Set();
+  const queue = coreCells.length > 0 ? [coreCells[0]] : [];
+  if (queue.length > 0) visited.add(`${queue[0].x},${queue[0].y}`);
+  while (queue.length > 0) {
+    const current = queue.shift();
+    for (const candidate of coreCells) {
+      const key = `${candidate.x},${candidate.y}`;
+      if (visited.has(key) || Math.abs(candidate.x - current.x) > 1 ||
+          Math.abs(candidate.y - current.y) > 1) continue;
+      visited.add(key);
+      queue.push(candidate);
+    }
   }
   return {
     parcelId: contact.parcelId,
@@ -421,10 +509,23 @@ function auditParcel(frame) {
     routeKind: contact.routeKind,
     layers: contact.parcelLayers,
     connectorLength,
+    pathArcLength: connectorCells[0]?.arcLength ?? 0,
+    pathLateralOffset: connectorCells[0]?.lateralOffset ?? 0,
+    connectorRenderCells: connectorCells.length,
+    connectorProtectedCells: protectedCells.length,
+    connectorCoreCells: coreCells.length,
+    connectorCoreConnected: visited.size === coreCells.length && coreCells.length > 0,
+    connectorSpan: connectorCells.length === 0 ? [0, 0] : [
+      Math.max(...connectorCells.map((cell) => cell.x)) -
+        Math.min(...connectorCells.map((cell) => cell.x)) + 1,
+      Math.max(...connectorCells.map((cell) => cell.y)) -
+        Math.min(...connectorCells.map((cell) => cell.y)) + 1,
+    ],
     componentCount: components.length,
     componentIds: components.map((placement) => placement.assetId),
     familyMismatchCount: components.filter((placement) =>
       !placement.families.includes(contact.families[0])).length,
+    componentPathFrameMissing,
     collisionOverlapCells: [...occupied.values()].filter((owners) => owners.length > 1).length,
     connectorCollisionBlocked: collisionBlocked,
     connectorVisuallyBlocked: visuallyBlocked,

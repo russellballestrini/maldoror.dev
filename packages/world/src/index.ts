@@ -78,6 +78,17 @@ export {
   type RegionalMaterialCompositorConfig,
 } from './tiles/regional-material-compositor.js';
 export {
+  buildRegionalParcelPath,
+  distanceToRegionalParcelPath,
+  rasterizeRegionalParcelPath,
+  sampleRegionalParcelPath,
+  type RegionalParcelPath,
+  type RegionalParcelPathCell,
+  type RegionalParcelPathConfig,
+  type RegionalParcelPathFrame,
+  type RegionalParcelPathPoint,
+} from './tiles/regional-parcel-path.js';
+export {
   RegionalWorldTileProvider,
   type RegionalAmbientAsset,
   type RegionalAssetPlacement,
@@ -90,6 +101,7 @@ export {
   type RegionalPreparedTerrainTile,
   type RegionalPreparedViewport,
   type RegionalPackedPreparedViewport,
+  type RegionalParcelConnectorCell,
   type RegionalParcelComponentAsset,
   type RegionalPreparedViewportPayload,
   type RegionalRouteContactAsset,

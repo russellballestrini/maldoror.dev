@@ -17,6 +17,12 @@ import type {
   RegionalRouteSample,
 } from '../routes/regional-route-field.js';
 import { RegionalMaterialCompositor } from './regional-material-compositor.js';
+import {
+  buildRegionalParcelPath,
+  rasterizeRegionalParcelPath,
+  sampleRegionalParcelPath,
+  type RegionalParcelPath,
+} from './regional-parcel-path.js';
 import { TileProvider, type TileProviderConfig } from './tile-provider.js';
 
 export interface RegionalVisualAsset {
@@ -86,6 +92,10 @@ export interface RegionalAssetPlacement {
   routeKind?: RegionalRouteKind;
   parcelLayers?: number;
   connectorLength?: number;
+  parcelPathId?: string;
+  parcelStation?: number;
+  pathTangentX?: number;
+  pathTangentY?: number;
 }
 
 export type RegionalLandmarkPlacement = RegionalAssetPlacement;
@@ -203,20 +213,45 @@ interface Placement {
   routeKind?: RegionalRouteKind;
   parcelLayers?: number;
   connectorLength?: number;
+  parcelPathId?: string;
+  parcelStation?: number;
+  pathTangentX?: number;
+  pathTangentY?: number;
 }
 
 interface ParcelConnector {
-  accessAxis: RegionalRouteContactAxis;
   routeKind: RegionalRouteKind;
   parcelId: string;
+  path: RegionalParcelPath;
+  core: boolean;
+  protected: boolean;
+}
+
+export interface RegionalParcelConnectorCell {
+  x: number;
+  y: number;
+  parcelId: string;
+  pathId: string;
+  routeKind: RegionalRouteKind;
+  core: boolean;
+  protected: boolean;
+  arcLength: number;
+  lateralOffset: number;
 }
 
 interface CachedBlock {
   overlays: Map<string, BuildingTileData>;
   solid: Set<string>;
-  connectors: Map<string, ParcelConnector>;
   placements: Placement[];
   accessedAt: number;
+}
+
+interface CachedParcelGroup {
+  contact: Placement;
+  components: Placement[];
+  connectors: Map<string, ParcelConnector>;
+  overlays: Map<string, BuildingTileData>;
+  solid: Set<string>;
 }
 
 interface ImportedPreparedViewport {
@@ -280,7 +315,11 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly placementMaxOffsetX: number;
   private readonly placementMinOffsetY: number;
   private readonly placementMaxOffsetY: number;
+  private readonly parcelGeometryReach: number;
+  private readonly parcelSourceReach: number;
   private readonly blockCache = new Map<string, CachedBlock>();
+  private readonly parcelGroupCache = new Map<string, CachedParcelGroup | null>();
+  private readonly parcelLayerCache = new Map<string, CollectedDerivedLayers>();
   private readonly routeContactPlacementCache = new Map<string, Placement | null>();
   private readonly environmentContactPlacementCache = new Map<string, Placement | null>();
   private readonly preparedViewports = new Map<string, ImportedPreparedViewport>();
@@ -361,7 +400,6 @@ export class RegionalWorldTileProvider extends TileProvider {
       ...this.landmarks,
       ...this.ambient,
       ...this.routeContacts,
-      ...this.parcelComponents,
       ...this.environmentContacts,
     ];
     const extentX = placementAssets.flatMap((asset) => {
@@ -382,19 +420,42 @@ export class RegionalWorldTileProvider extends TileProvider {
         ...asset.collision.flatMap(([, offsetY]) => [offsetY - reach, offsetY + reach]),
       ];
     });
-    const parcelReach = this.parcelComponents.length === 0
-      ? 0
-      : this.parcelMaximumLayers * this.parcelLayerSpacing + 3;
-    this.placementMinOffsetX = Math.min(-parcelReach, 0, ...extentX);
-    this.placementMaxOffsetX = Math.max(parcelReach, 0, ...extentX);
-    this.placementMinOffsetY = Math.min(-parcelReach, 0, ...extentY);
-    this.placementMaxOffsetY = Math.max(parcelReach, 0, ...extentY);
+    const parcelAssetReach = Math.max(0, ...this.parcelComponents.flatMap((asset) => {
+      const [anchorX, anchorY] = getSpriteAnchor(asset);
+      return [
+        Math.hypot(anchorX, anchorY),
+        Math.hypot(asset.sprite.width - 1 - anchorX, anchorY),
+        Math.hypot(anchorX, asset.sprite.height - 1 - anchorY),
+        Math.hypot(asset.sprite.width - 1 - anchorX, asset.sprite.height - 1 - anchorY),
+        ...asset.collision.map(([offsetX, offsetY]) => Math.hypot(offsetX, offsetY)),
+      ];
+    }));
+    const maximumPathLength = 3 + this.parcelMaximumLayers * this.parcelLayerSpacing + 1;
+    const maximumPathLateral = Math.min(14, maximumPathLength * 0.72);
+    this.parcelGeometryReach = this.parcelComponents.length === 0 ? 0 : Math.ceil(
+      Math.hypot(maximumPathLength, maximumPathLateral) + PARCEL_SIDE_OFFSET +
+      parcelAssetReach + 2,
+    );
+    // A jittered route-contact candidate can resolve to a nearby route before
+    // it seeds its parcel. This outer bound discovers candidate cells; the
+    // exact site-distance check runs before any parcel group is built.
+    this.parcelSourceReach = this.parcelGeometryReach + this.routeContactCellSize + 2;
+    this.placementMinOffsetX = Math.min(0, ...extentX);
+    this.placementMaxOffsetX = Math.max(0, ...extentX);
+    this.placementMinOffsetY = Math.min(0, ...extentY);
+    this.placementMaxOffsetY = Math.max(0, ...extentY);
   }
 
   override getTile(tileX: number, tileY: number): Tile {
     const connector = this.findParcelConnector(tileX, tileY);
     return connector
-      ? this.compositor.getAccessTile(tileX, tileY, connector.accessAxis, connector.routeKind)
+      ? this.compositor.getPathAccessTile(
+        tileX,
+        tileY,
+        connector.path,
+        connector.routeKind,
+        connector.core,
+      )
       : this.compositor.getTile(tileX, tileY);
   }
 
@@ -403,12 +464,13 @@ export class RegionalWorldTileProvider extends TileProvider {
     if (prepared) return prepared.terrain.get(positionKey(tileX, tileY))!;
     const connector = this.findParcelConnector(tileX, tileY);
     return connector
-      ? this.compositor.getAccessTileAtResolution(
+      ? this.compositor.getPathAccessTileAtResolution(
         tileX,
         tileY,
         resolution,
-        connector.accessAxis,
+        connector.path,
         connector.routeKind,
+        connector.core,
       )
       : this.compositor.getTileAtResolution(tileX, tileY, resolution);
   }
@@ -488,19 +550,22 @@ export class RegionalWorldTileProvider extends TileProvider {
         const key = positionKey(x, y);
         const connector = derived.connectors.get(key);
         const terrainTile = connector
-          ? this.compositor.getAccessTileAtResolution(
+          ? this.compositor.getPathAccessTileAtResolution(
             x,
             y,
             normalizedResolution,
-            connector.accessAxis,
+            connector.path,
             connector.routeKind,
+            connector.core,
           )
           : this.compositor.getTileAtResolution(x, y, normalizedResolution);
         terrain.push({ x, y, tile: terrainTile });
         const authoredOverlay = super.getBuildingTileAt(x, y);
-        const overlay = authoredOverlay ?? (connector ? null : derived.overlays.get(key) ?? null);
+        const overlay = authoredOverlay ?? (connector?.protected ? null : derived.overlays.get(key) ?? null);
         if (overlay) overlays.push({ x, y, tile: overlay });
-        if (super.isBuildingAt(x, y) || (!connector && derived.solid.has(key))) solid.push([x, y]);
+        if (super.isBuildingAt(x, y) || (!connector?.protected && derived.solid.has(key))) {
+          solid.push([x, y]);
+        }
       }
     }
     return {
@@ -539,11 +604,15 @@ export class RegionalWorldTileProvider extends TileProvider {
           if (inside(key) && !overlays.has(key)) overlays.set(key, tile);
         }
         for (const key of block.solid) if (inside(key)) solid.add(key);
-        for (const [key, connector] of block.connectors) {
-          if (inside(key) && !connectors.has(key)) connectors.set(key, connector);
-        }
       }
     }
+    const parcel = this.collectParcelLayers(bounds);
+    for (const [key, tile] of parcel.overlays) {
+      const beneath = overlays.get(key);
+      overlays.set(key, beneath ? compositeTiles(beneath, tile) : tile);
+    }
+    for (const key of parcel.solid) solid.add(key);
+    for (const [key, connector] of parcel.connectors) connectors.set(key, connector);
     return { overlays, solid, connectors };
   }
 
@@ -729,21 +798,30 @@ export class RegionalWorldTileProvider extends TileProvider {
     if (authored) return authored;
     const prepared = this.findPreparedViewport(worldX, worldY);
     if (prepared) return prepared.overlays.get(positionKey(worldX, worldY)) ?? null;
-    if (this.findParcelConnector(worldX, worldY)) return null;
+    const key = positionKey(worldX, worldY);
+    const parcel = this.getParcelLayerBlock(worldX, worldY);
+    if (parcel.connectors.get(key)?.protected) return null;
+    let derived: BuildingTileData | null = null;
     for (const block of this.blocksNear(worldX, worldY)) {
-      const tile = block.overlays.get(positionKey(worldX, worldY));
-      if (tile) return tile;
+      const tile = block.overlays.get(key);
+      if (tile) {
+        derived = tile;
+        break;
+      }
     }
-    return null;
+    const component = parcel.overlays.get(key);
+    return component ? (derived ? compositeTiles(derived, component) : component) : derived;
   }
 
   override isBuildingAt(worldX: number, worldY: number): boolean {
     if (super.isBuildingAt(worldX, worldY)) return true;
     const prepared = this.findPreparedViewport(worldX, worldY);
     if (prepared) return prepared.solid.has(positionKey(worldX, worldY));
-    if (this.findParcelConnector(worldX, worldY)) return false;
-    return this.blocksNear(worldX, worldY)
-      .some((block) => block.solid.has(positionKey(worldX, worldY)));
+    const key = positionKey(worldX, worldY);
+    const parcel = this.getParcelLayerBlock(worldX, worldY);
+    if (parcel.connectors.get(key)?.protected) return false;
+    return parcel.solid.has(key) || this.blocksNear(worldX, worldY)
+      .some((block) => block.solid.has(key));
   }
 
   getRegionalStats(): {
@@ -758,7 +836,10 @@ export class RegionalWorldTileProvider extends TileProvider {
     cachedAmbientPlacements: number;
     cachedEnvironmentContactPlacements: number;
     cachedRouteContactPlacements: number;
+    cachedParcelGroups: number;
+    cachedParcelLayerBlocks: number;
     cachedParcelComponentPlacements: number;
+    cachedParcelConnectorCells: number;
     cachedRouteContactCells: number;
     cachedEnvironmentContactCells: number;
     cachedOverlayTiles: number;
@@ -780,6 +861,9 @@ export class RegionalWorldTileProvider extends TileProvider {
       cachedPlacements: [...this.blockCache.values()].reduce(
         (total, block) => total + block.placements.length,
         0,
+      ) + [...this.parcelGroupCache.values()].reduce(
+        (total, group) => total + (group?.components.length ?? 0),
+        0,
       ),
       cachedLandmarkPlacements: [...this.blockCache.values()].reduce(
         (total, block) => total + block.placements.filter((placement) => placement.kind === 'landmark').length,
@@ -799,10 +883,14 @@ export class RegionalWorldTileProvider extends TileProvider {
         (total, block) => total + block.placements.filter((placement) => placement.kind === 'route-contact').length,
         0,
       ),
-      cachedParcelComponentPlacements: [...this.blockCache.values()].reduce(
-        (total, block) => total + block.placements.filter(
-          (placement) => placement.kind === 'parcel-component',
-        ).length,
+      cachedParcelGroups: [...this.parcelGroupCache.values()].filter((group) => group !== null).length,
+      cachedParcelLayerBlocks: this.parcelLayerCache.size,
+      cachedParcelComponentPlacements: [...this.parcelGroupCache.values()].reduce(
+        (total, group) => total + (group?.components.length ?? 0),
+        0,
+      ),
+      cachedParcelConnectorCells: [...this.parcelGroupCache.values()].reduce(
+        (total, group) => total + (group?.connectors.size ?? 0),
         0,
       ),
       cachedRouteContactCells: this.routeContactPlacementCache.size,
@@ -810,9 +898,15 @@ export class RegionalWorldTileProvider extends TileProvider {
       cachedOverlayTiles: [...this.blockCache.values()].reduce(
         (total, block) => total + block.overlays.size,
         0,
+      ) + [...this.parcelGroupCache.values()].reduce(
+        (total, group) => total + (group?.overlays.size ?? 0),
+        0,
       ),
       cachedSolidTiles: [...this.blockCache.values()].reduce(
         (total, block) => total + block.solid.size,
+        0,
+      ) + [...this.parcelGroupCache.values()].reduce(
+        (total, group) => total + (group?.solid.size ?? 0),
         0,
       ),
       blockSize: this.blockSize,
@@ -918,38 +1012,64 @@ export class RegionalWorldTileProvider extends TileProvider {
     maxY: number,
   ): RegionalAssetPlacement[] {
     const placements: RegionalAssetPlacement[] = [];
-    const firstBlockX = floorDiv(Math.floor(minX) - this.placementMaxOffsetX, this.blockSize);
-    const lastBlockX = floorDiv(Math.floor(maxX) - this.placementMinOffsetX, this.blockSize);
-    const firstBlockY = floorDiv(Math.floor(minY) - this.placementMaxOffsetY, this.blockSize);
-    const lastBlockY = floorDiv(Math.floor(maxY) - this.placementMinOffsetY, this.blockSize);
+    const bounds = normalizedPreparedBounds(minX, minY, maxX, maxY);
     const seen = new Set<string>();
-    for (let blockY = firstBlockY; blockY <= lastBlockY; blockY++) {
-      for (let blockX = firstBlockX; blockX <= lastBlockX; blockX++) {
-        for (const placement of this.getBlock(blockX, blockY).placements) {
-          if (placement.kind !== 'parcel-component' || placement.anchorX < minX ||
-              placement.anchorX > maxX || placement.anchorY < minY || placement.anchorY > maxY) continue;
-          const key = `${placement.parcelId}:${placement.asset.id}:${placement.anchorX},${placement.anchorY}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          placements.push({
-            assetId: placement.asset.id,
-            kind: 'parcel-component',
-            families: placement.asset.families,
-            siteX: placement.siteX,
-            siteY: placement.siteY,
-            anchorX: placement.anchorX,
-            anchorY: placement.anchorY,
-            parcelId: placement.parcelId,
-            accessAxis: placement.accessAxis,
-            routeKind: placement.routeKind,
-            parcelLayers: placement.parcelLayers,
-            connectorLength: placement.connectorLength,
-          });
-        }
+    for (const group of this.getParcelGroupsInBounds(bounds)) {
+      for (const placement of group.components) {
+        if (placement.anchorX < minX || placement.anchorX > maxX ||
+            placement.anchorY < minY || placement.anchorY > maxY) continue;
+        const key = `${placement.parcelId}:${placement.asset.id}:${placement.anchorX},${placement.anchorY}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        placements.push({
+          assetId: placement.asset.id,
+          kind: 'parcel-component',
+          families: placement.asset.families,
+          siteX: placement.siteX,
+          siteY: placement.siteY,
+          anchorX: placement.anchorX,
+          anchorY: placement.anchorY,
+          parcelId: placement.parcelId,
+          accessAxis: placement.accessAxis,
+          routeKind: placement.routeKind,
+          parcelLayers: placement.parcelLayers,
+          connectorLength: placement.connectorLength,
+          parcelPathId: placement.parcelPathId,
+          parcelStation: placement.parcelStation,
+          pathTangentX: placement.pathTangentX,
+          pathTangentY: placement.pathTangentY,
+        });
       }
     }
     return placements.sort((a, b) => a.anchorY - b.anchorY || a.anchorX - b.anchorX ||
       a.assetId.localeCompare(b.assetId));
+  }
+
+  getParcelConnectorCellsInBounds(
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number,
+  ): RegionalParcelConnectorCell[] {
+    const cells: RegionalParcelConnectorCell[] = [];
+    const bounds = normalizedPreparedBounds(minX, minY, maxX, maxY);
+    for (const [key, connector] of this.collectParcelLayers(bounds).connectors) {
+      const separator = key.indexOf(',');
+      const x = Number(key.slice(0, separator));
+      const y = Number(key.slice(separator + 1));
+      cells.push({
+        x,
+        y,
+        parcelId: connector.parcelId,
+        pathId: connector.path.id,
+        routeKind: connector.routeKind,
+        core: connector.core,
+        protected: connector.protected,
+        arcLength: connector.path.arcLength,
+        lateralOffset: connector.path.lateralOffset,
+      });
+    }
+    return cells.sort((a, b) => a.y - b.y || a.x - b.x || a.parcelId.localeCompare(b.parcelId));
   }
 
   getEnvironmentContactPlacementsInBounds(
@@ -985,6 +1105,8 @@ export class RegionalWorldTileProvider extends TileProvider {
 
   override destroy(): void {
     this.blockCache.clear();
+    this.parcelGroupCache.clear();
+    this.parcelLayerCache.clear();
     this.routeContactPlacementCache.clear();
     this.environmentContactPlacementCache.clear();
     this.preparedViewports.clear();
@@ -1068,14 +1190,16 @@ export class RegionalWorldTileProvider extends TileProvider {
     }
     placements.push(...this.buildAmbientPlacements(originX, originY));
     placements.push(...this.buildEnvironmentContactPlacements(originX, originY));
-    const connectors = new Map<string, ParcelConnector>();
-    for (const contact of this.buildRouteContactPlacements(originX, originY)) {
-      placements.push(contact);
-      const parcel = this.buildParcelGroup(contact);
-      placements.push(...parcel.components);
-      for (const [key, connector] of parcel.connectors) connectors.set(key, connector);
-    }
+    placements.push(...this.buildRouteContactPlacements(originX, originY));
 
+    const { overlays, solid } = this.rasterizePlacements(placements);
+    return { overlays, solid, placements, accessedAt: ++this.accessClock };
+  }
+
+  private rasterizePlacements(placements: readonly Placement[]): {
+    overlays: Map<string, BuildingTileData>;
+    solid: Set<string>;
+  } {
     const overlays = new Map<string, BuildingTileData>();
     const solid = new Set<string>();
     for (const placement of placements) {
@@ -1095,20 +1219,129 @@ export class RegionalWorldTileProvider extends TileProvider {
         solid.add(positionKey(placement.anchorX + offsetX, placement.anchorY + offsetY));
       }
     }
-    return { overlays, solid, connectors, placements, accessedAt: ++this.accessClock };
+    return { overlays, solid };
+  }
+
+  private getParcelGroup(
+    cellX: number,
+    cellY: number,
+    knownContact?: Placement,
+  ): CachedParcelGroup | null {
+    const key = `${cellX},${cellY}`;
+    if (this.parcelGroupCache.has(key)) {
+      const cached = this.parcelGroupCache.get(key) ?? null;
+      this.parcelGroupCache.delete(key);
+      this.parcelGroupCache.set(key, cached);
+      return cached;
+    }
+    const contact = knownContact ?? this.getRouteContactPlacement(cellX, cellY);
+    let cached: CachedParcelGroup | null = null;
+    if (contact) {
+      const parcel = this.buildParcelGroup(contact);
+      if (parcel.connectors.size > 0 || parcel.components.length > 0) {
+        const rasterized = this.rasterizePlacements(parcel.components);
+        cached = {
+          contact,
+          components: parcel.components,
+          connectors: parcel.connectors,
+          overlays: rasterized.overlays,
+          solid: rasterized.solid,
+        };
+      }
+    }
+    this.parcelGroupCache.set(key, cached);
+    while (this.parcelGroupCache.size > this.maxCachedRouteContactCells) {
+      const oldest = this.parcelGroupCache.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.parcelGroupCache.delete(oldest);
+    }
+    return cached;
+  }
+
+  private getParcelGroupsInBounds(
+    bounds: RegionalPreparedViewport['bounds'],
+  ): CachedParcelGroup[] {
+    if (this.parcelComponents.length === 0) return [];
+    const groups: CachedParcelGroup[] = [];
+    const firstCellX = floorDiv(bounds.minX - this.parcelSourceReach, this.routeContactCellSize);
+    const lastCellX = floorDiv(bounds.maxX + this.parcelSourceReach, this.routeContactCellSize);
+    const firstCellY = floorDiv(bounds.minY - this.parcelSourceReach, this.routeContactCellSize);
+    const lastCellY = floorDiv(bounds.maxY + this.parcelSourceReach, this.routeContactCellSize);
+    for (let cellY = firstCellY; cellY <= lastCellY; cellY++) {
+      for (let cellX = firstCellX; cellX <= lastCellX; cellX++) {
+        const contact = this.getRouteContactPlacement(cellX, cellY);
+        if (!contact || contact.siteX < bounds.minX - this.parcelGeometryReach ||
+            contact.siteX > bounds.maxX + this.parcelGeometryReach ||
+            contact.siteY < bounds.minY - this.parcelGeometryReach ||
+            contact.siteY > bounds.maxY + this.parcelGeometryReach) continue;
+        const group = this.getParcelGroup(cellX, cellY, contact);
+        if (group) groups.push(group);
+      }
+    }
+    return groups;
+  }
+
+  private collectParcelLayers(
+    bounds: RegionalPreparedViewport['bounds'],
+  ): CollectedDerivedLayers {
+    const overlays = new Map<string, BuildingTileData>();
+    const solid = new Set<string>();
+    const connectors = new Map<string, ParcelConnector>();
+    const inside = (key: string): boolean => {
+      const separator = key.indexOf(',');
+      const x = Number(key.slice(0, separator));
+      const y = Number(key.slice(separator + 1));
+      return x >= bounds.minX && x <= bounds.maxX && y >= bounds.minY && y <= bounds.maxY;
+    };
+    for (const group of this.getParcelGroupsInBounds(bounds)) {
+      for (const [key, tile] of group.overlays) {
+        if (!inside(key)) continue;
+        const beneath = overlays.get(key);
+        overlays.set(key, beneath ? compositeTiles(beneath, tile) : tile);
+      }
+      for (const key of group.solid) if (inside(key)) solid.add(key);
+      for (const [key, connector] of group.connectors) {
+        if (inside(key) && !connectors.has(key)) connectors.set(key, connector);
+      }
+    }
+    return { overlays, solid, connectors };
+  }
+
+  private getParcelLayerBlock(worldX: number, worldY: number): CollectedDerivedLayers {
+    const blockX = floorDiv(worldX, this.blockSize);
+    const blockY = floorDiv(worldY, this.blockSize);
+    const key = `${blockX},${blockY}`;
+    const cached = this.parcelLayerCache.get(key);
+    if (cached) {
+      this.parcelLayerCache.delete(key);
+      this.parcelLayerCache.set(key, cached);
+      return cached;
+    }
+    const minX = blockX * this.blockSize;
+    const minY = blockY * this.blockSize;
+    const layers = this.collectParcelLayers({
+      minX,
+      minY,
+      maxX: minX + this.blockSize - 1,
+      maxY: minY + this.blockSize - 1,
+    });
+    this.parcelLayerCache.set(key, layers);
+    while (this.parcelLayerCache.size > this.maxCachedBlocks) {
+      const oldest = this.parcelLayerCache.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.parcelLayerCache.delete(oldest);
+    }
+    return layers;
   }
 
   private findParcelConnector(worldX: number, worldY: number): ParcelConnector | null {
     const key = positionKey(worldX, worldY);
-    for (const block of this.blocksNear(worldX, worldY)) {
-      const connector = block.connectors.get(key);
-      if (connector) return connector;
-    }
-    return null;
+    return this.getParcelLayerBlock(worldX, worldY).connectors.get(key) ?? null;
   }
 
-  /** Expand one persistent route contact into a modular U-shaped compound.
-   * Component anchors sit beside an explicit centreline; no sprite is rotated,
+  /** Expand one persistent route contact into a route-relative compound.
+   * One continuous spine owns circulation and shared arc-length stations; both
+   * sides derive their anchors from its local frame. No sprite is rotated,
    * stretched, or trusted to encode walkability in painted pixels. */
   private buildParcelGroup(contact: Placement): {
     components: Placement[];
@@ -1118,27 +1351,34 @@ export class RegionalWorldTileProvider extends TileProvider {
     const connectors = new Map<string, ParcelConnector>();
     if (!contact.parcelId || !contact.accessAxis || !contact.routeKind ||
         this.parcelComponents.length === 0) return { components, connectors };
-    const normalSign = contact.accessAxis === 'north-south'
-      ? Math.sign(contact.anchorY - contact.siteY) || 1
-      : Math.sign(contact.anchorX - contact.siteX) || 1;
-    const layers = contact.parcelLayers ?? this.parcelLayerCount(contact.siteX, contact.siteY);
-    const connectorEnd = contact.connectorLength ?? 3 + layers * this.parcelLayerSpacing + 1;
-    for (let distance = 0; distance <= connectorEnd; distance++) {
-      const x = contact.accessAxis === 'north-south'
-        ? contact.siteX
-        : contact.siteX + normalSign * distance;
-      const y = contact.accessAxis === 'north-south'
-        ? contact.siteY + normalSign * distance
-        : contact.siteY;
-      connectors.set(positionKey(x, y), {
-        accessAxis: contact.accessAxis,
+    const requestedLayers = contact.parcelLayers ?? this.parcelLayerCount(contact.siteX, contact.siteY);
+    let layers = requestedLayers;
+    let connectorEnd = 3 + layers * this.parcelLayerSpacing + 1;
+    let path: RegionalParcelPath | null = null;
+    while (layers >= this.parcelMinimumLayers && !path) {
+      connectorEnd = 3 + layers * this.parcelLayerSpacing + 1;
+      path = this.selectParcelPath(contact, connectorEnd);
+      if (!path) layers--;
+    }
+    if (!path) return { components, connectors };
+    contact.parcelLayers = layers;
+    contact.connectorLength = connectorEnd;
+    contact.parcelPathId = path.id;
+    for (const cell of rasterizeRegionalParcelPath(path)) {
+      connectors.set(positionKey(cell.x, cell.y), {
         routeKind: contact.routeKind,
         parcelId: contact.parcelId,
+        path,
+        core: cell.core,
+        protected: cell.protected,
       });
     }
     const occupied = new Set<string>();
     for (let layer = 1; layer <= layers; layer++) {
-      const depth = 3 + layer * this.parcelLayerSpacing;
+      const stationDistance = 3 + layer * this.parcelLayerSpacing;
+      const station = sampleRegionalParcelPath(path, stationDistance);
+      const normalX = -station.tangentY;
+      const normalY = station.tangentX;
       const doubleSided = layer === 1 || this.hashUnit(
         contact.siteX + layer,
         contact.siteY,
@@ -1147,17 +1387,13 @@ export class RegionalWorldTileProvider extends TileProvider {
       const preferredSide = this.hashUnit(contact.siteX, contact.siteY + layer, 0x19a7) < 0.5 ? -1 : 1;
       const sides: readonly number[] = doubleSided ? [-1, 1] : [preferredSide];
       for (const side of sides) {
-        const anchorX = contact.accessAxis === 'north-south'
-          ? contact.siteX + side * PARCEL_SIDE_OFFSET
-          : contact.siteX + normalSign * depth;
-        const anchorY = contact.accessAxis === 'north-south'
-          ? contact.siteY + normalSign * depth
-          : contact.siteY + (side < 0 ? -1 : 4);
+        const anchorX = Math.floor(station.x + normalX * side * PARCEL_SIDE_OFFSET);
+        const anchorY = Math.floor(station.y + normalY * side * PARCEL_SIDE_OFFSET);
         const asset = this.selectParcelComponent(contact, layer, side);
         if (!asset || !this.assetFits(anchorX, anchorY, asset)) continue;
         const collisionKeys = asset.collision.map(([offsetX, offsetY]) =>
           positionKey(anchorX + offsetX, anchorY + offsetY));
-        if (collisionKeys.some((key) => connectors.has(key) || occupied.has(key))) continue;
+        if (collisionKeys.some((key) => connectors.get(key)?.protected || occupied.has(key))) continue;
         for (const key of collisionKeys) occupied.add(key);
         components.push({
           asset,
@@ -1171,6 +1407,10 @@ export class RegionalWorldTileProvider extends TileProvider {
           routeKind: contact.routeKind,
           parcelLayers: layers,
           connectorLength: connectorEnd,
+          parcelPathId: path.id,
+          parcelStation: station.distance,
+          pathTangentX: station.tangentX,
+          pathTangentY: station.tangentY,
         });
       }
     }
@@ -1199,6 +1439,79 @@ export class RegionalWorldTileProvider extends TileProvider {
   private parcelLayerCount(siteX: number, siteY: number): number {
     const layerRange = this.parcelMaximumLayers - this.parcelMinimumLayers + 1;
     return this.parcelMinimumLayers + Math.floor(this.hashUnit(siteX, siteY, 0x28d3) * layerRange);
+  }
+
+  /** Apply local physical constraints to a small family of ideal curved
+   * successors. A clear preferred bend wins; water or a second route can bend
+   * it back toward the straight fallback. If no legal successor exists the
+   * threshold remains, but no false walkable compound is fabricated. */
+  private selectParcelPath(contact: Placement, connectorEnd: number): RegionalParcelPath | null {
+    const route = this.routes.sample(contact.siteX, contact.siteY);
+    const tangentLength = Math.hypot(route.directionX, route.directionY);
+    const tangentX = tangentLength >= 0.25
+      ? route.directionX / tangentLength
+      : contact.accessAxis === 'north-south' ? 1 : 0;
+    const tangentY = tangentLength >= 0.25
+      ? route.directionY / tangentLength
+      : contact.accessAxis === 'north-south' ? 0 : 1;
+    const normalX = -tangentY;
+    const normalY = tangentX;
+    const sideProjection = (contact.anchorX - contact.siteX) * normalX +
+      (contact.anchorY - contact.siteY) * normalY;
+    const outwardSign: -1 | 1 = sideProjection < 0 ? -1 : 1;
+    const maximumLateral = Math.min(14, connectorEnd * 0.72);
+    const preferred = (this.hashUnit(contact.siteX, contact.siteY, 0x53bd) - 0.5) *
+      maximumLateral * 2;
+    const lateralCandidates = [...new Set([
+      preferred,
+      preferred * 0.35,
+      preferred * -0.55,
+      0,
+      maximumLateral * 0.68,
+      maximumLateral * -0.68,
+      maximumLateral,
+      -maximumLateral,
+    ])];
+    let selected: RegionalParcelPath | null = null;
+    let selectedScore = Number.POSITIVE_INFINITY;
+    for (const [candidateIndex, lateralOffset] of lateralCandidates.entries()) {
+      const path = buildRegionalParcelPath({
+        id: contact.parcelId!,
+        startX: contact.siteX + 0.5,
+        startY: contact.siteY + 0.5,
+        tangentX,
+        tangentY,
+        outwardSign,
+        length: connectorEnd,
+        lateralOffset,
+      });
+      const coreCells = rasterizeRegionalParcelPath(path).filter((cell) => cell.core);
+      const waterSamples = coreCells.filter((cell) => (
+        Math.hypot(cell.x + 0.5 - path.points[0]!.x, cell.y + 0.5 - path.points[0]!.y) >= 3.25 &&
+        this.field.sample(cell.x, cell.y).isWater
+      )).length;
+      let routeConflicts = 0;
+      let slopeCost = 0;
+      const stride = Math.max(1, Math.floor(path.points.length / 14));
+      for (let index = 0; index < path.points.length; index += stride) {
+        const point = path.points[index]!;
+        const distance = path.cumulativeLength[index]!;
+        if (distance < 3.25) continue;
+        const x = Math.floor(point.x);
+        const y = Math.floor(point.y);
+        const biome = this.field.sample(x, y);
+        slopeCost += biome.slope;
+        if (distance > 5 && this.routes.sample(x, y).distance < 1.25) routeConflicts++;
+      }
+      if (waterSamples > 0) continue;
+      const score = routeConflicts * 8 + slopeCost * 0.18 +
+        Math.abs(lateralOffset - preferred) * 0.05 + candidateIndex * 1e-6;
+      if (score < selectedScore) {
+        selected = path;
+        selectedScore = score;
+      }
+    }
+    return selected;
   }
 
   private createPlacement(siteX: number, siteY: number): Placement | null {

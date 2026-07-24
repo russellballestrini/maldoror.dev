@@ -247,7 +247,7 @@ describe('RegionalWorldTileProvider', () => {
     expect(world.getRegionalStats().environmentContactAssets).toBe(2);
   });
 
-  it('selects authored contact axes from route tangents and keeps the connector open', () => {
+  it('grows curved parcel spines from authored route-relative thresholds', () => {
     const horizontal = makeWorld();
     const horizontalContacts = horizontal.getRouteContactPlacementsInBounds(-24, -16, 224, 16);
     expect(horizontalContacts.length).toBeGreaterThan(4);
@@ -264,12 +264,17 @@ describe('RegionalWorldTileProvider', () => {
       expect(horizontal.getTile(placement.siteX, placement.siteY).walkable).toBe(true);
     }
     const horizontalComponents = horizontal.getParcelComponentPlacementsInBounds(-24, -24, 224, 24);
+    const horizontalConnectors = horizontal.getParcelConnectorCellsInBounds(-40, -40, 240, 40);
     expect(horizontalComponents.length).toBeGreaterThan(horizontalContacts.length);
+    expect(horizontalConnectors.length).toBeGreaterThan(horizontalContacts.length * 8);
     expect(new Set(horizontalComponents.flatMap((placement) => placement.families)))
       .toEqual(new Set(BIOME_FAMILIES));
     for (const component of horizontalComponents) {
       expect(component.parcelId).toMatch(/^parcel:-?\d+:-?\d+$/);
       expect(component.routeKind).toBe('local-road');
+      expect(component.parcelPathId).toBe(component.parcelId);
+      expect(component.parcelStation).toBeGreaterThan(0);
+      expect(Math.hypot(component.pathTangentX!, component.pathTangentY!)).toBeCloseTo(1, 6);
     }
     for (const parcelId of new Set(horizontalComponents.map((component) => component.parcelId))) {
       const ids = horizontalComponents
@@ -280,17 +285,23 @@ describe('RegionalWorldTileProvider', () => {
     for (const contact of horizontalContacts) {
       const members = horizontalComponents.filter((component) => component.parcelId === contact.parcelId);
       if (members.length === 0) continue;
-      const sign = Math.sign(contact.anchorY - contact.siteY) || 1;
+      const cells = horizontalConnectors.filter((cell) => cell.parcelId === contact.parcelId);
+      const core = cells.filter((cell) => cell.core);
       expect(contact.parcelLayers).toBeGreaterThanOrEqual(2);
       expect(contact.connectorLength).toBeGreaterThan(0);
-      for (let distance = 0; distance <= contact.connectorLength!; distance++) {
-        const x = contact.siteX;
-        const y = contact.siteY + sign * distance;
-        expect(horizontal.isBuildingAt(x, y), `connector collision at ${x},${y}`).toBe(false);
-        expect(horizontal.getBuildingTileAt(x, y), `connector art at ${x},${y}`).toBeNull();
-        expect(horizontal.getTile(x, y).id).toContain('regional-access:');
+      expect(core.length).toBeGreaterThan(contact.connectorLength!);
+      expect(cells.every((cell) => cell.pathId === contact.parcelId)).toBe(true);
+      expect(cells[0]!.arcLength).toBeGreaterThanOrEqual(contact.connectorLength!);
+      for (const cell of core) {
+        expect(horizontal.isBuildingAt(cell.x, cell.y),
+          `connector collision at ${cell.x},${cell.y}`).toBe(false);
+        expect(horizontal.getBuildingTileAt(cell.x, cell.y),
+          `connector art at ${cell.x},${cell.y}`).toBeNull();
+        expect(horizontal.getTile(cell.x, cell.y).id).toContain('regional-path-access:');
       }
     }
+    expect(Math.max(...horizontalConnectors.map((cell) => Math.abs(cell.lateralOffset))))
+      .toBeGreaterThan(0.5);
 
     const vertical = makeWorld(32, 32, (x, y) => ({
       ...routeSample(x, y),
@@ -309,6 +320,8 @@ describe('RegionalWorldTileProvider', () => {
     expect(new Set(verticalContacts.map((placement) => placement.accessAxis)))
       .toEqual(new Set(['east-west']));
     expect(verticalContacts.every((placement) => placement.assetId.includes(':east-west'))).toBe(true);
+    const verticalConnectors = vertical.getParcelConnectorCellsInBounds(-40, -184, 40, 184);
+    expect(verticalConnectors.some((cell) => cell.core)).toBe(true);
     for (const placement of verticalContacts) {
       expect(placement.anchorY).toBe(placement.siteY);
       expect(Math.abs(placement.anchorX - placement.siteX)).toBe(3);
@@ -326,9 +339,13 @@ describe('RegionalWorldTileProvider', () => {
         .filter((placement) => placement.families.includes(family))
         .map((placement) => placement.assetId)).size).toBe(2);
     }
+    const protectedCells = new Set(world.getParcelConnectorCellsInBounds(-32, -48, 232, 48)
+      .filter((cell) => cell.protected)
+      .map((cell) => `${cell.x},${cell.y}`));
     for (const placement of placements) {
       expect(Math.abs(placement.anchorY)).toBeGreaterThanOrEqual(2);
-      expect(world.isBuildingAt(placement.anchorX, placement.anchorY)).toBe(true);
+      const occupied = world.isBuildingAt(placement.anchorX, placement.anchorY);
+      expect(occupied || protectedCells.has(`${placement.anchorX},${placement.anchorY}`)).toBe(true);
     }
   });
 
@@ -369,6 +386,7 @@ describe('RegionalWorldTileProvider', () => {
     const large = makeWorld(48);
     const contacts = small.getRouteContactPlacementsInBounds(-24, -24, 224, 24);
     const components = small.getParcelComponentPlacementsInBounds(-40, -40, 240, 40);
+    const connectors = small.getParcelConnectorCellsInBounds(-40, -40, 240, 40);
     const coordinateKeys = new Set<string>();
     for (const component of components) {
       for (let offsetY = -4; offsetY <= 2; offsetY++) {
@@ -377,20 +395,8 @@ describe('RegionalWorldTileProvider', () => {
         }
       }
     }
-    for (const contact of contacts) {
-      const sign = contact.accessAxis === 'north-south'
-        ? Math.sign(contact.anchorY - contact.siteY) || 1
-        : Math.sign(contact.anchorX - contact.siteX) || 1;
-      for (let distance = 0; distance <= (contact.connectorLength ?? 0); distance++) {
-        const x = contact.accessAxis === 'north-south'
-          ? contact.siteX
-          : contact.siteX + sign * distance;
-        const y = contact.accessAxis === 'north-south'
-          ? contact.siteY + sign * distance
-          : contact.siteY;
-        coordinateKeys.add(`${x},${y}`);
-      }
-    }
+    expect(contacts.length).toBeGreaterThan(0);
+    for (const connector of connectors) coordinateKeys.add(`${connector.x},${connector.y}`);
     const coordinates = [...coordinateKeys].map((key) => {
       const [x, y] = key.split(',').map(Number);
       return [x!, y!] as const;
@@ -403,8 +409,8 @@ describe('RegionalWorldTileProvider', () => {
     for (const [x, y] of coordinates) {
       expect(Boolean(small.getBuildingTileAt(x, y))).toBe(Boolean(large.getBuildingTileAt(x, y)));
       expect(small.isBuildingAt(x, y)).toBe(large.isBuildingAt(x, y));
-      expect(small.getTile(x, y).id.startsWith('regional-access:'))
-        .toBe(large.getTile(x, y).id.startsWith('regional-access:'));
+      expect(small.getTile(x, y).id.startsWith('regional-path-access:'))
+        .toBe(large.getTile(x, y).id.startsWith('regional-path-access:'));
     }
   });
 
@@ -414,10 +420,20 @@ describe('RegionalWorldTileProvider', () => {
     expect(world.getRegionalStats().cachedBlocks).toBeLessThanOrEqual(9);
   });
 
-  it('bounds source blocks to the parcel-aware manifest reach', () => {
+  it('separates base source blocks from the bounded parcel spatial layer', () => {
     const world = makeWorld(32);
     world.getBuildingTileAt(12, 12);
-    expect(world.getRegionalStats().cachedBlocks).toBe(4);
+    expect(world.getRegionalStats()).toMatchObject({
+      cachedParcelLayerBlocks: 1,
+    });
+    expect(world.getRegionalStats().cachedBlocks).toBeLessThanOrEqual(4);
+    expect(world.getRegionalStats().cachedParcelGroups).toBeGreaterThan(0);
+    world.destroy();
+    expect(world.getRegionalStats()).toMatchObject({
+      cachedBlocks: 0,
+      cachedParcelGroups: 0,
+      cachedParcelLayerBlocks: 0,
+    });
   });
 
   it('primes one bounded viewport without conflating preparation with rendering', () => {

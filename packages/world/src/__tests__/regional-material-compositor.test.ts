@@ -13,6 +13,10 @@ import {
   type RegionalRouteSampler,
   type RegionalTextureReconstruction,
 } from '../tiles/regional-material-compositor.js';
+import {
+  buildRegionalParcelPath,
+  rasterizeRegionalParcelPath,
+} from '../tiles/regional-parcel-path.js';
 
 const COLOURS: Record<BiomeFamily, RGB> = {
   'canal-town': { r: 220, g: 150, b: 90 },
@@ -179,6 +183,56 @@ describe('RegionalMaterialCompositor', () => {
       .toBeGreaterThan(distance(eastWest.pixels[0]![4]!, base.pixels[0]![4]!));
     expect(northSouth.id).toContain('north-south:local-road');
     expect(eastWest.id).toContain('east-west:local-road');
+  });
+
+  it('reconstructs one curved parcel path continuously across tile boundaries', () => {
+    const noRoute: RegionalRouteSampler = {
+      sample: () => ({
+        ...routeSample('local-road', null),
+        distance: 8,
+        isRoute: false,
+        isWalkableRoute: false,
+        routeKind: null,
+        routeId: null,
+      }),
+    };
+    const composed = routedCompositor(noRoute);
+    const path = buildRegionalParcelPath({
+      id: 'parcel:test-path',
+      startX: 0.5,
+      startY: 0.5,
+      tangentX: 0,
+      tangentY: 1,
+      outwardSign: -1,
+      length: 7,
+      lateralOffset: 0,
+    });
+    const cells = rasterizeRegionalParcelPath(path);
+    const core = cells.find((cell) => cell.x === 2 && cell.y === 0)!;
+    const fringe = cells.find((cell) => !cell.core)!;
+    const left = composed.getPathAccessTileAtResolution(2, 0, 8, path, 'local-road', core.core);
+    const rightCore = cells.find((cell) => cell.x === 3 && cell.y === 0)!;
+    const right = composed.getPathAccessTileAtResolution(
+      3,
+      0,
+      8,
+      path,
+      'local-road',
+      rightCore.core,
+    );
+    const fringeTile = composed.getPathAccessTileAtResolution(
+      fringe.x,
+      fringe.y,
+      8,
+      path,
+      'local-road',
+      fringe.core,
+    );
+    expect(left.id).toContain('regional-path-access:parcel:test-path');
+    expect(left.walkable).toBe(true);
+    expect(fringeTile.walkable).toBe(false);
+    expect(left.pixels[4]![7]).toEqual(right.pixels[4]![0]);
+    expect(composed.getPathAccessTileAtResolution(2, 0, 8, path, 'local-road', true)).toBe(left);
   });
 
   it('authors only the requested semantic LOD and reuses quantized zoom bands', () => {

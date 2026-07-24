@@ -10,6 +10,10 @@ import type {
   RegionalRouteKind,
   RegionalRouteSample,
 } from '../routes/regional-route-field.js';
+import {
+  distanceToRegionalParcelPath,
+  type RegionalParcelPath,
+} from './regional-parcel-path.js';
 
 export interface BiomeSampler {
   sample(worldX: number, worldY: number): BiomeWorldSample;
@@ -230,6 +234,97 @@ export class RegionalMaterialCompositor {
       pixels,
       materialMask: base.materialMask,
       walkable: true,
+      resolutions: { [String(resolution)]: pixels },
+    };
+    this.cache.set(key, tile);
+    while (this.cache.size > this.maxCachedTiles) {
+      const oldest = this.cache.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.cache.delete(oldest);
+    }
+    return tile;
+  }
+
+  /** Reconstruct a continuous route-material path from one shared world-space
+   * spline. Every touched tile samples the same distance field, so bends cross
+   * tile and cache boundaries without an axis switch or painted square. */
+  getPathAccessTile(
+    tileX: number,
+    tileY: number,
+    path: RegionalParcelPath,
+    routeKind: RegionalRouteKind,
+    core: boolean,
+  ): Tile {
+    return this.getPathAccessTileAtResolution(
+      tileX,
+      tileY,
+      this.sourceSize,
+      path,
+      routeKind,
+      core,
+    );
+  }
+
+  getPathAccessTileAtResolution(
+    tileX: number,
+    tileY: number,
+    requestedResolution: number,
+    path: RegionalParcelPath,
+    routeKind: RegionalRouteKind,
+    core: boolean,
+  ): Tile {
+    if (!this.routeMaterials) return this.getTileAtResolution(tileX, tileY, requestedResolution);
+    const resolution = this.selectResolution(requestedResolution);
+    const key = `path-access:${path.id}:${tileX},${tileY}@${resolution}:${routeKind}:${Number(core)}`;
+    const cached = this.cache.get(key);
+    if (cached) {
+      this.cache.delete(key);
+      this.cache.set(key, cached);
+      return cached;
+    }
+    const base = this.getTileAtResolution(tileX, tileY, resolution);
+    const pixels: PixelGrid = [];
+    const routeTexture = new Float64Array(3);
+    const textureScaleTiles = this.textureScaleForResolution(resolution);
+    for (let y = 0; y < resolution; y++) {
+      const row: RGB[] = [];
+      for (let x = 0; x < resolution; x++) {
+        const worldX = tileX + (x + 0.5) / resolution;
+        const worldY = tileY + (y + 0.5) / resolution;
+        const distance = distanceToRegionalParcelPath(worldX, worldY, path);
+        const opacity = 1 - smoothstep(
+          path.radius - path.feather,
+          path.radius + path.feather,
+          distance,
+        );
+        const beneath = base.pixels[y]?.[x] ?? { r: 0, g: 0, b: 0 };
+        if (opacity <= 0.0001) {
+          row.push(beneath);
+          continue;
+        }
+        this.sampleTextureField(
+          this.routeMaterials[routeKind],
+          worldX,
+          worldY,
+          0x6b91,
+          textureScaleTiles,
+          resolution,
+          routeTexture,
+        );
+        row.push({
+          r: linearToSrgb(lerp(srgbToLinear(beneath.r), routeTexture[0]!, opacity)),
+          g: linearToSrgb(lerp(srgbToLinear(beneath.g), routeTexture[1]!, opacity)),
+          b: linearToSrgb(lerp(srgbToLinear(beneath.b), routeTexture[2]!, opacity)),
+        });
+      }
+      pixels.push(row);
+    }
+    const tile: Tile = {
+      id: `regional-path-access:${path.id}:${tileX},${tileY}@${resolution}`,
+      name: 'Continuous curved regional parcel access',
+      pixels,
+      materialMask: base.materialMask,
+      walkable: base.walkable || core,
       resolutions: { [String(resolution)]: pixels },
     };
     this.cache.set(key, tile);

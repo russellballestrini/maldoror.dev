@@ -371,7 +371,7 @@ research area, linked from this file:
 9. production deployment commit and rollback procedure;
 10. explicit physical-Ghostty operator acceptance.
 
-## Execution ledger — 2026-07-23 (not completion)
+## Execution ledger — 2026-07-24 (not completion)
 
 Completed foundations:
 
@@ -470,6 +470,25 @@ Completed foundations:
   per family: 1.365 s startup, 6.055 s initial preparation, render
   p50/p95/p99 4.39/9.22/26.32 ms, event-loop p99 5.60 ms, import p95 8.58 ms,
   779.57 MiB peak RSS, and zero misses, mismatches, or worker errors;
+- the straight U-shaped parcel connector is replaced in the research provider
+  by one route-relative cubic spine with a deterministic water/route/slope
+  successor fan, shared arc-length component stations, continuous
+  route-material reconstruction, and separately protected core/negative-space
+  bands. The selected six-family district atlas has connected cores, 3--5
+  compatible components per compound, and zero mismatch, overlap, blocked
+  circulation, painted circulation, missing path material, or missing path
+  frame. A failed all-asset requirement is retained: both discovered coast
+  north/south thresholds correctly face water and have no legal same-side
+  compound, so they remain waterfront contacts rather than fabricated inland
+  parcels;
+- the first conservative curve integration regressed identical cold predictive
+  lead to 9.730 seconds. Separating base blocks, route-cell parcel groups, and
+  output-block parcel spatial layers preserves all six faithful hashes
+  byte-for-byte and restores the current identical 180-frame lead to 5.997
+  seconds. Render p50/p95/p99 is 4.60/11.49/43.29 ms, event-loop p99 6.15 ms,
+  import p95 9.52 ms, peak RSS 775.70 MiB, with zero misses, mismatches, or
+  worker errors. The p99 increase remains an explicit profiling follow-up, not
+  a hidden pass;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–021 expose selected and rejected research candidates without
@@ -478,17 +497,17 @@ Completed foundations:
 Still open and therefore goal-blocking:
 
 - the regional field/compositor/routes are not the live provider; predictive
-  cache transport is now a measured research seam, but the current 6.055-second initial
-  origin corridor must move into service readiness and authoritative movement/
+  cache transport is now a measured research seam, but the current 5.997-second
+  initial origin corridor must move into service readiness and authoritative movement/
   camera/zoom integration, production SSH latency, the 5/10/20-presence ladder,
   30-minute run, cgroup behavior, and physical Ghostty remain unproven;
-- the first six-family landmark silhouettes and modular parcel compounds are
-  still sparse, axis-aligned research prototypes rather than a complete world
-  layer; the curved shared-station/shared-boundary grammar, waterfronts,
-  squares/gardens, far greater travel-scale entropy, authoritative traversal,
-  stronger landmark framing, cave interiors, climbable highlands, waterfront
-  grammar, tidal/open-water/boat/island interactions, and environmental
-  consequences remain before the family layer is production-complete;
+- the first six-family landmark silhouettes and curved shared-station parcel
+  compounds are still sparse research prototypes rather than a complete world
+  layer; shared parcel boundaries, waterfront districts, squares/gardens, far
+  greater travel-scale entropy, authoritative traversal, stronger landmark
+  framing, cave interiors, climbable highlands, tidal/open-water/boat/island
+  interactions, and environmental consequences remain before the family layer
+  is production-complete;
 - the complete Phase-0 diagnostic comparison and operator direction approval
   have not passed;
 - schedules, needs, relationships, memories, environmental systems, persistent
