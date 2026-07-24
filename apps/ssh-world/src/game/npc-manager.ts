@@ -5,17 +5,30 @@ import type {
   NPCConfig,
   Direction,
   NPCBehaviorState,
+  NPCLifeEvent,
+  WorldLifeState,
 } from '@maldoror/protocol';
 import { DEFAULT_NPC_CONFIG } from '@maldoror/protocol';
 import {
   loadAllNPCs,
   loadNPCSpriteFromDisk,
   createNPC,
+  loadNPCRelationshipFamiliarities,
+  loadWorldLifeState,
   persistNPCRuntimeStates,
   type LoadedNPCRecord,
   type NPCCreateData,
   type NPCRuntimeSnapshot,
 } from '../utils/npc-storage.js';
+import {
+  advanceNPCLifeMinute,
+  advanceWorldLifeMinute,
+  createInitialNPCLifeState,
+  createInitialWorldLifeState,
+  primaryNPCNeed,
+  stableLifeHash,
+  type LifePosition,
+} from './npc-life-simulation.js';
 
 /**
  * Player position for AI calculations
@@ -55,6 +68,18 @@ export class NPCManager {
   private tickCounter: number = 0;
   private dirtyNPCIds: Set<string> = new Set();
   private persistencePromise: Promise<void> | null = null;
+  private worldLifeState: WorldLifeState;
+  private worldStateDirty: boolean = false;
+  private pendingLifeEvents: NPCLifeEvent[] = [];
+  private readonly worldSeed: string;
+  private readonly tickRate: number;
+  private relationshipFamiliarity: Map<string, number> = new Map();
+
+  constructor(options: { worldSeed?: string; tickRate?: number } = {}) {
+    this.worldSeed = options.worldSeed ?? '0';
+    this.tickRate = Math.max(1, Math.floor(options.tickRate ?? 15));
+    this.worldLifeState = createInitialWorldLifeState(this.worldSeed);
+  }
 
   /**
    * Set collision checker function
@@ -82,7 +107,24 @@ export class NPCManager {
    * Load all NPCs from database on startup
    */
   async loadFromDB(): Promise<void> {
+    const persistedWorld = await loadWorldLifeState();
+    if (persistedWorld && persistedWorld.worldSeed !== this.worldSeed) {
+      throw new Error(
+        `World-life seed mismatch: persisted ${persistedWorld.worldSeed}, runtime ${this.worldSeed}`,
+      );
+    }
+    this.worldLifeState = persistedWorld ?? createInitialWorldLifeState(this.worldSeed);
+    this.worldStateDirty = persistedWorld === null;
+
     const records = await loadAllNPCs();
+    const relationships = await loadNPCRelationshipFamiliarities();
+    this.relationshipFamiliarity.clear();
+    for (const relationship of relationships) {
+      this.relationshipFamiliarity.set(
+        this.relationshipKey(relationship.npcId, relationship.targetId),
+        relationship.familiarity,
+      );
+    }
     console.log(`[NPCManager] Loading ${records.length} NPCs from database...`);
 
     let loadedCount = 0;
@@ -143,10 +185,18 @@ export class NPCManager {
         ? motorState!.movementTicksRemaining
         : 0,
       config,
+      lifeState: record.lifeState ?? createInitialNPCLifeState({
+        npcId: record.id,
+        homeX: record.spawnX,
+        homeY: record.spawnY,
+        roamRadius: record.roamRadius,
+        worldMinute: this.worldLifeState.worldMinute,
+        worldSeed: this.worldSeed,
+      }),
     };
 
     if (state.ticksUntilNextDecision <= 0) {
-      state.ticksUntilNextDecision = this.randomDecisionTicks(state);
+      state.ticksUntilNextDecision = this.tickRate;
     }
 
     return state;
@@ -167,6 +217,7 @@ export class NPCManager {
       persistedDirection: 'down',
       persistedAnimationFrame: 0,
       motorState: null,
+      lifeState: null,
     });
     this.npcs.set(record.id, state);
     this.markDirty(state.npcId);
@@ -242,12 +293,19 @@ export class NPCManager {
   tickAll(playerPositions: PlayerPosition[]): void {
     this.tickCounter++;
 
+    if (this.tickCounter % this.tickRate === 0) {
+      this.advanceLivingWorld(playerPositions);
+    }
+
     for (const npc of this.npcs.values()) {
-      this.tickNPC(npc, playerPositions);
+      this.tickNPC(npc);
     }
 
     // One atomic checkpoint per second at the production 15 Hz tick rate.
-    if (this.tickCounter % 15 === 0 && this.dirtyNPCIds.size > 0) {
+    if (
+      this.tickCounter % this.tickRate === 0
+      && (this.dirtyNPCIds.size > 0 || this.worldStateDirty || this.pendingLifeEvents.length > 0)
+    ) {
       void this.flushRuntimeState().catch((error) => {
         console.error('[NPCManager] Failed to checkpoint runtime state:', error);
       });
@@ -257,7 +315,7 @@ export class NPCManager {
   /**
    * Tick a single NPC
    */
-  private tickNPC(npc: NPCState, playerPositions: PlayerPosition[]): void {
+  private tickNPC(npc: NPCState): void {
     // 1. Update animation if moving (cycle through frames)
     if (npc.isMoving) {
       npc.animationFrame = ((this.tickCounter % 4) as 0 | 1 | 2 | 3);
@@ -294,127 +352,123 @@ export class NPCManager {
 
     // 4. Make a new decision if timer expired
     if (npc.ticksUntilNextDecision <= 0) {
-      this.makeDecision(npc, playerPositions);
-      npc.ticksUntilNextDecision = this.randomDecisionTicks(npc);
+      this.applyLifeIntent(npc);
+      npc.ticksUntilNextDecision = this.tickRate;
       this.markDirty(npc.npcId);
     }
   }
 
-  /**
-   * Make an AI decision for an NPC
-   */
-  private makeDecision(npc: NPCState, playerPositions: PlayerPosition[]): void {
-    // Find nearest player within detection radius
-    const nearestPlayer = this.findNearestPlayer(npc, playerPositions);
+  private advanceLivingWorld(playerPositions: PlayerPosition[]): void {
+    const worldResult = advanceWorldLifeMinute(this.worldLifeState);
+    this.worldLifeState = worldResult.state;
+    this.worldStateDirty = true;
+    this.pendingLifeEvents.push(...worldResult.events);
 
-    // Decide behavior based on player proximity and affinity
-    if (nearestPlayer) {
-      const { player } = nearestPlayer;
+    const people: LifePosition[] = [
+      ...Array.from(this.npcs.values(), (npc): LifePosition => ({
+        id: npc.npcId,
+        x: npc.x,
+        y: npc.y,
+        kind: 'npc',
+      })),
+      ...playerPositions.map((player): LifePosition => ({
+        id: player.userId,
+        x: player.x,
+        y: player.y,
+        kind: 'player',
+      })),
+    ];
 
-      if (npc.config.playerAffinity > 60) {
-        // Follow player
-        npc.behaviorState = 'following_player';
-        this.setTargetNear(npc, player.x, player.y, 2, 4);
-      } else if (npc.config.playerAffinity < 40) {
-        // Flee from player
-        npc.behaviorState = 'fleeing';
-        const dx = npc.x - player.x;
-        const dy = npc.y - player.y;
-        const fleeDistance = 8;
-        const targetX = npc.x + Math.sign(dx) * fleeDistance;
-        const targetY = npc.y + Math.sign(dy) * fleeDistance;
-        this.setTargetWithinBounds(npc, targetX, targetY);
-      } else {
-        // Neutral - wander or idle
-        this.wanderOrIdle(npc);
+    for (const npc of this.npcs.values()) {
+      const perceivedPeople = people.map((person): LifePosition => ({
+        ...person,
+        familiarity: this.relationshipFamiliarity.get(
+          this.relationshipKey(npc.npcId, person.id),
+        ) ?? 0,
+        disposition: person.kind === 'player'
+          ? Math.max(-1, Math.min(1, (npc.config.playerAffinity - 50) / 50))
+          : 0,
+      }));
+      const result = advanceNPCLifeMinute(
+        npc.lifeState,
+        this.worldLifeState,
+        {
+          id: npc.npcId,
+          x: npc.x,
+          y: npc.y,
+          kind: 'npc',
+          detectionRadius: npc.config.detectionRadius,
+        },
+        perceivedPeople,
+      );
+      npc.lifeState = result.state;
+      this.pendingLifeEvents.push(...result.events);
+      for (const event of result.events) {
+        if (event.eventType !== 'social_encounter' || !event.npcId || !event.targetId) continue;
+        const key = this.relationshipKey(event.npcId, event.targetId);
+        this.relationshipFamiliarity.set(
+          key,
+          Math.min(1, (this.relationshipFamiliarity.get(key) ?? 0) + 0.04),
+        );
       }
-    } else {
-      // No player nearby - wander or idle
-      this.wanderOrIdle(npc);
+      this.applyLifeIntent(npc);
+      npc.ticksUntilNextDecision = this.tickRate;
+      this.markDirty(npc.npcId);
     }
   }
 
-  /**
-   * Find the nearest player within detection radius
-   */
-  private findNearestPlayer(
-    npc: NPCState,
-    playerPositions: PlayerPosition[]
-  ): { player: PlayerPosition; distance: number } | null {
-    let nearest: { player: PlayerPosition; distance: number } | null = null;
-
-    for (const player of playerPositions) {
-      const dx = player.x - npc.x;
-      const dy = player.y - npc.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-
-      if (distance <= npc.config.detectionRadius) {
-        if (!nearest || distance < nearest.distance) {
-          nearest = { player, distance };
-        }
-      }
-    }
-
-    return nearest;
-  }
-
-  /**
-   * Wander randomly or stay idle
-   */
-  private wanderOrIdle(npc: NPCState): void {
-    // 30% chance to idle
-    if (this.nextRandom(npc) < npc.config.idleChance) {
-      npc.behaviorState = 'idle';
+  private applyLifeIntent(npc: NPCState): void {
+    const desired = this.findWalkableLifeDestination(
+      npc,
+      npc.lifeState.destinationX,
+      npc.lifeState.destinationY,
+    );
+    if (!desired || (desired.x === npc.x && desired.y === npc.y)) {
       npc.targetX = null;
       npc.targetY = null;
       npc.isMoving = false;
       npc.animationFrame = 0;
+      npc.behaviorState = 'idle';
       return;
     }
-
-    // Wander to a random point within roam radius
     npc.behaviorState = 'wandering';
-    const angle = this.nextRandom(npc) * Math.PI * 2;
-    const distance = 3 + this.nextRandom(npc) * 5; // 3-8 tiles
-    const targetX = npc.x + Math.round(Math.cos(angle) * distance);
-    const targetY = npc.y + Math.round(Math.sin(angle) * distance);
-
-    this.setTargetWithinBounds(npc, targetX, targetY);
-  }
-
-  /**
-   * Set target position ensuring it's within roam radius of spawn
-   */
-  private setTargetWithinBounds(npc: NPCState, targetX: number, targetY: number): void {
-    const radius = npc.config.roamRadius;
-
-    // Clamp to roam radius
-    const dx = targetX - npc.spawnX;
-    const dy = targetY - npc.spawnY;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-
-    if (dist > radius) {
-      // Scale back to radius
-      const scale = radius / dist;
-      targetX = npc.spawnX + Math.round(dx * scale);
-      targetY = npc.spawnY + Math.round(dy * scale);
-    }
-
-    npc.targetX = targetX;
-    npc.targetY = targetY;
+    npc.targetX = desired.x;
+    npc.targetY = desired.y;
     npc.isMoving = true;
   }
 
-  /**
-   * Set target near a position with some random offset
-   */
-  private setTargetNear(npc: NPCState, x: number, y: number, minDist: number, maxDist: number): void {
-    const angle = this.nextRandom(npc) * Math.PI * 2;
-    const distance = minDist + this.nextRandom(npc) * (maxDist - minDist);
-    const targetX = x + Math.round(Math.cos(angle) * distance);
-    const targetY = y + Math.round(Math.sin(angle) * distance);
+  private findWalkableLifeDestination(
+    npc: NPCState,
+    requestedX: number,
+    requestedY: number,
+  ): { x: number; y: number } | null {
+    const dx = requestedX - npc.spawnX;
+    const dy = requestedY - npc.spawnY;
+    const distance = Math.hypot(dx, dy);
+    const scale = distance > npc.config.roamRadius ? npc.config.roamRadius / distance : 1;
+    const centerX = npc.spawnX + Math.round(dx * scale);
+    const centerY = npc.spawnY + Math.round(dy * scale);
+    if (!this.isBlocked(centerX, centerY)) return { x: centerX, y: centerY };
 
-    this.setTargetWithinBounds(npc, targetX, targetY);
+    const phase = stableLifeHash(npc.npcId, centerX, centerY, 'walkable-target') % 8;
+    const directions = [
+      { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }, { x: -1, y: 1 },
+      { x: -1, y: 0 }, { x: -1, y: -1 }, { x: 0, y: -1 }, { x: 1, y: -1 },
+    ];
+    for (let radius = 1; radius <= 4; radius++) {
+      for (let index = 0; index < directions.length; index++) {
+        const direction = directions[(index + phase) % directions.length]!;
+        const candidateX = centerX + direction.x * radius;
+        const candidateY = centerY + direction.y * radius;
+        if (
+          Math.hypot(candidateX - npc.spawnX, candidateY - npc.spawnY) <= npc.config.roamRadius
+          && !this.isBlocked(candidateX, candidateY)
+        ) {
+          return { x: candidateX, y: candidateY };
+        }
+      }
+    }
+    return null;
   }
 
   /**
@@ -507,13 +561,6 @@ export class NPCManager {
     return 'down';
   }
 
-  /**
-   * Generate random ticks until next decision (1 minute at 20 TPS)
-   */
-  private randomDecisionTicks(npc: NPCState): number {
-    return 900 + Math.floor(this.nextRandom(npc) * 150); // ~60-70 seconds at 15 TPS
-  }
-
   /** Move the one canonical NPC body in response to a cognitive action. */
   moveNPC(npcId: string, direction: Direction): NPCVisualState | null {
     const npc = this.npcs.get(npcId);
@@ -550,13 +597,23 @@ export class NPCManager {
   async flushRuntimeState(): Promise<void> {
     if (this.persistencePromise) {
       await this.persistencePromise;
-      if (this.dirtyNPCIds.size > 0) await this.flushRuntimeState();
+      if (
+        this.dirtyNPCIds.size > 0
+        || this.worldStateDirty
+        || this.pendingLifeEvents.length > 0
+      ) {
+        await this.flushRuntimeState();
+      }
       return;
     }
 
     const ids = Array.from(this.dirtyNPCIds);
-    if (ids.length === 0) return;
+    if (ids.length === 0 && !this.worldStateDirty && this.pendingLifeEvents.length === 0) return;
     this.dirtyNPCIds.clear();
+    const worldState = this.worldStateDirty ? { ...this.worldLifeState } : undefined;
+    this.worldStateDirty = false;
+    const lifeEvents = this.pendingLifeEvents;
+    this.pendingLifeEvents = [];
 
     const snapshots = ids
       .map((id): NPCRuntimeSnapshot | null => {
@@ -577,15 +634,18 @@ export class NPCManager {
             isMoving: npc.isMoving,
             movementTicksRemaining: npc.movementTicksRemaining,
           },
+          lifeState: npc.lifeState,
         };
       })
       .filter((snapshot): snapshot is NPCRuntimeSnapshot => snapshot !== null);
 
-    this.persistencePromise = persistNPCRuntimeStates(snapshots);
+    this.persistencePromise = persistNPCRuntimeStates(snapshots, worldState, lifeEvents);
     try {
       await this.persistencePromise;
     } catch (error) {
       for (const id of ids) this.dirtyNPCIds.add(id);
+      if (worldState) this.worldStateDirty = true;
+      this.pendingLifeEvents = [...lifeEvents, ...this.pendingLifeEvents];
       throw error;
     } finally {
       this.persistencePromise = null;
@@ -596,13 +656,8 @@ export class NPCManager {
     this.dirtyNPCIds.add(npcId);
   }
 
-  private nextRandom(npc: NPCState): number {
-    let state = npc.rngState >>> 0;
-    state ^= state << 13;
-    state ^= state >>> 17;
-    state ^= state << 5;
-    npc.rngState = (state >>> 0) || 0x6d2b79f5;
-    return npc.rngState / 0x100000000;
+  private relationshipKey(npcId: string, targetId: string): string {
+    return `${npcId}\u001f${targetId}`;
   }
 
   private normalizeRngState(value: unknown, npcId: string): number {
@@ -666,7 +721,14 @@ export class NPCManager {
       direction: npc.direction,
       animationFrame: npc.animationFrame,
       isMoving: npc.isMoving,
+      role: npc.lifeState.role,
+      activity: npc.lifeState.currentActivity,
+      primaryNeed: primaryNPCNeed(npc.lifeState.needs),
     };
+  }
+
+  getWorldLifeState(): WorldLifeState {
+    return { ...this.worldLifeState };
   }
 
   /**

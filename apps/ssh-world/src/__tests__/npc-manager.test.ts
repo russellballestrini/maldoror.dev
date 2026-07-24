@@ -5,6 +5,8 @@ const storage = vi.hoisted(() => ({
   loadAllNPCs: vi.fn(),
   loadNPCSpriteFromDisk: vi.fn(),
   createNPC: vi.fn(),
+  loadWorldLifeState: vi.fn(),
+  loadNPCRelationshipFamiliarities: vi.fn(),
   persistNPCRuntimeStates: vi.fn(),
 }));
 
@@ -36,12 +38,15 @@ const record: LoadedNPCRecord = {
     isMoving: true,
     movementTicksRemaining: 0,
   },
+  lifeState: null,
 };
 
 describe('NPCManager persistent body state', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     storage.loadAllNPCs.mockResolvedValue([record]);
+    storage.loadWorldLifeState.mockResolvedValue(null);
+    storage.loadNPCRelationshipFamiliarities.mockResolvedValue([]);
     storage.loadNPCSpriteFromDisk.mockResolvedValue(null);
     storage.persistNPCRuntimeStates.mockResolvedValue(undefined);
   });
@@ -94,6 +99,7 @@ describe('NPCManager persistent body state', () => {
       persistedDirection: snapshots[0]!.direction,
       persistedAnimationFrame: snapshots[0]!.animationFrame,
       motorState: snapshots[0]!.motorState,
+      lifeState: snapshots[0]!.lifeState ?? null,
     }]);
 
     const restarted = new NPCManager();
@@ -122,8 +128,46 @@ describe('NPCManager persistent body state', () => {
     });
     await manager.flushRuntimeState();
 
-    expect(storage.persistNPCRuntimeStates).toHaveBeenCalledWith([
+    expect(storage.persistNPCRuntimeStates.mock.calls[0]![0]).toEqual([
       expect.objectContaining({ x: 7, y: -2, direction: 'right' }),
     ]);
+  });
+
+  it('advances and atomically checkpoints world time, inhabitant needs, and audit facts', async () => {
+    storage.loadWorldLifeState.mockResolvedValueOnce({
+      worldId: 'primary',
+      worldSeed: '42',
+      worldMinute: 719,
+      weather: 'clear',
+      weatherIntensity: 0.1,
+      weatherUntilWorldMinute: 720,
+      season: 'spring',
+      rngState: 123456,
+    });
+    const manager = new NPCManager({ worldSeed: '42', tickRate: 3 });
+    await manager.loadFromDB();
+
+    manager.tickAll([]);
+    manager.tickAll([]);
+    manager.tickAll([]);
+    await manager.flushRuntimeState();
+
+    const finalCall = storage.persistNPCRuntimeStates.mock.calls.at(-1)!;
+    const snapshots = finalCall[0] as NPCRuntimeSnapshot[];
+    expect(finalCall[1]).toMatchObject({ worldMinute: 720, worldSeed: '42' });
+    expect(snapshots[0]!.lifeState).toMatchObject({
+      npcId: record.id,
+      lastWorldMinute: 720,
+      stateVersion: 2,
+    });
+    expect(finalCall[2]).toContainEqual(expect.objectContaining({
+      eventType: 'weather_changed',
+      worldMinute: 720,
+    }));
+    expect(manager.getAllNPCs()[0]).toEqual(expect.objectContaining({
+      role: expect.any(String),
+      activity: expect.any(String),
+      primaryNeed: expect.any(String),
+    }));
   });
 });

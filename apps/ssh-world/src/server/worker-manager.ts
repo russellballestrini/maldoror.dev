@@ -14,7 +14,7 @@
 import { fork, ChildProcess } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import type { PlayerInput, NPCVisualState, Sprite } from '@maldoror/protocol';
+import type { PlayerInput, NPCVisualState, Sprite, WorldLifeState } from '@maldoror/protocol';
 import type { ProviderConfig } from '@maldoror/ai';
 import type {
   MainToWorkerMessage,
@@ -531,6 +531,16 @@ export class WorkerManager {
     );
   }
 
+  async getWorldLifeState(): Promise<WorldLifeState | null> {
+    if (!this.isReady()) return null;
+    const requestId = this.nextRequestId();
+    return this.sendRequest<WorldLifeState>(
+      { type: 'get_world_life_state', requestId },
+      requestId,
+      'world_life_state',
+    );
+  }
+
   async getNPCSprite(npcId: string): Promise<Sprite | null> {
     if (!this.isReady()) return null;
 
@@ -852,6 +862,16 @@ export class WorkerManager {
           clearTimeout(pending.timeout);
           this.pendingRequests.delete(msg.requestId);
           pending.resolve(msg.npcs);
+        }
+        break;
+      }
+
+      case 'world_life_state': {
+        const pending = this.pendingRequests.get(msg.requestId);
+        if (pending) {
+          clearTimeout(pending.timeout);
+          this.pendingRequests.delete(msg.requestId);
+          pending.resolve(msg.state);
         }
         break;
       }

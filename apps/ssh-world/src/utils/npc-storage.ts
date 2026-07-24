@@ -5,11 +5,14 @@ import type {
   DirectionFrames,
   Direction,
   NPCMotorState,
+  NPCLifeEvent,
+  NPCLifeState,
+  WorldLifeState,
 } from '@maldoror/protocol';
 import { RESOLUTIONS } from '@maldoror/protocol';
 import type { NPCRecord } from '@maldoror/protocol';
 import { db, schema } from '@maldoror/db';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import {
   ensureNPCDir,
   getNPCPngPath,
@@ -258,11 +261,96 @@ export async function loadAllNPCs(): Promise<LoadedNPCRecord[]> {
       persistedDirection: schema.playerState.direction,
       persistedAnimationFrame: schema.playerState.animationFrame,
       motorState: schema.playerState.npcMotorState,
+      lifeNpcId: schema.npcLifeState.npcId,
+      lifeHomeX: schema.npcLifeState.homeX,
+      lifeHomeY: schema.npcLifeState.homeY,
+      lifeRole: schema.npcLifeState.role,
+      lifeSchedule: schema.npcLifeState.schedule,
+      lifeNeeds: schema.npcLifeState.needs,
+      lifeCurrentActivity: schema.npcLifeState.currentActivity,
+      lifeActivityStartedWorldMinute: schema.npcLifeState.activityStartedWorldMinute,
+      lifeDestinationX: schema.npcLifeState.destinationX,
+      lifeDestinationY: schema.npcLifeState.destinationY,
+      lifeLastWorldMinute: schema.npcLifeState.lastWorldMinute,
+      lifeLastEncounterWorldMinute: schema.npcLifeState.lastEncounterWorldMinute,
+      lifeLastSocialTargetId: schema.npcLifeState.lastSocialTargetId,
+      lifeStateVersion: schema.npcLifeState.stateVersion,
     })
     .from(schema.npcs)
-    .leftJoin(schema.playerState, eq(schema.playerState.userId, schema.npcs.id));
+    .leftJoin(schema.playerState, eq(schema.playerState.userId, schema.npcs.id))
+    .leftJoin(schema.npcLifeState, eq(schema.npcLifeState.npcId, schema.npcs.id));
   console.log(`[NPC] Loaded ${records.length} NPCs from database`);
-  return records as LoadedNPCRecord[];
+  return records.map((record): LoadedNPCRecord => ({
+    id: record.id,
+    creatorId: record.creatorId,
+    name: record.name,
+    prompt: record.prompt,
+    spawnX: record.spawnX,
+    spawnY: record.spawnY,
+    roamRadius: record.roamRadius,
+    playerAffinity: record.playerAffinity,
+    modelUsed: record.modelUsed,
+    createdAt: record.createdAt,
+    persistedX: record.persistedX,
+    persistedY: record.persistedY,
+    persistedDirection: record.persistedDirection,
+    persistedAnimationFrame: record.persistedAnimationFrame,
+    motorState: record.motorState,
+    lifeState: record.lifeNpcId === null ? null : {
+      npcId: record.lifeNpcId,
+      homeX: record.lifeHomeX!,
+      homeY: record.lifeHomeY!,
+      role: record.lifeRole!,
+      schedule: record.lifeSchedule!,
+      needs: record.lifeNeeds!,
+      currentActivity: record.lifeCurrentActivity!,
+      activityStartedWorldMinute: record.lifeActivityStartedWorldMinute!,
+      destinationX: record.lifeDestinationX!,
+      destinationY: record.lifeDestinationY!,
+      lastWorldMinute: record.lifeLastWorldMinute!,
+      lastEncounterWorldMinute: record.lifeLastEncounterWorldMinute,
+      lastSocialTargetId: record.lifeLastSocialTargetId,
+      stateVersion: record.lifeStateVersion!,
+    },
+  }));
+}
+
+export async function loadWorldLifeState(worldId = 'primary'): Promise<WorldLifeState | null> {
+  const [record] = await db
+    .select()
+    .from(schema.worldLifeState)
+    .where(eq(schema.worldLifeState.worldId, worldId))
+    .limit(1);
+  if (!record) return null;
+  return {
+    worldId: record.worldId,
+    worldSeed: record.worldSeed,
+    worldMinute: record.worldMinute,
+    weather: record.weather,
+    weatherIntensity: record.weatherIntensity,
+    weatherUntilWorldMinute: record.weatherUntilWorldMinute,
+    season: record.season,
+    rngState: record.rngState,
+  };
+}
+
+export interface NPCRelationshipFamiliarity {
+  npcId: string;
+  targetId: string;
+  familiarity: number;
+}
+
+export async function loadNPCRelationshipFamiliarities(): Promise<NPCRelationshipFamiliarity[]> {
+  const records = await db.select({
+    npcId: schema.npcRelationships.npcId,
+    targetId: schema.npcRelationships.targetId,
+    familiarity: schema.npcRelationships.familiarity,
+  }).from(schema.npcRelationships);
+  return records.map((record) => ({
+    npcId: record.npcId,
+    targetId: record.targetId,
+    familiarity: record.familiarity ?? 0,
+  }));
 }
 
 export interface LoadedNPCRecord extends NPCRecord {
@@ -271,6 +359,7 @@ export interface LoadedNPCRecord extends NPCRecord {
   persistedDirection: string | null;
   persistedAnimationFrame: number | null;
   motorState: NPCMotorState | null;
+  lifeState: NPCLifeState | null;
 }
 
 export interface NPCRuntimeSnapshot {
@@ -280,11 +369,16 @@ export interface NPCRuntimeSnapshot {
   direction: Direction;
   animationFrame: number;
   motorState: NPCMotorState;
+  lifeState?: NPCLifeState;
 }
 
 /** Persist a batch atomically so spatial and motor state never disagree. */
-export async function persistNPCRuntimeStates(snapshots: NPCRuntimeSnapshot[]): Promise<void> {
-  if (snapshots.length === 0) return;
+export async function persistNPCRuntimeStates(
+  snapshots: NPCRuntimeSnapshot[],
+  worldState?: WorldLifeState,
+  events: NPCLifeEvent[] = [],
+): Promise<void> {
+  if (snapshots.length === 0 && !worldState && events.length === 0) return;
 
   await db.transaction(async (tx) => {
     for (const snapshot of snapshots) {
@@ -303,6 +397,133 @@ export async function persistNPCRuntimeStates(snapshots: NPCRuntimeSnapshot[]): 
 
       if (updated.length !== 1) {
         throw new Error(`Missing canonical player_state for NPC ${snapshot.npcId}`);
+      }
+
+      if (snapshot.lifeState) {
+        const life = snapshot.lifeState;
+        await tx.insert(schema.npcLifeState).values({
+          npcId: snapshot.npcId,
+          homeX: life.homeX,
+          homeY: life.homeY,
+          role: life.role,
+          schedule: life.schedule,
+          needs: life.needs,
+          currentActivity: life.currentActivity,
+          activityStartedWorldMinute: life.activityStartedWorldMinute,
+          destinationX: life.destinationX,
+          destinationY: life.destinationY,
+          lastWorldMinute: life.lastWorldMinute,
+          lastEncounterWorldMinute: life.lastEncounterWorldMinute,
+          lastSocialTargetId: life.lastSocialTargetId,
+          stateVersion: life.stateVersion,
+          updatedAt: new Date(),
+        }).onConflictDoUpdate({
+          target: schema.npcLifeState.npcId,
+          set: {
+            homeX: life.homeX,
+            homeY: life.homeY,
+            role: life.role,
+            schedule: life.schedule,
+            needs: life.needs,
+            currentActivity: life.currentActivity,
+            activityStartedWorldMinute: life.activityStartedWorldMinute,
+            destinationX: life.destinationX,
+            destinationY: life.destinationY,
+            lastWorldMinute: life.lastWorldMinute,
+            lastEncounterWorldMinute: life.lastEncounterWorldMinute,
+            lastSocialTargetId: life.lastSocialTargetId,
+            stateVersion: life.stateVersion,
+            updatedAt: new Date(),
+          },
+        });
+      }
+    }
+
+    if (worldState) {
+      await tx.insert(schema.worldLifeState).values({
+        worldId: worldState.worldId,
+        worldSeed: worldState.worldSeed,
+        worldMinute: worldState.worldMinute,
+        weather: worldState.weather,
+        weatherIntensity: worldState.weatherIntensity,
+        weatherUntilWorldMinute: worldState.weatherUntilWorldMinute,
+        season: worldState.season,
+        rngState: worldState.rngState,
+        updatedAt: new Date(),
+      }).onConflictDoUpdate({
+        target: schema.worldLifeState.worldId,
+        set: {
+          worldSeed: worldState.worldSeed,
+          worldMinute: worldState.worldMinute,
+          weather: worldState.weather,
+          weatherIntensity: worldState.weatherIntensity,
+          weatherUntilWorldMinute: worldState.weatherUntilWorldMinute,
+          season: worldState.season,
+          rngState: worldState.rngState,
+          updatedAt: new Date(),
+        },
+      });
+    }
+
+    for (const event of events) {
+      const inserted = await tx.insert(schema.npcLifeEvents).values({
+        dedupeKey: event.dedupeKey,
+        eventType: event.eventType,
+        worldMinute: event.worldMinute,
+        npcId: event.npcId,
+        targetId: event.targetId,
+        x: event.x,
+        y: event.y,
+        cause: event.cause,
+        consequence: event.consequence,
+      }).onConflictDoNothing({
+        target: schema.npcLifeEvents.dedupeKey,
+      }).returning({ id: schema.npcLifeEvents.id });
+
+      if (
+        inserted.length === 1
+        && event.eventType === 'social_encounter'
+        && event.npcId
+        && event.targetId
+        && event.npcId !== event.targetId
+      ) {
+        await tx.insert(schema.npcMemories).values({
+          npcId: event.npcId,
+          memoryType: 'observation',
+          summary: `Spent time with ${event.targetId} while socializing`,
+          details: `Observed encounter ${event.dedupeKey} at world minute ${event.worldMinute}.`,
+          location: event.x === null || event.y === null ? undefined : { x: event.x, y: event.y },
+          participants: [event.targetId],
+          emotionalValence: 0.25,
+          emotionalIntensity: 0.35,
+          primaryEmotion: 'belonging',
+          importance: 0.42,
+          tags: ['social-encounter', `world-minute:${event.worldMinute}`],
+        });
+
+        await tx.insert(schema.npcRelationships).values({
+          npcId: event.npcId,
+          targetId: event.targetId,
+          familiarity: 0.04,
+          affection: 0.01,
+          trust: 0,
+          respect: 0,
+          attraction: 0,
+          rivalry: 0,
+          relationshipType: 'acquaintance',
+          interactionCount: 1,
+          lastInteractionAt: new Date(),
+          updatedAt: new Date(),
+        }).onConflictDoUpdate({
+          target: [schema.npcRelationships.npcId, schema.npcRelationships.targetId],
+          set: {
+            familiarity: sql`LEAST(1.0, COALESCE(${schema.npcRelationships.familiarity}, 0) + 0.04)`,
+            affection: sql`LEAST(1.0, COALESCE(${schema.npcRelationships.affection}, 0) + 0.01)`,
+            interactionCount: sql`COALESCE(${schema.npcRelationships.interactionCount}, 0) + 1`,
+            lastInteractionAt: new Date(),
+            updatedAt: new Date(),
+          },
+        });
       }
     }
   });

@@ -5,7 +5,8 @@ import type {
   RGB,
   WorldDataProvider,
   Direction,
-  BuildingDirection
+  BuildingDirection,
+  WorldLifeState,
 } from '@maldoror/protocol';
 import type { PackedPixelGrid, PixelGrid as ProtocolPixelGrid } from '@maldoror/protocol';
 import { materialPhase } from './palette-cycle.js';
@@ -146,6 +147,10 @@ function rotatePoint(x: number, y: number, angle: CameraRotation): { x: number; 
     case 180: return { x: -x, y: -y };
     case 270: return { x: y, y: -x };
   }
+}
+
+function clampByte(value: number): number {
+  return Math.max(0, Math.min(255, Math.round(value)));
 }
 
 /**
@@ -421,7 +426,12 @@ export class ViewportRenderer {
     // 4. Render players and NPCs together (sorted by Y for proper overlap)
     this.renderEntities(buffer, materialGrid, world, tick, origin);
 
-    // 5. Generate brightness grid if world supports it
+    // 5. The persistent world clock grades the whole scene. Overlays remain
+    // crisp UI, while terrain, architecture, and inhabitants share one sky.
+    const worldLife = world.getWorldLifeState?.();
+    if (worldLife) this.applyWorldAtmosphere(buffer, worldLife, tick);
+
+    // 6. Generate brightness grid if world supports it
     let brightnessGrid: number[][] | undefined;
     if (world.generateBrightnessGrid) {
       // Calculate cell dimensions based on render mode
@@ -457,6 +467,93 @@ export class ViewportRenderer {
       brightnessGrid,
       materialGrid,
     };
+  }
+
+  private applyWorldAtmosphere(
+    buffer: PixelGrid,
+    world: WorldLifeState,
+    tick: number,
+  ): void {
+    const minuteOfDay = ((world.worldMinute % 1440) + 1440) % 1440;
+    const solar = Math.max(0, Math.sin(((minuteOfDay - 360) / 720) * Math.PI));
+    const daylight = 0.34 + 0.66 * (solar * solar * (3 - 2 * solar));
+    let redScale = daylight;
+    let greenScale = daylight;
+    let blueScale = daylight;
+    let haze = 0;
+    let hazeR = 150;
+    let hazeG = 160;
+    let hazeB = 175;
+
+    if (world.weather === 'mist') {
+      haze = 0.18 + world.weatherIntensity * 0.18;
+      hazeR = 168; hazeG = 178; hazeB = 186;
+    } else if (world.weather === 'rain') {
+      redScale *= 0.82; greenScale *= 0.9; blueScale *= 1.02;
+      haze = 0.05 + world.weatherIntensity * 0.08;
+      hazeR = 78; hazeG = 101; hazeB = 128;
+    } else if (world.weather === 'storm') {
+      redScale *= 0.62; greenScale *= 0.72; blueScale *= 0.88;
+      haze = 0.08 + world.weatherIntensity * 0.1;
+      hazeR = 55; hazeG = 67; hazeB = 93;
+    } else if (world.weather === 'cold_snap') {
+      redScale *= 0.9; greenScale *= 0.97; blueScale *= 1.08;
+      haze = world.weatherIntensity * 0.06;
+      hazeR = 174; hazeG = 191; hazeB = 211;
+    } else if (world.weather === 'heat_haze') {
+      redScale *= 1.08; greenScale *= 0.98; blueScale *= 0.83;
+      haze = world.weatherIntensity * 0.055;
+      hazeR = 222; hazeG = 164; hazeB = 101;
+    }
+
+    const gradeCache = new Map<number, RGB>();
+    for (let y = 0; y < buffer.length; y++) {
+      const row = buffer[y]!;
+      for (let x = 0; x < row.length; x++) {
+        const pixel = row[x];
+        if (!pixel) continue;
+        // Tile and sprite caches may share RGB object identities across many
+        // buffer cells. Never mutate a cached authored sample in place.
+        const key = (pixel.r << 16) | (pixel.g << 8) | pixel.b;
+        let graded = gradeCache.get(key);
+        if (!graded) {
+          graded = {
+            r: clampByte(pixel.r * redScale * (1 - haze) + hazeR * haze),
+            g: clampByte(pixel.g * greenScale * (1 - haze) + hazeG * haze),
+            b: clampByte(pixel.b * blueScale * (1 - haze) + hazeB * haze),
+          };
+          gradeCache.set(key, graded);
+        }
+        row[x] = graded;
+      }
+    }
+
+    if (world.weather !== 'rain' && world.weather !== 'storm') return;
+    const density = world.weather === 'storm' ? 23 : 11;
+    const streakLength = world.weather === 'storm' ? 3 : 2;
+    const phase = tick + world.worldMinute * 3;
+    for (let y = 0; y < buffer.length; y++) {
+      const row = buffer[y]!;
+      for (let x = 0; x < row.length; x++) {
+        const hash = (
+          Math.imul(x + phase, 73856093)
+          ^ Math.imul(y - phase * 2, 19349663)
+        ) >>> 0;
+        if (hash % 1000 >= density) continue;
+        for (let offset = 0; offset < streakLength; offset++) {
+          const streakY = y + offset;
+          const streakX = x - Math.floor((offset + 1) / 2);
+          const pixel = buffer[streakY]?.[streakX];
+          if (!pixel) continue;
+          const strength = 0.44 - offset * 0.09;
+          buffer[streakY]![streakX] = {
+            r: clampByte(pixel.r * (1 - strength) + 160 * strength),
+            g: clampByte(pixel.g * (1 - strength) + 190 * strength),
+            b: clampByte(pixel.b * (1 - strength) + 220 * strength),
+          };
+        }
+      }
+    }
   }
 
   /**
@@ -887,7 +984,15 @@ export class ViewportRenderer {
     for (const entity of sortedEntities) {
       const isPlayerEntity = this.isPlayer(entity);
       const entityId = isPlayerEntity ? entity.userId : entity.npcId;
-      const entityName = isPlayerEntity ? entity.username : entity.name;
+      let entityName: string;
+      if (isPlayerEntity) {
+        entityName = entity.username;
+      } else {
+        const visibleStatus = [entity.role, entity.activity].filter(Boolean).join(' ');
+        entityName = this.tileRenderSize >= 12 && visibleStatus
+          ? `${entity.name} | ${visibleStatus}`
+          : entity.name;
+      }
 
       // Get sprite based on entity type
       const sprite = isPlayerEntity

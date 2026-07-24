@@ -57,6 +57,13 @@
       "when": 1784827870389,
       "tag": "0007_nosy_hulk",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784884949930,
+      "tag": "0008_handy_wolfpack",
+      "breakpoints": true
     }
   ]
 }

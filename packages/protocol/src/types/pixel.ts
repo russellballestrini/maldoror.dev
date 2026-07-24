@@ -1,4 +1,4 @@
-import type { NPCVisualState } from './npc.js';
+import type { NPCVisualState, WorldLifeState } from './npc.js';
 
 /**
  * RGB color for a single pixel
@@ -179,6 +179,7 @@ export interface WorldDataProvider {
   // NPC methods (optional for backwards compatibility)
   getNPCs?(): NPCVisualState[];
   getNPCSprite?(npcId: string): Sprite | null;
+  getWorldLifeState?(): WorldLifeState | null;
   // Road methods (optional for backwards compatibility)
   hasRoadAt?(x: number, y: number): boolean;
   getRoadTileAt?(x: number, y: number): Tile | null;

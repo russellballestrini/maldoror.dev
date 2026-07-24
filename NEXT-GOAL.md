@@ -596,9 +596,44 @@ Completed foundations:
   p50/p95/p99 4.54/11.42/19.14 and 3.82/6.79/17.71 ms. Their 6.985/7.019-second
   cold leads and 809.98/808.91 MiB peak RSS keep service readiness open.
   Production is unchanged;
+- the random-wander NPC motor now consumes a canonical integer world clock and
+  a restart-safe living policy instead of name/prompt conditionals. Every
+  inhabitant has a deterministic gapless day, one of six persistent roles,
+  six typed need pressures, activity-duration hysteresis, collision-adjusted
+  destinations, and continuous utility over schedule, place, time, weather,
+  exposure, nearby people, role, and prior activity. Directed familiarity is
+  loaded from durable relationships and feeds back into whom an inhabitant
+  seeks; the existing continuous player-affinity value now shapes both social
+  attraction and proximity-scaled retreat instead of being ignored by the new
+  policy. Encounters atomically append an auditable life fact, an episodic
+  memory, and an idempotently strengthened relationship. World time, season,
+  weather, needs, schedules, current intent, remembered social target, body,
+  and motor state checkpoint in one transaction. One consolidated additive
+  migration creates the canonical world/life tables and append-only event
+  ledger; all 34 tables and state-version default 2 were proven on a disposable
+  local scratch database, which was then removed. No metered/model call is in
+  the always-on policy. A full accelerated day with 18 residents and two human
+  presence traces covers all six roles, all seven activities, four weather
+  states, 574 facts, 90 social encounters, ten human encounters, persistent
+  directed relationships, and 44 sampled shelter responses; a restart after
+  613 minutes produces the exact same SHA-256 state/event digest as the
+  uninterrupted run (`95027fa...64db`). The same persistent clock now grades
+  terrain, structures, and actors together through day/night, mist, rain,
+  storm, cold, and heat, with deterministic diagonal precipitation and
+  walking-scale role/activity labels in both worker transports. The atmosphere
+  pass never mutates shared cached samples; an interleaved 160x46 profile puts
+  current clear/storm p95 overhead at 0.344/0.469 ms. Research, sources, raw
+  facts, timeline, performance, and the real-provider four-state atlas are in
+  `living-world-research/deterministic-life-v1/`. Full verification is 33 files
+  / 172 tests, all 18 typecheck tasks, all 12 build tasks, migration replay,
+  and clean diff validation. Public gallery iteration 028 exposes the timeline
+  and atmosphere atlas. The last remaining production-worker fallback that
+  could relocate a fresh login away from `(0,0)` was removed; the canonical
+  arrival island/route tests remain the walkability proof. This is an
+  accelerated local proof, not Gate C, and production remains unchanged;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
-  iterations 012–025 expose selected and rejected research candidates without
+  iterations 012–028 expose selected and rejected research candidates without
   claiming they are live.
 
 Still open and therefore goal-blocking:
@@ -619,9 +654,13 @@ Still open and therefore goal-blocking:
   production-complete;
 - the complete Phase-0 diagnostic comparison and operator direction approval
   have not passed;
-- schedules, needs, relationships, memories, environmental systems, persistent
-  consequences, multi-human encounters, and the 60-minute living-world proof
-  have not passed;
+- the deterministic schedule/need/role/relationship/memory/consequence core and
+  clock-driven atmosphere now have restart-exact accelerated evidence, but the
+  additive migration is not deployed and Gate C has not passed: uninterrupted
+  physical 60-minute observation with two real human clients, reconnect and
+  newcomer checks, natural conversations and plans, richer event coordination,
+  seasonal appearance, water state, growth/decay, lanterns, and persistent
+  environmental consequences remain open;
 - the 24-coordinate multi-zoom/time/weather atlas, deterministic traversal,
   load ladder, 30-minute terminal run, production deployment, and physical
   Ghostty acceptance all remain open.

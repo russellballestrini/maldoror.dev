@@ -1,5 +1,5 @@
 import { ChunkCache, ChunkGenerator, SpatialIndex, GameLoop } from '@maldoror/world';
-import type { PlayerInput, Direction, NPCVisualState, Sprite } from '@maldoror/protocol';
+import type { PlayerInput, Direction, NPCVisualState, Sprite, WorldLifeState } from '@maldoror/protocol';
 import { isPositionInBuilding } from '@maldoror/protocol';
 import { db, schema } from '@maldoror/db';
 import { NPCManager } from './npc-manager.js';
@@ -68,7 +68,10 @@ export class GameServer {
     this.chunkGenerator = new ChunkGenerator(config.worldSeed);
     this.chunkCache = new ChunkCache(this.chunkGenerator, config.chunkCacheSize);
     this.spatialIndex = new SpatialIndex();
-    this.npcManager = new NPCManager();
+    this.npcManager = new NPCManager({
+      worldSeed: config.worldSeed.toString(),
+      tickRate: config.tickRate,
+    });
 
     // Initialize game loop
     this.gameLoop = new GameLoop({ tickRate: config.tickRate });
@@ -552,6 +555,10 @@ export class GameServer {
    */
   getAllNPCs(): NPCVisualState[] {
     return this.npcManager.getAllNPCs();
+  }
+
+  getWorldLifeState(): WorldLifeState {
+    return this.npcManager.getWorldLifeState();
   }
 
   /** Apply a conscious action to the same NPC body used by the renderer. */

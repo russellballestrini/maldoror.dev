@@ -23,7 +23,7 @@ const PERF_OPTIMIZATIONS: PerfOptimizations = {
   enablePerfStats: false, // Set to true to log perf stats every 10s
 };
 import { TileProvider, createPlaceholderSprite } from '@maldoror/world';
-import type { Direction, AnimationFrame, PlayerVisualState, Sprite } from '@maldoror/protocol';
+import type { Direction, AnimationFrame, PlayerVisualState, NPCVisualState, Sprite } from '@maldoror/protocol';
 import type { DirectionalBuildingSprite } from '@maldoror/ai';
 import { getBuildingTilePositions } from '@maldoror/protocol';
 import { WorkerManager, ReloadState } from './worker-manager.js';
@@ -117,18 +117,11 @@ export class GameSession {
   private visiblePlayersLastUpdate: number = 0;
   private readonly VISIBLE_PLAYERS_TTL_MS = 200;  // Stale-while-revalidate
   // Non-blocking visible NPCs refresh
-  private cachedVisibleNPCs: Array<{
-    npcId: string;
-    name: string;
-    x: number;
-    y: number;
-    direction: string;
-    animationFrame: number;
-    isMoving: boolean;
-  }> = [];
+  private cachedVisibleNPCs: NPCVisualState[] = [];
   private visibleNPCsInFlight: Promise<void> | null = null;
   private visibleNPCsLastUpdate: number = 0;
   private loadingNPCSprites: Set<string> = new Set();
+  private worldLifeInFlight: Promise<void> | null = null;
 
   // === OPTIMISTIC MOVEMENT SYSTEM ===
   // Movement prediction - track pending server confirmations
@@ -436,6 +429,7 @@ export class GameSession {
     // NON-BLOCKING: Stale-while-revalidate for visible players and NPCs
     this.refreshVisiblePlayersIfNeeded();
     this.refreshVisibleNPCsIfNeeded();
+    this.refreshWorldLifeIfNeeded();
 
     // Poll chat messages every 10 ticks (~1.5s at 15fps)
     if (this.tickCounter % 10 === 0) {
@@ -489,6 +483,9 @@ export class GameSession {
         direction: npc.direction as Direction,
         animationFrame: npc.animationFrame as AnimationFrame,
         isMoving: npc.isMoving,
+        role: npc.role,
+        activity: npc.activity,
+        primaryNeed: npc.primaryNeed,
       });
 
       // Collect missing NPC sprites for loading
@@ -524,6 +521,22 @@ export class GameSession {
     if (output) {
       this.outputPump.enqueue(output);
     }
+  }
+
+  private refreshWorldLifeIfNeeded(): void {
+    if (
+      !this.tileProvider
+      || this.worldLifeInFlight
+      || (this.tickCounter !== 1 && this.tickCounter % 15 !== 0)
+    ) return;
+    this.worldLifeInFlight = this.workerManager.getWorldLifeState()
+      .then((state) => {
+        if (state && this.tileProvider) this.tileProvider.setWorldLifeState(state);
+      })
+      .catch((error) => console.error('[GameSession] World-life refresh failed:', error))
+      .finally(() => {
+        this.worldLifeInFlight = null;
+      });
   }
 
   /**
@@ -1175,7 +1188,7 @@ export class GameSession {
   /**
    * Handle NPC creation broadcast from another player
    */
-  private async handleNPCCreated(npc: { npcId: string; name: string; x: number; y: number; direction: string; animationFrame: number; isMoving: boolean }): Promise<void> {
+  private async handleNPCCreated(npc: NPCVisualState): Promise<void> {
     if (!this.tileProvider) return;
 
     // Add NPC to tile provider
@@ -1187,6 +1200,9 @@ export class GameSession {
       direction: npc.direction as Direction,
       animationFrame: npc.animationFrame as AnimationFrame,
       isMoving: npc.isMoving,
+      role: npc.role,
+      activity: npc.activity,
+      primaryNeed: npc.primaryNeed,
     });
 
     // Load sprite

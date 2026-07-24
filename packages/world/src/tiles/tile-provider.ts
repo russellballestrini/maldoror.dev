@@ -1,4 +1,4 @@
-import type { Tile, Sprite, PlayerVisualState, PixelGrid, RGB, WorldDataProvider, Pixel, DirectionFrames, BuildingSprite, BuildingTile, BuildingDirection, NPCVisualState } from '@maldoror/protocol';
+import type { Tile, Sprite, PlayerVisualState, PixelGrid, RGB, WorldDataProvider, Pixel, DirectionFrames, BuildingSprite, BuildingTile, BuildingDirection, NPCVisualState, WorldLifeState } from '@maldoror/protocol';
 import { CHUNK_SIZE_TILES, BASE_SIZE, RESOLUTIONS, isPositionInBuilding, getBuildingTileIndex } from '@maldoror/protocol';
 import { BASE_TILES, getTileById, hasAITile } from './base-tiles.js';
 import { getRoadTileVariant } from './road-tiles.js';
@@ -201,6 +201,7 @@ export class TileProvider implements WorldDataProvider {
   private roads: Map<string, { x: number; y: number; placedBy: string | null }> = new Map(); // "x,y" -> road data
   private roadsByChunk: Map<string, Set<string>> = new Map(); // Spatial hash for O(1) road lookups
   private visualRevision = 0;
+  private worldLifeState: WorldLifeState | null = null;
 
   constructor(config: TileProviderConfig) {
     this.worldSeed = config.worldSeed;
@@ -211,6 +212,20 @@ export class TileProvider implements WorldDataProvider {
 
   getVisualRevision(): number {
     return this.visualRevision;
+  }
+
+  setWorldLifeState(state: WorldLifeState): void {
+    if (
+      this.worldLifeState?.worldMinute === state.worldMinute
+      && this.worldLifeState.weather === state.weather
+      && this.worldLifeState.weatherIntensity === state.weatherIntensity
+    ) return;
+    this.worldLifeState = { ...state };
+    this.markVisualChange();
+  }
+
+  getWorldLifeState(): WorldLifeState | null {
+    return this.worldLifeState ? { ...this.worldLifeState } : null;
   }
 
   private markVisualChange(): void {
@@ -1010,7 +1025,10 @@ function sameNPCState(a: NPCVisualState, b: NPCVisualState): boolean {
     a.x === b.x && a.y === b.y &&
     a.direction === b.direction &&
     a.animationFrame === b.animationFrame &&
-    a.isMoving === b.isMoving;
+    a.isMoving === b.isMoving &&
+    a.role === b.role &&
+    a.activity === b.activity &&
+    a.primaryNeed === b.primaryNeed;
 }
 
 /**

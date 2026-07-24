@@ -6,7 +6,7 @@
  */
 
 import { GameServer } from '../game/game-server.js';
-import type { PlayerInput, NPCVisualState, Sprite } from '@maldoror/protocol';
+import type { PlayerInput, NPCVisualState, Sprite, WorldLifeState } from '@maldoror/protocol';
 import type { NPCCreateData } from '../utils/npc-storage.js';
 import type { ProviderConfig } from '@maldoror/ai';
 import { WorkerSession } from './worker-session.js';
@@ -79,6 +79,11 @@ export interface GetVisibleNPCsMessage {
   y: number;
   cols: number;
   rows: number;
+}
+
+export interface GetWorldLifeStateMessage {
+  type: 'get_world_life_state';
+  requestId: string;
 }
 
 export interface GetNPCSpriteMessage {
@@ -172,6 +177,7 @@ export type MainToWorkerMessage =
   | GetAllPlayersMessage
   | BroadcastSpriteReloadMessage
   | GetVisibleNPCsMessage
+  | GetWorldLifeStateMessage
   | GetNPCSpriteMessage
   | CreateNPCMessage
   | MoveNPCMessage
@@ -230,6 +236,12 @@ export interface VisibleNPCsResponse {
   type: 'visible_npcs';
   requestId: string;
   npcs: NPCVisualState[];
+}
+
+export interface WorldLifeStateResponse {
+  type: 'world_life_state';
+  requestId: string;
+  state: WorldLifeState;
 }
 
 export interface NPCSpriteResponse {
@@ -292,6 +304,7 @@ export type WorkerToMainMessage =
   | AllPlayersResponse
   | SpriteReloadBroadcast
   | VisibleNPCsResponse
+  | WorldLifeStateResponse
   | NPCSpriteResponse
   | CreateNPCResponse
   | NPCCreatedBroadcast
@@ -473,6 +486,19 @@ process.on('message', async (msg: MainToWorkerMessage) => {
         }
         const visibleNpcs = gameServer.getVisibleNPCs(msg.x, msg.y, msg.cols, msg.rows);
         send({ type: 'visible_npcs', requestId: msg.requestId, npcs: visibleNpcs });
+        break;
+      }
+
+      case 'get_world_life_state': {
+        if (!gameServer) {
+          send({ type: 'error', message: 'Game server not initialized' });
+          break;
+        }
+        send({
+          type: 'world_life_state',
+          requestId: msg.requestId,
+          state: gameServer.getWorldLifeState(),
+        });
         break;
       }
 
