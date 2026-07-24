@@ -202,6 +202,7 @@ export class TileProvider implements WorldDataProvider {
   private roadsByChunk: Map<string, Set<string>> = new Map(); // Spatial hash for O(1) road lookups
   private visualRevision = 0;
   private worldLifeState: WorldLifeState | null = null;
+  private worldLifeVisualEpoch: string | number | null = null;
 
   constructor(config: TileProviderConfig) {
     this.worldSeed = config.worldSeed;
@@ -214,13 +215,23 @@ export class TileProvider implements WorldDataProvider {
     return this.visualRevision;
   }
 
-  setWorldLifeState(state: WorldLifeState): void {
+  setWorldLifeState(
+    state: WorldLifeState,
+    visualEpoch: string | number = state.worldMinute,
+  ): void {
     if (
       this.worldLifeState?.worldMinute === state.worldMinute
       && this.worldLifeState.weather === state.weather
       && this.worldLifeState.weatherIntensity === state.weatherIntensity
+      && this.worldLifeState.season === state.season
+      && this.worldLifeState.surfaceWetness === state.surfaceWetness
+      && this.worldLifeState.waterTurbulence === state.waterTurbulence
+      && this.worldLifeState.vegetationVitality === state.vegetationVitality
+      && this.worldLifeState.decayPressure === state.decayPressure
+      && this.worldLifeVisualEpoch === visualEpoch
     ) return;
     this.worldLifeState = { ...state };
+    this.worldLifeVisualEpoch = visualEpoch;
     this.markVisualChange();
   }
 

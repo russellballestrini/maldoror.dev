@@ -4,6 +4,10 @@ import { isPositionInBuilding } from '@maldoror/protocol';
 import { db, schema } from '@maldoror/db';
 import { NPCManager } from './npc-manager.js';
 import type { NPCCreateData } from '../utils/npc-storage.js';
+import {
+  TerminalWorldLifeProjector,
+  type TerminalWorldLifeProjection,
+} from './terminal-world-life-projector.js';
 
 interface GameServerConfig {
   worldSeed: bigint;
@@ -48,6 +52,7 @@ export class GameServer {
   private spatialIndex: SpatialIndex;
   private gameLoop: GameLoop;
   private npcManager: NPCManager;
+  private terminalWorldLifeProjector = new TerminalWorldLifeProjector();
   private players: Map<string, PlayerState> = new Map();
   private inputQueue: PlayerInput[] = [];
   private chatCallbacks: Map<string, ChatCallback> = new Map();
@@ -559,6 +564,10 @@ export class GameServer {
 
   getWorldLifeState(): WorldLifeState {
     return this.npcManager.getWorldLifeState();
+  }
+
+  getTerminalWorldLifeProjection(): TerminalWorldLifeProjection {
+    return this.terminalWorldLifeProjector.project(this.npcManager.getWorldLifeState());
   }
 
   /** Apply a conscious action to the same NPC body used by the renderer. */

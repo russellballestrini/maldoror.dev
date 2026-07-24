@@ -767,7 +767,8 @@ export class WorkerSession {
 
     // Center camera on player
     this.renderer.setCamera(this.visualPlayerX, this.visualPlayerY);
-    this.tileProvider.setWorldLifeState(this.gameServer.getWorldLifeState());
+    const worldLife = this.gameServer.getTerminalWorldLifeProjection();
+    this.tileProvider.setWorldLifeState(worldLife.state, worldLife.animationEpoch);
 
     // Render
     let output = this.renderer.renderToString(this.tileProvider);
