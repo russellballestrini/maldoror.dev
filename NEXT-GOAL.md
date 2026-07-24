@@ -449,15 +449,36 @@ Completed foundations:
   the 180-frame corridor at render p50/p95/p99 4.08/9.38/30.54 ms, event-loop
   p99 5.35 ms, import p95 4.29 ms, 756.21 MiB peak RSS, and zero misses,
   mismatches, or errors;
+- a five-method reconstruction lab now makes the dominant regional repetition
+  failure explicit. Square blending remains a quilt; stochastic hex lowers a
+  diagnostic correlation but retains wrong-scale leaves/cobbles; the
+  Laplacian candidate clips them; cellular reconstruction makes broad plaid.
+  Direct faithful review selects a separately authored far-scale tier. Its
+  six-family 3 x 2 source atlas was generated through the built-in
+  ChatGPT/Codex subscription path, retains its exact prompt and source hash
+  `66b78392...589db`, and derives six 512 px masters byte-for-byte. Detail stays
+  at a seven-world-tile frequency while regional art spans 42 world tiles; this
+  also removes the inverted two/four-tile far-zoom scale. Exact `(0,0)` walking,
+  district, and regional frames preserve near construction, simplify at the
+  middle tier, and replace the map-scale motif quilt with painterly fields;
+- the perfect circular arrival/root ring is replaced by a bounded smooth union
+  of anisotropic hub, quay, and ward components. An over-broad first tuning is
+  retained because it incorrectly captured the `(60,20)` mountain fixture; the
+  selected field passes all six deterministic family fixtures. After rejecting
+  four 192 px overview variants and global source upscaling for excessive
+  startup/RSS, the current 180-frame corridor uses one 128 px overview master
+  per family: 1.365 s startup, 6.055 s initial preparation, render
+  p50/p95/p99 4.39/9.22/26.32 ms, event-loop p99 5.60 ms, import p95 8.58 ms,
+  779.57 MiB peak RSS, and zero misses, mismatches, or worker errors;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
-  iterations 012–020 expose selected and rejected research candidates without
+  iterations 012–021 expose selected and rejected research candidates without
   claiming they are live.
 
 Still open and therefore goal-blocking:
 
 - the regional field/compositor/routes are not the live provider; predictive
-  cache transport is now a measured research seam, but the 4.62-second initial
+  cache transport is now a measured research seam, but the current 6.055-second initial
   origin corridor must move into service readiness and authoritative movement/
   camera/zoom integration, production SSH latency, the 5/10/20-presence ladder,
   30-minute run, cgroup behavior, and physical Ghostty remain unproven;

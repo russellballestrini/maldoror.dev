@@ -87,12 +87,14 @@ function createWorld() {
     worldSeed: WORLD_SEED,
     field,
     materials: biomeKit.materials,
+    overviewMaterials: biomeKit.overviewMaterials,
     routes,
     routeMaterials: routeKit.routeMaterials,
     crossingMaterials: routeKit.crossingMaterials,
     maxCachedTiles: 4096,
     variantPeriodTiles: 5,
     textureScaleTiles: 7,
+    maxOutputResolution: Math.min(biomeKit.sourceTileSize, routeKit.sourceTileSize),
   });
   const world = new RegionalWorldTileProvider({
     worldSeed: WORLD_SEED,

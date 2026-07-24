@@ -15,13 +15,15 @@ describe('regional biome material manifest', () => {
   it('loads all six authored families into shared bounded source tiles', async () => {
     const kit = await loadRegionalBiomeMaterialKit(path.resolve('assets/biomes/manifest.json'));
     expect(kit.sourceTileSize).toBe(96);
-    expect(kit.tiles).toHaveLength(24);
+    expect(kit.tiles).toHaveLength(30);
     for (const family of BIOME_FAMILIES) {
       expect(kit.materials[family]).toHaveLength(4);
+      expect(kit.overviewMaterials[family]).toHaveLength(1);
       for (const tile of kit.materials[family]) {
         expect(tile.pixels).toHaveLength(96);
         expect(tile.pixels[0]).toHaveLength(96);
       }
+      expect(kit.overviewMaterials[family].every((tile) => tile.pixels.length === 128)).toBe(true);
     }
     expect(kit.materials.coast.every((tile) => tile.material === 'water' && !tile.walkable)).toBe(true);
   });

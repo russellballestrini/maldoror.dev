@@ -1,6 +1,7 @@
 {
   "version": 1,
   "sourceTileSize": 96,
+  "samplingTextureSize": 96,
   "generation": {
     "date": "2026-07-23",
     "mode": "Codex built-in image generation on ChatGPT subscription",

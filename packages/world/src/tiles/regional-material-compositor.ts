@@ -19,10 +19,19 @@ export interface RegionalRouteSampler {
   sample(worldX: number, worldY: number): RegionalRouteSample;
 }
 
+export type RegionalTextureReconstruction =
+  | 'square-bilinear'
+  | 'hex-contrast'
+  | 'hex-laplacian'
+  | 'cellular-semantic';
+
 export interface RegionalMaterialCompositorConfig {
   worldSeed: bigint;
   field: BiomeSampler;
   materials: Readonly<Record<BiomeFamily, readonly Tile[]>>;
+  /** Separately authored broad-value materials for district/regional zoom.
+   * These are not mipmaps of walking art: their semantic detail is different. */
+  overviewMaterials?: Readonly<Record<BiomeFamily, readonly Tile[]>>;
   routes?: RegionalRouteSampler;
   routeMaterials?: Readonly<Record<RegionalRouteKind, readonly Tile[]>>;
   crossingMaterials?: Readonly<Partial<Record<RegionalCrossingKind, readonly Tile[]>>>;
@@ -31,6 +40,17 @@ export interface RegionalMaterialCompositorConfig {
   /** World-tile span of one complete source texture. Values above one prevent
    * the source master from becoming a visible stamp on every terrain tile. */
   textureScaleTiles?: number;
+  /** World span of a scale-authored overview master. It must be materially
+   * larger than walking art; mipmaps filter pixels but do not author scale. */
+  overviewTextureScaleTiles?: number;
+  overviewVariantPeriodTiles?: number;
+  /** Highest semantic raster emitted for one world tile. Authored sampling
+   * textures may be larger so walking zoom does not magnify a tiny crop. */
+  maxOutputResolution?: number;
+  /** Aperiodic reconstruction method used for every authored material. The
+   * explicit baseline remains available to research harnesses; production can
+   * select a measured candidate without changing asset or biome semantics. */
+  textureReconstruction?: RegionalTextureReconstruction;
 }
 
 interface PreparedTextureLevel {
@@ -64,13 +84,23 @@ export class RegionalMaterialCompositor {
   private readonly field: BiomeSampler;
   private readonly routes?: RegionalRouteSampler;
   private readonly materials: Readonly<Record<BiomeFamily, readonly PreparedTexture[]>>;
+  private readonly overviewMaterials?: Readonly<Record<BiomeFamily, readonly PreparedTexture[]>>;
   private readonly routeMaterials?: Readonly<Record<RegionalRouteKind, readonly PreparedTexture[]>>;
   private readonly crossingMaterials?: Readonly<Partial<Record<RegionalCrossingKind, readonly PreparedTexture[]>>>;
   private readonly maxCachedTiles: number;
   private readonly variantPeriodTiles: number;
   private readonly textureScaleTiles: number;
+  private readonly overviewTextureScaleTiles: number;
+  private readonly overviewVariantPeriodTiles: number;
+  private readonly textureReconstruction: RegionalTextureReconstruction;
   private readonly sourceSize: number;
   private readonly cache = new Map<string, Tile>();
+  private readonly triangleWeights = new Float64Array(3);
+  private readonly triangleVertices = new Int32Array(6);
+  private readonly hexSamples = new Float64Array(27);
+  private readonly cellularDistances = new Float64Array(4);
+  private readonly cellularHashes = new Uint32Array(4);
+  private readonly cellularWeights = new Float64Array(4);
 
   constructor(config: RegionalMaterialCompositorConfig) {
     this.seed32 = Number(BigInt.asUintN(32, config.worldSeed));
@@ -79,11 +109,27 @@ export class RegionalMaterialCompositor {
     this.maxCachedTiles = Math.max(8, config.maxCachedTiles ?? 128);
     this.variantPeriodTiles = Math.max(2, config.variantPeriodTiles ?? 5);
     this.textureScaleTiles = Math.max(2, config.textureScaleTiles ?? 7);
+    this.overviewTextureScaleTiles = Math.max(
+      this.textureScaleTiles * 2,
+      config.overviewTextureScaleTiles ?? 42,
+    );
+    this.overviewVariantPeriodTiles = Math.max(
+      this.variantPeriodTiles * 2,
+      config.overviewVariantPeriodTiles ?? 31,
+    );
+    this.textureReconstruction = config.textureReconstruction ?? 'square-bilinear';
     this.materials = Object.fromEntries(BIOME_FAMILIES.map((family) => {
       const sources = config.materials[family];
       if (sources.length === 0) throw new Error(`Regional material family is empty: ${family}`);
       return [family, sources.map(prepareTexture)];
     })) as unknown as Readonly<Record<BiomeFamily, readonly PreparedTexture[]>>;
+    if (config.overviewMaterials) {
+      this.overviewMaterials = Object.fromEntries(BIOME_FAMILIES.map((family) => {
+        const sources = config.overviewMaterials![family];
+        if (sources.length === 0) throw new Error(`Regional overview material family is empty: ${family}`);
+        return [family, sources.map(prepareTexture)];
+      })) as unknown as Readonly<Record<BiomeFamily, readonly PreparedTexture[]>>;
+    }
     if (Boolean(config.routes) !== Boolean(config.routeMaterials)) {
       throw new Error('Regional routes and route materials must be configured together');
     }
@@ -102,10 +148,15 @@ export class RegionalMaterialCompositor {
     }
     const prepared = [
       ...BIOME_FAMILIES.flatMap((family) => this.materials[family]),
+      ...BIOME_FAMILIES.flatMap((family) => this.overviewMaterials?.[family] ?? []),
       ...ROUTE_KINDS.flatMap((kind) => this.routeMaterials?.[kind] ?? []),
       ...Object.values(this.crossingMaterials ?? {}).flatMap((textures) => textures ?? []),
     ];
-    this.sourceSize = Math.min(...prepared.flatMap((texture) => [texture.width, texture.height]));
+    const samplingSize = Math.min(...prepared.flatMap((texture) => [texture.width, texture.height]));
+    this.sourceSize = Math.min(
+      samplingSize,
+      Math.max(1, Math.round(config.maxOutputResolution ?? samplingSize)),
+    );
     if (this.sourceSize === 0) throw new Error('Regional material textures cannot be empty');
   }
 
@@ -230,8 +281,7 @@ export class RegionalMaterialCompositor {
   }
 
   private textureScaleForResolution(resolution: number): number {
-    if (resolution <= 4) return 2;
-    if (resolution <= 8) return Math.min(4, this.textureScaleTiles);
+    void resolution;
     return this.textureScaleTiles;
   }
 
@@ -294,14 +344,17 @@ export class RegionalMaterialCompositor {
         if (ruinsOverlay > 0.001) needed.add(5);
         for (const familyIndex of needed) {
           const family = BIOME_FAMILIES[familyIndex]!;
+          const useOverview = size <= 8 && this.overviewMaterials !== undefined;
           this.sampleTextureField(
-            this.materials[family],
+            useOverview ? this.overviewMaterials![family] : this.materials[family],
             worldX,
             worldY,
             0x93d7 + familyIndex * 0x1f123,
-            textureScaleTiles,
+            useOverview ? this.overviewTextureScaleTiles : textureScaleTiles,
             size,
             textureSamples[familyIndex]!,
+            useOverview ? this.overviewVariantPeriodTiles : this.variantPeriodTiles,
+            useOverview,
           );
         }
         const firstWeight = weights[ecology[0]]!;
@@ -383,10 +436,75 @@ export class RegionalMaterialCompositor {
     textureScaleTiles: number,
     outputSize: number,
     out: Float64Array,
+    variantPeriodTiles = this.variantPeriodTiles,
+    interpolateSource = false,
+  ): void {
+    if (this.textureReconstruction === 'hex-contrast') {
+      this.sampleHexContrast(
+        textures,
+        worldX,
+        worldY,
+        salt,
+        textureScaleTiles,
+        outputSize,
+        out,
+        variantPeriodTiles,
+      );
+      return;
+    }
+    if (this.textureReconstruction === 'hex-laplacian') {
+      this.sampleHexLaplacian(
+        textures,
+        worldX,
+        worldY,
+        salt,
+        textureScaleTiles,
+        outputSize,
+        out,
+        variantPeriodTiles,
+      );
+      return;
+    }
+    if (this.textureReconstruction === 'cellular-semantic') {
+      this.sampleCellularSemantic(
+        textures,
+        worldX,
+        worldY,
+        salt,
+        textureScaleTiles,
+        outputSize,
+        out,
+        variantPeriodTiles,
+      );
+      return;
+    }
+    this.sampleSquareBilinear(
+      textures,
+      worldX,
+      worldY,
+      salt,
+      textureScaleTiles,
+      outputSize,
+      out,
+      variantPeriodTiles,
+      interpolateSource,
+    );
+  }
+
+  private sampleSquareBilinear(
+    textures: readonly PreparedTexture[],
+    worldX: number,
+    worldY: number,
+    salt: number,
+    textureScaleTiles: number,
+    outputSize: number,
+    out: Float64Array,
+    variantPeriodTiles: number,
+    interpolateSource: boolean,
   ): void {
     out.fill(0);
-    const fieldX = worldX / this.variantPeriodTiles;
-    const fieldY = worldY / this.variantPeriodTiles;
+    const fieldX = worldX / variantPeriodTiles;
+    const fieldY = worldY / variantPeriodTiles;
     const cellX = Math.floor(fieldX);
     const cellY = Math.floor(fieldY);
     const blendX = smoothstep01(fieldX - cellX);
@@ -402,19 +520,265 @@ export class RegionalMaterialCompositor {
         const scaleY = level.height / texture.height;
         const phaseX = ((hash >>> 8) % texture.width) * scaleX;
         const phaseY = ((hash >>> 17) % texture.height) * scaleY;
-        const sampleX = mirrorIndex(
-          Math.floor(worldX * level.width / textureScaleTiles + phaseX),
+        const sampleX = mirrorCoordinate(
+          worldX * level.width / textureScaleTiles + phaseX,
           level.width,
         );
-        const sampleY = mirrorIndex(
-          Math.floor(worldY * level.height / textureScaleTiles + phaseY),
+        const sampleY = mirrorCoordinate(
+          worldY * level.height / textureScaleTiles + phaseY,
           level.height,
         );
-        const index = (sampleY * level.width + sampleX) * 3;
-        out[0] = out[0]! + level.linear[index]! * weight;
-        out[1] = out[1]! + level.linear[index + 1]! * weight;
-        out[2] = out[2]! + level.linear[index + 2]! * weight;
+        const x0 = Math.floor(sampleX);
+        const y0 = Math.floor(sampleY);
+        if (!interpolateSource) {
+          const index = (y0 * level.width + x0) * 3;
+          out[0] = out[0]! + level.linear[index]! * weight;
+          out[1] = out[1]! + level.linear[index + 1]! * weight;
+          out[2] = out[2]! + level.linear[index + 2]! * weight;
+          continue;
+        }
+        const x1 = Math.min(level.width - 1, x0 + 1);
+        const y1 = Math.min(level.height - 1, y0 + 1);
+        const u = sampleX - x0;
+        const v = sampleY - y0;
+        for (let channel = 0; channel < 3; channel++) {
+          const top = lerp(
+            level.linear[(y0 * level.width + x0) * 3 + channel]!,
+            level.linear[(y0 * level.width + x1) * 3 + channel]!,
+            u,
+          );
+          const bottom = lerp(
+            level.linear[(y1 * level.width + x0) * 3 + channel]!,
+            level.linear[(y1 * level.width + x1) * 3 + channel]!,
+            u,
+          );
+          out[channel] = out[channel]! + lerp(top, bottom, v) * weight;
+        }
       }
+    }
+  }
+
+  /** Three randomized source mappings over a triangular lattice, adapted from
+   * Mikkelsen's practical real-time hex tiling. Sharpened barycentric weights
+   * retain authored features while the oblique lattice removes the square
+   * cadence of the original four-corner blend. */
+  private sampleHexContrast(
+    textures: readonly PreparedTexture[],
+    worldX: number,
+    worldY: number,
+    salt: number,
+    textureScaleTiles: number,
+    outputSize: number,
+    out: Float64Array,
+    variantPeriodTiles: number,
+  ): void {
+    triangleGrid(
+      worldX,
+      worldY,
+      variantPeriodTiles,
+      this.triangleWeights,
+      this.triangleVertices,
+    );
+    for (let vertex = 0; vertex < 3; vertex++) {
+      const vertexX = this.triangleVertices[vertex * 2]!;
+      const vertexY = this.triangleVertices[vertex * 2 + 1]!;
+      const hash = this.hash(vertexX, vertexY, salt);
+      const texture = textures[hash % textures.length]!;
+      const levelIndex = selectTextureLevelIndex(texture, outputSize, textureScaleTiles);
+      sampleMappedTexture(
+        texture,
+        levelIndex,
+        worldX,
+        worldY,
+        textureScaleTiles,
+        hash,
+        this.hexSamples,
+        vertex * 3,
+      );
+    }
+    blendHexSamples(
+      this.hexSamples,
+      0,
+      this.triangleWeights,
+      7,
+      0.6,
+      out,
+    );
+  }
+
+  /** Two-band reconstruction inspired by Laplacian texture blending. Broad
+   * colour masses use a three-times larger independently randomized field;
+   * only the fine high-pass residual repeats at the authored detail scale.
+   * Fine weights are sharpened, so local stones, leaves, and brush marks do
+   * not dissolve into the ghosted average produced by ordinary blending. */
+  private sampleHexLaplacian(
+    textures: readonly PreparedTexture[],
+    worldX: number,
+    worldY: number,
+    salt: number,
+    textureScaleTiles: number,
+    outputSize: number,
+    out: Float64Array,
+    variantPeriodTiles: number,
+  ): void {
+    const broadScale = textureScaleTiles * 3;
+    triangleGrid(
+      worldX,
+      worldY,
+      variantPeriodTiles * 3,
+      this.triangleWeights,
+      this.triangleVertices,
+    );
+    for (let vertex = 0; vertex < 3; vertex++) {
+      const vertexX = this.triangleVertices[vertex * 2]!;
+      const vertexY = this.triangleVertices[vertex * 2 + 1]!;
+      const hash = this.hash(vertexX, vertexY, salt ^ 0x62f39a17);
+      const texture = textures[hash % textures.length]!;
+      const selected = selectTextureLevelIndex(texture, outputSize, broadScale);
+      const broadLevel = Math.min(texture.levels.length - 1, selected + 2);
+      sampleMappedTexture(
+        texture,
+        broadLevel,
+        worldX,
+        worldY,
+        broadScale,
+        hash,
+        this.hexSamples,
+        vertex * 3,
+      );
+    }
+    blendHexSamples(
+      this.hexSamples,
+      0,
+      this.triangleWeights,
+      2,
+      0,
+      out,
+    );
+
+    triangleGrid(
+      worldX,
+      worldY,
+      variantPeriodTiles,
+      this.triangleWeights,
+      this.triangleVertices,
+    );
+    for (let vertex = 0; vertex < 3; vertex++) {
+      const vertexX = this.triangleVertices[vertex * 2]!;
+      const vertexY = this.triangleVertices[vertex * 2 + 1]!;
+      const hash = this.hash(vertexX, vertexY, salt ^ 0x39d17b5d);
+      const texture = textures[hash % textures.length]!;
+      const fineLevel = selectTextureLevelIndex(texture, outputSize, textureScaleTiles);
+      const coarseLevel = Math.min(texture.levels.length - 1, fineLevel + 2);
+      sampleMappedTexture(
+        texture,
+        fineLevel,
+        worldX,
+        worldY,
+        textureScaleTiles,
+        hash,
+        this.hexSamples,
+        9 + vertex * 3,
+      );
+      sampleMappedTexture(
+        texture,
+        coarseLevel,
+        worldX,
+        worldY,
+        textureScaleTiles,
+        hash,
+        this.hexSamples,
+        18 + vertex * 3,
+      );
+      for (let channel = 0; channel < 3; channel++) {
+        this.hexSamples[9 + vertex * 3 + channel] =
+          this.hexSamples[9 + vertex * 3 + channel]! -
+          this.hexSamples[18 + vertex * 3 + channel]!;
+      }
+    }
+    const detail = this.hexSamples.subarray(0, 3);
+    blendHexSamples(
+      this.hexSamples,
+      9,
+      this.triangleWeights,
+      7,
+      0,
+      detail,
+    );
+    out[0] = out[0]! + detail[0]!;
+    out[1] = out[1]! + detail[1]!;
+    out[2] = out[2]! + detail[2]!;
+  }
+
+  /** Four nearest sites from a coordinate-stable jittered lattice provide an
+   * irregular patch neighborhood without square or hex boundaries. District
+   * zoom adds two mip levels and regional zoom adds one: foliage, pebbles, and
+   * grout remain authored at walking scale but become broad material value and
+   * hue at map scale instead of aliasing into decorative tapestry. */
+  private sampleCellularSemantic(
+    textures: readonly PreparedTexture[],
+    worldX: number,
+    worldY: number,
+    salt: number,
+    textureScaleTiles: number,
+    outputSize: number,
+    out: Float64Array,
+    variantPeriodTiles: number,
+  ): void {
+    const cellSpan = variantPeriodTiles * 2;
+    const cellX = Math.floor(worldX / cellSpan);
+    const cellY = Math.floor(worldY / cellSpan);
+    this.cellularDistances.fill(Number.POSITIVE_INFINITY);
+    this.cellularHashes.fill(0);
+    for (let offsetY = -1; offsetY <= 1; offsetY++) {
+      for (let offsetX = -1; offsetX <= 1; offsetX++) {
+        const candidateX = cellX + offsetX;
+        const candidateY = cellY + offsetY;
+        const hash = this.hash(candidateX, candidateY, salt ^ 0x7f4a7c15);
+        const jitterX = 0.14 + (hash & 0xffff) / 0xffff * 0.72;
+        const jitterY = 0.14 + (hash >>> 16) / 0xffff * 0.72;
+        const siteX = (candidateX + jitterX) * cellSpan;
+        const siteY = (candidateY + jitterY) * cellSpan;
+        const distance = ((worldX - siteX) ** 2 + (worldY - siteY) ** 2) /
+          (cellSpan * cellSpan);
+        for (let rank = 0; rank < 4; rank++) {
+          if (distance >= this.cellularDistances[rank]!) continue;
+          for (let shift = 3; shift > rank; shift--) {
+            this.cellularDistances[shift] = this.cellularDistances[shift - 1]!;
+            this.cellularHashes[shift] = this.cellularHashes[shift - 1]!;
+          }
+          this.cellularDistances[rank] = distance;
+          this.cellularHashes[rank] = hash;
+          break;
+        }
+      }
+    }
+    const lodBias = outputSize <= 4 ? 2 : outputSize <= 8 ? 1 : 0;
+    let total = 0;
+    for (let rank = 0; rank < 4; rank++) {
+      const hash = this.cellularHashes[rank]!;
+      const texture = textures[hash % textures.length]!;
+      const selected = selectTextureLevelIndex(texture, outputSize, textureScaleTiles);
+      sampleMappedTexture(
+        texture,
+        Math.min(texture.levels.length - 1, selected + lodBias),
+        worldX,
+        worldY,
+        textureScaleTiles,
+        hash,
+        this.hexSamples,
+        rank * 3,
+      );
+      const weight = 1 / Math.pow(0.16 + this.cellularDistances[rank]!, 2.4);
+      this.cellularWeights[rank] = weight;
+      total += weight;
+    }
+    out.fill(0);
+    for (let rank = 0; rank < 4; rank++) {
+      const weight = this.cellularWeights[rank]! / Math.max(1e-12, total);
+      out[0] = out[0]! + this.hexSamples[rank * 3]! * weight;
+      out[1] = out[1]! + this.hexSamples[rank * 3 + 1]! * weight;
+      out[2] = out[2]! + this.hexSamples[rank * 3 + 2]! * weight;
     }
   }
 
@@ -533,20 +897,133 @@ function selectTextureLevel(
   outputSize: number,
   textureScaleTiles: number,
 ): PreparedTextureLevel {
+  return texture.levels[selectTextureLevelIndex(texture, outputSize, textureScaleTiles)]!;
+}
+
+function selectTextureLevelIndex(
+  texture: PreparedTexture,
+  outputSize: number,
+  textureScaleTiles: number,
+): number {
   const texelsPerOutputPixel = Math.max(texture.width, texture.height) /
     Math.max(1, outputSize * textureScaleTiles);
-  const levelIndex = Math.max(0, Math.min(
+  return Math.max(0, Math.min(
     texture.levels.length - 1,
     Math.round(Math.log2(Math.max(1, texelsPerOutputPixel))),
   ));
-  return texture.levels[levelIndex]!;
+}
+
+function triangleGrid(
+  worldX: number,
+  worldY: number,
+  cellSpan: number,
+  weights: Float64Array,
+  vertices: Int32Array,
+): void {
+  const skewedX = worldX / cellSpan - worldY / (Math.sqrt(3) * cellSpan);
+  const skewedY = worldY * 2 / (Math.sqrt(3) * cellSpan);
+  const baseX = Math.floor(skewedX);
+  const baseY = Math.floor(skewedY);
+  const fractionX = skewedX - baseX;
+  const fractionY = skewedY - baseY;
+  const third = 1 - fractionX - fractionY;
+  const upper = third <= 0 ? 1 : 0;
+  const sign = upper * 2 - 1;
+  weights[0] = -third * sign;
+  weights[1] = upper - fractionY * sign;
+  weights[2] = upper - fractionX * sign;
+  vertices[0] = baseX + upper;
+  vertices[1] = baseY + upper;
+  vertices[2] = baseX + upper;
+  vertices[3] = baseY + 1 - upper;
+  vertices[4] = baseX + 1 - upper;
+  vertices[5] = baseY + upper;
+}
+
+function sampleMappedTexture(
+  texture: PreparedTexture,
+  levelIndex: number,
+  worldX: number,
+  worldY: number,
+  textureScaleTiles: number,
+  hash: number,
+  output: Float64Array,
+  outputOffset: number,
+): void {
+  const level = texture.levels[levelIndex]!;
+  let mappedX = worldX * texture.width / textureScaleTiles;
+  let mappedY = worldY * texture.height / textureScaleTiles;
+  switch ((hash >>> 27) & 7) {
+    case 1: [mappedX, mappedY] = [-mappedY, mappedX]; break;
+    case 2: [mappedX, mappedY] = [-mappedX, -mappedY]; break;
+    case 3: [mappedX, mappedY] = [mappedY, -mappedX]; break;
+    case 4: mappedX = -mappedX; break;
+    case 5: mappedY = -mappedY; break;
+    case 6: [mappedX, mappedY] = [mappedY, mappedX]; break;
+    case 7: [mappedX, mappedY] = [-mappedY, -mappedX]; break;
+  }
+  const scaleX = level.width / texture.width;
+  const scaleY = level.height / texture.height;
+  const phaseX = ((hash >>> 7) % texture.width) * scaleX;
+  const phaseY = ((hash >>> 16) % texture.height) * scaleY;
+  const sourceX = mirrorCoordinate(mappedX * scaleX + phaseX, level.width);
+  const sourceY = mirrorCoordinate(mappedY * scaleY + phaseY, level.height);
+  const x0 = Math.floor(sourceX);
+  const y0 = Math.floor(sourceY);
+  const x1 = Math.min(level.width - 1, x0 + 1);
+  const y1 = Math.min(level.height - 1, y0 + 1);
+  const u = sourceX - x0;
+  const v = sourceY - y0;
+  for (let channel = 0; channel < 3; channel++) {
+    const top = lerp(
+      level.linear[(y0 * level.width + x0) * 3 + channel]!,
+      level.linear[(y0 * level.width + x1) * 3 + channel]!,
+      u,
+    );
+    const bottom = lerp(
+      level.linear[(y1 * level.width + x0) * 3 + channel]!,
+      level.linear[(y1 * level.width + x1) * 3 + channel]!,
+      u,
+    );
+    output[outputOffset + channel] = lerp(top, bottom, v);
+  }
+}
+
+function blendHexSamples(
+  samples: Float64Array,
+  sampleOffset: number,
+  barycentric: Float64Array,
+  exponent: number,
+  luminanceInfluence: number,
+  output: Float64Array,
+): void {
+  let total = 0;
+  const weights = [0, 0, 0];
+  for (let vertex = 0; vertex < 3; vertex++) {
+    const offset = sampleOffset + vertex * 3;
+    const luminance = samples[offset]! * 0.2126 +
+      samples[offset + 1]! * 0.7152 + samples[offset + 2]! * 0.0722;
+    const contrast = 1 - luminanceInfluence + luminance * luminanceInfluence;
+    const weight = Math.pow(Math.max(0, barycentric[vertex]!), exponent) * contrast;
+    weights[vertex] = weight;
+    total += weight;
+  }
+  output.fill(0);
+  const normalizer = 1 / Math.max(1e-12, total);
+  for (let vertex = 0; vertex < 3; vertex++) {
+    const weight = weights[vertex]! * normalizer;
+    const offset = sampleOffset + vertex * 3;
+    output[0] = output[0]! + samples[offset]! * weight;
+    output[1] = output[1]! + samples[offset + 1]! * weight;
+    output[2] = output[2]! + samples[offset + 2]! * weight;
+  }
 }
 
 function bilerp(a: number, b: number, c: number, d: number, u: number, v: number): number {
   return lerp(lerp(a, b, u), lerp(c, d, u), v);
 }
 
-function mirrorIndex(value: number, size: number): number {
+function mirrorCoordinate(value: number, size: number): number {
   if (size <= 1) return 0;
   const period = (size - 1) * 2;
   const wrapped = ((value % period) + period) % period;

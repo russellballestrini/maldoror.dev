@@ -339,7 +339,18 @@ export class BiomeWorldField {
           this.noise01(this.ancientRidgeNoise, worldX, worldY) * 0.32;
         const temperate = gaussian(temperature, 0.58, 0.23);
         const shoreBand = gaussian(distance, 5.4, 5.1);
-        const arrival = 1 - smoothstep(18, 46, Math.hypot(worldX, worldY));
+        // The exact origin is a composed arrival district, not a radial paint
+        // stamp. Three overlapping anisotropic lobes imply a hub, quay, and
+        // ward aligned to different travel axes; their smooth union has no
+        // circular cutoff for overview art to expose as a "root ring".
+        let arrival = 0;
+        if (Math.abs(worldX) <= 96 && Math.abs(worldY) <= 96) {
+          const arrivalHub = orientedGaussian(worldX, worldY, 0, 0, 18, 12, 0.28);
+          const arrivalQuay = orientedGaussian(worldX, worldY, 10, -7, 36, 7, -0.48) * 0.82;
+          const arrivalWard = orientedGaussian(worldX, worldY, -9, 11, 11, 29, 0.76) * 0.76;
+          const arrivalUnion = 1 - (1 - arrivalHub) * (1 - arrivalQuay) * (1 - arrivalWard);
+          arrival = Math.pow(arrivalUnion, 2.4);
+        }
         const raw = [
           accessibility * shoreBand * smoothstep(0.47, 0.70, settlementField) * temperate * 2.28 + arrival * 8,
           dryLand * smoothstep(0.34, 0.69, moisture) * temperate *
@@ -562,6 +573,24 @@ function segmentDistance(px: number, py: number, x0: number, y0: number, x1: num
 
 function gaussian(value: number, centre: number, spread: number): number {
   return Math.exp(-((value - centre) ** 2) / (2 * spread ** 2));
+}
+
+function orientedGaussian(
+  x: number,
+  y: number,
+  centreX: number,
+  centreY: number,
+  spreadX: number,
+  spreadY: number,
+  angle: number,
+): number {
+  const translatedX = x - centreX;
+  const translatedY = y - centreY;
+  const cosine = Math.cos(angle);
+  const sine = Math.sin(angle);
+  const localX = translatedX * cosine - translatedY * sine;
+  const localY = translatedX * sine + translatedY * cosine;
+  return Math.exp(-0.5 * ((localX / spreadX) ** 2 + (localY / spreadY) ** 2));
 }
 
 function smoothstep(low: number, high: number, value: number): number {

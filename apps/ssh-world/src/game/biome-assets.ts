@@ -22,6 +22,7 @@ export interface RegionalBiomeMaterialKit {
   sourceTileSize: number;
   tiles: Tile[];
   materials: Record<BiomeFamily, Tile[]>;
+  overviewMaterials: Record<BiomeFamily, Tile[]>;
 }
 
 export interface RegionalRouteMaterialKit {
@@ -87,6 +88,8 @@ interface BaseMaterialEntry {
 
 interface MaterialEntry extends BaseMaterialEntry {
   family: BiomeFamily;
+  overviewFile: string;
+  overviewVariants: number;
 }
 
 interface RouteMaterialEntry extends BaseMaterialEntry {
@@ -159,6 +162,14 @@ export async function loadRegionalBiomeMaterialKit(manifestPath: string): Promis
   if (sourceTileSize < 16 || sourceTileSize > 256) {
     throw new Error(`Regional biome sourceTileSize is outside 16..256: ${sourceTileSize}`);
   }
+  const samplingTextureSize = parseSamplingTextureSize(raw, sourceTileSize, absoluteManifest);
+  const overviewSamplingTextureSize = parseNamedTextureSize(
+    raw,
+    'overviewSamplingTextureSize',
+    sourceTileSize,
+    samplingTextureSize,
+    absoluteManifest,
+  );
   const entries = raw.materialMasters.map((value, index) => parseEntry(value, index));
   const families = new Set(entries.map((entry) => entry.family));
   for (const family of BIOME_FAMILIES) {
@@ -174,14 +185,30 @@ export async function loadRegionalBiomeMaterialKit(manifestPath: string): Promis
     mountain: [],
     ruins: [],
   };
+  const overviewMaterials: Record<BiomeFamily, Tile[]> = {
+    'canal-town': [],
+    forest: [],
+    coast: [],
+    rural: [],
+    mountain: [],
+    ruins: [],
+  };
   const tiles: Tile[] = [];
   for (const entry of entries) {
     const imagePath = resolveAssetPath(manifestDirectory, entry.file);
-    const variants = await loadTerrainMasterVariants(imagePath, sourceTileSize, entry);
+    const variants = await loadTerrainMasterVariants(imagePath, samplingTextureSize, entry);
+    const overviewPath = resolveAssetPath(manifestDirectory, entry.overviewFile);
+    const overviewVariants = await loadTerrainMasterVariants(overviewPath, overviewSamplingTextureSize, {
+      ...entry,
+      id: `${entry.id}-overview`,
+      file: entry.overviewFile,
+      variants: entry.overviewVariants,
+    });
     materials[entry.family].push(...variants);
-    tiles.push(...variants);
+    overviewMaterials[entry.family].push(...overviewVariants);
+    tiles.push(...variants, ...overviewVariants);
   }
-  return { manifestPath: absoluteManifest, sourceTileSize, tiles, materials };
+  return { manifestPath: absoluteManifest, sourceTileSize, tiles, materials, overviewMaterials };
 }
 
 /** Load authored route surfaces from explicit route/crossing semantics. */
@@ -197,6 +224,7 @@ export async function loadRegionalRouteMaterialKit(manifestPath: string): Promis
   if (sourceTileSize < 16 || sourceTileSize > 256) {
     throw new Error(`Regional route sourceTileSize is outside 16..256: ${sourceTileSize}`);
   }
+  const samplingTextureSize = parseSamplingTextureSize(raw, sourceTileSize, absoluteManifest);
   const routeEntries = raw.routeMaterialMasters.map((value, index) =>
     parseRouteEntry(value, index, 'route'));
   const crossingEntries = raw.crossingMaterialMasters.map((value, index) =>
@@ -216,7 +244,7 @@ export async function loadRegionalRouteMaterialKit(manifestPath: string): Promis
   const tiles: Tile[] = [];
   for (const entry of [...routeEntries, ...crossingEntries]) {
     const imagePath = resolveAssetPath(manifestDirectory, entry.file);
-    const variants = await loadTerrainMasterVariants(imagePath, sourceTileSize, entry);
+    const variants = await loadTerrainMasterVariants(imagePath, samplingTextureSize, entry);
     if (entry.routeKind) routeMaterials[entry.routeKind].push(...variants);
     if (entry.crossingKind) crossingMaterials[entry.crossingKind] = variants;
     tiles.push(...variants);
@@ -494,6 +522,9 @@ function parseEntry(value: unknown, index: number): MaterialEntry {
       !BIOME_FAMILIES.includes(value.family as BiomeFamily) ||
       typeof value.id !== 'string' || value.id.length === 0 ||
       typeof value.file !== 'string' || value.file.length === 0 ||
+      typeof value.overviewFile !== 'string' || value.overviewFile.length === 0 ||
+      !Number.isInteger(value.overviewVariants) || Number(value.overviewVariants) < 1 ||
+      Number(value.overviewVariants) > 4 ||
       !Number.isInteger(value.variants) || Number(value.variants) < 1 || Number(value.variants) > 16 ||
       typeof value.walkable !== 'boolean') {
     throw new Error(`Invalid regional material entry at index ${index}`);
@@ -506,6 +537,8 @@ function parseEntry(value: unknown, index: number): MaterialEntry {
     family: value.family as BiomeFamily,
     id: value.id,
     file: value.file,
+    overviewFile: value.overviewFile,
+    overviewVariants: Number(value.overviewVariants),
     variants: Number(value.variants),
     walkable: value.walkable,
     material: material as Tile['material'],
@@ -722,6 +755,32 @@ async function loadTerrainMasterVariants(
     });
   }
   return variants;
+}
+
+function parseSamplingTextureSize(
+  manifest: Record<string, unknown>,
+  sourceTileSize: number,
+  manifestPath: string,
+): number {
+  const value = manifest.samplingTextureSize ?? sourceTileSize;
+  if (!Number.isInteger(value) || Number(value) < sourceTileSize || Number(value) > 512) {
+    throw new Error(`Regional samplingTextureSize is outside ${sourceTileSize}..512: ${manifestPath}`);
+  }
+  return Number(value);
+}
+
+function parseNamedTextureSize(
+  manifest: Record<string, unknown>,
+  key: string,
+  minimum: number,
+  fallback: number,
+  manifestPath: string,
+): number {
+  const value = manifest[key] ?? fallback;
+  if (!Number.isInteger(value) || Number(value) < minimum || Number(value) > 512) {
+    throw new Error(`Regional ${key} is outside ${minimum}..512: ${manifestPath}`);
+  }
+  return Number(value);
 }
 
 const REGIONAL_SPRITE_CACHE = new Map<string, Promise<BuildingSprite>>();

@@ -11,6 +11,7 @@ import {
   RegionalMaterialCompositor,
   type BiomeSampler,
   type RegionalRouteSampler,
+  type RegionalTextureReconstruction,
 } from '../tiles/regional-material-compositor.js';
 
 const COLOURS: Record<BiomeFamily, RGB> = {
@@ -199,5 +200,45 @@ describe('RegionalMaterialCompositor', () => {
     expect(overview.pixels[0]).toHaveLength(4);
     expect(animatedZoomA.pixels).toHaveLength(8);
     expect(animatedZoomB).toBe(animatedZoomA);
+  });
+
+  it('keeps all reconstruction candidates deterministic and caps output below sampling resolution', () => {
+    const patterned = (family: BiomeFamily): Tile => {
+      const pixels = Array.from({ length: 32 }, (_, y) => Array.from({ length: 32 }, (_, x) => ({
+        r: (x * 7 + y * 3 + COLOURS[family].r) % 256,
+        g: (x * 2 + y * 11 + COLOURS[family].g) % 256,
+        b: (x * 13 + y * 5 + COLOURS[family].b) % 256,
+      })));
+      return { id: family, name: family, walkable: true, pixels, resolutions: { '32': pixels } };
+    };
+    const signatures = new Set<string>();
+    for (const textureReconstruction of [
+      'square-bilinear',
+      'hex-contrast',
+      'hex-laplacian',
+      'cellular-semantic',
+    ] satisfies RegionalTextureReconstruction[]) {
+      const create = () => new RegionalMaterialCompositor({
+        worldSeed: 42n,
+        field: { sample: () => sample([0, 1, 0, 0, 0, 0]) },
+        materials: Object.fromEntries(BIOME_FAMILIES.map((family) => [
+          family,
+          [patterned(family)],
+        ])) as Record<BiomeFamily, Tile[]>,
+        maxOutputResolution: 8,
+        textureReconstruction,
+      });
+      const first = create();
+      const second = create();
+      const tile = first.getTile(17, -9);
+      expect(tile.pixels).toHaveLength(8);
+      expect(tile).toEqual(second.getTile(17, -9));
+      expect(tile.pixels.flat().every((pixel) =>
+        pixel !== null && Number.isInteger(pixel.r) &&
+        Number.isInteger(pixel.g) && Number.isInteger(pixel.b)))
+        .toBe(true);
+      signatures.add(JSON.stringify(tile.pixels));
+    }
+    expect(signatures.size).toBe(4);
   });
 });

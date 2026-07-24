@@ -26,6 +26,14 @@ const MATERIAL_FILES = {
   mountain: 'assets/biomes/materials/mountain-highland-master-v1.png',
   ruins: 'assets/biomes/materials/ancient-ruins-master-v1.png',
 };
+const OVERVIEW_MATERIAL_FILES = {
+  'canal-town': 'assets/biomes/overview-materials/canal-town-overview-master-v1.png',
+  forest: 'assets/biomes/overview-materials/forest-overview-master-v1.png',
+  coast: 'assets/biomes/overview-materials/coast-overview-master-v1.png',
+  rural: 'assets/biomes/overview-materials/rural-overview-master-v1.png',
+  mountain: 'assets/biomes/overview-materials/mountain-overview-master-v1.png',
+  ruins: 'assets/biomes/overview-materials/ruins-overview-master-v1.png',
+};
 const ROUTE_MATERIAL_FILES = {
   arterial: 'assets/routes/materials/arterial-stone-master-v1.png',
   'local-road': 'assets/routes/materials/local-earth-master-v1.png',
@@ -47,15 +55,17 @@ if (FRAMES.length === 0) throw new Error(`Unknown regional material frame: ${FRA
 
 fs.mkdirSync(OUTPUT, { recursive: true });
 
-async function loadTiles(family, file) {
+async function loadTiles(family, file, variants = 4) {
   const metadata = await sharp(file).metadata();
-  const cropWidth = Math.floor(metadata.width / 2);
-  const cropHeight = Math.floor(metadata.height / 2);
-  return Promise.all(Array.from({ length: 4 }, async (_, variant) => {
+  const columns = variants === 1 ? 1 : 2;
+  const rows = variants === 1 ? 1 : 2;
+  const cropWidth = Math.floor(metadata.width / columns);
+  const cropHeight = Math.floor(metadata.height / rows);
+  return Promise.all(Array.from({ length: variants }, async (_, variant) => {
     const { data, info } = await sharp(file)
       .extract({
-        left: (variant % 2) * cropWidth,
-        top: Math.floor(variant / 2) * cropHeight,
+        left: (variant % columns) * cropWidth,
+        top: Math.floor(variant / columns) * cropHeight,
         width: cropWidth,
         height: cropHeight,
       })
@@ -81,6 +91,10 @@ async function loadTiles(family, file) {
 const materials = Object.fromEntries(await Promise.all(BIOME_FAMILIES.map(async (family) => [
   family,
   await loadTiles(family, MATERIAL_FILES[family]),
+])));
+const overviewMaterials = Object.fromEntries(await Promise.all(BIOME_FAMILIES.map(async (family) => [
+  family,
+  await loadTiles(`${family}:overview`, OVERVIEW_MATERIAL_FILES[family], 1),
 ])));
 const routeMaterials = Object.fromEntries(await Promise.all(Object.entries(ROUTE_MATERIAL_FILES).map(async ([kind, file]) => [
   kind,
@@ -126,12 +140,14 @@ function renderFrame(frame) {
     worldSeed: WORLD_SEED,
     field,
     materials,
+    overviewMaterials,
     routes,
     routeMaterials,
     crossingMaterials,
     maxCachedTiles: 256,
     variantPeriodTiles: 5,
     textureScaleTiles: 7,
+    maxOutputResolution: SOURCE_TILE_SIZE,
   });
   const colours = new Uint8Array(WIDTH * HEIGHT * 3);
   const tilesWide = Math.ceil(WIDTH / frame.displayTileSize);
