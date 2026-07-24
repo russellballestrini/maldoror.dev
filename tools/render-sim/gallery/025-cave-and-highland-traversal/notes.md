@@ -1,0 +1,5 @@
+# 025-cave-and-highland-traversal
+
+2026-07-24T07:00:38.551Z
+
+RESEARCH CANDIDATE — NOT LIVE. Decorative mountain contacts now expand into physical, route-connected terrain programs. The selected real cave has a smoothed main tunnel, upstream side branch, two unequal irregular chambers, 70 connected walkable floor cells, 75 solid wall cells, cool cracked/pebbled material, and zero route/dryness/material/collision mismatches. The real highland route gains 0.11118 elevation through three long smoothed switchbacks, with a 1.3543 path/direct ratio, 39 connected walkable cells, and zero mismatches. The geometric black keyhole is retained as a visual reject; later blurred, brown-road, paired-circle, and flat-floor candidates remain in the mounted research record. Three independent 180-frame 160x46 traversals kept zero misses/mismatches/errors; cold lead was 6.246/7.051/6.434 seconds and render p99 was 26.42/54.62/34.67 ms, so service readiness remains open. No metered image or text API was used; existing silhouette provenance remains built-in Codex/ChatGPT subscription. Production remains vea2e691 and physical Ghostty acceptance is still unproven.

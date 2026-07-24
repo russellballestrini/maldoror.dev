@@ -143,6 +143,10 @@ describe('regional biome material manifest', () => {
     expect(kit.assets).toHaveLength(8);
     expect(new Set(kit.assets.flatMap((asset) => asset.families)))
       .toEqual(new Set(['coast', 'mountain']));
+    expect(kit.assets.find((asset) => asset.program === 'cave-interior')?.id)
+      .toBe('mountain-cave-mouth-environment-contact-v1');
+    expect(kit.assets.find((asset) => asset.program === 'highland-ascent')?.id)
+      .toBe('mountain-way-shrine-environment-contact-v1');
     for (const asset of kit.assets) {
       expect(asset.role).toBe('environment-contact');
       expect(asset.sprite.width).toBe(6);

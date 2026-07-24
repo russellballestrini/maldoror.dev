@@ -524,9 +524,25 @@ Completed foundations:
   `regional-waterfront-v10-blended-canal/FINDINGS.md`; public gallery iteration
   024 exposes the rejected outline and selected regional/district frames;
   production is unchanged;
+- geography-bound mountain contacts can now become physical traversal programs
+  instead of decorative silhouettes. The selected real cave connects a route
+  through its authored mouth to a smoothed main tunnel, an upstream branch, two
+  unequal radially distorted chambers, 70 connected walkable cells, and 75
+  solid rock-wall cells; material/collision/dryness coverage is 100%. The real
+  highland route gains 0.11118 elevation through three long smoothed
+  switchbacks at a 1.3543 path/direct ratio, with 39 connected walkable cells
+  and 100% material/collision agreement. Seven visual/physical intermediates
+  remain retained: hard circular cutaways, a four-neighbour diagonal gap,
+  unreadable blur, brown road-like interiors, paired-circle chambers, and a
+  flat-floor pass were all rejected before the selected cool cracked/pebbled
+  cutaway. Full evidence and primary-source deductions are in
+  `regional-environment-programs-v8-textured-cave/FINDINGS.md`. Three
+  independent 180-frame repeats retained zero misses/mismatches/errors, but
+  their 6.246/7.051/6.434-second cold leads and 26.42/54.62/34.67 ms render
+  p99s keep service readiness open. Production is unchanged;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
-  iterations 012–023 expose selected and rejected research candidates without
+  iterations 012–025 expose selected and rejected research candidates without
   claiming they are live.
 
 Still open and therefore goal-blocking:
@@ -540,9 +556,9 @@ Still open and therefore goal-blocking:
   compounds are still sparse research prototypes rather than a complete world
   layer; coast-specific waterfront diversity, larger squares/commons, far
   greater travel-scale entropy, authoritative traversal, stronger landmark
-  framing, cave interiors, climbable highlands, tidal/open-water/boat/island
-  interactions, and environmental consequences remain before the family layer
-  is production-complete;
+  framing, multiple cave/highland programs and production cave transitions,
+  tidal/open-water/boat/island interactions, and environmental consequences
+  remain before the family layer is production-complete;
 - the complete Phase-0 diagnostic comparison and operator direction approval
   have not passed;
 - schedules, needs, relationships, memories, environmental systems, persistent

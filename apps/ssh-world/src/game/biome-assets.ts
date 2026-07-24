@@ -7,6 +7,7 @@ import {
   type RegionalAmbientAsset,
   type RegionalEnvironmentConstraints,
   type RegionalEnvironmentContactAsset,
+  type RegionalEnvironmentProgramKind,
   type RegionalLandmarkAsset,
   type RegionalParcelComponentAsset,
   type RegionalParcelProgram,
@@ -145,6 +146,7 @@ interface EnvironmentContactEntry {
   spriteTiles: [number, number];
   collision: Array<[number, number]>;
   constraints: RegionalEnvironmentConstraints;
+  program?: RegionalEnvironmentProgramKind;
 }
 
 const ROUTE_KINDS: readonly RegionalRouteKind[] = ['trail', 'local-road', 'arterial'];
@@ -158,6 +160,10 @@ const WATERFRONT_FUNCTIONS: readonly RegionalWaterfrontFunction[] = [
   'market',
   'shelter',
   'workshop',
+];
+const ENVIRONMENT_PROGRAMS: readonly RegionalEnvironmentProgramKind[] = [
+  'cave-interior',
+  'highland-ascent',
 ];
 
 /** Load the authored six-family manifest without inferring semantics from file
@@ -512,6 +518,7 @@ export async function loadRegionalEnvironmentContactKit(
       families: entry.families,
       role: entry.role,
       constraints: entry.constraints,
+      program: entry.program,
       collision: entry.collision,
       sprite: await loadRegionalSprite(
         resolveAssetPath(manifestDirectory, entry.file),
@@ -688,6 +695,8 @@ function parseEnvironmentContactEntry(value: unknown, index: number): Environmen
       !Array.isArray(value.collision) || value.collision.length === 0 ||
       !value.collision.every(isCollisionOffset) ||
       typeof value.scale !== 'number' || value.scale < 0.2 || value.scale > 1 ||
+      (value.program !== undefined &&
+        !ENVIRONMENT_PROGRAMS.includes(value.program as RegionalEnvironmentProgramKind)) ||
       !isRecord(value.constraints)) {
     throw new Error(`Invalid regional environment-contact entry at index ${index}`);
   }
@@ -717,6 +726,7 @@ function parseEnvironmentContactEntry(value: unknown, index: number): Environmen
       routeDistance: constraints.routeDistance as [number, number],
       nearbyWaterRadius: Number(constraints.nearbyWaterRadius),
     },
+    program: value.program as RegionalEnvironmentProgramKind | undefined,
   };
 }
 

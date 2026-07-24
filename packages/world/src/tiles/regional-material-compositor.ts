@@ -22,6 +22,10 @@ import {
   sampleRegionalWaterfrontLayout,
   type RegionalWaterfrontLayout,
 } from './regional-waterfront-layout.js';
+import {
+  sampleRegionalEnvironmentProgramLayout,
+  type RegionalEnvironmentProgramLayout,
+} from './regional-environment-program-layout.js';
 
 export interface BiomeSampler {
   sample(worldX: number, worldY: number): BiomeWorldSample;
@@ -572,6 +576,137 @@ export class RegionalMaterialCompositor {
         centre.apronWeight,
         centre.workYardWeight,
         centre.pierWeight,
+      ) > 0.08,
+      resolutions: { [String(resolution)]: pixels },
+    };
+    this.cache.set(key, tile);
+    while (this.cache.size > this.maxCachedTiles) {
+      const oldest = this.cache.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.cache.delete(oldest);
+    }
+    return tile;
+  }
+
+  /** Reconstruct traversable terrain programs without a painted background.
+   * Trails borrow the local route material; cave floors and rock boundaries
+   * transform the already blended terrain in linear light. */
+  getEnvironmentProgramGroundTile(
+    tileX: number,
+    tileY: number,
+    layout: RegionalEnvironmentProgramLayout,
+    routeKind: RegionalRouteKind,
+  ): Tile {
+    return this.getEnvironmentProgramGroundTileAtResolution(
+      tileX,
+      tileY,
+      this.sourceSize,
+      layout,
+      routeKind,
+    );
+  }
+
+  getEnvironmentProgramGroundTileAtResolution(
+    tileX: number,
+    tileY: number,
+    requestedResolution: number,
+    layout: RegionalEnvironmentProgramLayout,
+    routeKind: RegionalRouteKind,
+  ): Tile {
+    const resolution = this.selectResolution(requestedResolution);
+    const key = `environment-program:${layout.id}:${tileX},${tileY}@${resolution}:${routeKind}`;
+    const cached = this.cache.get(key);
+    if (cached) {
+      this.cache.delete(key);
+      this.cache.set(key, cached);
+      return cached;
+    }
+    const base = this.getTileAtResolution(tileX, tileY, resolution);
+    const routeTexture = new Float64Array(3);
+    const textureScaleTiles = this.textureScaleForResolution(resolution);
+    const pixels: PixelGrid = [];
+    for (let y = 0; y < resolution; y++) {
+      const row: RGB[] = [];
+      for (let x = 0; x < resolution; x++) {
+        const worldX = tileX + (x + 0.5) / resolution;
+        const worldY = tileY + (y + 0.5) / resolution;
+        const sample = sampleRegionalEnvironmentProgramLayout(worldX, worldY, layout);
+        const beneath = base.pixels[y]?.[x] ?? { r: 0, g: 0, b: 0 };
+        const trailWeight = Math.max(sample.accessTrailWeight, sample.highlandTrailWeight);
+        if (Math.max(
+          trailWeight,
+          sample.caveFloorWeight,
+          sample.caveWallWeight,
+          sample.retainingEdgeWeight,
+        ) <= 0.0001) {
+          row.push(beneath);
+          continue;
+        }
+        let linearR = srgbToLinear(beneath.r);
+        let linearG = srgbToLinear(beneath.g);
+        let linearB = srgbToLinear(beneath.b);
+        if (trailWeight > 0.0001 && this.routeMaterials) {
+          this.sampleTextureField(
+            this.routeMaterials[routeKind],
+            worldX,
+            worldY,
+            0x6bd1,
+            textureScaleTiles,
+            resolution,
+            routeTexture,
+          );
+          const trailOpacity = sample.highlandTrailWeight * 0.68 + sample.accessTrailWeight * 0.56;
+          linearR = lerp(linearR, routeTexture[0]!, trailOpacity);
+          linearG = lerp(linearG, routeTexture[1]!, trailOpacity);
+          linearB = lerp(linearB, routeTexture[2]!, trailOpacity);
+        }
+        const patch = clamp01(0.5 + (
+          valueNoise(worldX * 0.38, worldY * 0.38, this.seed32 ^ 0x4c91) * 0.72 +
+          valueNoise(worldX * 1.07, worldY * 1.07, this.seed32 ^ 0xa713) * 0.28
+        ) * 0.5);
+        if (sample.caveWallWeight > 0.0001) {
+          const wallScale = 0.16 + patch * 0.1;
+          linearR = lerp(linearR, linearR * wallScale + 0.004, sample.caveWallWeight * 0.9);
+          linearG = lerp(linearG, linearG * wallScale + 0.004, sample.caveWallWeight * 0.9);
+          linearB = lerp(linearB, linearB * (wallScale + 0.045) + 0.009, sample.caveWallWeight * 0.9);
+        }
+        if (sample.caveFloorWeight > 0.0001) {
+          const beneathLuminance = linearR * 0.2126 + linearG * 0.7152 + linearB * 0.0722;
+          const strata = valueNoise(worldX * 0.72, worldY * 0.72, this.seed32 ^ 0x53d1);
+          const grain = valueNoise(worldX * 2.85, worldY * 2.85, this.seed32 ^ 0x7ab3);
+          const crack = 1 - smoothstep(0.025, 0.095, Math.abs(strata));
+          const pebble = smoothstep(0.55, 0.82, grain);
+          const floorLuminance = (0.018 + beneathLuminance * (0.2 + patch * 0.12)) *
+            (1 - crack * 0.28) + pebble * 0.018;
+          const facet = grain * 0.012;
+          linearR = lerp(linearR, floorLuminance * 0.76 + facet, sample.caveFloorWeight * 0.91);
+          linearG = lerp(linearG, floorLuminance * 0.88 + facet, sample.caveFloorWeight * 0.91);
+          linearB = lerp(linearB, floorLuminance * 1.14 + facet * 0.7, sample.caveFloorWeight * 0.91);
+        }
+        if (sample.retainingEdgeWeight > 0.0001) {
+          const edgeOpacity = sample.retainingEdgeWeight * (1 - sample.highlandTrailWeight) * 0.5;
+          linearR = lerp(linearR, linearR * 0.5, edgeOpacity);
+          linearG = lerp(linearG, linearG * 0.52, edgeOpacity);
+          linearB = lerp(linearB, linearB * 0.54, edgeOpacity);
+        }
+        row.push({
+          r: linearToSrgb(linearR),
+          g: linearToSrgb(linearG),
+          b: linearToSrgb(linearB),
+        });
+      }
+      pixels.push(row);
+    }
+    const centre = sampleRegionalEnvironmentProgramLayout(tileX + 0.5, tileY + 0.5, layout);
+    const tile: Tile = {
+      id: `regional-environment-program:${layout.id}:${tileX},${tileY}@${resolution}`,
+      name: layout.kind === 'cave-interior' ? 'Regional cave interior' : 'Regional highland ascent',
+      pixels,
+      materialMask: base.materialMask,
+      walkable: base.walkable || Math.max(
+        centre.accessTrailWeight,
+        centre.caveFloorWeight,
+        centre.highlandTrailWeight,
       ) > 0.08,
       resolutions: { [String(resolution)]: pixels },
     };
@@ -1392,6 +1527,27 @@ function smoothstep(low: number, high: number, value: number): number {
 function smoothstep01(value: number): number {
   const t = Math.max(0, Math.min(1, value));
   return t * t * (3 - 2 * t);
+}
+
+function valueNoise(x: number, y: number, seed: number): number {
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  const u = smoothstep01(x - x0);
+  const v = smoothstep01(y - y0);
+  const top = lerp(hashSigned(x0, y0, seed), hashSigned(x0 + 1, y0, seed), u);
+  const bottom = lerp(hashSigned(x0, y0 + 1, seed), hashSigned(x0 + 1, y0 + 1, seed), u);
+  return lerp(top, bottom, v);
+}
+
+function hashSigned(x: number, y: number, seed: number): number {
+  let value = Math.imul(x ^ seed, 0x9e3779b1) ^ Math.imul(y ^ (seed >>> 1), 0x85ebca77);
+  value = Math.imul(value ^ (value >>> 16), 0x7feb352d);
+  value = Math.imul(value ^ (value >>> 15), 0x846ca68b);
+  return (((value ^ (value >>> 16)) >>> 0) / 2147483648) - 1;
+}
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
 }
 
 function lerp(a: number, b: number, t: number): number {

@@ -12,6 +12,7 @@ import type {
   RegionalRouteSample,
 } from '../routes/regional-route-field.js';
 import { RegionalMaterialCompositor } from '../tiles/regional-material-compositor.js';
+import { rasterizeRegionalEnvironmentProgramLayout } from '../tiles/regional-environment-program-layout.js';
 import {
   RegionalWorldTileProvider,
   type RegionalAmbientAsset,
@@ -100,6 +101,7 @@ function makeWorld(
   maxCachedBlocks = 32,
   sampleRoute: (x: number, y: number) => RegionalRouteSample = routeSample,
   sampleBiome: (x: number, y: number) => BiomeWorldSample = (x) => biomeSample(nearestFamily(x)),
+  includeEnvironmentPrograms = false,
 ): RegionalWorldTileProvider {
   const field = {
     sample: sampleBiome,
@@ -184,6 +186,9 @@ function makeWorld(
       id: `environment:${family}`,
       families: [family],
       role: 'environment-contact' as const,
+      program: includeEnvironmentPrograms && family === 'mountain'
+        ? 'cave-interior' as const
+        : undefined,
       sprite: sprite(COLOURS[family]),
       collision: [[0, 0]] as const,
       constraints: {
@@ -191,7 +196,9 @@ function makeWorld(
         waterDistance: [0, 999] as const,
         elevation: [0, 1] as const,
         slope: [0, 1] as const,
-        routeDistance: [1.5, 999] as const,
+        routeDistance: includeEnvironmentPrograms && family === 'mountain'
+          ? [1.5, 12] as const
+          : [1.5, 999] as const,
         nearbyWaterRadius: 0,
       },
     }));
@@ -440,6 +447,33 @@ describe('RegionalWorldTileProvider', () => {
       reversed.getBuildingTileAt(placement.anchorX, placement.anchorY);
     }
     expect(reversed.getEnvironmentContactPlacementsInBounds(-24, -40, 224, 40)).toEqual(placements);
+  });
+
+  it('expands semantic cave contacts into connected walkable interiors and solid rock', () => {
+    const offsetRoute = (x: number, y: number) => routeSample(x, y - 10);
+    const world = makeWorld(32, 32, offsetRoute, () => biomeSample('mountain'), true);
+    const layouts = world.getEnvironmentProgramLayoutsInBounds(-100, -48, 100, 64);
+    const cave = layouts.find((layout) => layout.kind === 'cave-interior');
+    expect(cave).toBeDefined();
+    expect(cave!.interiorPaths).toHaveLength(2);
+    expect(cave!.chambers).toHaveLength(2);
+    const cells = rasterizeRegionalEnvironmentProgramLayout(cave!);
+    const floor = cells.find((cell) => cell.walkable && cell.roles.includes('cave-floor'))!;
+    const wall = cells.find((cell) => cell.solid && cell.roles.includes('cave-wall'))!;
+    expect(world.getTile(floor.x, floor.y).id).toContain('regional-environment-program:');
+    expect(world.isBuildingAt(floor.x, floor.y)).toBe(false);
+    expect(world.isBuildingAt(wall.x, wall.y)).toBe(true);
+    const prepared = world.prepareViewport(
+      Math.floor(cave!.bounds.minX),
+      Math.floor(cave!.bounds.minY),
+      Math.ceil(cave!.bounds.maxX),
+      Math.ceil(cave!.bounds.maxY),
+      8,
+    );
+    expect(prepared.solid.some(([x, y]) => x === floor.x && y === floor.y)).toBe(false);
+    expect(prepared.solid.some(([x, y]) => x === wall.x && y === wall.y)).toBe(true);
+    expect(world.getRegionalStats().cachedEnvironmentPrograms).toBeGreaterThan(0);
+    expect(world.getRegionalStats().cachedEnvironmentProgramSurfaceCells).toBeGreaterThan(0);
   });
 
   it('keeps overlays and collision exact across cache block sizes and traversal order', () => {

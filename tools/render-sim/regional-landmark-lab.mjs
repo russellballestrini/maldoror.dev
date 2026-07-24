@@ -18,6 +18,7 @@ import {
   RegionalMaterialCompositor,
   RegionalRouteField,
   RegionalWorldTileProvider,
+  rasterizeRegionalEnvironmentProgramLayout,
   sampleRegionalParcelLayout,
   sampleRegionalWaterfrontLayout,
 } from '../../packages/world/dist/index.js';
@@ -124,6 +125,7 @@ const world = new RegionalWorldTileProvider({
   environmentContactDensity: environmentKit.density,
   environmentContactLandmarkClearance: environmentKit.landmarkClearance,
 });
+const environmentProgramLayouts = new Map();
 
 function locateLandmarkFamilies() {
   const assetIds = new Set(landmarkKit.assets.map((asset) => asset.id));
@@ -370,13 +372,34 @@ if (process.env.MALDOROR_REGIONAL_ENVIRONMENT_ATLAS === '1') {
   }
   FRAMES = environmentKit.assets.map((asset) => {
     const placement = found.get(asset.id);
+    const layout = placement.environmentProgramId
+      ? world.getEnvironmentProgramLayoutsInBounds(
+        placement.anchorX - 48,
+        placement.anchorY - 48,
+        placement.anchorX + 48,
+        placement.anchorY + 48,
+      ).find((candidate) => candidate.id === placement.environmentProgramId)
+      : null;
+    if (placement.environmentProgram && !layout) {
+      throw new Error(
+        `Could not build ${placement.environmentProgram} at ${asset.id} (${placement.anchorX},${placement.anchorY})`,
+      );
+    }
+    if (layout) environmentProgramLayouts.set(layout.id, layout);
     const scaleName = contactTileSize === 16 ? 'walking' : contactTileSize === 8 ? 'district' : 'regional';
     return {
       name: `${asset.id}-${scaleName}`,
-      centre: [placement.anchorX, placement.anchorY],
+      centre: layout
+        ? [
+          Math.round((layout.bounds.minX + layout.bounds.maxX) / 2),
+          Math.round((layout.bounds.minY + layout.bounds.maxY) / 2),
+        ]
+        : [placement.anchorX, placement.anchorY],
       displayTileSize: contactTileSize,
       assetId: asset.id,
       anchor: [placement.anchorX, placement.anchorY],
+      environmentProgram: placement.environmentProgram,
+      environmentProgramId: placement.environmentProgramId,
     };
   });
 }
@@ -733,6 +756,83 @@ function auditEnvironmentContact(frame) {
   };
 }
 
+function auditEnvironmentProgram(frame) {
+  if (!frame.environmentProgramId) return null;
+  const layout = environmentProgramLayouts.get(frame.environmentProgramId);
+  if (!layout) return { id: frame.environmentProgramId, missing: true, mismatchCount: 1 };
+  const cells = rasterizeRegionalEnvironmentProgramLayout(layout);
+  const walkable = cells.filter((cell) => cell.walkable);
+  const walls = cells.filter((cell) => cell.solid && cell.roles.includes('cave-wall'));
+  const surfaceMatches = walkable.filter((cell) => (
+    world.getTile(cell.x, cell.y).id.startsWith('regional-environment-program:')
+  )).length;
+  const collisionOpen = walkable.filter((cell) => !world.isBuildingAt(cell.x, cell.y)).length;
+  const solidWalls = walls.filter((cell) => world.isBuildingAt(cell.x, cell.y)).length;
+  const route = routes.sample(
+    Math.floor(layout.routePoint.x),
+    Math.floor(layout.routePoint.y),
+  );
+  const checks = {
+    semanticKind: layout.kind === frame.environmentProgram,
+    routeConnected: route.isWalkableRoute || route.distance <= 0.55,
+    walkableConnected: walkableCellsConnected(walkable),
+    surfaceCoverage: surfaceMatches === walkable.length,
+    collisionOpen: collisionOpen === walkable.length,
+    dry: walkable.every((cell) => !field.sample(cell.x, cell.y).isWater),
+    caveGraph: layout.kind !== 'cave-interior' ||
+      (layout.interiorPaths.length === 2 && layout.chambers.length === 2 && walls.length > 0),
+    caveWallsSolid: layout.kind !== 'cave-interior' || solidWalls === walls.length,
+    uphill: layout.kind !== 'highland-ascent' || layout.elevationGain >= 0.018,
+    longSwitchbacks: layout.kind !== 'highland-ascent' ||
+      (layout.switchbackCount === 3 && layout.traversableLength / layout.directDistance > 1.08),
+  };
+  return {
+    id: layout.id,
+    kind: layout.kind,
+    routePoint: layout.routePoint,
+    anchorPoint: layout.anchorPoint,
+    terminalPoint: layout.terminalPoint,
+    bounds: layout.bounds,
+    interiorPathCount: layout.interiorPaths.length,
+    chamberCount: layout.chambers.length,
+    walkableCells: walkable.length,
+    solidWallCells: walls.length,
+    surfaceCoverageRate: surfaceMatches / Math.max(1, walkable.length),
+    collisionOpenRate: collisionOpen / Math.max(1, walkable.length),
+    solidWallRate: layout.kind === 'cave-interior'
+      ? solidWalls / Math.max(1, walls.length)
+      : null,
+    startElevation: layout.startElevation,
+    endElevation: layout.endElevation,
+    elevationGain: layout.elevationGain,
+    directDistance: layout.directDistance,
+    traversableLength: layout.traversableLength,
+    pathToDirectRatio: layout.traversableLength / layout.directDistance,
+    switchbackCount: layout.switchbackCount,
+    checks,
+    mismatchCount: Object.values(checks).filter((value) => !value).length,
+  };
+}
+
+function walkableCellsConnected(cells) {
+  const remaining = new Set(cells.map((cell) => `${cell.x},${cell.y}`));
+  const first = remaining.values().next().value;
+  if (!first) return false;
+  const visited = new Set([first]);
+  const queue = [first];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    const [x, y] = current.split(',').map(Number);
+    for (const [offsetX, offsetY] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const key = `${x + offsetX},${y + offsetY}`;
+      if (!remaining.has(key) || visited.has(key)) continue;
+      visited.add(key);
+      queue.push(key);
+    }
+  }
+  return visited.size === remaining.size;
+}
+
 const metrics = {
   worldSeed: String(WORLD_SEED),
   sourceDimensions: [WIDTH, HEIGHT],
@@ -778,6 +878,7 @@ for (const frame of FRAMES) {
     visibleEnvironmentContacts: world.getEnvironmentContactPlacementsInBounds(...visibleBounds),
     parcelAudit: auditParcel(frame),
     environmentContactAudit: auditEnvironmentContact(frame),
+    environmentProgramAudit: auditEnvironmentProgram(frame),
   });
 }
 fs.writeFileSync(path.join(OUTPUT, 'metrics.json'), `${JSON.stringify(metrics, null, 2)}\n`);

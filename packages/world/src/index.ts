@@ -79,6 +79,7 @@ export {
 } from './tiles/regional-material-compositor.js';
 export {
   buildRegionalParcelPath,
+  buildRegionalPolylinePath,
   distanceToRegionalParcelPath,
   rasterizeRegionalParcelPath,
   sampleRegionalParcelPath,
@@ -87,7 +88,22 @@ export {
   type RegionalParcelPathConfig,
   type RegionalParcelPathFrame,
   type RegionalParcelPathPoint,
+  type RegionalPolylinePathConfig,
 } from './tiles/regional-parcel-path.js';
+export {
+  buildRegionalEnvironmentProgramLayout,
+  rasterizeRegionalEnvironmentProgramLayout,
+  sampleRegionalEnvironmentProgramLayout,
+  type RegionalCaveChamber,
+  type RegionalEnvironmentProgramBounds,
+  type RegionalEnvironmentProgramCell,
+  type RegionalEnvironmentProgramKind,
+  type RegionalEnvironmentProgramLayout,
+  type RegionalEnvironmentProgramLayoutConfig,
+  type RegionalEnvironmentProgramRole,
+  type RegionalEnvironmentProgramSample,
+  type RegionalEnvironmentTerrainSample,
+} from './tiles/regional-environment-program-layout.js';
 export {
   buildRegionalParcelLayout,
   rasterizeRegionalParcelLayout,

@@ -17,6 +17,11 @@ import {
   buildRegionalParcelPath,
   rasterizeRegionalParcelPath,
 } from '../tiles/regional-parcel-path.js';
+import {
+  buildRegionalEnvironmentProgramLayout,
+  rasterizeRegionalEnvironmentProgramLayout,
+  sampleRegionalEnvironmentProgramLayout,
+} from '../tiles/regional-environment-program-layout.js';
 import { buildRegionalWaterfrontLayout } from '../tiles/regional-waterfront-layout.js';
 
 const COLOURS: Record<BiomeFamily, RGB> = {
@@ -291,6 +296,75 @@ describe('RegionalMaterialCompositor', () => {
     );
     expect(pierTile.id).toContain('regional-waterfront-ground:waterfront:test-blend');
     expect(pierTile.walkable).toBe(true);
+  });
+
+  it('carves cave darkness and contour trails from blended terrain instead of square stamps', () => {
+    const noRoute: RegionalRouteSampler = {
+      sample: () => ({
+        ...routeSample('trail', null),
+        distance: 8,
+        isRoute: false,
+        isWalkableRoute: false,
+        routeKind: null,
+        routeId: null,
+      }),
+    };
+    const composed = routedCompositor(noRoute);
+    const cave = buildRegionalEnvironmentProgramLayout({
+      id: 'environment:test-cave-material',
+      kind: 'cave-interior',
+      routePoint: { x: 0, y: 0 },
+      anchorPoint: { x: 4, y: 0 },
+      seed: 42,
+      sampleTerrain: () => ({ elevation: 0.5, slope: 0.02, isWater: false }),
+    })!;
+    const cells = rasterizeRegionalEnvironmentProgramLayout(cave);
+    const floor = {
+      x: Math.floor(cave.chambers[0]!.centre.x),
+      y: Math.floor(cave.chambers[0]!.centre.y),
+    };
+    const wall = cells.filter((cell) => cell.solid && cell.roles.includes('cave-wall'))
+      .sort((a, b) => (
+        sampleRegionalEnvironmentProgramLayout(b.x + 0.5, b.y + 0.5, cave).caveWallWeight -
+        sampleRegionalEnvironmentProgramLayout(a.x + 0.5, a.y + 0.5, cave).caveWallWeight
+      ))[0]!;
+    const floorBase = composed.getTileAtResolution(floor.x, floor.y, 8);
+    const floorTile = composed.getEnvironmentProgramGroundTileAtResolution(
+      floor.x,
+      floor.y,
+      8,
+      cave,
+      'trail',
+    );
+    const wallBase = composed.getTileAtResolution(wall.x, wall.y, 8);
+    const wallTile = composed.getEnvironmentProgramGroundTileAtResolution(
+      wall.x,
+      wall.y,
+      8,
+      cave,
+      'trail',
+    );
+    const luminance = (colour: RGB) => colour.r * 0.2126 + colour.g * 0.7152 + colour.b * 0.0722;
+    expect(floorTile.id).toContain('regional-environment-program:environment:test-cave-material');
+    expect(floorTile.walkable).toBe(true);
+    expect(luminance(floorTile.pixels[4]![4]!)).toBeLessThan(
+      luminance(floorBase.pixels[4]![4]!) * 0.75,
+    );
+    expect(luminance(wallTile.pixels[4]![4]!)).toBeLessThan(
+      luminance(wallBase.pixels[4]![4]!),
+    );
+
+    const fringe = cells.find((cell) => cell.roles.includes('cave-wall') && !cell.solid)!;
+    const fringeBase = composed.getTileAtResolution(fringe.x, fringe.y, 8);
+    const fringeTile = composed.getEnvironmentProgramGroundTileAtResolution(
+      fringe.x,
+      fringe.y,
+      8,
+      cave,
+      'trail',
+    );
+    const delta = (a: RGB, b: RGB) => Math.hypot(a.r - b.r, a.g - b.g, a.b - b.b);
+    expect(delta(fringeTile.pixels[0]![0]!, fringeBase.pixels[0]![0]!)).toBeLessThan(20);
   });
 
   it('authors only the requested semantic LOD and reuses quantized zoom bands', () => {

@@ -35,6 +35,12 @@ import {
   sampleRegionalWaterfrontLayout,
   type RegionalWaterfrontLayout,
 } from './regional-waterfront-layout.js';
+import {
+  buildRegionalEnvironmentProgramLayout,
+  rasterizeRegionalEnvironmentProgramLayout,
+  type RegionalEnvironmentProgramKind,
+  type RegionalEnvironmentProgramLayout,
+} from './regional-environment-program-layout.js';
 import { TileProvider, type TileProviderConfig } from './tile-provider.js';
 
 export interface RegionalVisualAsset {
@@ -101,6 +107,7 @@ export interface RegionalEnvironmentConstraints {
 export interface RegionalEnvironmentContactAsset extends RegionalVisualAsset {
   role: 'environment-contact';
   constraints: RegionalEnvironmentConstraints;
+  program?: RegionalEnvironmentProgramKind;
 }
 
 export interface RegionalAssetPlacement {
@@ -122,6 +129,8 @@ export interface RegionalAssetPlacement {
   pathTangentY?: number;
   waterfrontId?: string;
   waterfrontFunction?: RegionalWaterfrontFunction;
+  environmentProgram?: RegionalEnvironmentProgramKind;
+  environmentProgramId?: string;
 }
 
 export type RegionalLandmarkPlacement = RegionalAssetPlacement;
@@ -245,6 +254,8 @@ interface Placement {
   pathTangentY?: number;
   waterfrontId?: string;
   waterfrontFunction?: RegionalWaterfrontFunction;
+  environmentProgram?: RegionalEnvironmentProgramKind;
+  environmentProgramId?: string;
 }
 
 interface ParcelConnector {
@@ -263,6 +274,19 @@ interface ParcelSurface {
 interface WaterfrontSurface {
   routeKind: RegionalRouteKind;
   layout: RegionalWaterfrontLayout;
+}
+
+interface EnvironmentProgramSurface {
+  routeKind: RegionalRouteKind;
+  layout: RegionalEnvironmentProgramLayout;
+}
+
+interface CachedEnvironmentProgram {
+  placement: Placement;
+  layout: RegionalEnvironmentProgramLayout;
+  surfaces: Map<string, EnvironmentProgramSurface>;
+  walkable: Set<string>;
+  solid: Set<string>;
 }
 
 export interface RegionalParcelConnectorCell {
@@ -311,12 +335,15 @@ interface CollectedDerivedLayers {
   connectors: Map<string, ParcelConnector>;
   surfaces: Map<string, ParcelSurface>;
   waterfrontSurfaces: Map<string, WaterfrontSurface>;
+  environmentSurfaces: Map<string, EnvironmentProgramSurface>;
+  environmentWalkable: Set<string>;
 }
 
 const VISIBLE_TILE_CACHE = new WeakMap<BuildingTileData, boolean>();
 const LANDMARK_ANCHOR_REACH = 7;
 const PARCEL_SIDE_OFFSET = 3;
 const MAX_PREPARED_VIEWPORT_AREA = 8192;
+const ENVIRONMENT_PROGRAM_REACH = 40;
 
 /**
  * Regional production-provider seam.
@@ -366,6 +393,7 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly parcelLayerCache = new Map<string, CollectedDerivedLayers>();
   private readonly routeContactPlacementCache = new Map<string, Placement | null>();
   private readonly environmentContactPlacementCache = new Map<string, Placement | null>();
+  private readonly environmentProgramCache = new Map<string, CachedEnvironmentProgram | null>();
   private readonly preparedViewports = new Map<string, ImportedPreparedViewport>();
   private accessClock = 0;
 
@@ -436,7 +464,9 @@ export class RegionalWorldTileProvider extends TileProvider {
     }
     for (const asset of this.environmentContacts) {
       if (asset.role !== 'environment-contact' || asset.families.length === 0 ||
-          asset.collision.length === 0 || asset.constraints.nearbyWaterRadius < 0) {
+          asset.collision.length === 0 || asset.constraints.nearbyWaterRadius < 0 ||
+          (asset.program !== undefined &&
+            !['cave-interior', 'highland-ascent'].includes(asset.program))) {
         throw new Error(`Regional environment contact has invalid semantics: ${asset.id}`);
       }
     }
@@ -496,6 +526,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     const connector = parcel.connectors.get(key);
     const surface = parcel.surfaces.get(key);
     const waterfront = parcel.waterfrontSurfaces.get(key);
+    const environment = parcel.environmentSurfaces.get(key);
     return connector
       ? this.compositor.getPathAccessTile(
         tileX,
@@ -515,6 +546,13 @@ export class RegionalWorldTileProvider extends TileProvider {
         )
         : surface
         ? this.compositor.getParcelGroundTile(tileX, tileY, surface.layout, surface.routeKind)
+        : environment
+          ? this.compositor.getEnvironmentProgramGroundTile(
+            tileX,
+            tileY,
+            environment.layout,
+            environment.routeKind,
+          )
         : this.compositor.getTile(tileX, tileY);
   }
 
@@ -526,6 +564,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     const connector = parcel.connectors.get(key);
     const surface = parcel.surfaces.get(key);
     const waterfront = parcel.waterfrontSurfaces.get(key);
+    const environment = parcel.environmentSurfaces.get(key);
     return connector
       ? this.compositor.getPathAccessTileAtResolution(
         tileX,
@@ -553,6 +592,14 @@ export class RegionalWorldTileProvider extends TileProvider {
           surface.layout,
           surface.routeKind,
         )
+        : environment
+          ? this.compositor.getEnvironmentProgramGroundTileAtResolution(
+            tileX,
+            tileY,
+            resolution,
+            environment.layout,
+            environment.routeKind,
+          )
         : this.compositor.getTileAtResolution(tileX, tileY, resolution);
   }
 
@@ -632,6 +679,7 @@ export class RegionalWorldTileProvider extends TileProvider {
         const connector = derived.connectors.get(key);
         const surface = derived.surfaces.get(key);
         const waterfront = derived.waterfrontSurfaces.get(key);
+        const environment = derived.environmentSurfaces.get(key);
         const terrainTile = connector
           ? this.compositor.getPathAccessTileAtResolution(
             x,
@@ -659,12 +707,21 @@ export class RegionalWorldTileProvider extends TileProvider {
               surface.layout,
               surface.routeKind,
             )
+            : environment
+              ? this.compositor.getEnvironmentProgramGroundTileAtResolution(
+                x,
+                y,
+                normalizedResolution,
+                environment.layout,
+                environment.routeKind,
+              )
             : this.compositor.getTileAtResolution(x, y, normalizedResolution);
         terrain.push({ x, y, tile: terrainTile });
         const authoredOverlay = super.getBuildingTileAt(x, y);
         const overlay = authoredOverlay ?? (connector?.protected ? null : derived.overlays.get(key) ?? null);
         if (overlay) overlays.push({ x, y, tile: overlay });
-        if (super.isBuildingAt(x, y) || (!connector?.protected && derived.solid.has(key))) {
+        const opensAuthoredMass = connector?.protected || derived.environmentWalkable.has(key);
+        if ((!opensAuthoredMass && super.isBuildingAt(x, y)) || derived.solid.has(key)) {
           solid.push([x, y]);
         }
       }
@@ -690,6 +747,8 @@ export class RegionalWorldTileProvider extends TileProvider {
     const connectors = new Map<string, ParcelConnector>();
     const surfaces = new Map<string, ParcelSurface>();
     const waterfrontSurfaces = new Map<string, WaterfrontSurface>();
+    const environmentSurfaces = new Map<string, EnvironmentProgramSurface>();
+    const environmentWalkable = new Set<string>();
     const firstBlockX = floorDiv(bounds.minX - this.placementMaxOffsetX, this.blockSize);
     const lastBlockX = floorDiv(bounds.maxX - this.placementMinOffsetX, this.blockSize);
     const firstBlockY = floorDiv(bounds.minY - this.placementMaxOffsetY, this.blockSize);
@@ -714,11 +773,27 @@ export class RegionalWorldTileProvider extends TileProvider {
       const beneath = overlays.get(key);
       overlays.set(key, beneath ? compositeTiles(beneath, tile) : tile);
     }
+    for (const [key, connector] of parcel.connectors) {
+      if (connector.protected) solid.delete(key);
+    }
+    for (const key of parcel.environmentWalkable) {
+      environmentWalkable.add(key);
+      solid.delete(key);
+    }
     for (const key of parcel.solid) solid.add(key);
     for (const [key, connector] of parcel.connectors) connectors.set(key, connector);
     for (const [key, surface] of parcel.surfaces) surfaces.set(key, surface);
     for (const [key, surface] of parcel.waterfrontSurfaces) waterfrontSurfaces.set(key, surface);
-    return { overlays, solid, connectors, surfaces, waterfrontSurfaces };
+    for (const [key, surface] of parcel.environmentSurfaces) environmentSurfaces.set(key, surface);
+    return {
+      overlays,
+      solid,
+      connectors,
+      surfaces,
+      waterfrontSurfaces,
+      environmentSurfaces,
+      environmentWalkable,
+    };
   }
 
   /** Import a worker-produced rectangle with bounded package-level LRU. The
@@ -919,14 +994,14 @@ export class RegionalWorldTileProvider extends TileProvider {
   }
 
   override isBuildingAt(worldX: number, worldY: number): boolean {
-    if (super.isBuildingAt(worldX, worldY)) return true;
     const prepared = this.findPreparedViewport(worldX, worldY);
     if (prepared) return prepared.solid.has(positionKey(worldX, worldY));
     const key = positionKey(worldX, worldY);
     const parcel = this.getParcelLayerBlock(worldX, worldY);
-    if (parcel.connectors.get(key)?.protected) return false;
-    return parcel.solid.has(key) || this.blocksNear(worldX, worldY)
-      .some((block) => block.solid.has(key));
+    if (parcel.connectors.get(key)?.protected || parcel.environmentWalkable.has(key)) return false;
+    if (super.isBuildingAt(worldX, worldY)) return true;
+    if (parcel.solid.has(key)) return true;
+    return this.blocksNear(worldX, worldY).some((block) => block.solid.has(key));
   }
 
   getRegionalStats(): {
@@ -948,6 +1023,8 @@ export class RegionalWorldTileProvider extends TileProvider {
     cachedParcelSurfaceCells: number;
     cachedWaterfrontPrograms: number;
     cachedWaterfrontSurfaceCells: number;
+    cachedEnvironmentPrograms: number;
+    cachedEnvironmentProgramSurfaceCells: number;
     cachedRouteContactCells: number;
     cachedEnvironmentContactCells: number;
     cachedOverlayTiles: number;
@@ -1010,6 +1087,13 @@ export class RegionalWorldTileProvider extends TileProvider {
       ).length,
       cachedWaterfrontSurfaceCells: [...this.parcelGroupCache.values()].reduce(
         (total, group) => total + (group?.waterfrontSurfaces.size ?? 0),
+        0,
+      ),
+      cachedEnvironmentPrograms: [...this.environmentProgramCache.values()].filter(
+        (program) => program !== null,
+      ).length,
+      cachedEnvironmentProgramSurfaceCells: [...this.environmentProgramCache.values()].reduce(
+        (total, program) => total + (program?.surfaces.size ?? 0),
         0,
       ),
       cachedRouteContactCells: this.routeContactPlacementCache.size,
@@ -1247,11 +1331,27 @@ export class RegionalWorldTileProvider extends TileProvider {
           siteY: placement.siteY,
           anchorX: placement.anchorX,
           anchorY: placement.anchorY,
+          environmentProgram: placement.environmentProgram,
+          environmentProgramId: placement.environmentProgramId,
         });
       }
     }
     return placements.sort((a, b) => a.anchorY - b.anchorY || a.anchorX - b.anchorX ||
       a.assetId.localeCompare(b.assetId));
+  }
+
+  getEnvironmentProgramLayoutsInBounds(
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number,
+  ): RegionalEnvironmentProgramLayout[] {
+    const bounds = normalizedPreparedBounds(minX, minY, maxX, maxY);
+    const layouts = new Map<string, RegionalEnvironmentProgramLayout>();
+    for (const program of this.getEnvironmentProgramsInBounds(bounds)) {
+      layouts.set(program.layout.id, program.layout);
+    }
+    return [...layouts.values()].sort((a, b) => a.id.localeCompare(b.id));
   }
 
   override destroy(): void {
@@ -1260,6 +1360,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     this.parcelLayerCache.clear();
     this.routeContactPlacementCache.clear();
     this.environmentContactPlacementCache.clear();
+    this.environmentProgramCache.clear();
     this.preparedViewports.clear();
     this.compositor.clear();
     super.destroy();
@@ -1437,6 +1538,125 @@ export class RegionalWorldTileProvider extends TileProvider {
     return groups;
   }
 
+  private getEnvironmentProgram(
+    cellX: number,
+    cellY: number,
+    knownPlacement?: Placement,
+  ): CachedEnvironmentProgram | null {
+    const key = `${cellX},${cellY}`;
+    if (this.environmentProgramCache.has(key)) {
+      const cached = this.environmentProgramCache.get(key) ?? null;
+      this.environmentProgramCache.delete(key);
+      this.environmentProgramCache.set(key, cached);
+      return cached;
+    }
+    const placement = knownPlacement ?? this.getEnvironmentContactPlacement(cellX, cellY);
+    let program: CachedEnvironmentProgram | null = null;
+    if (placement?.environmentProgram && placement.environmentProgramId) {
+      const constraints = (placement.asset as RegionalEnvironmentContactAsset).constraints;
+      const nearestRoute = this.findNearestEnvironmentRoutePoint(
+        placement.anchorX,
+        placement.anchorY,
+        Math.min(16, Math.ceil(constraints.routeDistance[1])),
+      );
+      if (nearestRoute) {
+        const layout = buildRegionalEnvironmentProgramLayout({
+          id: placement.environmentProgramId,
+          kind: placement.environmentProgram,
+          routePoint: nearestRoute.point,
+          anchorPoint: { x: placement.anchorX + 0.5, y: placement.anchorY + 0.5 },
+          seed: this.seed32 ^ stringHash(placement.environmentProgramId),
+          maximumReach: placement.environmentProgram === 'cave-interior' ? 13 : 18,
+          sampleTerrain: (worldX, worldY) => {
+            const terrain = this.field.sample(Math.floor(worldX), Math.floor(worldY));
+            return {
+              elevation: terrain.elevation,
+              slope: terrain.slope,
+              isWater: terrain.isWater,
+            };
+          },
+        });
+        if (layout) {
+          const surface: EnvironmentProgramSurface = {
+            routeKind: nearestRoute.routeKind,
+            layout,
+          };
+          const surfaces = new Map<string, EnvironmentProgramSurface>();
+          const walkable = new Set<string>();
+          const solid = new Set<string>();
+          for (const cell of rasterizeRegionalEnvironmentProgramLayout(layout)) {
+            const cellKey = positionKey(cell.x, cell.y);
+            surfaces.set(cellKey, surface);
+            if (cell.walkable) walkable.add(cellKey);
+            if (cell.solid) solid.add(cellKey);
+          }
+          program = { placement, layout, surfaces, walkable, solid };
+        }
+      }
+    }
+    this.environmentProgramCache.set(key, program);
+    while (this.environmentProgramCache.size > this.maxCachedEnvironmentContactCells) {
+      const oldest = this.environmentProgramCache.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.environmentProgramCache.delete(oldest);
+    }
+    return program;
+  }
+
+  private getEnvironmentProgramsInBounds(
+    bounds: RegionalPreparedViewport['bounds'],
+  ): CachedEnvironmentProgram[] {
+    const programs: CachedEnvironmentProgram[] = [];
+    const firstCellX = floorDiv(bounds.minX - ENVIRONMENT_PROGRAM_REACH, this.environmentContactCellSize) - 1;
+    const lastCellX = floorDiv(bounds.maxX + ENVIRONMENT_PROGRAM_REACH, this.environmentContactCellSize) + 1;
+    const firstCellY = floorDiv(bounds.minY - ENVIRONMENT_PROGRAM_REACH, this.environmentContactCellSize) - 1;
+    const lastCellY = floorDiv(bounds.maxY + ENVIRONMENT_PROGRAM_REACH, this.environmentContactCellSize) + 1;
+    for (let cellY = firstCellY; cellY <= lastCellY; cellY++) {
+      for (let cellX = firstCellX; cellX <= lastCellX; cellX++) {
+        const placement = this.getEnvironmentContactPlacement(cellX, cellY);
+        if (!placement?.environmentProgram ||
+            placement.anchorX < bounds.minX - ENVIRONMENT_PROGRAM_REACH ||
+            placement.anchorX > bounds.maxX + ENVIRONMENT_PROGRAM_REACH ||
+            placement.anchorY < bounds.minY - ENVIRONMENT_PROGRAM_REACH ||
+            placement.anchorY > bounds.maxY + ENVIRONMENT_PROGRAM_REACH) continue;
+        const program = this.getEnvironmentProgram(cellX, cellY, placement);
+        if (program) programs.push(program);
+      }
+    }
+    return programs;
+  }
+
+  private findNearestEnvironmentRoutePoint(
+    anchorX: number,
+    anchorY: number,
+    requestedRadius: number,
+  ): { point: { x: number; y: number }; routeKind: RegionalRouteKind } | null {
+    const radius = Math.max(2, Math.min(16, requestedRadius));
+    let selected: {
+      point: { x: number; y: number };
+      routeKind: RegionalRouteKind;
+      score: number;
+    } | null = null;
+    for (let y = anchorY - radius; y <= anchorY + radius; y++) {
+      for (let x = anchorX - radius; x <= anchorX + radius; x++) {
+        const directDistance = Math.hypot(x - anchorX, y - anchorY);
+        if (directDistance > radius) continue;
+        const route = this.routes.sample(x, y);
+        if ((!route.isWalkableRoute && route.distance > 0.55) ||
+            this.field.sample(x, y).isWater) continue;
+        const score = directDistance + route.distance * 2;
+        if (!selected || score < selected.score) {
+          selected = {
+            point: { x: x + 0.5, y: y + 0.5 },
+            routeKind: route.routeKind ?? 'trail',
+            score,
+          };
+        }
+      }
+    }
+    return selected ? { point: selected.point, routeKind: selected.routeKind } : null;
+  }
+
   private collectParcelLayers(
     bounds: RegionalPreparedViewport['bounds'],
   ): CollectedDerivedLayers {
@@ -1445,6 +1665,8 @@ export class RegionalWorldTileProvider extends TileProvider {
     const connectors = new Map<string, ParcelConnector>();
     const surfaces = new Map<string, ParcelSurface>();
     const waterfrontSurfaces = new Map<string, WaterfrontSurface>();
+    const environmentSurfaces = new Map<string, EnvironmentProgramSurface>();
+    const environmentWalkable = new Set<string>();
     const inside = (key: string): boolean => {
       const separator = key.indexOf(',');
       const x = Number(key.slice(0, separator));
@@ -1468,7 +1690,22 @@ export class RegionalWorldTileProvider extends TileProvider {
         if (inside(key) && !waterfrontSurfaces.has(key)) waterfrontSurfaces.set(key, surface);
       }
     }
-    return { overlays, solid, connectors, surfaces, waterfrontSurfaces };
+    for (const program of this.getEnvironmentProgramsInBounds(bounds)) {
+      for (const [key, surface] of program.surfaces) {
+        if (inside(key) && !environmentSurfaces.has(key)) environmentSurfaces.set(key, surface);
+      }
+      for (const key of program.walkable) if (inside(key)) environmentWalkable.add(key);
+      for (const key of program.solid) if (inside(key)) solid.add(key);
+    }
+    return {
+      overlays,
+      solid,
+      connectors,
+      surfaces,
+      waterfrontSurfaces,
+      environmentSurfaces,
+      environmentWalkable,
+    };
   }
 
   private getParcelLayerBlock(worldX: number, worldY: number): CollectedDerivedLayers {
@@ -2147,6 +2384,10 @@ export class RegionalWorldTileProvider extends TileProvider {
       siteY: candidate.y,
       anchorX: candidate.x,
       anchorY: candidate.y,
+      environmentProgram: asset.program,
+      environmentProgramId: asset.program
+        ? `environment:${cellX}:${cellY}:${asset.program}`
+        : undefined,
     };
   }
 

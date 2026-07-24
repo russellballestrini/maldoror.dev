@@ -36,6 +36,13 @@ export interface RegionalParcelPathConfig {
   samplesPerTile?: number;
 }
 
+export interface RegionalPolylinePathConfig {
+  id: string;
+  points: readonly RegionalParcelPathPoint[];
+  radius?: number;
+  feather?: number;
+}
+
 export interface RegionalParcelPathFrame {
   x: number;
   y: number;
@@ -106,6 +113,33 @@ export function buildRegionalParcelPath(config: RegionalParcelPathConfig): Regio
     lateralOffset,
     radius: clamp(config.radius ?? 0.42, 0.24, 0.7),
     feather: clamp(config.feather ?? 0.16, 0.04, 0.3),
+  };
+}
+
+/** Build the same immutable path representation from an authored/procedural
+ * polyline. Environment programs use this for connected cave branches and
+ * switchbacks without inventing a second raster or distance implementation. */
+export function buildRegionalPolylinePath(config: RegionalPolylinePathConfig): RegionalParcelPath {
+  const points = config.points.filter((point, index, source) => (
+    index === 0 || distance(point, source[index - 1]!) > 1e-6
+  ));
+  if (points.length < 2) throw new Error(`Regional polyline path needs two points: ${config.id}`);
+  const cumulativeLength = [0];
+  for (let index = 1; index < points.length; index++) {
+    cumulativeLength.push(
+      cumulativeLength[index - 1]! + distance(points[index - 1]!, points[index]!),
+    );
+  }
+  const arcLength = cumulativeLength.at(-1) ?? 0;
+  return {
+    id: config.id,
+    points,
+    cumulativeLength,
+    arcLength,
+    targetLength: arcLength,
+    lateralOffset: 0,
+    radius: clamp(config.radius ?? 0.42, 0.24, 1.4),
+    feather: clamp(config.feather ?? 0.16, 0.04, 0.8),
   };
 }
 
