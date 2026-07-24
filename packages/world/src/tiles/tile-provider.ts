@@ -134,6 +134,8 @@ function positionHash(x: number, y: number): number {
 export interface TileProviderConfig {
   worldSeed: bigint;
   chunkCacheSize?: number;
+  /** Shared only while terrain/road/building output is byte-identical. */
+  staticRenderIdentity?: object;
 }
 
 /**
@@ -201,6 +203,7 @@ export class TileProvider implements WorldDataProvider {
   private roads: Map<string, { x: number; y: number; placedBy: string | null }> = new Map(); // "x,y" -> road data
   private roadsByChunk: Map<string, Set<string>> = new Map(); // Spatial hash for O(1) road lookups
   private visualRevision = 0;
+  private staticRenderIdentity: object;
   private worldLifeState: WorldLifeState | null = null;
   private worldLifeVisualEpoch: string | number | null = null;
 
@@ -209,10 +212,15 @@ export class TileProvider implements WorldDataProvider {
     this.noise = new ValueNoise(config.worldSeed);
     this.maxChunks = config.chunkCacheSize ?? 64;
     this.maxTiles = config.chunkCacheSize ? config.chunkCacheSize * 16 : 1024; // Cache up to 1024 procedural tiles (was 256)
+    this.staticRenderIdentity = config.staticRenderIdentity ?? {};
   }
 
   getVisualRevision(): number {
     return this.visualRevision;
+  }
+
+  getStaticRenderIdentity(): object {
+    return this.staticRenderIdentity;
   }
 
   setWorldLifeState(
@@ -250,6 +258,14 @@ export class TileProvider implements WorldDataProvider {
 
   protected markVisualChange(): void {
     this.visualRevision++;
+  }
+
+  /** Fork a shared static-scene identity before changing any session-owned
+   * road/building layer. Actor and atmosphere updates intentionally do not
+   * invalidate the shared terrain composition. */
+  private markStaticVisualChange(): void {
+    this.staticRenderIdentity = {};
+    this.markVisualChange();
   }
 
   /**
@@ -563,7 +579,7 @@ export class TileProvider implements WorldDataProvider {
     const previous = this.roads.get(key);
     if (previous && previous.placedBy === placedBy) return;
     this.roads.set(key, { x, y, placedBy });
-    this.markVisualChange();
+    this.markStaticVisualChange();
 
     // Register in spatial hash
     const chunkKey = this.getChunkKey(x, y);
@@ -581,7 +597,7 @@ export class TileProvider implements WorldDataProvider {
   removeRoad(x: number, y: number): void {
     const key = this.getRoadKey(x, y);
     if (!this.roads.delete(key)) return;
-    this.markVisualChange();
+    this.markStaticVisualChange();
 
     // Remove from spatial hash
     const chunkKey = this.getChunkKey(x, y);
@@ -630,7 +646,7 @@ export class TileProvider implements WorldDataProvider {
    * Clear all roads
    */
   clearRoads(): void {
-    if (this.roads.size > 0) this.markVisualChange();
+    if (this.roads.size > 0) this.markStaticVisualChange();
     this.roads.clear();
     this.roadsByChunk.clear();
   }
@@ -661,7 +677,7 @@ export class TileProvider implements WorldDataProvider {
       anchorX,
       anchorY,
     });
-    this.markVisualChange();
+    this.markStaticVisualChange();
 
     // Register in spatial hash
     this.registerBuildingInSpatialHash(buildingId, anchorX, anchorY);
@@ -675,7 +691,7 @@ export class TileProvider implements WorldDataProvider {
     if (building) {
       this.unregisterBuildingFromSpatialHash(buildingId, building.anchorX, building.anchorY);
     }
-    if (this.buildings.delete(buildingId)) this.markVisualChange();
+    if (this.buildings.delete(buildingId)) this.markStaticVisualChange();
   }
 
   private registerBuildingInSpatialHash(buildingId: string, anchorX: number, anchorY: number): void {
@@ -1055,7 +1071,17 @@ function sameNPCState(a: NPCVisualState, b: NPCVisualState): boolean {
  * Create a placeholder sprite for players without generated sprites
  * 256x256 pixels base with all resolutions pre-computed
  */
+const PLACEHOLDER_SPRITE_CACHE = new Map<string, Sprite>();
+const MAX_PLACEHOLDER_SPRITES = 256;
+
 export function createPlaceholderSprite(baseColor: RGB = { r: 100, g: 150, b: 255 }): Sprite {
+  const cacheKey = `${baseColor.r},${baseColor.g},${baseColor.b}`;
+  const cached = PLACEHOLDER_SPRITE_CACHE.get(cacheKey);
+  if (cached) {
+    PLACEHOLDER_SPRITE_CACHE.delete(cacheKey);
+    PLACEHOLDER_SPRITE_CACHE.set(cacheKey, cached);
+    return cached;
+  }
   const SIZE = BASE_SIZE;
 
   const darkColor: RGB = {
@@ -1129,7 +1155,7 @@ export function createPlaceholderSprite(baseColor: RGB = { r: 100, g: 150, b: 25
     };
   }
 
-  return {
+  const sprite: Sprite = {
     width: SIZE,
     height: SIZE,
     frames: {
@@ -1140,4 +1166,11 @@ export function createPlaceholderSprite(baseColor: RGB = { r: 100, g: 150, b: 25
     },
     resolutions,
   };
+  PLACEHOLDER_SPRITE_CACHE.set(cacheKey, sprite);
+  while (PLACEHOLDER_SPRITE_CACHE.size > MAX_PLACEHOLDER_SPRITES) {
+    const oldest = PLACEHOLDER_SPRITE_CACHE.keys().next().value as string | undefined;
+    if (oldest === undefined) break;
+    PLACEHOLDER_SPRITE_CACHE.delete(oldest);
+  }
+  return sprite;
 }

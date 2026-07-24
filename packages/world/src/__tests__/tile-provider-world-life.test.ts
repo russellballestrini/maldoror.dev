@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { WorldLifeState } from '@maldoror/protocol';
-import { TileProvider } from '../tiles/tile-provider.js';
+import { createPlaceholderSprite, TileProvider } from '../tiles/tile-provider.js';
 
 const LIFE: WorldLifeState = {
   worldId: 'visual-revision-proof',
@@ -32,5 +32,27 @@ describe('TileProvider world-life revisions', () => {
     const revision = world.getVisualRevision();
     world.setWorldLifeState({ ...LIFE, weather: 'rain' }, 482);
     expect(world.getVisualRevision()).toBe(revision + 1);
+  });
+
+  it('forks a shared static-render identity only for structural mutations', () => {
+    const sharedIdentity = {};
+    const first = new TileProvider({ worldSeed: 42n, staticRenderIdentity: sharedIdentity });
+    const second = new TileProvider({ worldSeed: 42n, staticRenderIdentity: sharedIdentity });
+
+    first.setWorldLifeState(LIFE, 16);
+    expect(first.getStaticRenderIdentity()).toBe(second.getStaticRenderIdentity());
+
+    first.setRoad(1, 2, null);
+    expect(first.getStaticRenderIdentity()).not.toBe(second.getStaticRenderIdentity());
+    expect(second.getStaticRenderIdentity()).toBe(sharedIdentity);
+  });
+
+  it('shares deterministic placeholder rasters across session providers', () => {
+    const first = createPlaceholderSprite({ r: 12, g: 34, b: 56 });
+    const second = createPlaceholderSprite({ r: 12, g: 34, b: 56 });
+    const different = createPlaceholderSprite({ r: 12, g: 34, b: 57 });
+
+    expect(second).toBe(first);
+    expect(different).not.toBe(first);
   });
 });

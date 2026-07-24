@@ -133,6 +133,7 @@ export class OutputPump {
 
     const bytes = Buffer.byteLength(chunk, 'utf8');
     this.totalBytesWritten += bytes;
+    this.totalFramesWritten++;
     const ok = this.stream.write(chunk);
     this.backpressured = !ok;
     return ok;

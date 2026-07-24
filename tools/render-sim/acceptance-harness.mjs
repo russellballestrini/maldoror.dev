@@ -12,11 +12,14 @@ const RESEARCH_ROOT = '/mnt/donto-data/donto-resources/maldoror';
 const DEFAULT_ATLAS = path.join(REPO, 'tools/render-sim/acceptance-atlas-v1.json');
 const COMMAND = process.argv[2];
 const RUN_DIR = validatedRunDirectory(argument('--run-dir'));
-const CONTAINER = argument('--container') ?? 'maldoror-acceptance-pg';
 const DB_PORT = integerArgument('--db-port', 55436);
 const SSH_PORT = integerArgument('--ssh-port', 3222);
 const STATS_PORT = integerArgument('--stats-port', 13300);
 const CONFIG_PATH = path.join(RUN_DIR, 'runtime-config.json');
+const CONFIGURED_CONTAINER = COMMAND !== 'prepare' && fs.existsSync(CONFIG_PATH)
+  ? JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')).container
+  : undefined;
+const CONTAINER = argument('--container') ?? CONFIGURED_CONTAINER ?? 'maldoror-acceptance-pg';
 
 if (COMMAND === 'prepare') await prepare();
 else if (COMMAND === 'set-environment') await setEnvironment(requiredArgument('--environment'));
@@ -193,9 +196,12 @@ async function setEnvironment(environmentId) {
 async function serve() {
   const config = readConfig();
   assertOwnedContainer();
+  const diagnosticNodeArgs = process.env.MALDOROR_ACCEPTANCE_TRACE_GC === '1'
+    ? ['--trace-gc']
+    : [];
   const child = spawn(
     process.execPath,
-    [path.join(REPO, 'apps/ssh-world/dist/acceptance-server.js')],
+    [...diagnosticNodeArgs, path.join(REPO, 'apps/ssh-world/dist/acceptance-server.js')],
     {
       cwd: path.join(REPO, 'apps/ssh-world'),
       stdio: 'inherit',

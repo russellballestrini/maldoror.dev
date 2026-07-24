@@ -74,6 +74,45 @@ export interface TerminalCell {
  */
 export type CellGrid = TerminalCell[][];
 
+/** Struct-of-arrays terminal frame used by the production OCTANT path. A
+ * 160x44 frame previously retained ~7k TerminalCell objects and ~14k RGB
+ * objects per session; these reusable planes keep the same information in a
+ * bounded native buffer and leave the object-grid API intact for other modes. */
+export interface PackedCellGrid {
+  readonly kind: 'packed-cell-grid';
+  readonly width: number;
+  readonly height: number;
+  readonly codepoints: Uint32Array;
+  readonly foreground: Uint32Array;
+  readonly background: Uint32Array;
+  readonly foregroundIndex: Int16Array;
+  readonly backgroundIndex: Int16Array;
+}
+
+export interface SharedStaticOctantFrame {
+  readonly buffer: PixelGrid;
+  readonly materialGrid?: Uint8Array[];
+  readonly dirtyCellOffsets?: readonly number[];
+}
+
+export function createPackedCellGrid(width: number, height: number): PackedCellGrid {
+  const size = width * height;
+  return {
+    kind: 'packed-cell-grid',
+    width,
+    height,
+    codepoints: new Uint32Array(size),
+    foreground: new Uint32Array(size),
+    background: new Uint32Array(size),
+    foregroundIndex: new Int16Array(size),
+    backgroundIndex: new Int16Array(size),
+  };
+}
+
+export function packedRgb(color: RGB): number {
+  return (color.r << 16) | (color.g << 8) | color.b;
+}
+
 /**
  * A 2D grid of brightness values for cell-level lighting
  * Each value represents brightness for a single terminal cell (0.7-1.2 typical)
@@ -323,6 +362,57 @@ function renderBrailleChar(
 // Scratch for renderOctantChar (single-threaded).
 const OCT_SCRATCH = new Int16Array(8);
 const OCT_PIXEL_SCRATCH: Pixel[] = new Array<Pixel>(8).fill(null);
+const OCTANT_CODEPOINTS = Uint32Array.from(OCTANT_CHARS, (char) => char.codePointAt(0) ?? 0x20);
+const DEFAULT_BG_PACKED = (DEFAULT_BG.r << 16) | (DEFAULT_BG.g << 8) | DEFAULT_BG.b;
+const OCTANT_NULL_PACKED = 0x1000000;
+const OCTANT_FIT_CACHE_SIZE = 1 << 15;
+const OCTANT_FIT_CACHE_MASK = OCTANT_FIT_CACHE_SIZE - 1;
+const OCTANT_PACKED_INPUT_SCRATCH = new Uint32Array(8);
+const OCTANT_FIT_CACHE_INPUTS = Array.from(
+  { length: 8 },
+  () => new Uint32Array(OCTANT_FIT_CACHE_SIZE),
+);
+const OCTANT_FIT_CACHE_VALID = new Uint8Array(OCTANT_FIT_CACHE_SIZE);
+const OCTANT_FIT_CACHE_BRIGHTNESS = new Float64Array(OCTANT_FIT_CACHE_SIZE);
+const OCTANT_FIT_CACHE_PATTERN = new Uint8Array(OCTANT_FIT_CACHE_SIZE);
+const OCTANT_FIT_CACHE_FG = new Uint32Array(OCTANT_FIT_CACHE_SIZE);
+const OCTANT_FIT_CACHE_BG = new Uint32Array(OCTANT_FIT_CACHE_SIZE);
+const STATIC_OCTANT_CELL_FRAMES = new WeakMap<PixelGrid, PackedCellGrid>();
+let OCTANT_RESULT_PATTERN = 0;
+let OCTANT_RESULT_FG = DEFAULT_BG_PACKED;
+let OCTANT_RESULT_BG = DEFAULT_BG_PACKED;
+
+function packChannels(r: number, g: number, b: number, brightness: number): number {
+  if (brightness !== 1.0) {
+    r = Math.min(255, Math.max(0, Math.round(r * brightness)));
+    g = Math.min(255, Math.max(0, Math.round(g * brightness)));
+    b = Math.min(255, Math.max(0, Math.round(b * brightness)));
+  }
+  return (r << 16) | (g << 8) | b;
+}
+
+function unpackColor(value: number): RGB {
+  return { r: (value >>> 16) & 0xff, g: (value >>> 8) & 0xff, b: value & 0xff };
+}
+
+function loadOctantGridScratch(grid: PixelGrid, x: number, y: number): void {
+  for (let dy = 0; dy < 4; dy++) {
+    const source = grid[y + dy];
+    OCT_PIXEL_SCRATCH[dy * 2] = source?.[x] ?? null;
+    OCT_PIXEL_SCRATCH[dy * 2 + 1] = source?.[x + 1] ?? null;
+  }
+}
+
+function retainOctantFit(cacheSlot: number, cellBrightness: number): void {
+  for (let index = 0; index < 8; index++) {
+    OCTANT_FIT_CACHE_INPUTS[index]![cacheSlot] = OCTANT_PACKED_INPUT_SCRATCH[index]!;
+  }
+  OCTANT_FIT_CACHE_BRIGHTNESS[cacheSlot] = cellBrightness;
+  OCTANT_FIT_CACHE_PATTERN[cacheSlot] = OCTANT_RESULT_PATTERN;
+  OCTANT_FIT_CACHE_FG[cacheSlot] = OCTANT_RESULT_FG;
+  OCTANT_FIT_CACHE_BG[cacheSlot] = OCTANT_RESULT_BG;
+  OCTANT_FIT_CACHE_VALID[cacheSlot] = 1;
+}
 
 /**
  * Render a 2×4 pixel block as a single Unicode OCTANT character (Unicode 16
@@ -335,37 +425,87 @@ const OCT_PIXEL_SCRATCH: Pixel[] = new Array<Pixel>(8).fill(null);
  * only the glyph differs: pattern bit for (row r, col c) = 1 << (r*2 + c),
  * looked up in OCTANT_CHARS.
  */
-function renderOctantChar(
-  block: Pixel[][],
-  cellBrightness: number = 1.0
+/** Load one grid cell directly into the fixed octant scratch plane. The live
+ * renderer calls this for every terminal cell; constructing five nested
+ * arrays per cell made a 160x46 frame allocate tens of thousands of objects. */
+function renderOctantGridChar(
+  grid: PixelGrid,
+  x: number,
+  y: number,
+  cellBrightness: number = 1.0,
 ): { char: string; fg: RGB; bg: RGB } {
+  loadOctantGridScratch(grid, x, y);
+  renderOctantScratchPacked(cellBrightness);
+  return {
+    char: OCTANT_CHARS[OCTANT_RESULT_PATTERN]!,
+    fg: unpackColor(OCTANT_RESULT_FG),
+    bg: unpackColor(OCTANT_RESULT_BG),
+  };
+}
+
+/** Fit the shared scratch plane into primitive module-local outputs. The live
+ * packed renderer reads these immediately on the same synchronous call stack,
+ * avoiding three allocated objects per terminal cell. */
+function renderOctantScratchPacked(cellBrightness: number): void {
+  // The immutable regional scene is shared by every colocated session, so the
+  // same 2x4 source blocks recur thousands of times. A bounded direct-mapped
+  // cache retains primitive fit results without object allocation. All eight
+  // packed inputs and the exact brightness are compared, making hash
+  // collisions harmless and preserving byte-for-byte terminal output.
+  let hash = 2166136261;
+  for (let index = 0; index < 8; index++) {
+    const pixel = OCT_PIXEL_SCRATCH[index] ?? null;
+    const packed = pixel === null
+      ? OCTANT_NULL_PACKED
+      : (pixel.r << 16) | (pixel.g << 8) | pixel.b;
+    OCTANT_PACKED_INPUT_SCRATCH[index] = packed;
+    hash = Math.imul(hash ^ packed, 16777619) >>> 0;
+  }
+  hash = Math.imul(hash ^ Math.round(cellBrightness * 65536), 16777619) >>> 0;
+  const cacheSlot = hash & OCTANT_FIT_CACHE_MASK;
+  let cacheHit = OCTANT_FIT_CACHE_VALID[cacheSlot] !== 0
+    && OCTANT_FIT_CACHE_BRIGHTNESS[cacheSlot] === cellBrightness;
+  if (cacheHit) {
+    for (let index = 0; index < 8; index++) {
+      if (OCTANT_FIT_CACHE_INPUTS[index]![cacheSlot] !== OCTANT_PACKED_INPUT_SCRATCH[index]) {
+        cacheHit = false;
+        break;
+      }
+    }
+  }
+  if (cacheHit) {
+    OCTANT_RESULT_PATTERN = OCTANT_FIT_CACHE_PATTERN[cacheSlot]!;
+    OCTANT_RESULT_FG = OCTANT_FIT_CACHE_FG[cacheSlot]!;
+    OCTANT_RESULT_BG = OCTANT_FIT_CACHE_BG[cacheSlot]!;
+    return;
+  }
+
   let minB = 999, maxB = -1;
   let minCo = 999, maxCo = -999, minCg = 999, maxCg = -999;
-  for (let row = 0; row < 4; row++) {
-    const r = block[row];
-    for (let col = 0; col < 2; col++) {
-      const pixel = r?.[col] ?? null;
-      OCT_PIXEL_SCRATCH[row * 2 + col] = pixel;
-      const b = pixel === null ? -1 : pixelBrightness(pixel);
-      OCT_SCRATCH[row * 2 + col] = b;
-      if (b >= 0) {
-        if (b < minB) minB = b;
-        if (b > maxB) maxB = b;
-        const co = pixel!.r - pixel!.b;
-        const cg = pixel!.g - (pixel!.r + pixel!.b) / 2;
-        if (co < minCo) minCo = co;
-        if (co > maxCo) maxCo = co;
-        if (cg < minCg) minCg = cg;
-        if (cg > maxCg) maxCg = cg;
-      }
+  for (let index = 0; index < 8; index++) {
+    const pixel = OCT_PIXEL_SCRATCH[index] ?? null;
+    const b = pixel === null ? -1 : pixelBrightness(pixel);
+    OCT_SCRATCH[index] = b;
+    if (b >= 0) {
+      if (b < minB) minB = b;
+      if (b > maxB) maxB = b;
+      const co = pixel!.r - pixel!.b;
+      const cg = pixel!.g - (pixel!.r + pixel!.b) / 2;
+      if (co < minCo) minCo = co;
+      if (co > maxCo) maxCo = co;
+      if (cg < minCg) minCg = cg;
+      if (cg > maxCg) maxCg = cg;
     }
   }
 
   // All-transparent → empty cell
   if (maxB < 0) {
-    let c: RGB = DEFAULT_BG;
-    if (cellBrightness !== 1.0) c = applyBrightness(c, cellBrightness);
-    return { char: OCTANT_CHARS[0]!, fg: c, bg: c };
+    const color = packChannels(DEFAULT_BG.r, DEFAULT_BG.g, DEFAULT_BG.b, cellBrightness);
+    OCTANT_RESULT_PATTERN = 0;
+    OCTANT_RESULT_FG = color;
+    OCTANT_RESULT_BG = color;
+    retainOctantFit(cacheSlot, cellBrightness);
+    return;
   }
 
   // A luminance-only split can collapse strongly different hues that happen
@@ -376,61 +516,56 @@ function renderOctantChar(
   const chromaSpan = Math.max(maxCo - minCo, maxCg - minCg);
   if (maxB - minB <= 20 && chromaSpan >= 30) {
     const fit = fitOctant(OCT_PIXEL_SCRATCH, 'oklab-kmeans', DEFAULT_BG, false);
-    let fg = fit.fg;
-    let bg = fit.bg;
-    if (cellBrightness !== 1.0) {
-      fg = applyBrightness(fg, cellBrightness);
-      bg = applyBrightness(bg, cellBrightness);
-    }
-    return { char: OCTANT_CHARS[fit.pattern]!, fg, bg };
+    OCTANT_RESULT_PATTERN = fit.pattern;
+    OCTANT_RESULT_FG = packChannels(fit.fg.r, fit.fg.g, fit.fg.b, cellBrightness);
+    OCTANT_RESULT_BG = packChannels(fit.bg.r, fit.bg.g, fit.bg.b, cellBrightness);
+    retainOctantFit(cacheSlot, cellBrightness);
+    return;
   }
 
   // Flat cell → solid full block (pattern 255), fg=bg=average
   if (maxB - minB <= 10) {
     let sr = 0, sg = 0, sb = 0, n = 0;
-    for (let row = 0; row < 4; row++) {
-      const r = block[row];
-      for (let col = 0; col < 2; col++) {
-        const pixel = r?.[col] ?? null;
-        if (pixel !== null) { sr += pixel.r; sg += pixel.g; sb += pixel.b; n++; }
-      }
+    for (let index = 0; index < 8; index++) {
+      const pixel = OCT_PIXEL_SCRATCH[index] ?? null;
+      if (pixel !== null) { sr += pixel.r; sg += pixel.g; sb += pixel.b; n++; }
     }
-    let avg: RGB = { r: Math.round(sr / n), g: Math.round(sg / n), b: Math.round(sb / n) };
-    if (cellBrightness !== 1.0) avg = applyBrightness(avg, cellBrightness);
-    return { char: OCTANT_CHARS[255]!, fg: avg, bg: avg };
+    const average = packChannels(
+      Math.round(sr / n),
+      Math.round(sg / n),
+      Math.round(sb / n),
+      cellBrightness,
+    );
+    OCTANT_RESULT_PATTERN = 255;
+    OCTANT_RESULT_FG = average;
+    OCTANT_RESULT_BG = average;
+    retainOctantFit(cacheSlot, cellBrightness);
+    return;
   }
 
   const threshold = (minB + maxB) / 2;
   let pattern = 0;
   let fr = 0, fgG = 0, fb = 0, fn = 0;
   let br = 0, bgG = 0, bb = 0, bn = 0;
-  for (let row = 0; row < 4; row++) {
-    const r = block[row];
-    for (let col = 0; col < 2; col++) {
-      const pixel = r?.[col] ?? null;
-      const b = OCT_SCRATCH[row * 2 + col]!;
-      if (pixel !== null && b >= threshold) {
-        pattern |= 1 << (row * 2 + col);
-        fr += pixel.r; fgG += pixel.g; fb += pixel.b; fn++;
-      } else if (pixel !== null) {
-        br += pixel.r; bgG += pixel.g; bb += pixel.b; bn++;
-      }
+  for (let index = 0; index < 8; index++) {
+    const pixel = OCT_PIXEL_SCRATCH[index] ?? null;
+    const b = OCT_SCRATCH[index]!;
+    if (pixel !== null && b >= threshold) {
+      pattern |= 1 << index;
+      fr += pixel.r; fgG += pixel.g; fb += pixel.b; fn++;
+    } else if (pixel !== null) {
+      br += pixel.r; bgG += pixel.g; bb += pixel.b; bn++;
     }
   }
 
-  let fg: RGB = fn > 0
-    ? { r: Math.round(fr / fn), g: Math.round(fgG / fn), b: Math.round(fb / fn) }
-    : DEFAULT_BG;
-  let bg: RGB = bn > 0
-    ? { r: Math.round(br / bn), g: Math.round(bgG / bn), b: Math.round(bb / bn) }
-    : DEFAULT_BG;
-
-  if (cellBrightness !== 1.0) {
-    fg = applyBrightness(fg, cellBrightness);
-    bg = applyBrightness(bg, cellBrightness);
-  }
-
-  return { char: OCTANT_CHARS[pattern]!, fg, bg };
+  OCTANT_RESULT_PATTERN = pattern;
+  OCTANT_RESULT_FG = fn > 0
+    ? packChannels(Math.round(fr / fn), Math.round(fgG / fn), Math.round(fb / fn), cellBrightness)
+    : packChannels(DEFAULT_BG.r, DEFAULT_BG.g, DEFAULT_BG.b, cellBrightness);
+  OCTANT_RESULT_BG = bn > 0
+    ? packChannels(Math.round(br / bn), Math.round(bgG / bn), Math.round(bb / bn), cellBrightness)
+    : packChannels(DEFAULT_BG.r, DEFAULT_BG.g, DEFAULT_BG.b, cellBrightness);
+  retainOctantFit(cacheSlot, cellBrightness);
 }
 
 /**
@@ -499,14 +634,7 @@ export function renderOctantGrid(grid: PixelGrid): string[] {
     let lastBg: RGB | null = null;
 
     for (let x = 0; x < width; x += 2) {
-      const block: Pixel[][] = [];
-      for (let dy = 0; dy < 4; dy++) {
-        const row: Pixel[] = [];
-        for (let dx = 0; dx < 2; dx++) row.push(grid[y + dy]?.[x + dx] ?? null);
-        block.push(row);
-      }
-
-      const { char, fg, bg } = renderOctantChar(block);
+      const { char, fg, bg } = renderOctantGridChar(grid, x, y);
 
       const fgChanged = !lastFg || lastFg.r !== fg.r || lastFg.g !== fg.g || lastFg.b !== fg.b;
       const bgChanged = !lastBg || lastBg.r !== bg.r || lastBg.g !== bg.g || lastBg.b !== bg.b;
@@ -879,28 +1007,23 @@ export function renderBrailleGridCells(grid: PixelGrid, brightnessGrid?: Brightn
 export function renderOctantGridCells(
   grid: PixelGrid,
   brightnessGrid?: BrightnessGrid,
-  materialGrid?: Uint8Array[]
+  materialGrid?: Uint8Array[],
 ): CellGrid {
   const result: CellGrid = [];
   const height = grid.length;
   const width = grid[0]?.length ?? 0;
+  const phaseCounts = materialGrid ? new Uint8Array(PHASES) : null;
 
   let cellY = 0;
   for (let y = 0; y < height; y += 4) {
     const cellRow: TerminalCell[] = [];
     let cellX = 0;
     for (let x = 0; x < width; x += 2) {
-      const block: Pixel[][] = [];
-      for (let dy = 0; dy < 4; dy++) {
-        const row: Pixel[] = [];
-        for (let dx = 0; dx < 2; dx++) row.push(grid[y + dy]?.[x + dx] ?? null);
-        block.push(row);
-      }
       const cellBrightness = brightnessGrid?.[cellY]?.[cellX] ?? 1.0;
-      const { char, fg, bg } = renderOctantChar(block, cellBrightness);
+      const { char, fg, bg } = renderOctantGridChar(grid, x, y, cellBrightness);
       let waterSamples = 0;
-      const phaseCounts = new Uint8Array(PHASES);
-      if (materialGrid) {
+      phaseCounts?.fill(0);
+      if (materialGrid && phaseCounts) {
         for (let dy = 0; dy < 4; dy++) {
           for (let dx = 0; dx < 2; dx++) {
             const encodedPhase = materialGrid[y + dy]?.[x + dx] ?? 0;
@@ -915,7 +1038,7 @@ export function renderOctantGridCells(
           }
         }
       }
-      if (waterSamples >= 6 && fg && bg) {
+      if (waterSamples >= 6 && fg && bg && phaseCounts) {
         let phase = 0;
         for (let p = 1; p < PHASES; p++) {
           if (phaseCounts[p]! > phaseCounts[phase]!) phase = p;
@@ -955,6 +1078,171 @@ export function renderOctantGridCells(
   }
 
   return result;
+}
+
+/** Production OCTANT conversion into a reusable struct-of-arrays frame.
+ * Glyph, colour fitting, water-phase selection, and row-major geometry are
+ * deliberately identical to `renderOctantGridCells`. */
+export function renderOctantPackedGridCells(
+  grid: PixelGrid,
+  brightnessGrid?: BrightnessGrid,
+  materialGrid?: Uint8Array[],
+  reusable?: PackedCellGrid,
+  sharedStatic?: SharedStaticOctantFrame,
+): PackedCellGrid {
+  const height = Math.ceil(grid.length / 4);
+  const width = Math.ceil((grid[0]?.length ?? 0) / 2);
+  const result = reusable?.width === width && reusable.height === height
+    ? reusable
+    : createPackedCellGrid(width, height);
+  const phaseCounts = materialGrid ? new Uint8Array(PHASES) : null;
+  const canReuseStatic = sharedStatic !== undefined
+    && brightnessGrid === undefined
+    && sharedStatic.buffer.length === grid.length
+    && (sharedStatic.buffer[0]?.length ?? 0) === (grid[0]?.length ?? 0);
+
+  if (canReuseStatic) {
+    let staticCells = STATIC_OCTANT_CELL_FRAMES.get(sharedStatic.buffer);
+    if (!staticCells) {
+      staticCells = renderOctantPackedGridCells(
+        sharedStatic.buffer,
+        undefined,
+        sharedStatic.materialGrid,
+      );
+      STATIC_OCTANT_CELL_FRAMES.set(sharedStatic.buffer, staticCells);
+    }
+    result.codepoints.set(staticCells.codepoints);
+    result.foreground.set(staticCells.foreground);
+    result.background.set(staticCells.background);
+    result.foregroundIndex.set(staticCells.foregroundIndex);
+    result.backgroundIndex.set(staticCells.backgroundIndex);
+
+    if (sharedStatic.dirtyCellOffsets) {
+      for (const offset of sharedStatic.dirtyCellOffsets) {
+        const cellY = Math.floor(offset / width);
+        const cellX = offset - cellY * width;
+        renderOctantPackedCell(
+          result,
+          offset,
+          grid,
+          materialGrid,
+          phaseCounts,
+          cellX * 2,
+          cellY * 4,
+          1,
+        );
+      }
+      return result;
+    }
+
+    for (let cellY = 0, y = 0; cellY < height; cellY++, y += 4) {
+      for (let cellX = 0, x = 0; cellX < width; cellX++, x += 2) {
+        let dirty = false;
+        for (let dy = 0; dy < 4 && !dirty; dy++) {
+          const row = grid[y + dy];
+          const staticRow = sharedStatic.buffer[y + dy];
+          const materials = materialGrid?.[y + dy];
+          const staticMaterials = sharedStatic.materialGrid?.[y + dy];
+          for (let dx = 0; dx < 2; dx++) {
+            if (
+              row?.[x + dx] !== staticRow?.[x + dx]
+              || (materials?.[x + dx] ?? 0) !== (staticMaterials?.[x + dx] ?? 0)
+            ) {
+              dirty = true;
+              break;
+            }
+          }
+        }
+        if (!dirty) continue;
+        renderOctantPackedCell(
+          result,
+          cellY * width + cellX,
+          grid,
+          materialGrid,
+          phaseCounts,
+          x,
+          y,
+          1,
+        );
+      }
+    }
+    return result;
+  }
+
+  result.foregroundIndex.fill(-1);
+  result.backgroundIndex.fill(-1);
+
+  for (let cellY = 0, y = 0; cellY < height; cellY++, y += 4) {
+    for (let cellX = 0, x = 0; cellX < width; cellX++, x += 2) {
+      const offset = cellY * width + cellX;
+      const cellBrightness = brightnessGrid?.[cellY]?.[cellX] ?? 1.0;
+      renderOctantPackedCell(
+        result,
+        offset,
+        grid,
+        materialGrid,
+        phaseCounts,
+        x,
+        y,
+        cellBrightness,
+      );
+    }
+  }
+
+  return result;
+}
+
+function renderOctantPackedCell(
+  result: PackedCellGrid,
+  offset: number,
+  grid: PixelGrid,
+  materialGrid: Uint8Array[] | undefined,
+  phaseCounts: Uint8Array | null,
+  x: number,
+  y: number,
+  cellBrightness: number,
+): void {
+  loadOctantGridScratch(grid, x, y);
+  renderOctantScratchPacked(cellBrightness);
+  result.codepoints[offset] = OCTANT_CODEPOINTS[OCTANT_RESULT_PATTERN] ?? 0x20;
+  result.foreground[offset] = OCTANT_RESULT_FG;
+  result.background[offset] = OCTANT_RESULT_BG;
+  result.foregroundIndex[offset] = -1;
+  result.backgroundIndex[offset] = -1;
+
+  let waterSamples = 0;
+  phaseCounts?.fill(0);
+  if (materialGrid && phaseCounts) {
+    for (let dy = 0; dy < 4; dy++) {
+      for (let dx = 0; dx < 2; dx++) {
+        const encodedPhase = materialGrid[y + dy]?.[x + dx] ?? 0;
+        if (encodedPhase >= 1 && encodedPhase <= PHASES) {
+          waterSamples++;
+          const phaseIndex = encodedPhase - 1;
+          phaseCounts[phaseIndex] = (phaseCounts[phaseIndex] ?? 0) + 1;
+        }
+      }
+    }
+  }
+  if (waterSamples < 6 || !phaseCounts) return;
+
+  let phase = 0;
+  for (let p = 1; p < PHASES; p++) {
+    if (phaseCounts[p]! > phaseCounts[phase]!) phase = p;
+  }
+  const foregroundLuminance = ((OCTANT_RESULT_FG >>> 16) & 0xff) * 0.2126
+    + ((OCTANT_RESULT_FG >>> 8) & 0xff) * 0.7152
+    + (OCTANT_RESULT_FG & 0xff) * 0.0722;
+  const backgroundLuminance = ((OCTANT_RESULT_BG >>> 16) & 0xff) * 0.2126
+    + ((OCTANT_RESULT_BG >>> 8) & 0xff) * 0.7152
+    + (OCTANT_RESULT_BG & 0xff) * 0.0722;
+  const contrast = Math.abs(foregroundLuminance - backgroundLuminance);
+  if (Math.max(foregroundLuminance, backgroundLuminance) < 178 || contrast < 12) return;
+  if (foregroundLuminance >= backgroundLuminance) {
+    result.foregroundIndex[offset] = PALETTE.WATER + phase;
+  } else {
+    result.backgroundIndex[offset] = PALETTE.WATER + phase;
+  }
 }
 
 // ============================================

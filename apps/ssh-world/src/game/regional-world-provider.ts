@@ -4,6 +4,7 @@ import {
   BiomeWorldField,
   RegionalMaterialCompositor,
   RegionalRouteField,
+  RegionalWorldDerivedCache,
   RegionalWorldTileProvider,
 } from '@maldoror/world';
 import {
@@ -120,6 +121,11 @@ export async function loadRegionalWorldKit(
     textureScaleTiles: 7,
     maxOutputResolution: Math.min(biomeKit.sourceTileSize, routeKit.sourceTileSize),
   });
+  const derivedCache = new RegionalWorldDerivedCache();
+  // Session providers begin with byte-identical canonical terrain and no
+  // user-authored roads/buildings. TileProvider forks this token on the first
+  // structural mutation, so colocated views can share only safe static frames.
+  const staticRenderIdentity = {};
   return {
     field,
     routes,
@@ -151,8 +157,11 @@ export async function loadRegionalWorldKit(
       environmentContactLandmarkClearance: environmentKit.landmarkClearance,
       maxPreparedViewports: runtimeOptions.maxPreparedViewports ?? 6,
       clearSharedCachesOnDestroy: runtimeOptions.clearSharedCachesOnDestroy ?? false,
+      derivedCache,
+      staticRenderIdentity,
     }),
     clearSharedCaches: () => {
+      derivedCache.clear();
       compositor.clear();
       routes.clear();
       field.clear();

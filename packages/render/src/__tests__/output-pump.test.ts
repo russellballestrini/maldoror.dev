@@ -32,4 +32,13 @@ describe('OutputPump', () => {
     expect(pump.getBacklogBytes()).toBe(0);
     expect(pump.getDrainCount()).toBe(1);
   });
+
+  it('accounts for a directly written critical response as one packet', () => {
+    const stream = new ControlledStream();
+    const pump = new OutputPump(stream as unknown as NodeJS.WritableStream);
+
+    expect(pump.writeImmediate('input-ack')).toBe(true);
+    expect(stream.writes).toEqual(['input-ack']);
+    expect(pump.getTotalFramesWritten()).toBe(1);
+  });
 });

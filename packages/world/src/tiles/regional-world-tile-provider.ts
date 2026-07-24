@@ -256,6 +256,7 @@ export interface RegionalWorldTileProviderConfig extends TileProviderConfig {
   environmentContactLandmarkClearance?: number;
   maxCachedEnvironmentContactCells?: number;
   maxPreparedViewports?: number;
+  derivedCache?: RegionalWorldDerivedCache;
   /** Runtime session providers share immutable assets and field/compositor
    * caches owned by the worker. Research providers own their compositor by
    * default and clear it when destroyed. */
@@ -374,7 +375,40 @@ interface CollectedDerivedLayers {
   environmentSolid: Set<string>;
 }
 
+/** Worker-owned deterministic world-composition cache. Session providers keep
+ * actor/building/road state isolated, but authored placements, parcels, and
+ * collision layers depend only on the world seed and manifests. Sharing those
+ * immutable results prevents N colocated SSH sessions from retaining N copies
+ * of the same regional raster hierarchy. */
+export class RegionalWorldDerivedCache {
+  readonly blockCache = new Map<string, CachedBlock>();
+  readonly parcelGroupCache = new Map<string, CachedParcelGroup | null>();
+  readonly parcelLayerCache = new Map<string, CollectedDerivedLayers>();
+  readonly routeContactPlacementCache = new Map<string, Placement | null>();
+  readonly environmentContactPlacementCache = new Map<string, Placement | null>();
+  readonly environmentProgramCache = new Map<string, CachedEnvironmentProgram | null>();
+  accessClock = 0;
+
+  clear(): void {
+    this.blockCache.clear();
+    this.parcelGroupCache.clear();
+    this.parcelLayerCache.clear();
+    this.routeContactPlacementCache.clear();
+    this.environmentContactPlacementCache.clear();
+    this.environmentProgramCache.clear();
+    this.accessClock = 0;
+  }
+}
+
 const VISIBLE_TILE_CACHE = new WeakMap<BuildingTileData, boolean>();
+/** One prewarm payload is intentionally fanned out to every colocated SSH
+ * session. Decode its immutable tile/index facade once so session providers
+ * retain only LRU references instead of duplicating thousands of wrapper
+ * objects—and so the renderer's packed-pixel memo is shared by identity. */
+const PACKED_PREPARED_VIEWPORT_CACHE = new WeakMap<
+  RegionalPackedPreparedViewport,
+  ImportedPreparedViewport
+>();
 const LANDMARK_ANCHOR_REACH = 7;
 const LANDMARK_ENTOURAGE_REACH = 18;
 const PARCEL_SIDE_OFFSET = 3;
@@ -425,14 +459,15 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly placementMaxOffsetY: number;
   private readonly parcelGeometryReach: number;
   private readonly parcelSourceReach: number;
-  private readonly blockCache = new Map<string, CachedBlock>();
-  private readonly parcelGroupCache = new Map<string, CachedParcelGroup | null>();
-  private readonly parcelLayerCache = new Map<string, CollectedDerivedLayers>();
-  private readonly routeContactPlacementCache = new Map<string, Placement | null>();
-  private readonly environmentContactPlacementCache = new Map<string, Placement | null>();
-  private readonly environmentProgramCache = new Map<string, CachedEnvironmentProgram | null>();
+  private readonly derivedCache: RegionalWorldDerivedCache;
+  private readonly ownsDerivedCache: boolean;
+  private readonly blockCache: Map<string, CachedBlock>;
+  private readonly parcelGroupCache: Map<string, CachedParcelGroup | null>;
+  private readonly parcelLayerCache: Map<string, CollectedDerivedLayers>;
+  private readonly routeContactPlacementCache: Map<string, Placement | null>;
+  private readonly environmentContactPlacementCache: Map<string, Placement | null>;
+  private readonly environmentProgramCache: Map<string, CachedEnvironmentProgram | null>;
   private readonly preparedViewports = new Map<string, ImportedPreparedViewport>();
-  private accessClock = 0;
 
   constructor(config: RegionalWorldTileProviderConfig) {
     super(config);
@@ -473,6 +508,14 @@ export class RegionalWorldTileProvider extends TileProvider {
     );
     this.maxPreparedViewports = Math.max(1, Math.min(16, config.maxPreparedViewports ?? 4));
     this.clearSharedCachesOnDestroy = config.clearSharedCachesOnDestroy ?? true;
+    this.ownsDerivedCache = config.derivedCache === undefined;
+    this.derivedCache = config.derivedCache ?? new RegionalWorldDerivedCache();
+    this.blockCache = this.derivedCache.blockCache;
+    this.parcelGroupCache = this.derivedCache.parcelGroupCache;
+    this.parcelLayerCache = this.derivedCache.parcelLayerCache;
+    this.routeContactPlacementCache = this.derivedCache.routeContactPlacementCache;
+    this.environmentContactPlacementCache = this.derivedCache.environmentContactPlacementCache;
+    this.environmentProgramCache = this.derivedCache.environmentProgramCache;
     for (const asset of this.landmarks) {
       if (asset.families.length === 0 || asset.landmarkKinds.length === 0) {
         throw new Error(`Regional landmark has no semantic compatibility: ${asset.id}`);
@@ -557,6 +600,13 @@ export class RegionalWorldTileProvider extends TileProvider {
     this.placementMaxOffsetX = Math.max(0, ...extentX);
     this.placementMinOffsetY = Math.min(0, ...extentY);
     this.placementMaxOffsetY = Math.max(0, ...extentY);
+  }
+
+  /** Regional terrain and authored structures are coordinate-stable. Water
+   * and foliage motion is palette-driven after cell reconstruction, so the
+   * expensive pixel base has no per-session tick phase. */
+  getStaticRenderEpoch(): number {
+    return 0;
   }
 
   override getTile(tileX: number, tileY: number): Tile {
@@ -948,6 +998,11 @@ export class RegionalWorldTileProvider extends TileProvider {
     if (payload.worldSeed !== this.worldSeedString) {
       throw new Error(`Regional viewport seed mismatch: ${payload.worldSeed} != ${this.worldSeedString}`);
     }
+    const shared = PACKED_PREPARED_VIEWPORT_CACHE.get(payload);
+    if (shared) {
+      this.installPreparedViewport(shared);
+      return;
+    }
     const bounds = normalizedPreparedBounds(
       payload.bounds.minX,
       payload.bounds.minY,
@@ -1019,14 +1074,16 @@ export class RegionalWorldTileProvider extends TileProvider {
       solid.add(positionKey(x, y));
     }
     const key = `${bounds.minX},${bounds.minY},${bounds.maxX},${bounds.maxY}@${payload.resolution}`;
-    this.installPreparedViewport({
+    const imported = {
       key,
       bounds,
       resolution: payload.resolution,
       terrain,
       overlays,
       solid,
-    });
+    };
+    PACKED_PREPARED_VIEWPORT_CACHE.set(payload, imported);
+    this.installPreparedViewport(imported);
   }
 
   /** Constant-bounded coverage query for the predictive scheduler. Coverage
@@ -1490,12 +1547,7 @@ export class RegionalWorldTileProvider extends TileProvider {
   }
 
   override destroy(): void {
-    this.blockCache.clear();
-    this.parcelGroupCache.clear();
-    this.parcelLayerCache.clear();
-    this.routeContactPlacementCache.clear();
-    this.environmentContactPlacementCache.clear();
-    this.environmentProgramCache.clear();
+    if (this.ownsDerivedCache) this.derivedCache.clear();
     this.preparedViewports.clear();
     if (this.clearSharedCachesOnDestroy) this.compositor.clear();
     super.destroy();
@@ -1547,7 +1599,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     const key = `${blockX},${blockY}`;
     const cached = this.blockCache.get(key);
     if (cached) {
-      cached.accessedAt = ++this.accessClock;
+      cached.accessedAt = ++this.derivedCache.accessClock;
       this.blockCache.delete(key);
       this.blockCache.set(key, cached);
       return cached;
@@ -1608,7 +1660,13 @@ export class RegionalWorldTileProvider extends TileProvider {
     placements.push(...this.buildRouteContactPlacements(originX, originY));
 
     const { overlays, solid } = this.rasterizePlacements(placements);
-    return { overlays, solid, landmarkFabricSurfaces, placements, accessedAt: ++this.accessClock };
+    return {
+      overlays,
+      solid,
+      landmarkFabricSurfaces,
+      placements,
+      accessedAt: ++this.derivedCache.accessClock,
+    };
   }
 
   private rasterizePlacements(placements: readonly Placement[]): {

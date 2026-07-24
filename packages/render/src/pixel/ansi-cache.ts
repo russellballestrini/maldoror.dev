@@ -21,6 +21,10 @@ const FG_CACHE = new Map<number, string>();
 const BG_CACHE = new Map<number, string>();
 const SGR_CACHE = new Map<number, string>();
 
+function red(key: number): number { return (key >>> 16) & 0xff; }
+function green(key: number): number { return (key >>> 8) & 0xff; }
+function blue(key: number): number { return key & 0xff; }
+
 /** Cached foreground escape: \x1b[38;2;r;g;bm */
 export function fgCode(c: RGB): string {
   const k = rgbKey(c);
@@ -73,6 +77,29 @@ export function sgrCode(fg: RGB | null, bg: RGB | null): string {
       s = `${ESC}[38;2;${fg.r};${fg.g};${fg.b}m`;
     } else {
       s = `${ESC}[48;2;${bg!.r};${bg!.g};${bg!.b}m`;
+    }
+    SGR_CACHE.set(k, s);
+  }
+  return s;
+}
+
+/** Packed-key variant for the typed terminal-cell path. This avoids creating
+ * two short-lived RGB objects for every emitted cell while sharing the same
+ * bounded pair cache and byte-identical SGR encoding as `sgrCode`. */
+export function sgrCodePacked(fg: number | null, bg: number | null): string {
+  if (fg === null && bg === null) return '';
+  const fk = fg === null ? 0 : fg + 1;
+  const bk = bg === null ? 0 : bg + 1;
+  const k = fk * 16777217 + bk;
+  let s = SGR_CACHE.get(k);
+  if (s === undefined) {
+    if (SGR_CACHE.size >= CACHE_CAP) SGR_CACHE.clear();
+    if (fg !== null && bg !== null) {
+      s = `${ESC}[38;2;${red(fg)};${green(fg)};${blue(fg)};48;2;${red(bg)};${green(bg)};${blue(bg)}m`;
+    } else if (fg !== null) {
+      s = `${ESC}[38;2;${red(fg)};${green(fg)};${blue(fg)}m`;
+    } else {
+      s = `${ESC}[48;2;${red(bg!)};${green(bg!)};${blue(bg!)}m`;
     }
     SGR_CACHE.set(k, s);
   }

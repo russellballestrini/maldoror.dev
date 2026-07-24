@@ -867,6 +867,36 @@ Completed foundations:
   / 212 tests, 18/18 typecheck tasks, and 12/12 build tasks. Evidence is in
   `track-7-performance/packed-raster-v1/FINDINGS.md`; no image generation or
   metered model call was used;
+- the follow-on Gate-D source pass now turns the real V8 profile into a
+  shared-static render architecture instead of tuning by intuition. Static
+  terrain/route/building atmosphere is graded once per exact world-life state;
+  a shared packed octant plane is reconstructed once per static scene; and
+  actor/shadow drawing returns explicit dirty cell offsets so sessions refit
+  only genuinely dynamic cells. Movement acceptance is reported separately
+  from smooth actor travel through a synchronized authoritative-position
+  acknowledgement. A cooperative scheduler coalesces lagging session frames
+  and yields through the event loop between viewports so queued SSH input is
+  not trapped behind a burst of expired render timers. The selected v41
+  160x46 real-SSH ladder passes all three steady rungs: at 5/10/20 presences,
+  input-response p95 is 23.994/25.963/76.974 ms, frame-gap p99 is
+  154.832/155.909/181.583 ms, peak coordinator-plus-worker RSS is
+  674.895/700.102/807.758 MiB, and one-core CPU is
+  28.569/29.816/44.881%. All rungs have zero dropped frames, drain events, and
+  recovery requests; two-client churn returns to exact `(0,0)`, restores all
+  20 sessions, and cleanup reaches zero. The 16 MiB semi-space experiment is
+  retained as rejected because it raised 20-client RSS to 846.023 MiB and
+  worsened frame p99 to 268.496 ms. Cold and steady evidence remain separate:
+  the first five-client cohort still has 2,344.696 ms cold response p95 even
+  though later additions settle at 23.192/24.146 ms. A fresh faithful real-SSH
+  origin replay is retained, while deterministic origin and traversal hashes
+  remain byte-identical at `25cf0516...9313` and `ea499954...5188`. This is a
+  selected source architecture and the first ladder pass, not Gate D, not a
+  deployment, and not physical acceptance. Full evidence, profile attribution,
+  rejected runs, and measurement semantics are in
+  `track-7-performance/packed-raster-v1/FINDINGS.md`. Verification is 42 files
+  / 231 tests, 18/18 typecheck tasks, 12/12 build tasks, 7/7 configured lint
+  tasks, and clean diff validation. Production remains `vb07c0d4`; no image
+  generation or metered model call was used;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
@@ -876,8 +906,11 @@ Still open and therefore goal-blocking:
 
 - the regional stack is now the live authoritative provider with exact-origin
   readiness, real SSH latency, movement/camera/zoom transport, and one bounded
-  six-second production capture. The 5/10/20-presence ladder, 30-minute run,
-  long-run cgroup behavior, and physical Ghostty remain unproven;
+  six-second production capture. The selected source build passes a loopback
+  real-SSH 5/10/20-presence ladder, but the 30-minute mixed run, separated
+  mode/keyframe bandwidth audit, first-cohort cold-start correction, deployed
+  cgroup observation, larger physical Ghostty viewport, and operator use remain
+  unproven;
 - the first six-family landmark silhouettes and shared-boundary parcel
   compounds now include a selected two-sided canal-town focal core, but remain
   sparse research prototypes rather than a complete world layer. The core now
@@ -914,8 +947,9 @@ Still open and therefore goal-blocking:
   topology-specific support vocabularies, crossing-family diversity, and the
   surrounding coast-composition failures close, followed by the fresh full
   atlas.
-  Deterministic traversal, the load ladder, 30-minute terminal run, and physical
-  Ghostty acceptance also remain open.
+  Fresh post-correction deterministic traversal, the 30-minute terminal run,
+  deployed-service/cgroup audit, and physical Ghostty acceptance also remain
+  open.
 
 This ledger records real progress and the remaining distance. It does not
 relax, subdivide, or supersede any proof gate above.

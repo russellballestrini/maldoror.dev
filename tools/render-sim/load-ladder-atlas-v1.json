@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "atlasVersion": "load-ladder-atlas-v1",
+  "worldSeed": "8801799478018485",
+  "zooms": [
+    { "id": "walking", "level": 30 }
+  ],
+  "viewports": [
+    { "id": "ghostty-reference", "cols": 160, "rows": 46 }
+  ],
+  "environments": [
+    { "id": "day-clear", "worldMinute": 720, "weather": "clear", "weatherIntensity": 0.12 }
+  ],
+  "sites": [
+    { "id": "presence-01", "kind": "load", "expectedPrimary": "canal-town", "x": 0, "y": 0, "environment": "day-clear" },
+    { "id": "presence-02", "kind": "load", "expectedPrimary": "canal-town", "x": 0, "y": 0, "environment": "day-clear" },
+    { "id": "presence-03", "kind": "load", "expectedPrimary": "canal-town", "x": 0, "y": 0, "environment": "day-clear" },
+    { "id": "presence-04", "kind": "load", "expectedPrimary": "canal-town", "x": 0, "y": 0, "environment": "day-clear" },
+    { "id": "presence-05", "kind": "load", "expectedPrimary": "canal-town", "x": 0, "y": 0, "environment": "day-clear" },
+    { "id": "presence-06", "kind": "load", "expectedPrimary": "canal-town", "x": 0, "y": 0, "environment": "day-clear" },
+    { "id": "presence-07", "kind": "load", "expectedPrimary": "canal-town", "x": 0, "y": 0, "environment": "day-clear" },
+    { "id": "presence-08", "kind": "load", "expectedPrimary": "canal-town", "x": 0, "y": 0, "environment": "day-clear" },
+    { "id": "presence-09", "kind": "load", "expectedPrimary": "canal-town", "x": 0, "y": 0, "environment": "day-clear" },
+    { "id": "presence-10", "kind": "load", "expectedPrimary": "canal-town", "x": 0, "y": 0, "environment": "day-clear" },
+    { "id": "presence-11", "kind": "load", "expectedPrimary": "canal-town", "x": 0, "y": 0, "environment": "day-clear" },
+    { "id": "presence-12", "kind": "load", "expectedPrimary": "canal-town", "x": 0, "y": 0, "environment": "day-clear" },
+    { "id": "presence-13", "kind": "load", "expectedPrimary": "canal-town", "x": 0, "y": 0, "environment": "day-clear" },
+    { "id": "presence-14", "kind": "load", "expectedPrimary": "canal-town", "x": 0, "y": 0, "environment": "day-clear" },
+    { "id": "presence-15", "kind": "load", "expectedPrimary": "canal-town", "x": 0, "y": 0, "environment": "day-clear" },
+    { "id": "presence-16", "kind": "load", "expectedPrimary": "canal-town", "x": 0, "y": 0, "environment": "day-clear" },
+    { "id": "presence-17", "kind": "load", "expectedPrimary": "canal-town", "x": 0, "y": 0, "environment": "day-clear" },
+    { "id": "presence-18", "kind": "load", "expectedPrimary": "canal-town", "x": 0, "y": 0, "environment": "day-clear" },
+    { "id": "presence-19", "kind": "load", "expectedPrimary": "canal-town", "x": 0, "y": 0, "environment": "day-clear" },
+    { "id": "presence-20", "kind": "load", "expectedPrimary": "canal-town", "x": 0, "y": 0, "environment": "day-clear" }
+  ]
+}

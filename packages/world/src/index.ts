@@ -151,6 +151,7 @@ export {
 } from './tiles/regional-waterfront-layout.js';
 export {
   REGIONAL_MAX_PREPARED_VIEWPORT_AREA,
+  RegionalWorldDerivedCache,
   RegionalWorldTileProvider,
   type RegionalAmbientAsset,
   type RegionalAssetPlacement,

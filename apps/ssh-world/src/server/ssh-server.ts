@@ -324,6 +324,10 @@ export class SSHServer {
     drainCount: number;
     totalBytesWritten: number;
     peakQueuedBytes: number;
+    totalFramesWritten: number;
+    keyframesAccepted: number;
+    recoveryKeyframesAccepted: number;
+    recoveryRequests: number;
   }> {
     return Array.from(this.sessions.values(), (session) => {
       const metrics = session.getTransportMetrics();
@@ -333,6 +337,10 @@ export class SSHServer {
         drainCount: metrics.drainCount,
         totalBytesWritten: metrics.totalBytesWritten,
         peakQueuedBytes: metrics.peakQueuedBytes,
+        totalFramesWritten: metrics.totalFramesWritten,
+        keyframesAccepted: metrics.keyframesAccepted,
+        recoveryKeyframesAccepted: metrics.recoveryKeyframesAccepted,
+        recoveryRequests: metrics.recoveryRequests,
       };
     });
   }

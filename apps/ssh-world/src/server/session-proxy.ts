@@ -72,6 +72,9 @@ export class SessionProxy {
   private unsubscribeReload: (() => void) | null = null;
   private outputPump: OutputPump;
   private awaitingKeyframe = false;
+  private keyframesAccepted = 0;
+  private recoveryKeyframesAccepted = 0;
+  private recoveryRequests = 0;
 
   constructor(config: SessionProxyConfig) {
     this.stream = config.stream;
@@ -90,6 +93,7 @@ export class SessionProxy {
       onDrop: () => {
         // Delta packets depend on terminal_view. If one is dropped, discard all
         // queued deltas and resume only from an explicitly flagged I-frame.
+        if (!this.awaitingKeyframe) this.recoveryRequests++;
         this.awaitingKeyframe = true;
         this.outputPump.clearQueued();
         this.workerManager.requestSessionKeyframe(this.sessionId);
@@ -142,13 +146,18 @@ export class SessionProxy {
   /**
    * Receive render output from worker and write to SSH stream
    */
-  handleOutput(output: string, keyframe = false): void {
+  handleOutput(output: string, keyframe = false, immediate = false): void {
     if (this.destroyed || this.isUpdating) return;
     if (this.awaitingKeyframe && !keyframe) return;
-    if (keyframe) this.awaitingKeyframe = false;
+    if (keyframe) {
+      this.keyframesAccepted++;
+      if (this.awaitingKeyframe) this.recoveryKeyframesAccepted++;
+      this.awaitingKeyframe = false;
+    }
 
     try {
-      this.outputPump.enqueue(output);
+      if (immediate) this.outputPump.writeImmediate(output);
+      else this.outputPump.enqueue(output);
     } catch (err) {
       console.error(`[SessionProxy] Write error for ${this.sessionId}:`, err);
     }
@@ -278,8 +287,8 @@ export class SessionProxy {
     resourceMonitor.trackConnection(this.sessionId, this.userId || undefined);
 
     // Register callback for session output from worker
-    this.workerManager.onSessionOutput(this.sessionId, (_sessionId, output, keyframe) => {
-      this.handleOutput(output, keyframe);
+    this.workerManager.onSessionOutput(this.sessionId, (_sessionId, output, keyframe, immediate) => {
+      this.handleOutput(output, keyframe, immediate);
     });
 
     // Register callback for userId updates (after onboarding)
@@ -348,7 +357,16 @@ export class SessionProxy {
     }
   }
 
-  getTransportMetrics(): OutputPumpMetrics {
-    return this.outputPump.getMetrics();
+  getTransportMetrics(): OutputPumpMetrics & {
+    keyframesAccepted: number;
+    recoveryKeyframesAccepted: number;
+    recoveryRequests: number;
+  } {
+    return {
+      ...this.outputPump.getMetrics(),
+      keyframesAccepted: this.keyframesAccepted,
+      recoveryKeyframesAccepted: this.recoveryKeyframesAccepted,
+      recoveryRequests: this.recoveryRequests,
+    };
   }
 }

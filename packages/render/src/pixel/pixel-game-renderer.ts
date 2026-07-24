@@ -8,10 +8,13 @@ import {
   renderHalfBlockGridCells,
   renderBrailleGridCells,
   renderOctantGridCells,
+  renderOctantPackedGridCells,
+  packedRgb,
   cellsEqual,
   colorsEqual,
   renderCRLE,
   type CellGrid,
+  type PackedCellGrid,
 } from './pixel-renderer.js';
 import { perfStats } from './perf-stats.js';
 import { sgrCode } from './ansi-cache.js';
@@ -166,6 +169,8 @@ export class PixelGameRenderer {
   private username: string;
   private playerX: number = 0;
   private playerY: number = 0;
+  private displayPlayerX: number = 0;
+  private displayPlayerY: number = 0;
   private zoomLevel: number;  // 100 = full resolution, 50 = half (zoomed out), etc.
   private zoomTargetLevel: number;
   private zoomFromLevel: number;
@@ -204,6 +209,8 @@ export class PixelGameRenderer {
   private zoneCCells: CellGrid = [];
   // Production transport: retained terminal framebuffer + motion compensation.
   private terminalCodec: TerminalCodec;
+  private octantCellBuffers: [PackedCellGrid | null, PackedCellGrid | null] = [null, null];
+  private octantCellBufferIndex = 0;
   private lastCodecMetrics: TerminalCodecMetrics | null = null;
   private previousStatsOutput: string = '';
   // The player can move inside this retained camera frame. Once they cross the
@@ -422,6 +429,8 @@ export class PixelGameRenderer {
    * Cleanup terminal state
    */
   cleanup(): void {
+    this.octantCellBuffers = [null, null];
+    this.terminalCodec.reset();
     if (!this.initialized) return;
 
     // Disable performance stats
@@ -707,9 +716,37 @@ export class PixelGameRenderer {
    * Set camera position (center on player)
    */
   setCamera(tileX: number, tileY: number): void {
+    this.setAuthoritativePosition(tileX, tileY);
     this.playerX = tileX;
     this.playerY = tileY;
     this.updateFollowCamera(tileX, tileY);
+  }
+
+  /** Keep the HUD on the accepted world coordinate while the actor and camera
+   * interpolate through sub-tile visual positions. This is immediate,
+   * truthful input feedback rather than waiting for smoothstep to cross the
+   * rounded half-tile boundary. */
+  setAuthoritativePosition(tileX: number, tileY: number): void {
+    const displayX = Math.round(tileX);
+    const displayY = Math.round(tileY);
+    if (displayX !== this.displayPlayerX || displayY !== this.displayPlayerY) {
+      this.displayPlayerX = displayX;
+      this.displayPlayerY = displayY;
+      this.invalidateStatsBar();
+    }
+  }
+
+  /** Emit an immediate synchronized HUD acknowledgement on the input path.
+   * The retained viewport is untouched; its next scheduled frame advances the
+   * smooth actor traversal. */
+  renderPositionAcknowledgement(tileX: number, tileY: number): string {
+    if (!this.initialized) return '';
+    this.setAuthoritativePosition(tileX, tileY);
+    const statsBar = this.renderStatsBar();
+    this.previousStatsOutput = statsBar;
+    const output = `${SYNC_BEGIN}${ESC}[1;1H${statsBar}${ESC}[0m${SYNC_END}`;
+    this.lastFrameBytes = Buffer.byteLength(output, 'utf8');
+    return output;
   }
 
   /**
@@ -721,6 +758,8 @@ export class PixelGameRenderer {
   primeCamera(tileX: number, tileY: number): void {
     this.playerX = tileX;
     this.playerY = tileY;
+    this.displayPlayerX = Math.round(tileX);
+    this.displayPlayerY = Math.round(tileY);
     this.cameraTileX = tileX;
     this.cameraTileY = tileY;
     this.cameraInitialized = true;
@@ -971,7 +1010,7 @@ export class PixelGameRenderer {
     const centerSection = `${fgLabel}Mode: ${fgValue}${modeStr}${fgLabel}  Zoom: ${fgValue}${this.zoomLevel}%${fgValue}${rotStr}${camStr}`;
 
     // Right content
-    const rightSection = `${fgLabel}Pos: ${fgCoord}(${this.playerX}, ${this.playerY})  `;
+    const rightSection = `${fgLabel}Pos: ${fgCoord}(${this.displayPlayerX}, ${this.displayPlayerY})  `;
 
     // Debug info (only shown if there's space)
     const debugStr = `${fgLabel}${this.fps}fps ${this.lastRenderTime}ms ${bytesStr}${skipStr}  ${tileSize}px ${widthTiles}×${heightTiles}`;
@@ -1465,7 +1504,15 @@ export class PixelGameRenderer {
     // whole ANSI lines here; any camera movement changed every line and forced
     // a near-full-frame repaint. Keeping structure is what lets TerminalCodec
     // motion-compensate the retained terminal framebuffer.
-    const { buffer, overlays, brightnessGrid, materialGrid } = this.viewportRenderer.renderToBuffer(world, this.tickCount);
+    const {
+      buffer,
+      overlays,
+      brightnessGrid,
+      materialGrid,
+      sharedStaticBuffer,
+      sharedStaticMaterialGrid,
+      sharedStaticDirtyCellOffsets,
+    } = this.viewportRenderer.renderToBuffer(world, this.tickCount);
 
     // Apply color quantization with dithering at high zoom levels to reduce ANSI codes
     let quantizedBuffer = buffer;
@@ -1475,33 +1522,50 @@ export class PixelGameRenderer {
       quantizedBuffer = quantizeGridDithered(buffer, 5);
     }
 
-    let viewportCells: CellGrid;
-    switch (this.renderMode) {
-      case 'octant':
-        viewportCells = renderOctantGridCells(quantizedBuffer, brightnessGrid, materialGrid);
-        break;
-      case 'braille':
-        viewportCells = renderBrailleGridCells(quantizedBuffer, brightnessGrid);
-        break;
-      case 'halfblock':
-        viewportCells = renderHalfBlockGridCells(quantizedBuffer, brightnessGrid);
-        break;
-      case 'normal':
-      default:
-        viewportCells = renderNormalGridCells(quantizedBuffer);
-        break;
-    }
-
-    this.applyTextOverlays(viewportCells, overlays);
-
     const cameraCenter = this.viewportRenderer.getCameraCenter();
     const geometry = this.getCellGeometry();
-    const encoded = this.terminalCodec.encode(viewportCells, {
+    const codecCamera = {
       x: cameraCenter.x,
       y: cameraCenter.y,
       rotation: this.viewportRenderer.getCameraRotation(),
       ...geometry,
-    });
+    };
+    let encoded;
+    if (this.renderMode === 'octant') {
+      this.octantCellBufferIndex = this.octantCellBufferIndex === 0 ? 1 : 0;
+      const packed = renderOctantPackedGridCells(
+        quantizedBuffer,
+        brightnessGrid,
+        materialGrid,
+        this.octantCellBuffers[this.octantCellBufferIndex] ?? undefined,
+        quantizedBuffer === buffer && brightnessGrid === undefined && sharedStaticBuffer
+          ? {
+              buffer: sharedStaticBuffer,
+              materialGrid: sharedStaticMaterialGrid,
+              dirtyCellOffsets: sharedStaticDirtyCellOffsets,
+            }
+          : undefined,
+      );
+      this.octantCellBuffers[this.octantCellBufferIndex] = packed;
+      this.applyTextOverlaysPacked(packed, overlays);
+      encoded = this.terminalCodec.encodePacked(packed, codecCamera);
+    } else {
+      let viewportCells: CellGrid;
+      switch (this.renderMode) {
+        case 'braille':
+          viewportCells = renderBrailleGridCells(quantizedBuffer, brightnessGrid);
+          break;
+        case 'halfblock':
+          viewportCells = renderHalfBlockGridCells(quantizedBuffer, brightnessGrid);
+          break;
+        case 'normal':
+        default:
+          viewportCells = renderNormalGridCells(quantizedBuffer);
+          break;
+      }
+      this.applyTextOverlays(viewportCells, overlays);
+      encoded = this.terminalCodec.encode(viewportCells, codecCamera);
+    }
     this.lastCodecMetrics = encoded.metrics;
     this.lastWorldRevision = worldRevision ?? null;
     this.lastComposedCameraX = cameraCenter.x;
@@ -1541,6 +1605,25 @@ export class PixelGameRenderer {
           fgColor: overlay.fgColor,
           bgColor: overlay.bgColor,
         };
+      }
+    }
+  }
+
+  private applyTextOverlaysPacked(cells: PackedCellGrid, overlays: TextOverlay[]): void {
+    for (const overlay of overlays) {
+      const { row, col } = this.pixelToTerminal(overlay.pixelX, overlay.pixelY);
+      if (row < 0 || row >= cells.height) continue;
+      const characters = [...` ${overlay.text} `];
+      const start = Math.max(0, col - Math.floor(characters.length / 2));
+      for (let i = 0; i < characters.length; i++) {
+        const x = start + i;
+        if (x >= cells.width) break;
+        const offset = row * cells.width + x;
+        cells.codepoints[offset] = characters[i]!.codePointAt(0) ?? 0x20;
+        cells.foreground[offset] = packedRgb(overlay.fgColor);
+        cells.background[offset] = packedRgb(overlay.bgColor);
+        cells.foregroundIndex[offset] = -1;
+        cells.backgroundIndex[offset] = -1;
       }
     }
   }

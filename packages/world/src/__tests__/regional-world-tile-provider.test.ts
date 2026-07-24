@@ -15,11 +15,13 @@ import { RegionalMaterialCompositor } from '../tiles/regional-material-composito
 import { rasterizeRegionalEnvironmentProgramLayout } from '../tiles/regional-environment-program-layout.js';
 import { rasterizeRegionalLandmarkFabricLayout } from '../tiles/regional-landmark-fabric-layout.js';
 import {
+  RegionalWorldDerivedCache,
   RegionalWorldTileProvider,
   type RegionalAmbientAsset,
   type RegionalEnvironmentContactAsset,
   type RegionalLandmarkAsset,
   type RegionalParcelComponentAsset,
+  type RegionalPackedPreparedViewport,
   type RegionalRouteContactAsset,
 } from '../tiles/regional-world-tile-provider.js';
 
@@ -108,6 +110,7 @@ function makeWorld(
   sampleRoute: (x: number, y: number) => RegionalRouteSample = routeSample,
   sampleBiome: (x: number, y: number) => BiomeWorldSample = (x) => biomeSample(nearestFamily(x)),
   includeEnvironmentPrograms = false,
+  derivedCache?: RegionalWorldDerivedCache,
 ): RegionalWorldTileProvider {
   const field = {
     sample: sampleBiome,
@@ -243,6 +246,7 @@ function makeWorld(
     environmentContactCellSize: 18,
     environmentContactDensity: 1,
     environmentContactLandmarkClearance: 4,
+    derivedCache,
   });
 }
 
@@ -258,6 +262,35 @@ function overlayColoursNear(world: RegionalWorldTileProvider, centreX: number): 
 }
 
 describe('RegionalWorldTileProvider', () => {
+  it('shares deterministic regional caches without sharing mutable actor state', () => {
+    const shared = new RegionalWorldDerivedCache();
+    const first = makeWorld(32, 32, routeSample, undefined, false, shared);
+    const second = makeWorld(32, 32, routeSample, undefined, false, shared);
+
+    first.getAmbientPlacementsInBounds(-24, -24, 24, 24);
+    const populated = first.getRegionalStats();
+    expect(populated.cachedBlocks).toBeGreaterThan(0);
+    expect(second.getRegionalStats().cachedBlocks).toBe(populated.cachedBlocks);
+
+    first.setLocalPlayerId('first');
+    second.setLocalPlayerId('second');
+    first.updatePlayer({
+      userId: 'first',
+      username: 'first',
+      x: 0,
+      y: 0,
+      direction: 'down',
+      animationFrame: 0,
+      isMoving: false,
+    });
+    expect(second.getPlayers()).toHaveLength(0);
+
+    first.destroy();
+    expect(second.getRegionalStats().cachedBlocks).toBe(populated.cachedBlocks);
+    shared.clear();
+    expect(second.getRegionalStats().cachedBlocks).toBe(0);
+  });
+
   it('projects declarative emitting placements into deterministic bounded lights', () => {
     const world = makeWorld();
     const first = world.getLightSourcesInBounds(-10, -10, 10, 10);
@@ -724,6 +757,30 @@ describe('RegionalWorldTileProvider', () => {
       }
     }
     expect(target.getRegionalStats().cachedBlocks).toBe(0);
+  });
+
+  it('shares one immutable packed viewport facade across session providers', () => {
+    const packed: RegionalPackedPreparedViewport = {
+      version: 2,
+      worldSeed: '42',
+      bounds: { minX: 0, minY: 0, maxX: 0, maxY: 0 },
+      resolution: 1,
+      terrainRgba: new Uint8Array([10, 20, 30, 255]),
+      terrainMaterial: new Uint8Array([2]),
+      terrainWalkable: new Uint8Array([1]),
+      overlayCoordinates: new Int32Array([0, 0]),
+      overlayRgba: new Uint8Array([40, 50, 60, 128]),
+      solid: new Uint8Array([0]),
+    };
+    const first = makeWorld(32, 32);
+    const second = makeWorld(32, 32);
+    first.importPreparedViewport(packed);
+    second.importPreparedViewport(packed);
+
+    expect(first.getTileAtResolution(0, 0, 1)).toBe(second.getTileAtResolution(0, 0, 1));
+    expect(first.getBuildingTileAt(0, 0)).toBe(second.getBuildingTileAt(0, 0));
+    expect(first.getRegionalStats().preparedTerrainTiles).toBe(1);
+    expect(second.getRegionalStats().preparedTerrainTiles).toBe(1);
   });
 
   it('uses the nearest prepared semantic LOD during animated zoom', () => {

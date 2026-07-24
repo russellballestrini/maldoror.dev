@@ -23,6 +23,8 @@ import {
   type LoadedRegionalWorldKit,
 } from '../game/regional-world-provider.js';
 import { RegionalPrewarmService } from '../game/regional-prewarm-service.js';
+import { getHeapStatistics } from 'node:v8';
+import { monitorEventLoopDelay, performance } from 'node:perf_hooks';
 
 // Message types for IPC
 export interface WorkerInitMessage {
@@ -154,6 +156,11 @@ export interface GetAllSessionStatesMessage {
   requestId: string;
 }
 
+export interface GetWorkerRuntimeMessage {
+  type: 'get_worker_runtime';
+  requestId: string;
+}
+
 export interface DestroySessionMessage {
   type: 'destroy_session';
   sessionId: string;
@@ -199,6 +206,7 @@ export type MainToWorkerMessage =
   | SessionResizeMessage
   | SessionKeyframeMessage
   | GetAllSessionStatesMessage
+  | GetWorkerRuntimeMessage
   | ShutdownMessage;
 
 // Response types
@@ -289,6 +297,7 @@ export interface SessionOutputMessage {
   sessionId: string;
   output: string;
   keyframe: boolean;
+  immediate: boolean;
 }
 
 export interface SessionUserIdMessage {
@@ -308,6 +317,34 @@ export interface AllSessionStatesResponse {
   states: SessionState[];
 }
 
+export interface WorkerRuntimeSnapshot {
+  pid: number;
+  sessions: number;
+  memory: {
+    rss_mib: number;
+    heap_used_mib: number;
+    heap_total_mib: number;
+    heap_limit_mib: number;
+    external_mib: number;
+    array_buffers_mib: number;
+  };
+  event_loop: {
+    utilization: number;
+    delay_p50_ms: number;
+    delay_p95_ms: number;
+    delay_p99_ms: number;
+    delay_max_ms: number;
+  };
+  prewarm: ReturnType<RegionalPrewarmService['getStats']> | null;
+  session_stats: ReturnType<WorkerSession['getRuntimeStats']>[];
+}
+
+export interface WorkerRuntimeResponse {
+  type: 'worker_runtime';
+  requestId: string;
+  runtime: WorkerRuntimeSnapshot;
+}
+
 export type WorkerToMainMessage =
   | WorkerReadyMessage
   | VisiblePlayersResponse
@@ -324,6 +361,7 @@ export type WorkerToMainMessage =
   | SessionUserIdMessage
   | SessionEndedMessage
   | AllSessionStatesResponse
+  | WorkerRuntimeResponse
   | WorkerErrorMessage;
 
 let gameServer: GameServer | null = null;
@@ -336,6 +374,17 @@ let regionalOriginViewport: RegionalPreparedViewportPayload | null = null;
 let regionalDefaultAvatar: Sprite | null = null;
 const workerSessions: Map<string, WorkerSession> = new Map();
 let shuttingDown = false;
+const workerEventLoopDelay = monitorEventLoopDelay({ resolution: 1 });
+workerEventLoopDelay.enable();
+let lastWorkerEventLoopUtilization = performance.eventLoopUtilization();
+
+function runtimeMetric(value: number): number {
+  return Number(value.toFixed(3));
+}
+
+function delayMilliseconds(value: number): number {
+  return Number.isFinite(value) ? runtimeMetric(value / 1_000_000) : 0;
+}
 
 const REGIONAL_ORIGIN_PREWARM = {
   bounds: { minX: -20, minY: -20, maxX: 20, maxY: 20 },
@@ -348,8 +397,13 @@ function send(message: WorkerToMainMessage): void {
   }
 }
 
-function sendSessionOutput(sessionId: string, output: string, keyframe = false): void {
-  send({ type: 'session_output', sessionId, output, keyframe });
+function sendSessionOutput(
+  sessionId: string,
+  output: string,
+  keyframe = false,
+  immediate = false,
+): void {
+  send({ type: 'session_output', sessionId, output, keyframe, immediate });
 }
 
 function sendSessionUserId(sessionId: string, userId: string): void {
@@ -633,9 +687,14 @@ process.on('message', async (msg: MainToWorkerMessage) => {
         console.log(`[Worker] Created session ${msg.sessionId.slice(0, 8)}... (${workerSessions.size} total)`);
 
         // Start the session (async, don't block IPC)
-        session.start().catch(err => {
+        session.start().catch(async err => {
           console.error(`[Worker] Session ${msg.sessionId.slice(0, 8)}... start error:`, err);
-          workerSessions.delete(msg.sessionId);
+          if (workerSessions.get(msg.sessionId) === session) {
+            workerSessions.delete(msg.sessionId);
+          }
+          await session.destroy().catch(destroyError => {
+            console.error(`[Worker] Session ${msg.sessionId.slice(0, 8)}... cleanup error:`, destroyError);
+          });
         });
         break;
       }
@@ -678,6 +737,43 @@ process.on('message', async (msg: MainToWorkerMessage) => {
         }
         console.log(`[Worker] Reporting ${states.length} session states for hot reload`);
         send({ type: 'all_session_states', requestId: msg.requestId, states });
+        break;
+      }
+
+      case 'get_worker_runtime': {
+        const memory = process.memoryUsage();
+        const heap = getHeapStatistics();
+        const eventLoopUtilization = performance.eventLoopUtilization(
+          lastWorkerEventLoopUtilization,
+        );
+        const mib = 1024 * 1024;
+        send({
+          type: 'worker_runtime',
+          requestId: msg.requestId,
+          runtime: {
+            pid: process.pid,
+            sessions: workerSessions.size,
+            memory: {
+              rss_mib: Number((memory.rss / mib).toFixed(3)),
+              heap_used_mib: Number((memory.heapUsed / mib).toFixed(3)),
+              heap_total_mib: Number((memory.heapTotal / mib).toFixed(3)),
+              heap_limit_mib: Number((heap.heap_size_limit / mib).toFixed(3)),
+              external_mib: Number((memory.external / mib).toFixed(3)),
+              array_buffers_mib: Number((memory.arrayBuffers / mib).toFixed(3)),
+            },
+            event_loop: {
+              utilization: runtimeMetric(eventLoopUtilization.utilization),
+              delay_p50_ms: delayMilliseconds(workerEventLoopDelay.percentile(50)),
+              delay_p95_ms: delayMilliseconds(workerEventLoopDelay.percentile(95)),
+              delay_p99_ms: delayMilliseconds(workerEventLoopDelay.percentile(99)),
+              delay_max_ms: delayMilliseconds(workerEventLoopDelay.max),
+            },
+            prewarm: regionalPrewarmService?.getStats() ?? null,
+            session_stats: [...workerSessions.values()].map((session) => session.getRuntimeStats()),
+          },
+        });
+        lastWorkerEventLoopUtilization = performance.eventLoopUtilization();
+        workerEventLoopDelay.reset();
         break;
       }
 

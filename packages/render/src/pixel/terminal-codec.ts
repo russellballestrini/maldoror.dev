@@ -1,11 +1,18 @@
-import { sgrCode } from './ansi-cache.js';
-import { cellsEqual, type CellGrid, type TerminalCell } from './pixel-renderer.js';
+import { sgrCode, sgrCodePacked } from './ansi-cache.js';
+import {
+  cellsEqual,
+  type CellGrid,
+  type PackedCellGrid,
+  type TerminalCell,
+} from './pixel-renderer.js';
 
 const ESC = '\x1b';
 const SAVE_CURSOR = `${ESC}7`;
 const RESTORE_CURSOR = `${ESC}8`;
 
 const DEFAULT_COLOR = { r: 20, g: 20, b: 25 } as const;
+const DEFAULT_COLOR_PACKED = (20 << 16) | (20 << 8) | 25;
+const SPACE_CODEPOINT = 0x20;
 
 export interface TerminalCodecCamera {
   /** Camera centre in the renderer's world-pixel coordinate system. */
@@ -54,6 +61,8 @@ export interface TerminalCodecConfig {
 export class TerminalCodec {
   private config: TerminalCodecConfig;
   private terminalView: CellGrid = [];
+  private packedTerminalView: PackedCellGrid | null = null;
+  private viewKind: 'object' | 'packed' | null = null;
   private previousCamera: TerminalCodecCamera | null = null;
   private forceKeyframe = true;
 
@@ -70,6 +79,8 @@ export class TerminalCodec {
 
   reset(): void {
     this.terminalView = [];
+    this.packedTerminalView = null;
+    this.viewKind = null;
     this.previousCamera = null;
     this.forceKeyframe = true;
   }
@@ -93,7 +104,7 @@ export class TerminalCodec {
     let output = '';
     let scrollColumns = 0;
     let scrollRows = 0;
-    let keyframe = this.forceKeyframe || dimensionsChanged;
+    let keyframe = this.forceKeyframe || dimensionsChanged || this.viewKind !== 'object';
 
     if (!keyframe && this.previousCamera && camera.rotation === 0 && this.previousCamera.rotation === 0) {
       const vector = this.cameraVector(normalizedCamera, width, height);
@@ -122,6 +133,66 @@ export class TerminalCodec {
     // Target rows are freshly produced for every render; retaining their
     // references is safe and avoids a deep framebuffer copy.
     this.terminalView = target;
+    this.packedTerminalView = null;
+    this.viewKind = 'object';
+    this.previousCamera = normalizedCamera;
+
+    return {
+      output,
+      metrics: {
+        bytes: Buffer.byteLength(output, 'utf8'),
+        changedCells,
+        totalCells,
+        scrollColumns,
+        scrollRows,
+        keyframe,
+      },
+    };
+  }
+
+  /** Encode the production OCTANT struct-of-arrays frame without materializing
+   * a TerminalCell/RGB object graph. Output and motion compensation mirror
+   * `encode`, including independently decodable keyframes. */
+  encodePacked(target: PackedCellGrid, camera: TerminalCodecCamera): TerminalCodecFrame {
+    const height = target.height;
+    const width = target.width;
+    const totalCells = height * width;
+    const terminalCellWidth = Math.max(1, camera.terminalCellWidth ?? 1);
+    const normalizedCamera = { ...camera, terminalCellWidth };
+    const previous = this.packedTerminalView;
+    const dimensionsChanged = !previous || previous.height !== height || previous.width !== width;
+
+    let output = '';
+    let scrollColumns = 0;
+    let scrollRows = 0;
+    let keyframe = this.forceKeyframe || dimensionsChanged || this.viewKind !== 'packed';
+
+    if (!keyframe && this.previousCamera && camera.rotation === 0 && this.previousCamera.rotation === 0) {
+      const vector = this.cameraVector(normalizedCamera, width, height);
+      if (vector) {
+        scrollColumns = vector.x;
+        scrollRows = vector.y;
+        if (scrollColumns !== 0 || scrollRows !== 0) {
+          output += this.emitScroll(scrollColumns, scrollRows, width, height, terminalCellWidth);
+          this.shiftPackedTerminalView(scrollColumns, scrollRows);
+        }
+      }
+    }
+
+    let changedCells: number;
+    if (keyframe) {
+      output += this.emitPackedKeyframe(target, terminalCellWidth);
+      changedCells = totalCells;
+      this.forceKeyframe = false;
+    } else {
+      const patch = this.emitPackedChangedRuns(target, terminalCellWidth);
+      output += patch.output;
+      changedCells = patch.changedCells;
+    }
+
+    this.packedTerminalView = target;
+    this.terminalView = [];
+    this.viewKind = 'packed';
     this.previousCamera = normalizedCamera;
 
     return {
@@ -215,6 +286,169 @@ export class TerminalCodec {
       });
     }
     this.terminalView = shifted;
+  }
+
+  private shiftPackedTerminalView(dx: number, dy: number): void {
+    const view = this.packedTerminalView;
+    if (!view) return;
+    const { width, height } = view;
+    const planes: Array<{ values: Uint32Array | Int16Array; blank: number }> = [
+      { values: view.codepoints, blank: SPACE_CODEPOINT },
+      { values: view.foreground, blank: DEFAULT_COLOR_PACKED },
+      { values: view.background, blank: DEFAULT_COLOR_PACKED },
+      { values: view.foregroundIndex, blank: -1 },
+      { values: view.backgroundIndex, blank: -1 },
+    ];
+
+    if (dy !== 0) {
+      const count = Math.min(Math.abs(dy), height);
+      for (const { values, blank } of planes) {
+        if (dy > 0) {
+          values.copyWithin(0, count * width);
+          values.fill(blank, (height - count) * width);
+        } else {
+          values.copyWithin(count * width, 0, (height - count) * width);
+          values.fill(blank, 0, count * width);
+        }
+      }
+    }
+
+    if (dx !== 0) {
+      const count = Math.min(Math.abs(dx), width);
+      for (let y = 0; y < height; y++) {
+        const rowStart = y * width;
+        const rowEnd = rowStart + width;
+        for (const { values, blank } of planes) {
+          if (dx > 0) {
+            values.copyWithin(rowStart, rowStart + count, rowEnd);
+            values.fill(blank, rowEnd - count, rowEnd);
+          } else {
+            values.copyWithin(rowStart + count, rowStart, rowEnd - count);
+            values.fill(blank, rowStart, rowStart + count);
+          }
+        }
+      }
+    }
+  }
+
+  private emitPackedKeyframe(target: PackedCellGrid, cellWidth: number): string {
+    const chunks: string[] = [SAVE_CURSOR, this.worldMargins(target.width, target.height, cellWidth)];
+    let lastFg: number | null = null;
+    let lastBg: number | null = null;
+    const top = this.config.headerRows + 1;
+    for (let y = 0; y < target.height; y++) {
+      chunks.push(`${ESC}[${top + y};1H`);
+      const emitted = this.emitPackedCells(target, y * target.width, (y + 1) * target.width, cellWidth, lastFg, lastBg);
+      chunks.push(emitted.output);
+      lastFg = emitted.lastFg;
+      lastBg = emitted.lastBg;
+    }
+    chunks.push(RESTORE_CURSOR);
+    return chunks.join('');
+  }
+
+  private emitPackedChangedRuns(
+    target: PackedCellGrid,
+    cellWidth: number,
+  ): { output: string; changedCells: number } {
+    const previous = this.packedTerminalView!;
+    const chunks: string[] = [];
+    const top = this.config.headerRows + 1;
+    let changedCells = 0;
+    let lastFg: number | null = null;
+    let lastBg: number | null = null;
+    for (let y = 0; y < target.height; y++) {
+      const rowStart = y * target.width;
+      const rowEnd = rowStart + target.width;
+      let offset = rowStart;
+      while (offset < rowEnd) {
+        while (offset < rowEnd && this.packedCellsEqual(target, previous, offset)) offset++;
+        if (offset >= rowEnd) break;
+        const start = offset++;
+        let lastChanged = offset;
+        while (offset < rowEnd) {
+          if (!this.packedCellsEqual(target, previous, offset)) {
+            lastChanged = offset + 1;
+          } else if (offset - lastChanged >= 2) {
+            break;
+          }
+          offset++;
+        }
+        const end = lastChanged;
+        changedCells += end - start;
+        chunks.push(`${ESC}[${top + y};${(start - rowStart) * cellWidth + 1}H`);
+        const emitted = this.emitPackedCells(target, start, end, cellWidth, lastFg, lastBg);
+        chunks.push(emitted.output);
+        lastFg = emitted.lastFg;
+        lastBg = emitted.lastBg;
+        offset = end;
+      }
+    }
+    return { output: chunks.join(''), changedCells };
+  }
+
+  private emitPackedCells(
+    frame: PackedCellGrid,
+    start: number,
+    end: number,
+    cellWidth: number,
+    initialFg: number | null,
+    initialBg: number | null,
+  ): { output: string; lastFg: number | null; lastBg: number | null } {
+    const chunks: string[] = [];
+    let lastFg = initialFg;
+    let lastBg = initialBg;
+    let offset = start;
+    while (offset < end) {
+      const fg = frame.foreground[offset] ?? DEFAULT_COLOR_PACKED;
+      const bg = frame.background[offset] ?? DEFAULT_COLOR_PACKED;
+      const fgIndex = frame.foregroundIndex[offset] ?? -1;
+      const bgIndex = frame.backgroundIndex[offset] ?? -1;
+      if (fgIndex >= 0 || bgIndex >= 0) {
+        const parts: string[] = [];
+        parts.push(fgIndex >= 0
+          ? `38;5;${fgIndex}`
+          : `38;2;${(fg >>> 16) & 0xff};${(fg >>> 8) & 0xff};${fg & 0xff}`);
+        parts.push(bgIndex >= 0
+          ? `48;5;${bgIndex}`
+          : `48;2;${(bg >>> 16) & 0xff};${(bg >>> 8) & 0xff};${bg & 0xff}`);
+        chunks.push(`${ESC}[${parts.join(';')}m`);
+        lastFg = null;
+        lastBg = null;
+      } else {
+        const fgChanged = fg !== lastFg;
+        const bgChanged = bg !== lastBg;
+        if (fgChanged || bgChanged) {
+          chunks.push(sgrCodePacked(fgChanged ? fg : null, bgChanged ? bg : null));
+          if (fgChanged) lastFg = fg;
+          if (bgChanged) lastBg = bg;
+        }
+      }
+
+      let count = 1;
+      if (cellWidth === 1) {
+        while (offset + count < end && this.packedCellsEqual(frame, frame, offset, offset + count)) count++;
+      }
+      const char = String.fromCodePoint(frame.codepoints[offset] || SPACE_CODEPOINT);
+      chunks.push(char);
+      if (count >= 4) chunks.push(`${ESC}[${count - 1}b`);
+      else for (let i = 1; i < count; i++) chunks.push(char);
+      offset += count;
+    }
+    return { output: chunks.join(''), lastFg, lastBg };
+  }
+
+  private packedCellsEqual(
+    left: PackedCellGrid,
+    right: PackedCellGrid,
+    leftOffset: number,
+    rightOffset = leftOffset,
+  ): boolean {
+    return left.codepoints[leftOffset] === right.codepoints[rightOffset] &&
+      left.foreground[leftOffset] === right.foreground[rightOffset] &&
+      left.background[leftOffset] === right.background[rightOffset] &&
+      left.foregroundIndex[leftOffset] === right.foregroundIndex[rightOffset] &&
+      left.backgroundIndex[leftOffset] === right.backgroundIndex[rightOffset];
   }
 
   private emitKeyframe(target: CellGrid, cellWidth: number): { output: string } {

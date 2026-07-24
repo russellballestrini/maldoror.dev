@@ -19,6 +19,7 @@ import type { ProviderConfig } from '@maldoror/ai';
 import type {
   MainToWorkerMessage,
   WorkerToMainMessage,
+  WorkerRuntimeSnapshot,
 } from '../worker/game-worker.js';
 import type { NPCCreateData } from '../utils/npc-storage.js';
 
@@ -30,7 +31,12 @@ export type ReloadCallback = (state: ReloadState) => void;
 export type SpriteReloadCallback = (userId: string) => void;
 export type BuildingPlacementCallback = (buildingId: string, anchorX: number, anchorY: number) => void;
 export type NPCCreatedCallback = (npc: NPCVisualState) => void;
-export type SessionOutputCallback = (sessionId: string, output: string, keyframe: boolean) => void;
+export type SessionOutputCallback = (
+  sessionId: string,
+  output: string,
+  keyframe: boolean,
+  immediate: boolean,
+) => void;
 export type SessionUserIdCallback = (sessionId: string, userId: string) => void;
 export type SessionEndedCallback = (sessionId: string) => void;
 
@@ -64,6 +70,27 @@ interface PendingRequest {
   resolve: (value: any) => void;
   reject: (error: Error) => void;
   timeout: NodeJS.Timeout;
+}
+
+export function workerExecArgv(
+  inherited = process.execArgv,
+  configuredOldSpace = process.env.MALDOROR_WORKER_MAX_OLD_SPACE_MB ?? '1280',
+  configuredSemiSpace = process.env.MALDOROR_WORKER_MAX_SEMI_SPACE_MB ?? '8',
+): string[] {
+  let result = [...inherited];
+  const oldSpace = Number.parseInt(configuredOldSpace, 10);
+  if (configuredOldSpace.trim() !== '' && Number.isFinite(oldSpace)) {
+    const oldSpaceMiB = Math.max(384, Math.min(2048, oldSpace));
+    result = result.filter((argument) => !argument.startsWith('--max-old-space-size='));
+    result.push(`--max-old-space-size=${oldSpaceMiB}`);
+  }
+  const semiSpace = Number.parseInt(configuredSemiSpace, 10);
+  if (configuredSemiSpace.trim() !== '' && Number.isFinite(semiSpace)) {
+    const semiSpaceMiB = Math.max(2, Math.min(32, semiSpace));
+    result = result.filter((argument) => !argument.startsWith('--max-semi-space-size='));
+    result.push(`--max-semi-space-size=${semiSpaceMiB}`);
+  }
+  return result;
 }
 
 // Track connected sessions for re-registration after hot reload
@@ -541,6 +568,16 @@ export class WorkerManager {
     );
   }
 
+  async getWorkerRuntime(): Promise<WorkerRuntimeSnapshot | null> {
+    if (!this.workerReady || !this.worker?.connected) return null;
+    const requestId = this.nextRequestId();
+    return this.sendRequest<WorkerRuntimeSnapshot>(
+      { type: 'get_worker_runtime', requestId },
+      requestId,
+      'worker_runtime',
+    );
+  }
+
   async getNPCSprite(npcId: string): Promise<Sprite | null> {
     if (!this.isReady()) return null;
 
@@ -725,6 +762,11 @@ export class WorkerManager {
 
       const child = fork(workerPath, [], {
         stdio: ['pipe', 'inherit', 'inherit', 'ipc'],
+        // The source defaults are the measured 20-session operating point:
+        // enough old space for the packed regional world, with a restrained
+        // young generation to keep aggregate RSS below the 1.6 GiB gate.
+        // Operators can still override either value for diagnostics.
+        execArgv: workerExecArgv(),
       });
       this.worker = child;
       this.workerReady = false;
@@ -942,10 +984,20 @@ export class WorkerManager {
         break;
       }
 
+      case 'worker_runtime': {
+        const pending = this.pendingRequests.get(msg.requestId);
+        if (pending) {
+          clearTimeout(pending.timeout);
+          this.pendingRequests.delete(msg.requestId);
+          pending.resolve(msg.runtime);
+        }
+        break;
+      }
+
       case 'session_output': {
         const callback = this.sessionOutputCallbacks.get(msg.sessionId);
         if (callback) {
-          callback(msg.sessionId, msg.output, msg.keyframe);
+          callback(msg.sessionId, msg.output, msg.keyframe, msg.immediate);
         }
         break;
       }

@@ -64,6 +64,71 @@ describe('PixelGameRenderer zoom animation', () => {
     expect(renderer.getCameraTilePosition()).toEqual({ x: 83, y: 42 });
   });
 
+  it('invalidates the cached HUD position as visual movement crosses a tile boundary', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    const renderer = new PixelGameRenderer({
+      stream: new PassThrough(),
+      cols: 160,
+      rows: 46,
+      renderMode: 'octant',
+      paletteAnimation: false,
+    });
+    const renderStatsBar = () => (
+      renderer as unknown as { renderStatsBar(): string }
+    ).renderStatsBar();
+
+    renderer.setCamera(0, 0);
+    expect(renderStatsBar()).toContain('(0, 0)');
+
+    // This is still inside the normal one-second stats TTL. The coordinate
+    // change itself must invalidate the cache, and the HUD must never expose
+    // the animation's fractional camera coordinate.
+    vi.setSystemTime(1_050);
+    renderer.setCamera(0.6, 0);
+    expect(renderStatsBar()).toContain('(1, 0)');
+  });
+
+  it('can acknowledge an accepted tile before the visual camera finishes crossing it', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    const renderer = new PixelGameRenderer({
+      stream: new PassThrough(),
+      cols: 160,
+      rows: 46,
+      renderMode: 'octant',
+      paletteAnimation: false,
+    });
+    const renderStatsBar = () => (
+      renderer as unknown as { renderStatsBar(): string }
+    ).renderStatsBar();
+
+    renderer.setCamera(0.1, 0);
+    renderer.setAuthoritativePosition(1, 0);
+
+    expect(renderStatsBar()).toContain('(1, 0)');
+    expect(renderer.getCameraTilePosition().x).toBeCloseTo(0.1, 10);
+    expect(renderer.getCameraTilePosition().y).toBe(0);
+  });
+
+  it('emits a synchronized header-only accepted-position response', () => {
+    const renderer = new PixelGameRenderer({
+      stream: new PassThrough(),
+      cols: 160,
+      rows: 46,
+      renderMode: 'octant',
+      paletteAnimation: false,
+    });
+    renderer.initialize();
+
+    const response = renderer.renderPositionAcknowledgement(4, -3);
+
+    expect(response).toContain('\x1b[?2026h');
+    expect(response).toContain('Pos: ');
+    expect(response).toContain('(4, -3)');
+    expect(response).toContain('\x1b[?2026l');
+  });
+
   it('reports target LOD and rotation-aware bounds for off-thread preparation', () => {
     const renderer = new PixelGameRenderer({
       stream: new PassThrough(),

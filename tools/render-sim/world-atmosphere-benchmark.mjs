@@ -14,9 +14,12 @@ const pixels = Array.from({ length: 4 }, (_, y) => (
   }))
 ));
 const tile = { id: 'benchmark-material', name: 'benchmark material', walkable: true, pixels };
+const staticRenderIdentity = {};
 
 function world(life, lights = []) {
   return {
+    getStaticRenderIdentity: () => staticRenderIdentity,
+    getStaticRenderEpoch: () => 0,
     getTile: () => tile,
     getPlayers: () => [],
     getPlayerSprite: () => null,

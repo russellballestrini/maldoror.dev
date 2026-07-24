@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { WorkerManager } from '../server/worker-manager.js';
+import { WorkerManager, workerExecArgv } from '../server/worker-manager.js';
 
 interface WorkerManagerInternals {
   workerReady: boolean;
@@ -43,6 +43,35 @@ function managerInternals(): WorkerManagerInternals {
 }
 
 describe('WorkerManager hot-reload state capture', () => {
+  it('bounds worker old space while preserving unrelated Node arguments', () => {
+    expect(workerExecArgv(
+      ['--trace-warnings', '--max-old-space-size=4096', '--max-semi-space-size=32'],
+      '900',
+      '6',
+    )).toEqual([
+      '--trace-warnings',
+      '--max-old-space-size=900',
+      '--max-semi-space-size=6',
+    ]);
+    expect(workerExecArgv([], '99999', '999')).toEqual([
+      '--max-old-space-size=2048',
+      '--max-semi-space-size=32',
+    ]);
+    expect(workerExecArgv([], undefined, undefined)).toEqual([
+      '--max-old-space-size=1280',
+      '--max-semi-space-size=8',
+    ]);
+    expect(workerExecArgv(
+      ['--max-old-space-size=4096', '--max-semi-space-size=16'],
+      '',
+      '',
+    )).toEqual([
+      '--max-old-space-size=4096',
+      '--max-semi-space-size=16',
+    ]);
+    expect(workerExecArgv(['--trace-warnings'], 'invalid', 'invalid')).toEqual(['--trace-warnings']);
+  });
+
   it('forwards an explicit loopback acceptance restoration on initial creation', async () => {
     const manager = managerInternals();
     manager.workerReady = true;

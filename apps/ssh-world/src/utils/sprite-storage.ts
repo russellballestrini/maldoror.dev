@@ -158,9 +158,13 @@ export async function loadSpriteFromDisk(userId: string): Promise<Sprite | null>
 
   const pending = loadSpriteFromDiskUncached(userId);
   touchRuntimeCache(userId, pending);
-  const sprite = await pending;
-  if (!sprite && runtimeSpriteCache.get(userId) === pending) runtimeSpriteCache.delete(userId);
-  return sprite;
+  // A missing authored sprite is a stable and common runtime result: new
+  // players use the deterministic placeholder. Keep that negative result in
+  // the same bounded LRU. Dropping it caused every other session's visibility
+  // refresh to issue the same query again; a ten-player join could fan out
+  // into a pool-saturating storm of identical misses. Generation paths call
+  // saveSpriteToDisk/cacheRuntimeSprite, both of which replace this entry.
+  return pending;
 }
 
 async function loadSpriteFromDiskUncached(userId: string): Promise<Sprite | null> {

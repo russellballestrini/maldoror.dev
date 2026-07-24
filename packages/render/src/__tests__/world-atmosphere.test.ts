@@ -14,9 +14,13 @@ const terrain: Tile = {
 
 function world(
   life: WorldLifeState,
-  options: { tile?: Tile; lights?: WorldLightSource[] } = {},
+  options: { tile?: Tile; lights?: WorldLightSource[]; staticIdentity?: object } = {},
 ): WorldDataProvider {
   return {
+    getStaticRenderIdentity: options.staticIdentity
+      ? () => options.staticIdentity!
+      : undefined,
+    getStaticRenderEpoch: options.staticIdentity ? () => 0 : undefined,
     getTile: () => options.tile ?? terrain,
     getPlayers: () => [],
     getPlayerSprite: () => null,
@@ -136,5 +140,27 @@ describe('persistent world atmosphere', () => {
     expect(luminance(litCenter)).toBeGreaterThan(luminance(darkCenter) * 1.5);
     expect(meanLuminance(lit)).toBeGreaterThan(meanLuminance(dark) * 1.1);
     expect(lit).not.toEqual(dark);
+  });
+
+  it('keeps cached static grading pixel-exact through wet weather and local lights', () => {
+    const life = {
+      ...state(780, 'storm'),
+      surfaceWetness: 0.93,
+    };
+    const lights: WorldLightSource[] = [{
+      id: 'lamp:cache-proof',
+      x: 0,
+      y: 0,
+      radius: 3,
+      intensity: 0.85,
+      color: { r: 255, g: 177, b: 88 },
+    }];
+    const uncached = renderer().renderToBuffer(world(life, { lights }), 31).buffer;
+    const cached = renderer().renderToBuffer(world(life, {
+      lights,
+      staticIdentity: {},
+    }), 31).buffer;
+
+    expect(cached).toEqual(uncached);
   });
 });

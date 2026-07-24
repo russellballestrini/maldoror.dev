@@ -50,6 +50,11 @@ export interface ViewportRenderResult {
   brightnessGrid?: number[][];  // Cell-level brightness for lighting
   /** 0 = ordinary scene, 1..8 = water, 9..16 = foliage, 255 = actor. */
   materialGrid?: Uint8Array[];
+  /** Immutable, atmosphere-graded scene before session-local actors. Present
+   * only when later weather/light passes do not make the static plane dynamic. */
+  sharedStaticBuffer?: PixelGrid;
+  sharedStaticMaterialGrid?: Uint8Array[];
+  sharedStaticDirtyCellOffsets?: readonly number[];
 }
 
 // Re-export for convenience
@@ -139,6 +144,68 @@ const PACKED_PIXEL_CACHE = new WeakMap<PackedPixelGrid, ProtocolPixelGrid>();
 const WATER_MATERIAL_BASE = 1;
 const FOLIAGE_MATERIAL_BASE = WATER_MATERIAL_BASE + PHASES;
 const ACTOR_MATERIAL = 255;
+const ATMOSPHERE_GRADE_CACHES = new Map<string, Map<number, RGB>>();
+const MAX_ATMOSPHERE_GRADE_STATES = 4;
+/** Packed terrain and authored overlay samples are immutable and shared across
+ * session providers. Linear alpha composition is pure, so cache the result by
+ * those stable object identities instead of allocating the same edge colour
+ * in every viewport on every movement frame. Weak keys keep asset lifetime in
+ * charge of eviction. */
+const ALPHA_OVER_CACHE = new WeakMap<RGB, WeakMap<RGB, RGB>>();
+const RGB_WITHOUT_ALPHA_CACHE = new WeakMap<RGB, RGB>();
+interface StaticSceneFrame {
+  buffer: PixelGrid;
+  materialGrid: Uint8Array[];
+}
+const STATIC_SCENE_FRAMES = new WeakMap<object, Map<string, StaticSceneFrame>>();
+const MAX_STATIC_SCENE_FRAMES_PER_IDENTITY = 4;
+const STATIC_ATMOSPHERE_FRAMES = new WeakMap<StaticSceneFrame, Map<string, PixelGrid>>();
+const MAX_STATIC_ATMOSPHERE_FRAMES_PER_SCENE = 4;
+
+function rgbWithoutAlpha(source: RGB): RGB {
+  if (source.a === undefined) return source;
+  const cached = RGB_WITHOUT_ALPHA_CACHE.get(source);
+  if (cached) return cached;
+  const opaque = { r: source.r, g: source.g, b: source.b };
+  RGB_WITHOUT_ALPHA_CACHE.set(source, opaque);
+  return opaque;
+}
+
+/** The terminal-life projector already holds these values stable inside one
+ * visual atmosphere step. Share the pure RGB transform across sessions and
+ * frames instead of rebuilding thousands of identical objects in each
+ * renderer. The later local-light/wet/rain passes replace pixels rather than
+ * mutating these shared values. */
+function atmosphereSignature(world: WorldLifeState): string {
+  return [
+    world.worldMinute,
+    world.season,
+    world.weather,
+    world.weatherIntensity,
+    world.surfaceWetness,
+    world.waterTurbulence,
+    world.vegetationVitality,
+    world.decayPressure,
+  ].join('|');
+}
+
+function atmosphereGradeCache(world: WorldLifeState): Map<number, RGB> {
+  const signature = atmosphereSignature(world);
+  const cached = ATMOSPHERE_GRADE_CACHES.get(signature);
+  if (cached) {
+    ATMOSPHERE_GRADE_CACHES.delete(signature);
+    ATMOSPHERE_GRADE_CACHES.set(signature, cached);
+    return cached;
+  }
+  const created = new Map<number, RGB>();
+  ATMOSPHERE_GRADE_CACHES.set(signature, created);
+  while (ATMOSPHERE_GRADE_CACHES.size > MAX_ATMOSPHERE_GRADE_STATES) {
+    const oldest = ATMOSPHERE_GRADE_CACHES.keys().next().value as string | undefined;
+    if (oldest === undefined) break;
+    ATMOSPHERE_GRADE_CACHES.delete(oldest);
+  }
+  return created;
+}
 
 /**
  * Rotate a point around the origin by camera angle
@@ -200,6 +267,9 @@ export class ViewportRenderer {
   // was a major GC pressure source. Recreated only when dimensions change.
   private frameBuffer: PixelGrid | null = null;
   private materialBuffer: Uint8Array[] | null = null;
+  private dynamicOctantDirtyMask: Uint8Array | null = null;
+  private dynamicOctantDirtyOffsets: number[] = [];
+  private dynamicOctantCellWidth = 0;
 
   constructor(config: ViewportConfig) {
     this.config = config;
@@ -428,18 +498,16 @@ export class ViewportRenderer {
       for (const row of this.materialBuffer) row.fill(0);
     }
     const materialGrid = this.materialBuffer;
+    this.prepareDynamicOctantCells(pixelWidth, pixelHeight);
 
     // Get viewport origin in world pixels
     const origin = this.getViewportOrigin();
 
-    // 1. Render terrain tiles with sub-pixel offset
-    this.renderTiles(buffer, materialGrid, world, tick, origin);
-
-    // 2. Render road tiles on top of terrain (with transparency)
-    this.renderRoads(buffer, materialGrid, world, origin);
-
-    // 3. Render building tiles on top of roads (with transparency)
-    this.renderBuildings(buffer, materialGrid, world, origin);
+    // 1-3. Terrain, roads, and buildings are independent of actor state and
+    // global atmosphere. Colocated SSH sessions usually share the same
+    // canonical regional identity and camera, so compose that immutable base
+    // once and copy references into each session's reusable scratch buffer.
+    const staticScene = this.renderStaticScene(buffer, materialGrid, world, tick, origin);
 
     // 4. Render players and NPCs together (sorted by Y for proper overlap)
     this.renderEntities(buffer, materialGrid, world, tick, origin);
@@ -447,6 +515,7 @@ export class ViewportRenderer {
     // 5. The persistent world clock grades the whole scene. Overlays remain
     // crisp UI, while terrain, architecture, and inhabitants share one sky.
     const worldLife = world.getWorldLifeState?.();
+    let sharedStaticBuffer = worldLife ? undefined : staticScene?.buffer;
     if (worldLife) {
       const bounds = this.getVisibleTileBounds(pixelWidth, pixelHeight);
       const lightReach = 9;
@@ -458,7 +527,14 @@ export class ViewportRenderer {
             bounds.endTileY + lightReach,
           ) ?? []
         : [];
-      this.applyWorldAtmosphere(buffer, materialGrid, worldLife, tick, lights);
+      sharedStaticBuffer = this.applyWorldAtmosphere(
+        buffer,
+        materialGrid,
+        worldLife,
+        tick,
+        lights,
+        staticScene,
+      );
     }
 
     // 6. Generate brightness grid if world supports it
@@ -496,7 +572,78 @@ export class ViewportRenderer {
       overlays: this.pendingOverlays,
       brightnessGrid,
       materialGrid,
+      sharedStaticBuffer,
+      sharedStaticMaterialGrid: sharedStaticBuffer ? staticScene?.materialGrid : undefined,
+      sharedStaticDirtyCellOffsets: sharedStaticBuffer
+        ? this.dynamicOctantDirtyOffsets
+        : undefined,
     };
+  }
+
+  private renderStaticScene(
+    buffer: PixelGrid,
+    materialGrid: Uint8Array[],
+    world: WorldDataProvider,
+    tick: number,
+    origin: { x: number; y: number },
+  ): StaticSceneFrame | undefined {
+    const identity = world.getStaticRenderIdentity?.();
+    if (!identity) {
+      this.renderTiles(buffer, materialGrid, world, tick, origin);
+      this.renderRoads(buffer, materialGrid, world, origin);
+      this.renderBuildings(buffer, materialGrid, world, origin);
+      return undefined;
+    }
+
+    // Authored tile animation advances at one phase per second (15 ticks).
+    // Material palette motion is terminal-side and does not invalidate this
+    // frame. Camera coordinates are already cell-quantized by the game
+    // renderer, making colocated movement converge on identical cache keys.
+    const key = [
+      buffer[0]?.length ?? 0,
+      buffer.length,
+      this.tileRenderSize,
+      this.dataResolution,
+      this.cameraCenterX,
+      this.cameraCenterY,
+      this.cameraRotation,
+      world.getStaticRenderEpoch?.() ?? Math.floor(tick / 15),
+    ].join(':');
+    let frames = STATIC_SCENE_FRAMES.get(identity);
+    if (!frames) {
+      frames = new Map();
+      STATIC_SCENE_FRAMES.set(identity, frames);
+    }
+    let frame = frames.get(key);
+    if (frame) {
+      // Refresh insertion order for bounded LRU eviction.
+      frames.delete(key);
+      frames.set(key, frame);
+    } else {
+      const staticBuffer = createEmptyGrid(buffer[0]?.length ?? 0, buffer.length);
+      const staticMaterialGrid = Array.from(
+        { length: materialGrid.length },
+        (_, y) => new Uint8Array(materialGrid[y]?.length ?? 0),
+      );
+      this.renderTiles(staticBuffer, staticMaterialGrid, world, tick, origin);
+      this.renderRoads(staticBuffer, staticMaterialGrid, world, origin);
+      this.renderBuildings(staticBuffer, staticMaterialGrid, world, origin);
+      frame = { buffer: staticBuffer, materialGrid: staticMaterialGrid };
+      frames.set(key, frame);
+      while (frames.size > MAX_STATIC_SCENE_FRAMES_PER_IDENTITY) {
+        const oldest = frames.keys().next().value as string | undefined;
+        if (oldest === undefined) break;
+        frames.delete(oldest);
+      }
+    }
+
+    for (let y = 0; y < buffer.length; y++) {
+      const target = buffer[y]!;
+      const source = frame.buffer[y]!;
+      for (let x = 0; x < target.length; x++) target[x] = source[x] ?? null;
+      materialGrid[y]!.set(frame.materialGrid[y]!);
+    }
+    return frame;
   }
 
   private applyWorldAtmosphere(
@@ -505,7 +652,8 @@ export class ViewportRenderer {
     world: WorldLifeState,
     tick: number,
     lights: readonly WorldLightSource[],
-  ): void {
+    staticScene?: StaticSceneFrame,
+  ): PixelGrid | undefined {
     const minuteOfDay = ((world.worldMinute % 1440) + 1440) % 1440;
     const solar = Math.max(0, Math.sin(((minuteOfDay - 360) / 720) * Math.PI));
     // Preserve a moonlit navigation floor before weather grading. The old
@@ -544,80 +692,128 @@ export class ViewportRenderer {
       hazeR = 222; hazeG = 164; hazeB = 101;
     }
 
-    const gradeCache = new Map<number, RGB>();
+    const gradeCache = atmosphereGradeCache(world);
     const seasonalFoliage = foliageSeasonColor(world.season);
+    const gradePixel = (pixel: RGB, material: number): RGB => {
+      const isWater = material >= WATER_MATERIAL_BASE && material < FOLIAGE_MATERIAL_BASE;
+      const isFoliage = material >= FOLIAGE_MATERIAL_BASE && material < FOLIAGE_MATERIAL_BASE + PHASES;
+      const isActor = material === ACTOR_MATERIAL;
+      const category = isWater || isFoliage ? material : isActor ? 33 : 0;
+      // Tile and sprite caches may share RGB object identities across many
+      // buffer cells. Never mutate a cached authored sample in place.
+      const key = category * 0x1000000 + (pixel.r << 16) + (pixel.g << 8) + pixel.b;
+      let graded = gradeCache.get(key);
+      if (graded) return graded;
+      let sourceR = pixel.r;
+      let sourceG = pixel.g;
+      let sourceB = pixel.b;
+      if (isFoliage) {
+        const seasonalMix = 0.08 + world.decayPressure * 0.16;
+        sourceR = sourceR * (1 - seasonalMix) + seasonalFoliage.r * seasonalMix;
+        sourceG = sourceG * (1 - seasonalMix) + seasonalFoliage.g * seasonalMix;
+        sourceB = sourceB * (1 - seasonalMix) + seasonalFoliage.b * seasonalMix;
+        const vitalityScale = 0.78 + world.vegetationVitality * 0.3;
+        sourceR *= vitalityScale;
+        sourceG *= vitalityScale;
+        sourceB *= vitalityScale;
+      }
+      if (isWater) {
+        const phase = material - WATER_MATERIAL_BASE;
+        const wave = phase / Math.max(1, PHASES - 1) - 0.5;
+        const disturbance = 1 + wave * world.waterTurbulence * 0.16;
+        sourceR *= disturbance * 0.98;
+        sourceG *= disturbance;
+        sourceB *= disturbance * 1.04;
+      }
+      if (!isWater && !isActor) {
+        const wetDarkening = 1 - world.surfaceWetness * 0.19;
+        sourceR *= wetDarkening;
+        sourceG *= wetDarkening;
+        sourceB *= wetDarkening;
+      }
+      graded = {
+        r: clampByte(sourceR * redScale * (1 - haze) + hazeR * haze),
+        g: clampByte(sourceG * greenScale * (1 - haze) + hazeG * haze),
+        b: clampByte(sourceB * blueScale * (1 - haze) + hazeB * haze),
+      };
+      gradeCache.set(key, graded);
+      return graded;
+    };
+    const gradeAt = (pixel: RGB, material: number, x: number, y: number): RGB => {
+      const isWater = material >= WATER_MATERIAL_BASE && material < FOLIAGE_MATERIAL_BASE;
+      const isActor = material === ACTOR_MATERIAL;
+      const graded = gradePixel(pixel, material);
+      if (isWater || isActor || world.surfaceWetness <= 0.18) return graded;
+      const worldPixel = this.screenPixelToWorldPixel(x, y, buffer);
+      const hash = (
+        Math.imul(Math.floor(worldPixel.x), 73856093)
+        ^ Math.imul(Math.floor(worldPixel.y), 19349663)
+      ) >>> 0;
+      if (hash % 1000 >= Math.round(world.surfaceWetness * 17)) return graded;
+      const strength = 0.06 + world.surfaceWetness * 0.13;
+      return {
+        r: clampByte(graded.r + (202 - graded.r) * strength),
+        g: clampByte(graded.g + (218 - graded.g) * strength),
+        b: clampByte(graded.b + (226 - graded.b) * strength),
+      };
+    };
+
+    // Colocated sessions share almost every static pixel but have independent
+    // actors. Grade each immutable static scene once per world-life state,
+    // then use object identity plus the material mask to copy the exact shared
+    // result. Only actor and shadow pixels take the dynamic grading path.
+    let staticAtmosphere: PixelGrid | undefined;
+    if (staticScene) {
+      const signature = atmosphereSignature(world);
+      let frames = STATIC_ATMOSPHERE_FRAMES.get(staticScene);
+      if (!frames) {
+        frames = new Map();
+        STATIC_ATMOSPHERE_FRAMES.set(staticScene, frames);
+      }
+      staticAtmosphere = frames.get(signature);
+      if (staticAtmosphere) {
+        frames.delete(signature);
+        frames.set(signature, staticAtmosphere);
+      } else {
+        staticAtmosphere = staticScene.buffer.map((row, y) => row.map((pixel, x) => {
+          if (!pixel) return null;
+          return gradeAt(pixel, staticScene.materialGrid[y]?.[x] ?? 0, x, y);
+        }));
+        frames.set(signature, staticAtmosphere);
+        while (frames.size > MAX_STATIC_ATMOSPHERE_FRAMES_PER_SCENE) {
+          const oldest = frames.keys().next().value as string | undefined;
+          if (oldest === undefined) break;
+          frames.delete(oldest);
+        }
+      }
+    }
+
     for (let y = 0; y < buffer.length; y++) {
       const row = buffer[y]!;
+      const staticRow = staticScene?.buffer[y];
+      const staticMaterialRow = staticScene?.materialGrid[y];
+      const staticAtmosphereRow = staticAtmosphere?.[y];
       for (let x = 0; x < row.length; x++) {
         const pixel = row[x];
         if (!pixel) continue;
         const material = materialGrid[y]?.[x] ?? 0;
-        const isWater = material >= WATER_MATERIAL_BASE && material < FOLIAGE_MATERIAL_BASE;
-        const isFoliage = material >= FOLIAGE_MATERIAL_BASE && material < FOLIAGE_MATERIAL_BASE + PHASES;
-        const isActor = material === ACTOR_MATERIAL;
-        const category = isWater || isFoliage ? material : isActor ? 33 : 0;
-        // Tile and sprite caches may share RGB object identities across many
-        // buffer cells. Never mutate a cached authored sample in place.
-        const key = category * 0x1000000 + (pixel.r << 16) + (pixel.g << 8) + pixel.b;
-        let graded = gradeCache.get(key);
-        if (!graded) {
-          let sourceR = pixel.r;
-          let sourceG = pixel.g;
-          let sourceB = pixel.b;
-          if (isFoliage) {
-            const seasonalMix = 0.08 + world.decayPressure * 0.16;
-            sourceR = sourceR * (1 - seasonalMix) + seasonalFoliage.r * seasonalMix;
-            sourceG = sourceG * (1 - seasonalMix) + seasonalFoliage.g * seasonalMix;
-            sourceB = sourceB * (1 - seasonalMix) + seasonalFoliage.b * seasonalMix;
-            const vitalityScale = 0.78 + world.vegetationVitality * 0.3;
-            sourceR *= vitalityScale;
-            sourceG *= vitalityScale;
-            sourceB *= vitalityScale;
-          }
-          if (isWater) {
-            const phase = material - WATER_MATERIAL_BASE;
-            const wave = phase / Math.max(1, PHASES - 1) - 0.5;
-            const disturbance = 1 + wave * world.waterTurbulence * 0.16;
-            sourceR *= disturbance * 0.98;
-            sourceG *= disturbance;
-            sourceB *= disturbance * 1.04;
-          }
-          if (!isWater && !isActor) {
-            const wetDarkening = 1 - world.surfaceWetness * 0.19;
-            sourceR *= wetDarkening;
-            sourceG *= wetDarkening;
-            sourceB *= wetDarkening;
-          }
-          graded = {
-            r: clampByte(sourceR * redScale * (1 - haze) + hazeR * haze),
-            g: clampByte(sourceG * greenScale * (1 - haze) + hazeG * haze),
-            b: clampByte(sourceB * blueScale * (1 - haze) + hazeB * haze),
-          };
-          gradeCache.set(key, graded);
+        if (
+          staticRow && staticMaterialRow && staticAtmosphereRow
+          && pixel === staticRow[x]
+          && material === staticMaterialRow[x]
+        ) {
+          row[x] = staticAtmosphereRow[x] ?? null;
+          continue;
         }
-        row[x] = graded;
-
-        if (!isWater && !isActor && world.surfaceWetness > 0.18) {
-          const worldPixel = this.screenPixelToWorldPixel(x, y, buffer);
-          const hash = (
-            Math.imul(Math.floor(worldPixel.x), 73856093)
-            ^ Math.imul(Math.floor(worldPixel.y), 19349663)
-          ) >>> 0;
-          if (hash % 1000 < Math.round(world.surfaceWetness * 17)) {
-            const strength = 0.06 + world.surfaceWetness * 0.13;
-            row[x] = {
-              r: clampByte(graded.r + (202 - graded.r) * strength),
-              g: clampByte(graded.g + (218 - graded.g) * strength),
-              b: clampByte(graded.b + (226 - graded.b) * strength),
-            };
-          }
-        }
+        row[x] = gradeAt(pixel, material, x, y);
       }
     }
 
     this.applyLocalLights(buffer, lights, nightLightFactor(world.worldMinute), world.surfaceWetness);
 
-    if (world.weather !== 'rain' && world.weather !== 'storm') return;
+    if (world.weather !== 'rain' && world.weather !== 'storm') {
+      return lights.length === 0 ? staticAtmosphere : undefined;
+    }
     const storm = world.weather === 'storm';
     const density = storm ? 17 : 11;
     const streakLength = world.weather === 'storm' ? 3 : 2;
@@ -650,6 +846,7 @@ export class ViewportRenderer {
         }
       }
     }
+    return undefined;
   }
 
   private screenPixelToWorldPixel(
@@ -1245,6 +1442,7 @@ export class ViewportRenderer {
             pixel,
           );
           materialGrid[targetY]![targetX] = ACTOR_MATERIAL;
+          this.markDynamicOctantPixel(targetX, targetY);
         }
       }
 
@@ -1304,6 +1502,7 @@ export class ViewportRenderer {
           b: Math.round(pixel.b * (1 - strength)),
         };
         materialGrid[y]![x] = 0;
+        this.markDynamicOctantPixel(x, y);
       }
     }
   }
@@ -1334,6 +1533,7 @@ export class ViewportRenderer {
             targetX >= 0 && targetX < (buffer[targetY]?.length ?? 0)) {
           buffer[targetY]![targetX] = placeholderColor;
           materialGrid[targetY]![targetX] = ACTOR_MATERIAL;
+          this.markDynamicOctantPixel(targetX, targetY);
         }
       }
     }
@@ -1365,6 +1565,7 @@ export class ViewportRenderer {
             targetX >= 0 && targetX < (buffer[targetY]?.length ?? 0)) {
           buffer[targetY]![targetX] = placeholderColor;
           materialGrid[targetY]![targetX] = ACTOR_MATERIAL;
+          this.markDynamicOctantPixel(targetX, targetY);
         }
       }
     }
@@ -1375,6 +1576,30 @@ export class ViewportRenderer {
    */
   private bufferToAnsi(buffer: PixelGrid): string[] {
     return buffer.map(row => renderPixelRow(row));
+  }
+
+  private prepareDynamicOctantCells(pixelWidth: number, pixelHeight: number): void {
+    const width = Math.ceil(pixelWidth / 2);
+    const size = width * Math.ceil(pixelHeight / 4);
+    if (!this.dynamicOctantDirtyMask || this.dynamicOctantDirtyMask.length !== size) {
+      this.dynamicOctantDirtyMask = new Uint8Array(size);
+    } else {
+      for (const offset of this.dynamicOctantDirtyOffsets) {
+        this.dynamicOctantDirtyMask[offset] = 0;
+      }
+    }
+    this.dynamicOctantDirtyOffsets.length = 0;
+    this.dynamicOctantCellWidth = width;
+  }
+
+  private markDynamicOctantPixel(pixelX: number, pixelY: number): void {
+    const mask = this.dynamicOctantDirtyMask;
+    if (!mask || this.dynamicOctantCellWidth <= 0) return;
+    const offset = Math.floor(pixelY / 4) * this.dynamicOctantCellWidth
+      + Math.floor(pixelX / 2);
+    if (offset < 0 || offset >= mask.length || mask[offset] !== 0) return;
+    mask[offset] = 1;
+    this.dynamicOctantDirtyOffsets.push(offset);
   }
 
   /**
@@ -1417,13 +1642,25 @@ export class ViewportRenderer {
 
 function alphaOverLinear(beneath: RGB | null, above: RGB): RGB {
   const alpha = Math.max(0, Math.min(255, above.a ?? 255)) / 255;
-  if (alpha >= 1 || beneath === null) return { r: above.r, g: above.g, b: above.b };
+  // Downstream render stages read RGB channels only and never mutate source
+  // samples. Reusing an opaque authored sample (or a partial sample over
+  // transparency) is byte-identical to cloning its three colour channels.
+  if (alpha >= 1 || beneath === null) return rgbWithoutAlpha(above);
   if (alpha <= 0) return beneath;
-  return {
+  let byOverlay = ALPHA_OVER_CACHE.get(beneath);
+  if (!byOverlay) {
+    byOverlay = new WeakMap<RGB, RGB>();
+    ALPHA_OVER_CACHE.set(beneath, byOverlay);
+  }
+  const cached = byOverlay.get(above);
+  if (cached) return cached;
+  const blended = {
     r: linearToSrgbByte(lerp(srgbByteToLinear(beneath.r), srgbByteToLinear(above.r), alpha)),
     g: linearToSrgbByte(lerp(srgbByteToLinear(beneath.g), srgbByteToLinear(above.g), alpha)),
     b: linearToSrgbByte(lerp(srgbByteToLinear(beneath.b), srgbByteToLinear(above.b), alpha)),
   };
+  byOverlay.set(above, blended);
+  return blended;
 }
 
 function srgbByteToLinear(value: number): number {

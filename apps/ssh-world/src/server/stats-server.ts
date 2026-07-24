@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'http';
+import { monitorEventLoopDelay, performance } from 'node:perf_hooks';
 import { db, schema } from '@maldoror/db';
 import { sql, count, min, max, eq } from 'drizzle-orm';
 import * as fs from 'fs';
@@ -49,6 +50,14 @@ export function addBotActivity(entry: Omit<BotLogEntry, 'timestamp'>): void {
   while (botActivityBuffer.length > MAX_BOT_ENTRIES) {
     botActivityBuffer.shift();
   }
+}
+
+function nanosecondsToMilliseconds(value: number): number {
+  return roundRuntimeMetric(value / 1e6);
+}
+
+function roundRuntimeMetric(value: number): number {
+  return Number(value.toFixed(3));
 }
 
 export function getBotActivity(): BotLogEntry[] {
@@ -122,6 +131,10 @@ interface TransportMetrics {
   drainCount: number;
   totalBytesWritten: number;
   peakQueuedBytes: number;
+  totalFramesWritten: number;
+  keyframesAccepted: number;
+  recoveryKeyframesAccepted: number;
+  recoveryRequests: number;
 }
 
 interface StatsServerConfig {
@@ -193,6 +206,10 @@ interface WorldStats {
     total_drain_events: number;
     total_bytes_written: number;
     peak_queued_bytes: number;
+    total_frames_written: number;
+    keyframes_accepted: number;
+    recovery_keyframes_accepted: number;
+    recovery_requests: number;
   };
 }
 
@@ -203,10 +220,15 @@ export class StatsServer {
   private server: ReturnType<typeof createServer>;
   private config: StatsServerConfig;
   private statsCache: { data: WorldStats; timestamp: number } | null = null;
+  private readonly eventLoopDelay = monitorEventLoopDelay({ resolution: 1 });
+  private lastRuntimeSampleAt = performance.now();
+  private lastCpuUsage = process.cpuUsage();
+  private lastEventLoopUtilization = performance.eventLoopUtilization();
 
   constructor(config: StatsServerConfig) {
     this.config = config;
     this.server = createServer(this.handleRequest.bind(this));
+    this.eventLoopDelay.enable();
   }
 
   start(): Promise<void> {
@@ -223,6 +245,7 @@ export class StatsServer {
   }
 
   stop(): void {
+    this.eventLoopDelay.disable();
     this.server.close();
   }
 
@@ -247,7 +270,17 @@ export class StatsServer {
 
     const url = new URL(req.url || '/', `http://${req.headers.host}`);
 
-    if (url.pathname === '/stats' || url.pathname === '/stats/') {
+    if (url.pathname === '/runtime' || url.pathname === '/runtime/') {
+      try {
+        const sample = await this.sampleRuntime();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(sample, null, 2));
+      } catch (error) {
+        console.error('Error sampling runtime:', error);
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Worker runtime sample unavailable' }));
+      }
+    } else if (url.pathname === '/stats' || url.pathname === '/stats/') {
       try {
         const stats = await this.getCachedStats();
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1581,12 +1614,20 @@ export class StatsServer {
     let totalDrainEvents = 0;
     let totalBytesWritten = 0;
     let peakQueuedBytes = 0;
+    let totalFramesWritten = 0;
+    let keyframesAccepted = 0;
+    let recoveryKeyframesAccepted = 0;
+    let recoveryRequests = 0;
 
     for (const m of metrics) {
       totalQueuedBytes += m.queuedBytes;
       totalDroppedFrames += m.droppedFrames;
       totalDrainEvents += m.drainCount;
       totalBytesWritten += m.totalBytesWritten;
+      totalFramesWritten += m.totalFramesWritten;
+      keyframesAccepted += m.keyframesAccepted;
+      recoveryKeyframesAccepted += m.recoveryKeyframesAccepted;
+      recoveryRequests += m.recoveryRequests;
       if (m.peakQueuedBytes > peakQueuedBytes) {
         peakQueuedBytes = m.peakQueuedBytes;
       }
@@ -1600,8 +1641,73 @@ export class StatsServer {
         total_drain_events: totalDrainEvents,
         total_bytes_written: totalBytesWritten,
         peak_queued_bytes: peakQueuedBytes,
+        total_frames_written: totalFramesWritten,
+        keyframes_accepted: keyframesAccepted,
+        recovery_keyframes_accepted: recoveryKeyframesAccepted,
+        recovery_requests: recoveryRequests,
       },
     };
+  }
+
+  /** Lightweight uncached runtime window for load and transport probes. Each
+   * read closes one interval and resets the event-loop histogram; unlike
+   * /stats it performs no database queries and has no 30-second cache. */
+  private async sampleRuntime(): Promise<{
+    sampled_at: string;
+    interval_ms: number;
+    pid: number;
+    active_sessions: number;
+    memory: WorldStats['server']['memory'];
+    cpu: { user_ms: number; system_ms: number; one_core_percent: number };
+    event_loop: {
+      utilization: number;
+      delay_p50_ms: number;
+      delay_p95_ms: number;
+      delay_p99_ms: number;
+      delay_max_ms: number;
+    };
+    transport?: WorldStats['transport'];
+    worker: Awaited<ReturnType<WorkerManager['getWorkerRuntime']>>;
+  }> {
+    const now = performance.now();
+    const intervalMs = Math.max(0.001, now - this.lastRuntimeSampleAt);
+    const cpu = process.cpuUsage(this.lastCpuUsage);
+    const utilization = performance.eventLoopUtilization(this.lastEventLoopUtilization);
+    const memory = process.memoryUsage();
+    const transport = this.getTransportStats().transport;
+    const worker = await this.config.workerManager.getWorkerRuntime();
+    const result = {
+      sampled_at: new Date().toISOString(),
+      interval_ms: roundRuntimeMetric(intervalMs),
+      pid: process.pid,
+      active_sessions: this.config.getSessionCount(),
+      memory: {
+        rss_mb: Math.round(memory.rss / 1024 / 1024),
+        heap_used_mb: Math.round(memory.heapUsed / 1024 / 1024),
+        heap_total_mb: Math.round(memory.heapTotal / 1024 / 1024),
+        external_mb: Math.round(memory.external / 1024 / 1024),
+        array_buffers_mb: Math.round(memory.arrayBuffers / 1024 / 1024),
+      },
+      cpu: {
+        user_ms: roundRuntimeMetric(cpu.user / 1000),
+        system_ms: roundRuntimeMetric(cpu.system / 1000),
+        one_core_percent: roundRuntimeMetric((cpu.user + cpu.system) / (intervalMs * 10)),
+      },
+      event_loop: {
+        utilization: roundRuntimeMetric(utilization.utilization),
+        delay_p50_ms: nanosecondsToMilliseconds(this.eventLoopDelay.percentile(50)),
+        delay_p95_ms: nanosecondsToMilliseconds(this.eventLoopDelay.percentile(95)),
+        delay_p99_ms: nanosecondsToMilliseconds(this.eventLoopDelay.percentile(99)),
+        delay_max_ms: nanosecondsToMilliseconds(this.eventLoopDelay.max),
+      },
+      ...(transport ? { transport } : {}),
+      worker,
+    };
+    this.lastRuntimeSampleAt = now;
+    this.lastCpuUsage = process.cpuUsage();
+    this.lastEventLoopUtilization = performance.eventLoopUtilization();
+    this.eventLoopDelay.reset();
+    return result;
   }
 
   /**

@@ -39,6 +39,21 @@ const PERF_OPTIMIZATIONS: PerfOptimizations = {
   foveated: true,       // Zone-based update rates (peripheral at 4Hz, core at 60Hz)
   enablePerfStats: false, // Set to true to log perf stats every 10s
 };
+const RENDER_INTERVAL_MS = 67;
+
+/** Deterministically distribute session render callbacks across one 15 Hz
+ * frame interval. Session startup otherwise synchronizes after the shared
+ * entrance animation and forces every full viewport through one event-loop
+ * burst, inflating transient heap and p99 latency without improving freshness. */
+export function sessionRenderPhase(sessionId: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < sessionId.length; index++) {
+    hash ^= sessionId.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) % RENDER_INTERVAL_MS;
+}
+
 import {
   CanalTownTileProvider,
   TileProvider,
@@ -71,6 +86,9 @@ import {
   type RegionalPrewarmService,
 } from '../game/regional-prewarm-service.js';
 import { LOGIN_ORIGIN } from '../game/login-origin.js';
+import { CooperativeRenderScheduler } from './cooperative-render-scheduler.js';
+
+const cooperativeRenderScheduler = new CooperativeRenderScheduler();
 
 /**
  * Choose the terminal render mode. Octant (Unicode 16 solid 2×4 mosaics) is
@@ -105,7 +123,7 @@ export interface WorkerSessionConfig {
   regionalPrewarmService: RegionalPrewarmService | null;
   regionalOriginViewport: RegionalPreparedViewportPayload | null;
   regionalDefaultAvatar: Sprite | null;
-  sendOutput: (sessionId: string, output: string, keyframe?: boolean) => void;
+  sendOutput: (sessionId: string, output: string, keyframe?: boolean, immediate?: boolean) => void;
   sendUserId: (sessionId: string, userId: string) => void;
   sendEnded: (sessionId: string) => void;
   restoredState?: SessionState;
@@ -132,7 +150,12 @@ export class WorkerSession {
   private regionalDefaultAvatar: Sprite | null;
   private sendUserId: (sessionId: string, userId: string) => void;
   private sendEnded: (sessionId: string) => void;
-  private sendOutput: (sessionId: string, output: string, keyframe?: boolean) => void;
+  private sendOutput: (
+    sessionId: string,
+    output: string,
+    keyframe?: boolean,
+    immediate?: boolean,
+  ) => void;
 
   private renderer: PixelGameRenderer | null = null;
   private componentManager: ComponentManager | null = null;
@@ -141,6 +164,7 @@ export class WorkerSession {
   private playerListModal: PlayerListComponent | null = null;
   private reloadOverlay: ReloadOverlayComponent | null = null;
   private chatComponent: ChatComponent | null = null;
+  private bootScreen: BootScreen | null = null;
   private chatVisible: boolean = false; // hidden by default; toggle with ` or c
   private tileProvider: TileProvider | null = null;
   private regionalTileProvider: RegionalWorldTileProvider | null = null;
@@ -149,6 +173,7 @@ export class WorkerSession {
   private destroyed: boolean = false;
   private inputPaused: boolean = false;
   private tickInterval: NodeJS.Timeout | null = null;
+  private tickStartTimeout: NodeJS.Timeout | null = null;
   private playerX: number = 0;
   private playerY: number = 0;
   private visualPlayerX: number = 0;
@@ -247,6 +272,20 @@ export class WorkerSession {
     this.renderer?.requestKeyframe();
   }
 
+  getRuntimeStats(): {
+    session_id: string;
+    position: [number, number];
+    provider: ReturnType<RegionalWorldTileProvider['getRegionalStats']> | null;
+    prewarmer: ReturnType<RegionalPredictivePrewarmer['getStats']> | null;
+  } {
+    return {
+      session_id: this.sessionId,
+      position: [this.playerX, this.playerY],
+      provider: this.regionalTileProvider?.getRegionalStats() ?? null,
+      prewarmer: this.regionalPrewarmer?.getStats() ?? null,
+    };
+  }
+
   /**
    * Handle input data from main process
    */
@@ -303,6 +342,8 @@ export class WorkerSession {
         this.inputPaused = false;
       }
 
+      if (this.destroyed) return;
+
       if (!result) {
         // User quit during onboarding
         this.sendEnded(this.sessionId);
@@ -319,6 +360,7 @@ export class WorkerSession {
     let boot: BootScreen | null = null;
     if (!isRestoring) {
       boot = new BootScreen(this.stream, this.cols, this.rows);
+      this.bootScreen = boot;
       boot.show();
 
       // Fetch online players for honourable mentions
@@ -341,6 +383,7 @@ export class WorkerSession {
       const playerState = await db.query.playerState.findFirst({
         where: eq(schema.playerState.userId, this.userId!),
       });
+      if (this.destroyed) return;
 
       this.playerX = LOGIN_ORIGIN.x;
       this.playerY = LOGIN_ORIGIN.y;
@@ -364,6 +407,7 @@ export class WorkerSession {
           direction: 'down',
         });
       }
+      if (this.destroyed) return;
     }
     boot?.markPreviousDone();
 
@@ -435,9 +479,11 @@ export class WorkerSession {
     // Load avatar
     boot?.updateStep('Loading avatar sprites...', 'loading');
     let sprite = await loadSpriteFromDisk(this.userId!);
+    if (this.destroyed) return;
     const avatar = await db.query.avatars.findFirst({
       where: eq(schema.avatars.userId, this.userId!),
     });
+    if (this.destroyed) return;
 
     if (sprite) {
       this.tileProvider.setPlayerSprite(this.userId!, sprite);
@@ -458,11 +504,13 @@ export class WorkerSession {
     // Load nearby buildings
     boot?.updateStep('Loading nearby buildings...', 'loading');
     await this.loadNearbyBuildings();
+    if (this.destroyed) return;
     boot?.markPreviousDone();
 
     // Load nearby roads
     boot?.updateStep('Loading nearby roads...', 'loading');
     await this.loadNearbyRoads();
+    if (this.destroyed) return;
     boot?.markPreviousDone();
 
     // Update local player state
@@ -547,6 +595,10 @@ export class WorkerSession {
     // Register with game server (direct, no IPC)
     boot?.updateStep('Connecting to game server...', 'loading');
     await this.gameServer.playerConnect(this.userId!, this.sessionId, this.username);
+    if (this.destroyed) {
+      await this.gameServer.playerDisconnect(this.userId!);
+      return;
+    }
     this.gameServer.updatePlayerPosition(this.userId!, this.playerX, this.playerY);
 
     // Register road callbacks to receive updates from other players
@@ -572,16 +624,19 @@ export class WorkerSession {
     if (this.regionalTileProvider) {
       boot?.updateStep('Priming the regional world...', 'loading');
       await this.observeRegionalWorld(0, 0, true);
+      if (this.destroyed) return;
       boot?.markPreviousDone();
     }
 
     // Clean up boot screen and start game only after the first authoritative
     // viewport is present. Cold world generation never runs behind input.
     boot?.hide();
+    if (this.bootScreen === boot) this.bootScreen = null;
 
     // Show entrance screen (skip for hot-reload)
     if (!isRestoring) {
       await this.showEntranceScreen();
+      if (this.destroyed) return;
     }
 
     // Zoom/layout configuration initially centers the renderer on its default
@@ -592,8 +647,22 @@ export class WorkerSession {
     // Initialize the renderer
     this.renderer.initialize();
 
-    // Start render loop
-    this.tickInterval = setInterval(() => this.tick(), 67);
+    // Keep every session at the same 15 Hz cadence, but do not queue all
+    // viewport reconstruction and IPC output in one synchronized burst.
+    this.tickStartTimeout = setTimeout(() => {
+      this.tickStartTimeout = null;
+      if (this.destroyed) return;
+      this.scheduleTick();
+      this.tickInterval = setInterval(() => this.scheduleTick(), RENDER_INTERVAL_MS);
+    }, sessionRenderPhase(this.sessionId));
+  }
+
+  private scheduleTick(): void {
+    cooperativeRenderScheduler.schedule(this.sessionId, () => this.tick());
+  }
+
+  private cancelScheduledTick(): void {
+    cooperativeRenderScheduler.cancel(this.sessionId);
   }
 
   private updateLocalPlayerState(): void {
@@ -767,6 +836,9 @@ export class WorkerSession {
 
     // Center camera on player
     this.renderer.setCamera(this.visualPlayerX, this.visualPlayerY);
+    // The simulation accepts a discrete tile immediately; keep that exact
+    // coordinate visible while the avatar traverses the tile smoothly.
+    this.renderer.setAuthoritativePosition(this.playerX, this.playerY);
     const worldLife = this.gameServer.getTerminalWorldLifeProjection();
     this.tileProvider.setWorldLifeState(worldLife.state, worldLife.animationEpoch);
 
@@ -1047,6 +1119,14 @@ export class WorkerSession {
       clearInterval(this.tickInterval);
       this.tickInterval = null;
     }
+    if (this.tickStartTimeout) {
+      clearTimeout(this.tickStartTimeout);
+      this.tickStartTimeout = null;
+    }
+    this.cancelScheduledTick();
+
+    this.bootScreen?.destroy();
+    this.bootScreen = null;
 
     this.renderer?.cleanup();
 
@@ -1105,7 +1185,7 @@ export class WorkerSession {
 
     this.inputPaused = false;
     this.renderer.invalidate();
-    this.tickInterval = setInterval(() => this.tick(), 67);
+    this.tickInterval = setInterval(() => this.scheduleTick(), RENDER_INTERVAL_MS);
   }
 
   private async saveAvatar(prompt: string, sprite: Sprite): Promise<void> {
@@ -1131,6 +1211,11 @@ export class WorkerSession {
       clearInterval(this.tickInterval);
       this.tickInterval = null;
     }
+    if (this.tickStartTimeout) {
+      clearTimeout(this.tickStartTimeout);
+      this.tickStartTimeout = null;
+    }
+    this.cancelScheduledTick();
 
     this.renderer?.cleanup();
 
@@ -1177,7 +1262,7 @@ export class WorkerSession {
 
     this.inputPaused = false;
     this.renderer.invalidate();
-    this.tickInterval = setInterval(() => this.tick(), 67);
+    this.tickInterval = setInterval(() => this.scheduleTick(), RENDER_INTERVAL_MS);
   }
 
   private async saveBuilding(prompt: string, sprite: DirectionalBuildingSprite): Promise<void> {
@@ -1304,6 +1389,11 @@ export class WorkerSession {
       clearInterval(this.tickInterval);
       this.tickInterval = null;
     }
+    if (this.tickStartTimeout) {
+      clearTimeout(this.tickStartTimeout);
+      this.tickStartTimeout = null;
+    }
+    this.cancelScheduledTick();
 
     this.renderer?.cleanup();
 
@@ -1368,7 +1458,7 @@ export class WorkerSession {
 
     this.inputPaused = false;
     this.renderer.invalidate();
-    this.tickInterval = setInterval(() => this.tick(), 67);
+    this.tickInterval = setInterval(() => this.scheduleTick(), RENDER_INTERVAL_MS);
   }
 
   private async loadNearbyBuildings(): Promise<void> {
@@ -1532,6 +1622,13 @@ export class WorkerSession {
     });
 
     this.gameServer.updatePlayerPosition(this.userId!, this.playerX, this.playerY);
+    if (this.renderer) {
+      const acknowledgement = this.renderer.renderPositionAcknowledgement(
+        this.playerX,
+        this.playerY,
+      );
+      if (acknowledgement) this.sendOutput(this.sessionId, acknowledgement, false, true);
+    }
     void this.observeRegionalWorld(dx, dy);
 
     this.updateMoveAnimation();
@@ -1577,26 +1674,37 @@ export class WorkerSession {
     const goldFg = fg(ACCENT_GOLD);
     const reset = `${ESC}[0m`;
 
+    const write = (output: string): boolean => {
+      if (this.destroyed || this.stream.isStreamDestroyed() || this.stream.writableEnded) {
+        return false;
+      }
+      this.stream.write(output);
+      return true;
+    };
+
     for (let row = 1; row <= this.rows; row++) {
-      this.stream.write(`${ESC}[${row};1H${bgAnsi}${' '.repeat(this.cols)}`);
+      if (!write(`${ESC}[${row};1H${bgAnsi}${' '.repeat(this.cols)}`)) return;
     }
 
     const centerY = Math.floor(this.rows / 2);
 
     const nameDisplay = this.username.toUpperCase();
     const nameX = Math.floor((this.cols - nameDisplay.length) / 2);
-    this.stream.write(`${ESC}[${centerY - 2};${nameX}H${goldFg}${nameDisplay}${reset}`);
+    if (!write(`${ESC}[${centerY - 2};${nameX}H${goldFg}${nameDisplay}${reset}`)) return;
     await new Promise(resolve => setTimeout(resolve, 400));
+    if (this.destroyed) return;
 
     const vsText = 'VS';
     const vsX = Math.floor((this.cols - vsText.length) / 2);
-    this.stream.write(`${ESC}[${centerY};${vsX}H${crimsonFg}${vsText}${reset}`);
+    if (!write(`${ESC}[${centerY};${vsX}H${crimsonFg}${vsText}${reset}`)) return;
     await new Promise(resolve => setTimeout(resolve, 300));
+    if (this.destroyed) return;
 
     const abyssText = 'THE ABYSS';
     const abyssX = Math.floor((this.cols - abyssText.length) / 2);
-    this.stream.write(`${ESC}[${centerY + 2};${abyssX}H${goldFg}${abyssText}${reset}`);
+    if (!write(`${ESC}[${centerY + 2};${abyssX}H${goldFg}${abyssText}${reset}`)) return;
     await new Promise(resolve => setTimeout(resolve, 500));
+    if (this.destroyed) return;
 
     const fightArt = [
       '███████╗██╗ ██████╗ ██╗  ██╗████████╗██╗',
@@ -1612,19 +1720,21 @@ export class WorkerSession {
     const fightY = centerY + 5;
 
     for (let i = 0; i < fightArt.length; i++) {
-      this.stream.write(`${ESC}[${fightY + i};${fightX}H${crimsonFg}${fightArt[i]}${reset}`);
+      if (!write(`${ESC}[${fightY + i};${fightX}H${crimsonFg}${fightArt[i]}${reset}`)) return;
     }
 
     await new Promise(resolve => setTimeout(resolve, 800));
+    if (this.destroyed) return;
 
     const whiteFg = `${ESC}[38;2;255;255;255m`;
     for (let i = 0; i < fightArt.length; i++) {
-      this.stream.write(`${ESC}[${fightY + i};${fightX}H${whiteFg}${fightArt[i]}${reset}`);
+      if (!write(`${ESC}[${fightY + i};${fightX}H${whiteFg}${fightArt[i]}${reset}`)) return;
     }
     await new Promise(resolve => setTimeout(resolve, 100));
+    if (this.destroyed) return;
 
     for (let i = 0; i < fightArt.length; i++) {
-      this.stream.write(`${ESC}[${fightY + i};${fightX}H${crimsonFg}${fightArt[i]}${reset}`);
+      if (!write(`${ESC}[${fightY + i};${fightX}H${crimsonFg}${fightArt[i]}${reset}`)) return;
     }
     await new Promise(resolve => setTimeout(resolve, 400));
   }
@@ -1648,6 +1758,11 @@ export class WorkerSession {
       clearInterval(this.tickInterval);
       this.tickInterval = null;
     }
+    if (this.tickStartTimeout) {
+      clearTimeout(this.tickStartTimeout);
+      this.tickStartTimeout = null;
+    }
+    this.cancelScheduledTick();
 
     if (this.moveTimer) {
       clearTimeout(this.moveTimer);
