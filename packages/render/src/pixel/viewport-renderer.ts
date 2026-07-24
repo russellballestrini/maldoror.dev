@@ -1217,7 +1217,13 @@ export class ViewportRenderer {
           const targetX = screenX + px;
           if (targetX < 0 || targetX >= (buffer[targetY]?.length ?? 0)) continue;
 
-          buffer[targetY]![targetX] = pixel;
+          // Actors share the same authored-edge contract as buildings: retain
+          // anti-aliased coverage and composite it over the current material
+          // instead of promoting every sampled edge pixel to opaque RGB.
+          buffer[targetY]![targetX] = alphaOverLinear(
+            buffer[targetY]![targetX] ?? null,
+            pixel,
+          );
           materialGrid[targetY]![targetX] = ACTOR_MATERIAL;
         }
       }

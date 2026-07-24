@@ -8,12 +8,28 @@ import { SessionProxy } from './session-proxy.js';
 import { WorkerManager } from './worker-manager.js';
 import { db, schema } from '@maldoror/db';
 import { eq } from 'drizzle-orm';
+import type { SessionRestoredState } from './worker-manager.js';
 
-interface SSHServerConfig {
+export interface AcceptanceSSHSession {
+  userId: string;
+  username: string;
+  restoredState: SessionRestoredState;
+}
+
+export interface SSHServerConfig {
   port: number;
+  host?: string;
   hostKeyPath: string;
   banner?: string;
   workerManager: WorkerManager;
+  /**
+   * Explicit acceptance-fixture lane. It is intentionally constructor-only,
+   * has no production environment switch, and is rejected unless the server
+   * binds to loopback. Unlisted keys never reach onboarding.
+   */
+  acceptance?: {
+    resolveSession(fingerprint: string): AcceptanceSSHSession | null;
+  };
 }
 
 interface ClientContext {
@@ -32,6 +48,10 @@ export class SSHServer {
   constructor(config: SSHServerConfig) {
     this.config = config;
 
+    if (config.acceptance && !isLoopbackHost(config.host ?? '0.0.0.0')) {
+      throw new Error('Acceptance SSH sessions require an explicit loopback bind');
+    }
+
     // Check for host key
     if (!existsSync(config.hostKeyPath)) {
       console.error(`Host key not found at ${config.hostKeyPath}`);
@@ -48,9 +68,16 @@ export class SSHServer {
     );
   }
 
-  start(): void {
-    this.server.listen(this.config.port, '0.0.0.0', () => {
-      console.log(`SSH server started on port ${this.config.port}`);
+  start(): Promise<void> {
+    const host = this.config.host ?? '0.0.0.0';
+    return new Promise((resolve, reject) => {
+      const onError = (error: Error) => reject(error);
+      this.server.once('error', onError);
+      this.server.listen(this.config.port, host, () => {
+        this.server.off('error', onError);
+        console.log(`SSH server started on ${host}:${this.config.port}`);
+        resolve();
+      });
     });
   }
 
@@ -107,21 +134,31 @@ export class SSHServer {
         // Username will be set from database for returning users, or onboarding for new users
         context.username = '';
 
-        // Look up user by fingerprint
-        const userKey = await db.query.userKeys.findFirst({
-          where: eq(schema.userKeys.fingerprintSha256, fingerprint),
-          with: { user: true },
-        });
+        if (this.config.acceptance) {
+          const fixture = this.config.acceptance.resolveSession(fingerprint);
+          if (!fixture) {
+            ctx.reject(['publickey']);
+            return;
+          }
+          context.userId = fixture.userId;
+          context.username = fixture.username;
+        } else {
+          // Look up user by fingerprint
+          const userKey = await db.query.userKeys.findFirst({
+            where: eq(schema.userKeys.fingerprintSha256, fingerprint),
+            with: { user: true },
+          });
 
-        if (userKey && userKey.user) {
-          context.userId = userKey.userId;
-          // Get the actual username from the database
-          context.username = userKey.user.username;
-          // Update last used
-          await db
-            .update(schema.userKeys)
-            .set({ lastUsedAt: new Date() })
-            .where(eq(schema.userKeys.id, userKey.id));
+          if (userKey && userKey.user) {
+            context.userId = userKey.userId;
+            // Get the actual username from the database
+            context.username = userKey.user.username;
+            // Update last used
+            await db
+              .update(schema.userKeys)
+              .set({ lastUsedAt: new Date() })
+              .where(eq(schema.userKeys.id, userKey.id));
+          }
         }
 
         ctx.accept();
@@ -197,6 +234,14 @@ export class SSHServer {
       }
 
       const stream = accept();
+      const acceptanceSession = this.config.acceptance?.resolveSession(context.fingerprint);
+
+      // The key was already checked during authentication. Refuse a session if
+      // a mutable test manifest changed between auth and shell creation.
+      if (this.config.acceptance && !acceptanceSession) {
+        stream.end();
+        return;
+      }
 
       // Create session proxy (thin layer - game logic runs in worker)
       const proxy = new SessionProxy({
@@ -208,6 +253,7 @@ export class SSHServer {
         rows: ptyInfo.rows,
         term: ptyInfo.term,
         workerManager: this.config.workerManager,
+        restoredState: acceptanceSession?.restoredState,
       });
       sessionProxy = proxy;
 
@@ -290,4 +336,8 @@ export class SSHServer {
       };
     });
   }
+}
+
+function isLoopbackHost(host: string): boolean {
+  return host === '127.0.0.1' || host === '::1' || host === 'localhost';
 }

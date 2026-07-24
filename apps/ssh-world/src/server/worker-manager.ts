@@ -626,6 +626,14 @@ export class WorkerManager {
       cols: config.cols,
       rows: config.rows,
       term: config.term,
+      restoredState: config.restoredState ? {
+        sessionId: config.sessionId,
+        playerX: config.restoredState.playerX,
+        playerY: config.restoredState.playerY,
+        zoomLevel: config.restoredState.zoomLevel,
+        renderMode: config.restoredState.renderMode,
+        cameraMode: config.restoredState.cameraMode,
+      } : undefined,
     });
   }
 

@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "atlasVersion": "acceptance-atlas-v1",
+  "worldSeed": "8801799478018485",
+  "zooms": [
+    { "id": "walking", "level": 30 },
+    { "id": "district", "level": 10 },
+    { "id": "regional", "level": 0 }
+  ],
+  "viewports": [
+    { "id": "ghostty-reference", "cols": 160, "rows": 46 },
+    { "id": "ghostty-large", "cols": 210, "rows": 60 }
+  ],
+  "environments": [
+    { "id": "day-clear", "worldMinute": 720, "weather": "clear", "weatherIntensity": 0.12 },
+    { "id": "night-clear", "worldMinute": 90, "weather": "clear", "weatherIntensity": 0.18 },
+    { "id": "day-rain", "worldMinute": 840, "weather": "rain", "weatherIntensity": 0.78 },
+    { "id": "night-storm", "worldMinute": 1320, "weather": "storm", "weatherIntensity": 0.92 }
+  ],
+  "sites": [
+    { "id": "canal-origin", "kind": "family", "expectedPrimary": "canal-town", "x": 0, "y": 0, "environment": "day-clear" },
+    { "id": "canal-north-quay", "kind": "family", "expectedPrimary": "canal-town", "x": 96, "y": -224, "environment": "night-clear" },
+    { "id": "canal-west-ward", "kind": "family", "expectedPrimary": "canal-town", "x": -64, "y": -192, "environment": "day-rain" },
+
+    { "id": "forest-west-deep", "kind": "family", "expectedPrimary": "forest", "x": -192, "y": -192, "environment": "night-storm" },
+    { "id": "forest-north-deep", "kind": "family", "expectedPrimary": "forest", "x": 128, "y": -192, "environment": "day-clear" },
+    { "id": "forest-west-grove", "kind": "family", "expectedPrimary": "forest", "x": -160, "y": 32, "environment": "night-clear" },
+
+    { "id": "coast-north-shelf", "kind": "family", "expectedPrimary": "coast", "x": -160, "y": -224, "environment": "day-rain" },
+    { "id": "coast-east-marsh", "kind": "family", "expectedPrimary": "coast", "x": 160, "y": 64, "environment": "night-storm" },
+    { "id": "coast-south-bank", "kind": "family", "expectedPrimary": "coast", "x": -64, "y": 128, "environment": "day-clear" },
+
+    { "id": "rural-north-orchard", "kind": "family", "expectedPrimary": "rural", "x": 96, "y": -96, "environment": "night-clear" },
+    { "id": "rural-south-orchard", "kind": "family", "expectedPrimary": "rural", "x": 64, "y": 128, "environment": "day-rain" },
+    { "id": "rural-far-south", "kind": "family", "expectedPrimary": "rural", "x": 256, "y": 256, "environment": "night-storm" },
+
+    { "id": "mountain-north-ridge", "kind": "family", "expectedPrimary": "mountain", "x": 256, "y": -256, "environment": "day-clear" },
+    { "id": "mountain-west-pass", "kind": "family", "expectedPrimary": "mountain", "x": -224, "y": -128, "environment": "night-clear" },
+    { "id": "mountain-south-ridge", "kind": "family", "expectedPrimary": "mountain", "x": -224, "y": 96, "environment": "day-rain" },
+
+    { "id": "ruins-west-court", "kind": "family", "expectedPrimary": "ruins", "x": -224, "y": -96, "environment": "night-storm" },
+    { "id": "ruins-north-complex", "kind": "family", "expectedPrimary": "ruins", "x": 160, "y": -224, "environment": "day-clear" },
+    { "id": "ruins-south-cloister", "kind": "family", "expectedPrimary": "ruins", "x": -192, "y": 64, "environment": "night-clear" },
+
+    { "id": "transition-ruins-rural", "kind": "transition", "expectedPair": ["ruins", "rural"], "x": 32, "y": 128, "environment": "day-rain" },
+    { "id": "transition-forest-rural", "kind": "transition", "expectedPair": ["forest", "rural"], "x": -128, "y": -32, "environment": "night-storm" },
+    { "id": "transition-forest-mountain", "kind": "transition", "expectedPair": ["forest", "mountain"], "x": 96, "y": 32, "environment": "day-clear" },
+    { "id": "transition-coast-forest", "kind": "transition", "expectedPair": ["coast", "forest"], "x": 192, "y": 0, "environment": "night-clear" },
+    { "id": "transition-canal-ruins", "kind": "transition", "expectedPair": ["canal-town", "ruins"], "x": -96, "y": 0, "environment": "day-rain" },
+    { "id": "transition-coast-ruins", "kind": "transition", "expectedPair": ["coast", "ruins"], "x": 96, "y": 64, "environment": "night-storm" }
+  ]
+}

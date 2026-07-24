@@ -43,6 +43,43 @@ function managerInternals(): WorkerManagerInternals {
 }
 
 describe('WorkerManager hot-reload state capture', () => {
+  it('forwards an explicit loopback acceptance restoration on initial creation', async () => {
+    const manager = managerInternals();
+    manager.workerReady = true;
+    manager.worker = { connected: true };
+    const sendToWorker = vi.fn();
+    (manager as unknown as { sendToWorker: typeof sendToWorker }).sendToWorker = sendToWorker;
+
+    await (manager as unknown as WorkerManager).createWorkerSession({
+      sessionId: 'acceptance-session',
+      fingerprint: 'fixture-key',
+      username: 'atlas-rural',
+      userId: 'fixture-user',
+      cols: 160,
+      rows: 46,
+      term: 'xterm-ghostty',
+      restoredState: {
+        playerX: 336,
+        playerY: 128,
+        zoomLevel: 10,
+        renderMode: 'octant',
+        cameraMode: 'follow',
+      },
+    });
+
+    expect(sendToWorker).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'create_session',
+      restoredState: {
+        sessionId: 'acceptance-session',
+        playerX: 336,
+        playerY: 128,
+        zoomLevel: 10,
+        renderMode: 'octant',
+        cameraMode: 'follow',
+      },
+    }));
+  });
+
   it('requests live session state after public admission enters reloading', async () => {
     const manager = managerInternals();
     const expected = [{ sessionId: 'session-1', playerX: 7, playerY: -3 }];

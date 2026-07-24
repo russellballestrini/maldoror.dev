@@ -31,6 +31,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout", type=float, default=30.0)
     parser.add_argument("--keys", default="", help="movement/actions sent one second after the first game frame")
     parser.add_argument("--user", default="ajax")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=2222)
+    parser.add_argument("--identity", help="explicit SSH private key for an isolated fixture")
+    parser.add_argument("--known-hosts", default="/tmp/maldoror-codex-known-hosts")
     return parser.parse_args()
 
 
@@ -39,21 +43,24 @@ def main() -> int:
     pid, fd = pty.fork()
     if pid == 0:
         os.environ["TERM"] = "xterm-ghostty"
+        command = [
+            "ssh",
+            "-tt",
+            "-p",
+            str(args.port),
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            f"UserKnownHostsFile={args.known_hosts}",
+        ]
+        if args.identity:
+            command.extend(["-i", args.identity, "-o", "IdentitiesOnly=yes"])
+        command.append(f"{args.user}@{args.host}")
         os.execvp(
             "ssh",
-            [
-                "ssh",
-                "-tt",
-                "-p",
-                "2222",
-                "-o",
-                "BatchMode=yes",
-                "-o",
-                "StrictHostKeyChecking=no",
-                "-o",
-                "UserKnownHostsFile=/tmp/maldoror-codex-known-hosts",
-                f"{args.user}@127.0.0.1",
-            ],
+            command,
         )
 
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", args.rows, args.cols, 0, 0))

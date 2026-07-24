@@ -126,6 +126,7 @@ interface TransportMetrics {
 
 interface StatsServerConfig {
   port: number;
+  host?: string;
   getSessionCount: () => number;
   getTransportMetrics?: () => TransportMetrics[];  // Returns metrics from all active sessions
   workerManager: WorkerManager;
@@ -208,9 +209,16 @@ export class StatsServer {
     this.server = createServer(this.handleRequest.bind(this));
   }
 
-  start(): void {
-    this.server.listen(this.config.port, '0.0.0.0', () => {
-      console.log(`Stats server listening on http://0.0.0.0:${this.config.port}/stats`);
+  start(): Promise<void> {
+    const host = this.config.host ?? '0.0.0.0';
+    return new Promise((resolve, reject) => {
+      const onError = (error: Error) => reject(error);
+      this.server.once('error', onError);
+      this.server.listen(this.config.port, host, () => {
+        this.server.off('error', onError);
+        console.log(`Stats server listening on http://${host}:${this.config.port}/stats`);
+        resolve();
+      });
     });
   }
 

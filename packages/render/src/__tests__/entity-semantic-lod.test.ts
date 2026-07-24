@@ -55,4 +55,38 @@ describe('entity semantic LOD', () => {
     );
     expect(grounded).toBe(true);
   });
+
+  it('composites authored actor edge coverage over terrain in linear light', () => {
+    const black = { r: 0, g: 0, b: 0 };
+    const terrain: Tile = { id: 'ground', name: 'ground', walkable: true, pixels: solid(2, black) };
+    const frame: PixelGrid = [[{ r: 255, g: 255, b: 255, a: 128 }]];
+    const frames = [frame, frame, frame, frame] as DirectionFrames;
+    const sprite: Sprite = {
+      width: 1,
+      height: 1,
+      frames: { up: frames, down: frames, left: frames, right: frames },
+    };
+    const world: WorldDataProvider = {
+      getTile: () => terrain,
+      getPlayers: () => [{
+        userId: 'local', username: '', x: 0, y: 0, direction: 'down',
+        animationFrame: 0, isMoving: false,
+      }],
+      getPlayerSprite: () => sprite,
+      getLocalPlayerId: () => 'local',
+    };
+    const renderer = new ViewportRenderer({
+      widthTiles: 3,
+      heightTiles: 3,
+      pixelWidth: 6,
+      pixelHeight: 6,
+      tileRenderSize: 2,
+      dataResolution: 1,
+    });
+    renderer.setCamera(0, 0);
+
+    const rendered = renderer.renderToBuffer(world, 0).buffer.flat();
+    expect(rendered.some((pixel) => pixel?.r === 188 && pixel.g === 188 && pixel.b === 188)).toBe(true);
+    expect(rendered.some((pixel) => pixel?.r === 255 && pixel.g === 255 && pixel.b === 255)).toBe(false);
+  });
 });

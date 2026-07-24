@@ -105,7 +105,7 @@ async function main() {
   });
 
   // Start SSH server
-  sshServer.start();
+  await sshServer.start();
 
   // Start stats HTTP server
   const statsServer = new StatsServer({
@@ -116,7 +116,7 @@ async function main() {
     worldSeed,
     startTime,
   });
-  statsServer.start();
+  await statsServer.start();
 
   // Start agent WebSocket server (attaches to stats server HTTP)
   const agentServer = new AgentServer({

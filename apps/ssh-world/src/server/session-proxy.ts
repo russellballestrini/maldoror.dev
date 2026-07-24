@@ -9,7 +9,11 @@
  */
 
 import type { Duplex } from 'stream';
-import type { WorkerManager, ReloadState } from './worker-manager.js';
+import type {
+  WorkerManager,
+  ReloadState,
+  SessionRestoredState,
+} from './worker-manager.js';
 import { resourceMonitor } from '../utils/resource-monitor.js';
 import { OutputPump, type OutputPumpMetrics } from '@maldoror/render';
 
@@ -29,6 +33,11 @@ export interface SessionProxyConfig {
   cols: number;
   rows: number;
   workerManager: WorkerManager;
+  /**
+   * Only supplied by the loopback acceptance server or by worker hot reload.
+   * Production SSH logins omit this and therefore take the exact-origin path.
+   */
+  restoredState?: SessionRestoredState;
 }
 
 export interface SessionState {
@@ -54,6 +63,7 @@ export class SessionProxy {
   private rows: number;
   private term?: string;
   private workerManager: WorkerManager;
+  private restoredState?: SessionRestoredState;
   private sessionId: string;
   private destroyed: boolean = false;
   private isUpdating: boolean = false;
@@ -72,6 +82,7 @@ export class SessionProxy {
     this.rows = config.rows;
     this.term = config.term;
     this.workerManager = config.workerManager;
+    this.restoredState = config.restoredState;
     this.sessionId = crypto.randomUUID();
     this.outputPump = new OutputPump(this.stream, {
       maxQueuedBytes: 64 * 1024,
@@ -301,6 +312,7 @@ export class SessionProxy {
       cols: this.cols,
       rows: this.rows,
       term: this.term,
+      restoredState: this.restoredState,
     });
   }
 

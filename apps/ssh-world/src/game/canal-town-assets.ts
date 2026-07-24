@@ -432,12 +432,7 @@ async function loadManifestSprite(
             continue;
           }
           const index = (sourceY * info.width + sourceX) * 4;
-          const alpha = data[index + 3] ?? 0;
-          pixelRow.push(alpha < 32 ? null : {
-            r: data[index]!,
-            g: data[index + 1]!,
-            b: data[index + 2]!,
-          });
+          pixelRow.push(rawPixelAt(data, index));
         }
         pixels.push(pixelRow);
       }
@@ -451,7 +446,16 @@ async function loadManifestSprite(
 
 async function loadDefaultAvatar(imagePath: string, size: number): Promise<Sprite> {
   const { data, info } = await sharp(imagePath)
-    .resize({ width: size, height: size, fit: 'contain', kernel: sharp.kernel.lanczos3 })
+    .resize({
+      width: size,
+      height: size,
+      fit: 'contain',
+      kernel: sharp.kernel.lanczos3,
+      // Sharp's default `contain` padding is opaque black. Make the canvas
+      // explicitly transparent so a portrait sprite never becomes a cut-out
+      // rectangle when fitted into the square runtime frame.
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
@@ -493,13 +497,24 @@ function rawToPixelGrid(data: Buffer, width: number, height: number): PixelGrid 
     const row: Pixel[] = [];
     for (let x = 0; x < width; x++) {
       const index = (y * width + x) * 4;
-      row.push((data[index + 3] ?? 0) < 32 ? null : {
-        r: data[index]!,
-        g: data[index + 1]!,
-        b: data[index + 2]!,
-      });
+      row.push(rawPixelAt(data, index));
     }
     pixels.push(row);
   }
   return pixels;
+}
+
+/** Convert Sharp's straight RGBA output without discarding authored edge
+ * coverage. Very low coverage remains transparent; partial coverage is kept
+ * for the renderer's linear-light alpha compositor. */
+function rawPixelAt(data: Buffer, index: number): Pixel {
+  const alpha = data[index + 3] ?? 0;
+  if (alpha < 32) return null;
+  const pixel: Exclude<Pixel, null> = {
+    r: data[index]!,
+    g: data[index + 1]!,
+    b: data[index + 2]!,
+  };
+  if (alpha < 255) pixel.a = alpha;
+  return pixel;
 }
