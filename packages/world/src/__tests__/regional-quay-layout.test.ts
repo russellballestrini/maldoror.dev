@@ -4,6 +4,7 @@ import {
   CANAL_TOWN_ARRIVAL_CIVIC_BRANCHES,
 } from '../biomes/biome-world-field.js';
 import {
+  CANAL_TOWN_QUAY_EDGE_VARIATION,
   buildRegionalQuayLayout,
   regionalQuayCellIsWalkable,
   sampleRegionalQuayLayout,
@@ -80,5 +81,36 @@ describe('regional quay layout', () => {
     expect(isWalkable(5, 4, 'arrival-civic-east')).toBe(true);
     expect(isWalkable(9, 4, 'arrival-civic-east')).toBe(true);
     expect(isWalkable(7, 4, 'arrival-civic-east')).toBe(false);
+  });
+
+  it('uses the same irregular outer edge for raster weight and physical walkability', () => {
+    const field = new BiomeWorldField(WORLD_SEED, {
+      arrivalCivicBranches: CANAL_TOWN_ARRIVAL_CIVIC_BRANCHES,
+    });
+    const waterway = field.getConstructedWaterways()[1]!;
+    const straight = buildRegionalQuayLayout({ id: 'quay:straight', waterway });
+    const irregular = buildRegionalQuayLayout({
+      id: 'quay:irregular',
+      waterway,
+      edgeVariation: CANAL_TOWN_QUAY_EDGE_VARIATION,
+    });
+    const sampleWaterway = (x: number, y: number, id: string) => (
+      field.sampleConstructedWaterway(x, y, id)
+    );
+    let changedCells = 0;
+    for (let y = -2; y <= 16; y++) {
+      for (let x = -11; x <= -3; x++) {
+        const straightWalkable = regionalQuayCellIsWalkable(x, y, straight, sampleWaterway);
+        const irregularWalkable = regionalQuayCellIsWalkable(x, y, irregular, sampleWaterway);
+        if (straightWalkable !== irregularWalkable) changedCells++;
+        const centre = sampleRegionalQuayLayout(
+          field.sampleConstructedWaterway(x + 0.5, y + 0.5, waterway.id),
+          irregular,
+        );
+        if (centre.quayWeight > 0.12) expect(irregularWalkable).toBe(true);
+      }
+    }
+    expect(changedCells).toBeGreaterThan(4);
+    expect(field.samplePhysical(0, 0).isWater).toBe(false);
   });
 });

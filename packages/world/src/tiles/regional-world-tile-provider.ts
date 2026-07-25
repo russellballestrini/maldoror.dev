@@ -277,6 +277,7 @@ export interface RegionalWorldTileProviderConfig extends TileProviderConfig {
   civicDetailCellSize?: number;
   civicDetailDensity?: number;
   quayWidth?: number;
+  quayEdgeVariation?: number;
   quayFrontageDepth?: number;
   routeContactCellSize?: number;
   routeContactDensity?: number;
@@ -529,6 +530,7 @@ export class RegionalWorldTileProvider extends TileProvider {
         id: `quay:${waterway.id}`,
         waterway,
         quayWidth: config.quayWidth,
+        edgeVariation: config.quayEdgeVariation,
         frontageDepth: config.quayFrontageDepth,
       })
     ));

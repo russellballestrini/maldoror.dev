@@ -553,3 +553,36 @@ complete atlas, Gate-D endurance, deployment, and physical Ghostty acceptance
 remain open. Repository verification passes 44 files / 244 tests, 18/18
 typecheck tasks, 12/12 build tasks, 7/7 configured lint tasks, and strict civic
 asset derivation. Production still reports `vb07c0d4`.
+
+### Physically shared irregular quay edges (2026-07-25)
+
+V90-V97 test deterministic landside quay modulation against the V89 paired
+canal baseline. A three-harmonic width field uses continuous waterway progress,
+waterway identity, and bank side. Crucially, the same local width drives the
+raster material weight, visible landside edge, frontage reserve, and physical
+cell walkability; there is no decorative edge/collision split.
+
+The selected 0.28-world-tile amplitude is named
+`CANAL_TOWN_QUAY_EDGE_VARIATION`. Both the live kit and the normal research
+production profile import it. V96 is byte-identical to the explicit V94
+candidate at walking `12526c9c...`, district `2b863cc0...`, and regional
+`288877ab...`. The 0.52 and 0.80 studies remain retained failures because their
+walking views create pale plaza-like lobes without enough broader-scale gain.
+
+V97 proves the selected source through three fresh-scratch real-SSH captures at
+exact `(0,0)`: 804,823 raw bytes, 75 synchronized frames, and asserted zoom,
+OCTANT, dimensions, and hashes. Cold readiness was 22.100 seconds (generator
+4.511, origin preparation 14.286), readiness RSS about 460 MiB, and
+post-capture worker RSS about 565 MiB. The full ladder, hashes, faithful images,
+and teardown proof are under
+`track-6-acceptance-atlas/composition-hierarchy-v97-real-ssh-irregular-quays/`.
+
+The terminal result modestly breaks the ruler-straight outer edge while
+preserving the wet cores, bridges, causeway, and authored frontage. Empty
+commons, regular waterside curbs, boats, stalls, moving inhabitants,
+vegetation masses, side-canal frontage, the other five family grammars, a
+fresh complete atlas, Gate-D endurance, deployment, and physical Ghostty
+acceptance remain open. Repository verification passes 44 files / 245 tests,
+18/18 typecheck tasks, 12/12 build tasks, 7/7 configured lint tasks, strict
+civic-asset derivation, and `git diff --check`. Production still reports
+`vb07c0d4`.

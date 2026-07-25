@@ -17,6 +17,7 @@ import {
   BIOME_FAMILIES,
   BiomeWorldField,
   CANAL_TOWN_ARRIVAL_CIVIC_BRANCHES,
+  CANAL_TOWN_QUAY_EDGE_VARIATION,
   RegionalMaterialCompositor,
   RegionalRouteField,
   RegionalWorldTileProvider,
@@ -196,10 +197,13 @@ if (!ARRIVAL_WATERWAY_PROFILE) {
   throw new Error(`Unknown arrival-waterway profile: ${ARRIVAL_WATERWAY_PROFILE_NAME}`);
 }
 const QUAY_PROFILES = {
-  production: {},
+  production: { quayEdgeVariation: CANAL_TOWN_QUAY_EDGE_VARIATION },
   baseline: {},
   'civic-wide': { quayWidth: 2.45, quayFrontageDepth: 4.2 },
   'civic-broad': { quayWidth: 3.05, quayFrontageDepth: 3.8 },
+  'irregular-subtle': { quayEdgeVariation: CANAL_TOWN_QUAY_EDGE_VARIATION },
+  'irregular-medium': { quayEdgeVariation: 0.52 },
+  'irregular-bold': { quayEdgeVariation: 0.8 },
 };
 const QUAY_PROFILE = QUAY_PROFILES[QUAY_PROFILE_NAME];
 if (!QUAY_PROFILE) throw new Error(`Unknown quay profile: ${QUAY_PROFILE_NAME}`);

@@ -1001,6 +1001,29 @@ Completed foundations:
   derivation.
   Production remains `vb07c0d4`; there was no deploy, service restart, push,
   complete Gate-A claim, Gate-D claim, or physical Ghostty claim;
+- V90-V97 replace the ruler-straight landside quay outline with one
+  deterministic low-frequency width field shared by rendering, frontage
+  reservation, and physical walkability. The 0.52 and 0.80 amplitudes create
+  pale plaza-like lobes and remain retained rejections; 0.28 is selected.
+  `CANAL_TOWN_QUAY_EDGE_VARIATION` is imported by both the live kit and normal
+  research production profile, while unspecified callers retain a zero-change
+  baseline. V96 proves production byte-identical to the explicit V94 candidate
+  at walking `12526c9c...`, district `2b863cc0...`, and regional
+  `288877ab...`. V97's fresh source-build SSH subset retains 804,823 raw bytes
+  and 75 synchronized frames at exact `(0,0)`, with position, zoom, OCTANT,
+  dimensions, and hashes asserted. Cold readiness was 22.100 seconds
+  (generator 4.511, origin 14.286), readiness RSS about 460 MiB, and
+  post-capture worker RSS about 565 MiB. The irregular edge survives faithful
+  terminal reconstruction without changing canal cores, bridges, causeway, or
+  authored frontage, but it is intentionally modest: empty commons, regular
+  waterside curbs, weak side-canal frontage, and absent boats, stalls, moving
+  people, and vegetation masses remain. Evidence is in
+  `track-6-acceptance-atlas/composition-hierarchy-v97-real-ssh-irregular-quays/FINDINGS.md`.
+  Repository-wide verification passes 44 files / 245 tests, 18/18 typecheck
+  tasks, 12/12 build tasks, 7/7 configured lint tasks, strict civic-asset
+  derivation, and `git diff --check`.
+  Production remains `vb07c0d4`; there was no deploy, service restart, push,
+  complete Gate-A claim, Gate-D claim, or physical Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
@@ -1020,8 +1043,9 @@ Still open and therefore goal-blocking:
   sparse research prototypes rather than a complete world layer. The core now
   has selected entrance-level constructed grounding plus water-owned semantic
   quay material, paired walkable arrival quays, and the first two bank-authored
-  low frontages, but still lacks irregular quay-edge/contact detail,
-  convincing bank-aware crossing silhouettes, larger squares/commons, dense
+  low frontages and modest deterministic landside-edge variation, but still
+  lacks convincing waterside contact detail, bank-aware crossing silhouettes,
+  larger squares/commons, dense
   route-connected secondary frontage, and
   equivalent focal vocabularies for the other five families. Coast-specific
   waterfront diversity, far
@@ -1051,10 +1075,11 @@ Still open and therefore goal-blocking:
   remains visually short of acceptance until approach wear, longer-span and
   topology-specific support vocabularies, crossing-family diversity, and the
   surrounding coast-composition failures close, followed by the fresh full
-  atlas. V89 adds selected paired civic canals and a lighter central causeway
-  to V66's bridge shaping, quay articulation, canal depth/current, and two
+  atlas. V97 adds modest physical quay-edge variation to V89's paired civic
+  canals and lighter central causeway, building on V66's bridge shaping, quay
+  articulation, canal depth/current, and two
   static civic-life modules, but is likewise only a selected sub-gate.
-  Crossing and support diversity, irregular bank contact, larger commons,
+  Crossing and support diversity, richer bank contact, larger commons,
   denser route-connected secondary frontage, moving people, stalls, boats,
   less empty paving, and equivalent grammar beyond the canal-town origin
   remain required before a fresh full-atlas recapture can attempt Gate A.

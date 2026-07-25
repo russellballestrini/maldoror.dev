@@ -155,6 +155,7 @@ export {
   type RegionalWaterfrontSurfaceRole,
 } from './tiles/regional-waterfront-layout.js';
 export {
+  CANAL_TOWN_QUAY_EDGE_VARIATION,
   buildRegionalQuayLayout,
   regionalQuayCellIsWalkable,
   sampleRegionalQuayLayout,

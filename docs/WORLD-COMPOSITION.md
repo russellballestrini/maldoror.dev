@@ -367,8 +367,18 @@ dry, an arterial route, and a walkable landmark tile. Tests pin both wet cores,
 four walkable quay samples, route avoidance, origin access, and compact
 bank-side frontage metadata.
 
+The selected V97 quay silhouette adds a deterministic, low-frequency
+landside-width modulation. `CANAL_TOWN_QUAY_EDGE_VARIATION` is 0.28 world
+tiles, selected against retained 0.52 and 0.80 experiments. Modulation is a
+continuous function of waterway progress, waterway identity, and bank side.
+`sampleRegionalQuayLayout` is the single authority for both visible weights
+and `regionalQuayCellIsWalkable`, so irregular paving cannot expose walkable
+water or leave an invisible collision wall. Frontage reservation follows the
+same edge. Unconfigured layouts remain straight, preserving a byte-exact
+research baseline and generic caller behavior.
+
 This is one bounded canal-town composition, not a generalized city generator.
-The visibly straight banks, missing boats/landings, sparse secondary frontage,
+The regular waterside curbs, missing boats/landings, sparse secondary frontage,
 and absence of equivalent hydrology-led grammar in the other five families are
 still acceptance failures.
 

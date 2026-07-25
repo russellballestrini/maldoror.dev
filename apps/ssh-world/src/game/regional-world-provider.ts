@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import {
   BiomeWorldField,
   CANAL_TOWN_ARRIVAL_CIVIC_BRANCHES,
+  CANAL_TOWN_QUAY_EDGE_VARIATION,
   RegionalMaterialCompositor,
   RegionalRouteField,
   RegionalWorldDerivedCache,
@@ -155,6 +156,7 @@ export async function loadRegionalWorldKit(
       ambientLandmarkClearance: ambientKit.landmarkClearance,
       civicDetailCellSize: civicDetailKit.cellSize,
       civicDetailDensity: civicDetailKit.density,
+      quayEdgeVariation: CANAL_TOWN_QUAY_EDGE_VARIATION,
       routeContactCellSize: routeContactKit.cellSize,
       routeContactDensity: routeContactKit.density,
       routeContactLandmarkClearance: routeContactKit.landmarkClearance,
