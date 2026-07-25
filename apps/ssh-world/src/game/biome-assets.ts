@@ -5,6 +5,7 @@ import {
   BIOME_FAMILIES,
   type BiomeFamily,
   type RegionalAmbientAsset,
+  type RegionalCivicDetailAsset,
   type RegionalEnvironmentConstraints,
   type RegionalEnvironmentContactAsset,
   type RegionalEnvironmentProgramKind,
@@ -55,6 +56,15 @@ export interface RegionalAmbientKit {
   density: number;
   landmarkClearance: number;
   assets: RegionalAmbientAsset[];
+}
+
+export interface RegionalCivicDetailKit {
+  manifestPath: string;
+  sourceTileSize: number;
+  blockSize: number;
+  cellSize: number;
+  density: number;
+  assets: RegionalCivicDetailAsset[];
 }
 
 export interface RegionalRouteContactKit {
@@ -131,6 +141,12 @@ interface AmbientEntry {
   spriteTiles: [number, number];
   collision: Array<[number, number]>;
   emitsLight?: boolean;
+}
+
+interface CivicDetailEntry extends AmbientEntry {
+  role: 'civic-detail';
+  landmarkDistance: [number, number];
+  minimumFamilyWeight: number;
 }
 
 interface RouteContactEntry extends AmbientEntry {
@@ -432,6 +448,55 @@ export async function loadRegionalAmbientKit(manifestPath: string): Promise<Regi
     landmarkClearance,
     assets,
   };
+}
+
+/** Load small civic-life silhouettes with explicit landmark and route bands.
+ * The manifest is the semantic authority; neither IDs nor generated pixels
+ * influence whether an object behaves as a bench, cart, lamp, or fountain. */
+export async function loadRegionalCivicDetailKit(
+  manifestPath: string,
+): Promise<RegionalCivicDetailKit> {
+  const absoluteManifest = path.resolve(manifestPath);
+  const manifestDirectory = path.dirname(absoluteManifest);
+  const raw = JSON.parse(await fs.promises.readFile(absoluteManifest, 'utf8')) as unknown;
+  if (!isRecord(raw) || raw.version !== 1 || !Number.isInteger(raw.sourceTileSize) ||
+      !Number.isInteger(raw.blockSize) || !Number.isInteger(raw.cellSize) ||
+      typeof raw.density !== 'number' || !Array.isArray(raw.assets)) {
+    throw new Error(`Invalid regional civic-detail manifest: ${absoluteManifest}`);
+  }
+  const sourceTileSize = Number(raw.sourceTileSize);
+  const blockSize = Number(raw.blockSize);
+  const cellSize = Number(raw.cellSize);
+  const density = Number(raw.density);
+  if (sourceTileSize < 16 || sourceTileSize > 192 || blockSize < 16 || blockSize > 128 ||
+      cellSize < 1 || cellSize > 12 || density < 0 || density > 1) {
+    throw new Error(`Regional civic-detail dimensions are invalid: ${absoluteManifest}`);
+  }
+  const entries = raw.assets.map((value, index) => parseCivicDetailEntry(value, index));
+  const ids = new Set(entries.map((entry) => entry.id));
+  if (entries.length === 0 || ids.size !== entries.length) {
+    throw new Error('Regional civic-detail manifest must contain unique assets');
+  }
+  const assets: RegionalCivicDetailAsset[] = [];
+  for (const entry of entries) {
+    assets.push({
+      id: entry.id,
+      families: [entry.family],
+      role: entry.role,
+      routeDistance: entry.routeDistance,
+      landmarkDistance: entry.landmarkDistance,
+      minimumFamilyWeight: entry.minimumFamilyWeight,
+      collision: entry.collision,
+      emitsLight: entry.emitsLight,
+      sprite: await loadRegionalSprite(
+        resolveAssetPath(manifestDirectory, entry.file),
+        sourceTileSize,
+        entry.scale,
+        entry.spriteTiles,
+      ),
+    });
+  }
+  return { manifestPath: absoluteManifest, sourceTileSize, blockSize, cellSize, density, assets };
 }
 
 /** Load paired, genuinely authored route-contact axes. Orientation is manifest
@@ -737,6 +802,22 @@ function parseAmbientEntry(value: unknown, index: number): AmbientEntry {
     spriteTiles: value.spriteTiles as [number, number],
     collision: value.collision as Array<[number, number]>,
     emitsLight: value.emitsLight as boolean | undefined,
+  };
+}
+
+function parseCivicDetailEntry(value: unknown, index: number): CivicDetailEntry {
+  const ambient = parseAmbientEntry(value, index);
+  if (!isRecord(value) || value.role !== 'civic-detail' ||
+      !isNumericRange(value.landmarkDistance, 999) ||
+      typeof value.minimumFamilyWeight !== 'number' ||
+      value.minimumFamilyWeight < 0 || value.minimumFamilyWeight > 1) {
+    throw new Error(`Invalid regional civic-detail entry at index ${index}`);
+  }
+  return {
+    ...ambient,
+    role: 'civic-detail',
+    landmarkDistance: value.landmarkDistance as [number, number],
+    minimumFamilyWeight: value.minimumFamilyWeight,
   };
 }
 

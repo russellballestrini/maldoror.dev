@@ -27,6 +27,7 @@
     "assets:derive-parcel-components": "node tools/render-sim/derive-regional-parcel-components.mjs",
     "assets:derive-canal-town-focals": "node tools/render-sim/derive-canal-town-focal-blocks.mjs",
     "assets:derive-canal-quay-frontages": "node tools/render-sim/derive-canal-town-quay-frontages.mjs",
+    "assets:derive-canal-civic-details": "node tools/render-sim/derive-canal-town-civic-details.mjs",
     "assets:derive-landmark-fabric-materials": "node tools/render-sim/derive-landmark-fabric-materials.mjs",
     "assets:derive-environment-contacts": "node tools/render-sim/derive-regional-environment-contacts.mjs",
     "research:regional-materials": "node tools/render-sim/regional-material-lab.mjs",

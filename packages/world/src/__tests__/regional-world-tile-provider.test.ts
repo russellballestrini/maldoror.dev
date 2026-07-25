@@ -19,6 +19,7 @@ import {
   RegionalWorldDerivedCache,
   RegionalWorldTileProvider,
   type RegionalAmbientAsset,
+  type RegionalCivicDetailAsset,
   type RegionalEnvironmentContactAsset,
   type RegionalLandmarkAsset,
   type RegionalParcelComponentAsset,
@@ -113,6 +114,7 @@ function makeWorld(
   includeEnvironmentPrograms = false,
   derivedCache?: RegionalWorldDerivedCache,
   includeQuay = false,
+  includeCivicDetails = false,
 ): RegionalWorldTileProvider {
   const quayDescriptor = {
     id: 'test-canal',
@@ -195,6 +197,17 @@ function makeWorld(
     sprite: sprite(COLOURS[family]),
     collision: [[0, 0]] as const,
   })));
+  const civicDetails: RegionalCivicDetailAsset[] = Array.from({ length: 4 }, (_, variant) => ({
+    id: `civic-detail:${variant}`,
+    families: ['canal-town'] as const,
+    role: 'civic-detail' as const,
+    routeDistance: [2, 8] as const,
+    landmarkDistance: [2.5, 14] as const,
+    minimumFamilyWeight: 0.5,
+    sprite: sprite({ r: 232, g: 184, b: 92 + variant * 8 }),
+    collision: [[0, 0]] as const,
+    emitsLight: variant === 3,
+  }));
   const routeContacts: RegionalRouteContactAsset[] = BIOME_FAMILIES.flatMap((family) => (
     ['north-south', 'east-west'] as const
   ).map((accessAxis) => ({
@@ -265,6 +278,7 @@ function makeWorld(
     compositor,
     landmarks,
     ambient,
+    civicDetails: includeCivicDetails ? civicDetails : [],
     routeContacts,
     parcelComponents,
     environmentContacts,
@@ -273,6 +287,8 @@ function makeWorld(
     ambientCellSize: 4,
     ambientDensity: 1,
     ambientLandmarkClearance: 4,
+    civicDetailCellSize: 1,
+    civicDetailDensity: 1,
     routeContactCellSize: 10,
     routeContactDensity: 1,
     routeContactLandmarkClearance: 4,
@@ -487,6 +503,34 @@ describe('RegionalWorldTileProvider', () => {
       const occupied = world.isBuildingAt(placement.anchorX, placement.anchorY);
       expect(occupied || protectedCells.has(`${placement.anchorX},${placement.anchorY}`)).toBe(true);
     }
+  });
+
+  it('places deterministic civic details only on route-safe landmark shoulders', () => {
+    const civicRoute = (x: number, y: number): RegionalRouteSample => {
+      const base = routeSample(x, y);
+      const nearest = [...SITES].sort((a, b) => Math.abs(x - a[0]) - Math.abs(x - b[0]))[0]!;
+      return {
+        ...base,
+        landmarkDistance: Math.hypot(x - nearest[0], y),
+      };
+    };
+    const first = makeWorld(32, 32, civicRoute, undefined, false, undefined, false, true);
+    const second = makeWorld(48, 32, civicRoute, undefined, false, undefined, false, true);
+    const placements = first.getCivicDetailPlacementsInBounds(-18, -18, 18, 18);
+    expect(placements.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(placements.map((placement) => placement.assetId)).size).toBeGreaterThan(1);
+    expect(placements.every((placement) => (
+      placement.kind === 'civic-detail' && placement.families.includes('canal-town') &&
+      placement.siteX === 0 && placement.siteY === 0 &&
+      Math.abs(placement.anchorY) >= 2 && Math.abs(placement.anchorY) <= 8 &&
+      Math.hypot(placement.anchorX, placement.anchorY) >= 2.5 &&
+      Math.hypot(placement.anchorX, placement.anchorY) <= 14
+    ))).toBe(true);
+    expect(second.getCivicDetailPlacementsInBounds(-18, -18, 18, 18)).toEqual(placements);
+    expect(first.getRegionalStats()).toMatchObject({
+      civicDetailAssets: 4,
+      cachedCivicDetailPlacements: placements.length,
+    });
   });
 
   it('builds a compact route-open entourage around the arrival landmark', () => {

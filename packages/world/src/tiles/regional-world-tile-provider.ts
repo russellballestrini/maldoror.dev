@@ -86,6 +86,16 @@ export interface RegionalAmbientAsset extends RegionalVisualAsset {
   routeDistance: readonly [number, number];
 }
 
+/** A small authored social/utility silhouette that occupies the civic shoulder
+ * around a route landmark. All eligibility is manifest-owned so the placement
+ * grammar never branches on an asset ID or attempts to infer use from pixels. */
+export interface RegionalCivicDetailAsset extends RegionalVisualAsset {
+  role: 'civic-detail';
+  routeDistance: readonly [number, number];
+  landmarkDistance: readonly [number, number];
+  minimumFamilyWeight: number;
+}
+
 export type RegionalRouteContactAxis = 'north-south' | 'east-west';
 
 export interface RegionalRouteContactAsset extends RegionalVisualAsset {
@@ -146,7 +156,8 @@ export interface RegionalEnvironmentContactAsset extends RegionalVisualAsset {
 
 export interface RegionalAssetPlacement {
   assetId: string;
-  kind: 'landmark' | 'ambient' | 'environment-contact' | 'route-contact' | 'parcel-component';
+  kind: 'landmark' | 'ambient' | 'civic-detail' | 'environment-contact' | 'route-contact' |
+    'parcel-component';
   families: readonly BiomeFamily[];
   siteX: number;
   siteY: number;
@@ -254,6 +265,7 @@ export interface RegionalWorldTileProviderConfig extends TileProviderConfig {
   compositor: RegionalMaterialCompositor;
   landmarks: readonly RegionalLandmarkAsset[];
   ambient?: readonly RegionalAmbientAsset[];
+  civicDetails?: readonly RegionalCivicDetailAsset[];
   routeContacts?: readonly RegionalRouteContactAsset[];
   parcelComponents?: readonly RegionalParcelComponentAsset[];
   environmentContacts?: readonly RegionalEnvironmentContactAsset[];
@@ -262,6 +274,8 @@ export interface RegionalWorldTileProviderConfig extends TileProviderConfig {
   ambientCellSize?: number;
   ambientDensity?: number;
   ambientLandmarkClearance?: number;
+  civicDetailCellSize?: number;
+  civicDetailDensity?: number;
   routeContactCellSize?: number;
   routeContactDensity?: number;
   routeContactLandmarkClearance?: number;
@@ -283,7 +297,8 @@ export interface RegionalWorldTileProviderConfig extends TileProviderConfig {
 
 interface Placement {
   asset: RegionalVisualAsset;
-  kind: 'landmark' | 'ambient' | 'environment-contact' | 'route-contact' | 'parcel-component';
+  kind: 'landmark' | 'ambient' | 'civic-detail' | 'environment-contact' | 'route-contact' |
+    'parcel-component';
   landmarkKind?: RegionalLandmarkKind;
   siteX: number;
   siteY: number;
@@ -405,6 +420,7 @@ export class RegionalWorldDerivedCache {
   readonly routeContactPlacementCache = new Map<string, Placement | null>();
   readonly environmentContactPlacementCache = new Map<string, Placement | null>();
   readonly environmentProgramCache = new Map<string, CachedEnvironmentProgram | null>();
+  readonly civicDetailPlacementCache = new Map<string, readonly Placement[]>();
   accessClock = 0;
 
   clear(): void {
@@ -414,6 +430,7 @@ export class RegionalWorldDerivedCache {
     this.routeContactPlacementCache.clear();
     this.environmentContactPlacementCache.clear();
     this.environmentProgramCache.clear();
+    this.civicDetailPlacementCache.clear();
     this.accessClock = 0;
   }
 }
@@ -450,6 +467,7 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly compositor: RegionalMaterialCompositor;
   private readonly landmarks: readonly RegionalLandmarkAsset[];
   private readonly ambient: readonly RegionalAmbientAsset[];
+  private readonly civicDetails: readonly RegionalCivicDetailAsset[];
   private readonly routeContacts: readonly RegionalRouteContactAsset[];
   private readonly parcelComponents: readonly RegionalParcelComponentAsset[];
   private readonly environmentContacts: readonly RegionalEnvironmentContactAsset[];
@@ -459,6 +477,8 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly ambientCellSize: number;
   private readonly ambientDensity: number;
   private readonly ambientLandmarkClearance: number;
+  private readonly civicDetailCellSize: number;
+  private readonly civicDetailDensity: number;
   private readonly routeContactCellSize: number;
   private readonly routeContactDensity: number;
   private readonly routeContactLandmarkClearance: number;
@@ -486,6 +506,7 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly routeContactPlacementCache: Map<string, Placement | null>;
   private readonly environmentContactPlacementCache: Map<string, Placement | null>;
   private readonly environmentProgramCache: Map<string, CachedEnvironmentProgram | null>;
+  private readonly civicDetailPlacementCache: Map<string, readonly Placement[]>;
   private readonly preparedViewports = new Map<string, ImportedPreparedViewport>();
 
   constructor(config: RegionalWorldTileProviderConfig) {
@@ -497,6 +518,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     this.compositor = config.compositor;
     this.landmarks = config.landmarks;
     this.ambient = config.ambient ?? [];
+    this.civicDetails = config.civicDetails ?? [];
     this.routeContacts = config.routeContacts ?? [];
     this.parcelComponents = config.parcelComponents ?? [];
     this.environmentContacts = config.environmentContacts ?? [];
@@ -511,6 +533,8 @@ export class RegionalWorldTileProvider extends TileProvider {
     this.ambientCellSize = Math.max(3, config.ambientCellSize ?? 4);
     this.ambientDensity = Math.max(0, Math.min(1, config.ambientDensity ?? 0.86));
     this.ambientLandmarkClearance = Math.max(4, config.ambientLandmarkClearance ?? 9);
+    this.civicDetailCellSize = Math.max(1, Math.min(12, config.civicDetailCellSize ?? 1));
+    this.civicDetailDensity = Math.max(0, Math.min(1, config.civicDetailDensity ?? 0.92));
     this.routeContactCellSize = Math.max(6, config.routeContactCellSize ?? 10);
     this.routeContactDensity = Math.max(0, Math.min(1, config.routeContactDensity ?? 0.55));
     this.routeContactLandmarkClearance = Math.max(4, config.routeContactLandmarkClearance ?? 10);
@@ -541,6 +565,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     this.routeContactPlacementCache = this.derivedCache.routeContactPlacementCache;
     this.environmentContactPlacementCache = this.derivedCache.environmentContactPlacementCache;
     this.environmentProgramCache = this.derivedCache.environmentProgramCache;
+    this.civicDetailPlacementCache = this.derivedCache.civicDetailPlacementCache;
     for (const asset of this.landmarks) {
       if (asset.families.length === 0 || asset.landmarkKinds.length === 0) {
         throw new Error(`Regional landmark has no semantic compatibility: ${asset.id}`);
@@ -553,6 +578,15 @@ export class RegionalWorldTileProvider extends TileProvider {
       if (asset.families.length === 0 || asset.collision.length === 0 ||
           asset.routeDistance[0] < 0 || asset.routeDistance[1] < asset.routeDistance[0]) {
         throw new Error(`Regional ambient asset has invalid semantics: ${asset.id}`);
+      }
+    }
+    for (const asset of this.civicDetails) {
+      if (asset.role !== 'civic-detail' || asset.families.length === 0 ||
+          asset.collision.length === 0 || asset.routeDistance[0] < 0 ||
+          asset.routeDistance[1] < asset.routeDistance[0] || asset.landmarkDistance[0] < 0 ||
+          asset.landmarkDistance[1] < asset.landmarkDistance[0] ||
+          asset.minimumFamilyWeight < 0 || asset.minimumFamilyWeight > 1) {
+        throw new Error(`Regional civic-detail asset has invalid semantics: ${asset.id}`);
       }
     }
     for (const asset of this.routeContacts) {
@@ -579,6 +613,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     const placementAssets: readonly RegionalVisualAsset[] = [
       ...this.landmarks,
       ...this.ambient,
+      ...this.civicDetails,
       ...this.routeContacts,
       ...this.parcelComponents,
       ...this.environmentContacts,
@@ -1196,6 +1231,7 @@ export class RegionalWorldTileProvider extends TileProvider {
   getRegionalStats(): {
     landmarkAssets: number;
     ambientAssets: number;
+    civicDetailAssets: number;
     environmentContactAssets: number;
     routeContactAssets: number;
     parcelComponentAssets: number;
@@ -1203,6 +1239,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     cachedPlacements: number;
     cachedLandmarkPlacements: number;
     cachedAmbientPlacements: number;
+    cachedCivicDetailPlacements: number;
     cachedEnvironmentContactPlacements: number;
     cachedRouteContactPlacements: number;
     cachedParcelGroups: number;
@@ -1228,6 +1265,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     return {
       landmarkAssets: this.landmarks.length,
       ambientAssets: this.ambient.length,
+      civicDetailAssets: this.civicDetails.length,
       environmentContactAssets: this.environmentContacts.length,
       routeContactAssets: this.routeContacts.length,
       parcelComponentAssets: this.parcelComponents.length,
@@ -1245,6 +1283,12 @@ export class RegionalWorldTileProvider extends TileProvider {
       ),
       cachedAmbientPlacements: [...this.blockCache.values()].reduce(
         (total, block) => total + block.placements.filter((placement) => placement.kind === 'ambient').length,
+        0,
+      ),
+      cachedCivicDetailPlacements: [...this.blockCache.values()].reduce(
+        (total, block) => total + block.placements.filter(
+          (placement) => placement.kind === 'civic-detail',
+        ).length,
         0,
       ),
       cachedEnvironmentContactPlacements: [...this.blockCache.values()].reduce(
@@ -1364,6 +1408,40 @@ export class RegionalWorldTileProvider extends TileProvider {
             pathTangentY: placement.pathTangentY,
             waterfrontId: placement.waterfrontId,
             waterfrontFunction: placement.waterfrontFunction,
+          });
+        }
+      }
+    }
+    return placements.sort((a, b) => a.anchorY - b.anchorY || a.anchorX - b.anchorX ||
+      a.assetId.localeCompare(b.assetId));
+  }
+
+  getCivicDetailPlacementsInBounds(
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number,
+  ): RegionalAssetPlacement[] {
+    const placements: RegionalAssetPlacement[] = [];
+    const firstBlockX = floorDiv(Math.floor(minX), this.blockSize);
+    const lastBlockX = floorDiv(Math.floor(maxX), this.blockSize);
+    const firstBlockY = floorDiv(Math.floor(minY), this.blockSize);
+    const lastBlockY = floorDiv(Math.floor(maxY), this.blockSize);
+    for (let blockY = firstBlockY; blockY <= lastBlockY; blockY++) {
+      for (let blockX = firstBlockX; blockX <= lastBlockX; blockX++) {
+        for (const placement of this.getBlock(blockX, blockY).placements) {
+          if (placement.kind !== 'civic-detail' || placement.anchorX < minX ||
+              placement.anchorX > maxX || placement.anchorY < minY || placement.anchorY > maxY) {
+            continue;
+          }
+          placements.push({
+            assetId: placement.asset.id,
+            kind: 'civic-detail',
+            families: placement.asset.families,
+            siteX: placement.siteX,
+            siteY: placement.siteY,
+            anchorX: placement.anchorX,
+            anchorY: placement.anchorY,
           });
         }
       }
@@ -1719,6 +1797,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     const originX = blockX * this.blockSize;
     const originY = blockY * this.blockSize;
     const placements: Placement[] = [];
+    const civicReservedPlacements: Placement[] = [];
     const landmarkFabricSurfaces = new Map<string, LandmarkFabricSurface>();
     const landmarkSites = this.routes.getLandmarkSites?.(
       originX - LANDMARK_ENTOURAGE_REACH,
@@ -1730,12 +1809,14 @@ export class RegionalWorldTileProvider extends TileProvider {
       for (const site of landmarkSites) {
         const placement = this.createPlacement(site.x, site.y);
         if (!placement) continue;
+        civicReservedPlacements.push(placement);
         if (site.x >= originX && site.x < originX + this.blockSize &&
             site.y >= originY && site.y < originY + this.blockSize) {
           placements.push(placement);
         }
         const entourage = this.buildLandmarkEntourage(placement);
         const quayFrontage = this.buildLandmarkQuayFrontage(placement, entourage);
+        civicReservedPlacements.push(...entourage, ...quayFrontage);
         placements.push(...quayFrontage.filter((support) => (
           support.anchorX >= originX && support.anchorX < originX + this.blockSize &&
           support.anchorY >= originY && support.anchorY < originY + this.blockSize
@@ -1761,6 +1842,11 @@ export class RegionalWorldTileProvider extends TileProvider {
         }
       }
     }
+    placements.push(...this.buildCivicDetailPlacements(
+      originX,
+      originY,
+      civicReservedPlacements,
+    ));
     placements.push(...this.buildAmbientPlacements(originX, originY));
     placements.push(...this.buildEnvironmentContactPlacements(originX, originY));
     placements.push(...this.buildRouteContactPlacements(originX, originY));
@@ -2988,6 +3074,154 @@ export class RegionalWorldTileProvider extends TileProvider {
     return placements;
   }
 
+  /** Populate only the social shoulder of an authored route landmark. The
+   * coordinate field is stable, while semantic bands select modules and the
+   * complete visible footprint of the established landmark composition is
+   * reserved before any detail can be accepted. */
+  private buildCivicDetailPlacements(
+    originX: number,
+    originY: number,
+    composition: readonly Placement[],
+  ): Placement[] {
+    if (this.civicDetails.length === 0 || this.civicDetailDensity <= 0) return [];
+    const landmarks = composition
+      .filter((placement) => placement.kind === 'landmark')
+      .sort((a, b) => a.siteY - b.siteY || a.siteX - b.siteX || a.asset.id.localeCompare(b.asset.id));
+    if (landmarks.length === 0) return [];
+    const placements: Placement[] = [];
+    const maximumLandmarkDistance = Math.max(...this.civicDetails.map(
+      (asset) => asset.landmarkDistance[1],
+    ));
+    for (const landmark of landmarks) {
+      const cacheKey = `${landmark.siteX},${landmark.siteY}:${landmark.asset.id}`;
+      const cached = this.civicDetailPlacementCache.get(cacheKey);
+      if (cached) {
+        this.civicDetailPlacementCache.delete(cacheKey);
+        this.civicDetailPlacementCache.set(cacheKey, cached);
+        placements.push(...cached.filter((placement) => (
+          placement.anchorX >= originX && placement.anchorX < originX + this.blockSize &&
+          placement.anchorY >= originY && placement.anchorY < originY + this.blockSize
+        )));
+        continue;
+      }
+      const reservedVisible = new Set<string>();
+      const occupied = new Set<string>();
+      for (const placement of composition) {
+        if (placement.siteX !== landmark.siteX || placement.siteY !== landmark.siteY) continue;
+        reserveVisibleFootprint(placement, reservedVisible, 0);
+        for (const [offsetX, offsetY] of placement.asset.collision) {
+          occupied.add(positionKey(placement.anchorX + offsetX, placement.anchorY + offsetY));
+        }
+      }
+      const candidates: Array<{
+        biome: BiomeWorldSample;
+        route: RegionalRouteSample;
+        x: number;
+        y: number;
+        priority: number;
+      }> = [];
+      const firstCellX = floorDiv(
+        landmark.siteX - maximumLandmarkDistance,
+        this.civicDetailCellSize,
+      );
+      const lastCellX = floorDiv(
+        landmark.siteX + maximumLandmarkDistance,
+        this.civicDetailCellSize,
+      );
+      const firstCellY = floorDiv(
+        landmark.siteY - maximumLandmarkDistance,
+        this.civicDetailCellSize,
+      );
+      const lastCellY = floorDiv(
+        landmark.siteY + maximumLandmarkDistance,
+        this.civicDetailCellSize,
+      );
+      for (let cellY = firstCellY; cellY <= lastCellY; cellY++) {
+        for (let cellX = firstCellX; cellX <= lastCellX; cellX++) {
+          if (this.hashUnit(cellX, cellY, 0x1c73) > this.civicDetailDensity) continue;
+          const candidate = this.civicDetailCandidate(cellX, cellY);
+          const route = this.routes.sample(candidate.x, candidate.y);
+          const siteDistance = Math.hypot(
+            candidate.x - landmark.siteX,
+            candidate.y - landmark.siteY,
+          );
+          if (!Number.isFinite(route.landmarkDistance) ||
+              Math.abs(route.landmarkDistance - siteDistance) > 0.75) continue;
+          const biome = this.field.sample(candidate.x, candidate.y);
+          const asset = this.selectCivicDetailAsset(
+            candidate.x,
+            candidate.y,
+            biome,
+            route,
+            undefined,
+            (option) => this.assetFits(candidate.x, candidate.y, option) &&
+              !visibleFootprintIntersects(
+                option,
+                candidate.x,
+                candidate.y,
+                reservedVisible,
+              ),
+          );
+          if (!asset || !this.assetFits(candidate.x, candidate.y, asset) ||
+              visibleFootprintIntersects(asset, candidate.x, candidate.y, reservedVisible)) continue;
+          candidates.push({
+            biome,
+            route,
+            x: candidate.x,
+            y: candidate.y,
+            priority: this.hashUnit(candidate.x, candidate.y, 0x3ba1),
+          });
+        }
+      }
+      candidates.sort((a, b) => b.priority - a.priority || a.y - b.y || a.x - b.x ||
+        a.route.distance - b.route.distance);
+      const assetUsage = new Map<string, number>();
+      const sitePlacements: Placement[] = [];
+      for (const candidate of candidates) {
+        const asset = this.selectCivicDetailAsset(
+          candidate.x,
+          candidate.y,
+          candidate.biome,
+          candidate.route,
+          assetUsage,
+          (option) => this.assetFits(candidate.x, candidate.y, option) &&
+            !visibleFootprintIntersects(option, candidate.x, candidate.y, reservedVisible) &&
+            option.collision.every(([offsetX, offsetY]) => !occupied.has(
+              positionKey(candidate.x + offsetX, candidate.y + offsetY),
+            )),
+        );
+        if (!asset) continue;
+        const collisionKeys = asset.collision.map(([offsetX, offsetY]) => (
+          positionKey(candidate.x + offsetX, candidate.y + offsetY)
+        ));
+        const placement: Placement = {
+          asset,
+          kind: 'civic-detail',
+          siteX: landmark.siteX,
+          siteY: landmark.siteY,
+          anchorX: candidate.x,
+          anchorY: candidate.y,
+        };
+        for (const key of collisionKeys) occupied.add(key);
+        reserveVisibleFootprint(placement, reservedVisible, 0);
+        assetUsage.set(asset.id, (assetUsage.get(asset.id) ?? 0) + 1);
+        sitePlacements.push(placement);
+      }
+      this.civicDetailPlacementCache.set(cacheKey, sitePlacements);
+      while (this.civicDetailPlacementCache.size > this.maxCachedBlocks * 4) {
+        const oldest = this.civicDetailPlacementCache.keys().next().value as string | undefined;
+        if (oldest === undefined) break;
+        this.civicDetailPlacementCache.delete(oldest);
+      }
+      placements.push(...sitePlacements.filter((placement) => (
+        placement.anchorX >= originX && placement.anchorX < originX + this.blockSize &&
+        placement.anchorY >= originY && placement.anchorY < originY + this.blockSize
+      )));
+    }
+    return placements.sort((a, b) => a.anchorY - b.anchorY || a.anchorX - b.anchorX ||
+      a.asset.id.localeCompare(b.asset.id));
+  }
+
   /** Place large geography contacts from declarative physical envelopes. The
    * candidate field, exclusion priority, and asset variant are all stable in
    * world coordinates, so cache block size and traversal order cannot alter
@@ -3296,6 +3530,17 @@ export class RegionalWorldTileProvider extends TileProvider {
     };
   }
 
+  private civicDetailCandidate(cellX: number, cellY: number): { x: number; y: number } {
+    const inset = 0.12;
+    const span = 1 - inset * 2;
+    return {
+      x: Math.floor((cellX + inset + this.hashUnit(cellX, cellY, 0x5ed3) * span) *
+        this.civicDetailCellSize),
+      y: Math.floor((cellY + inset + this.hashUnit(cellX, cellY, 0x29a7) * span) *
+        this.civicDetailCellSize),
+    };
+  }
+
   private isAmbientPriorityMaximum(cellX: number, cellY: number): boolean {
     const priority = this.hashUnit(cellX, cellY, 0x7f21);
     for (let offsetY = -2; offsetY <= 2; offsetY++) {
@@ -3335,6 +3580,36 @@ export class RegionalWorldTileProvider extends TileProvider {
     const cellY = floorDiv(worldY, this.ambientCellSize);
     const variantIndex = positiveMod(cellX * 3 + cellY * 5 + this.seed32, variants.length);
     return variants[variantIndex] ?? null;
+  }
+
+  private selectCivicDetailAsset(
+    worldX: number,
+    worldY: number,
+    biome: BiomeWorldSample,
+    route: RegionalRouteSample,
+    assetUsage: ReadonlyMap<string, number> = new Map(),
+    assetIsAvailable: (asset: RegionalCivicDetailAsset) => boolean = () => true,
+  ): RegionalCivicDetailAsset | null {
+    let selected: RegionalCivicDetailAsset | null = null;
+    let selectedScore = Number.NEGATIVE_INFINITY;
+    for (const asset of this.civicDetails) {
+      if (!assetIsAvailable(asset)) continue;
+      if (route.distance < asset.routeDistance[0] || route.distance > asset.routeDistance[1] ||
+          route.landmarkDistance < asset.landmarkDistance[0] ||
+          route.landmarkDistance > asset.landmarkDistance[1]) continue;
+      const compatibility = Math.max(...asset.families.map((family) => (
+        biome.weights[BIOME_FAMILIES.indexOf(family)] ?? 0
+      )));
+      if (compatibility < asset.minimumFamilyWeight) continue;
+      const variation = this.hashUnit(worldX, worldY, stringHash(asset.id)) * 0.35;
+      const repetitionPenalty = (assetUsage.get(asset.id) ?? 0) * 0.32;
+      const score = compatibility * 0.65 + variation - repetitionPenalty;
+      if (score > selectedScore) {
+        selected = asset;
+        selectedScore = score;
+      }
+    }
+    return selected;
   }
 
   private selectRouteContactAsset(

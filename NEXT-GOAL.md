@@ -944,6 +944,40 @@ Completed foundations:
   `track-6-acceptance-atlas/composition-hierarchy-v49-real-ssh-authored-quay-frontage/FINDINGS.md`.
   Production remains `vb07c0d4`; there was no deploy, restart, push, or
   physical Ghostty claim;
+- V50-V66 deepen the same arrival composition without changing its hydrology,
+  route, collision, or material-mask authorities. The selected bridge blends
+  civic limestone into timber, has stronger bank landings and a readable
+  mid-span waist, while deterministic world-space wear articulates the paired
+  quays. Continuous tangent-aligned current and real canal bank distance now
+  separate a deeper channel from shallows. A new four-module civic-detail kit
+  (bench/townsfolk, cart, lantern/bollards/flowers, and fountain/pigeons) was
+  generated with built-in Codex/ChatGPT-subscription image generation; exact
+  prompt, source/derived hashes, chroma derivation, alpha checks, semantic
+  route/landmark bands, collision, and light behavior are retained. Placement
+  scans semantic viability before deterministic ranking, reserves complete
+  focal footprints, avoids the route core, penalizes repeated modules, and
+  caches one bounded immutable result per landmark site without ID/filename
+  conditionals. V52's visually lost bridge shaping, V56-V59's incomplete water
+  studies, V62/V63's zero-placement civic studies, and V65's 20.869-second
+  repeated site-search regression remain retained failures. V66 selects the
+  cached result: its fresh 160x46 source-build SSH subset retains 804,635 raw
+  bytes and 75 synchronized frames across exact `(0,0)` walking, district, and
+  regional views, with all position, zoom, OCTANT, dimension, and hash
+  assertions passing. Cold readiness was 13.096 seconds (generator 1.801,
+  origin preparation 8.503), readiness RSS about 457 MiB, and post-capture
+  worker RSS about 542 MiB. SSH and agent/API fresh logins now both persist and
+  enter at `(0,0)`; hot-reload restoration remains a continuation rather than
+  a login. This is still an incremental composition sub-gate: large empty
+  paving remains, only two static origin details are selected, the single
+  crossing vocabulary needs stronger bank contact, and moving people, stalls,
+  boats, commons, secondary frontage, the other five family grammars, and
+  complete-atlas proof remain open. Evidence is in
+  `track-6-acceptance-atlas/composition-hierarchy-v66-real-ssh-cached-civic-life/FINDINGS.md`.
+  Repository-wide verification passes 44 files / 241 tests, 18/18 typecheck
+  tasks, 12/12 build tasks, and 7/7 configured lint tasks; strict civic-detail
+  source and derived-asset hash verification also passes.
+  Production remains `vb07c0d4`; there was no deploy, service restart, push,
+  complete Gate-A claim, Gate-D claim, or physical Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
@@ -994,13 +1028,14 @@ Still open and therefore goal-blocking:
   remains visually short of acceptance until approach wear, longer-span and
   topology-specific support vocabularies, crossing-family diversity, and the
   surrounding coast-composition failures close, followed by the fresh full
-  atlas. V49's bounded arrival canal, paired walkable quays, and first
-  bank-authored frontage are likewise only a selected sub-gate. Bridge
-  silhouette/support refinement, irregular quay-edge wear and contact, denser
-  route-connected civic frontage and props, richer overview-water
-  reconstruction, boats and visible life, and equivalent grammar beyond the
-  canal-town origin remain required before a fresh full-atlas recapture can
-  attempt Gate A.
+  atlas. V66 adds selected bridge shaping, quay articulation, canal depth and
+  current, and two static route-connected civic-life modules to V49's bounded
+  arrival canal and paired walkable quays, but is likewise only a selected
+  sub-gate. Crossing and support diversity, stronger bank contact, larger
+  commons, denser route-connected secondary frontage, moving people, stalls,
+  boats, less empty paving, and equivalent grammar beyond the canal-town
+  origin remain required before a fresh full-atlas recapture can attempt Gate
+  A.
   Fresh post-correction deterministic traversal, the 30-minute terminal run,
   deployed-service/cgroup audit, and physical Ghostty acceptance also remain
   open.

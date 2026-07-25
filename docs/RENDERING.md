@@ -464,3 +464,58 @@ mismatch, or worker error. This is a selected architecture increment, not a
 Gate-D pass: real-SSH churn, load ladder, long run, bandwidth, cgroup, and
 physical Ghostty evidence remain open. Detailed evidence is under
 `track-7-performance/packed-raster-v1/` on the mounted research drive.
+
+### Civic bridge, canal depth, and semantic civic life (2026-07-25)
+
+V50-V66 refine the origin canal as one shared physical and visual composition.
+`RegionalInfrastructureVisualProfile` controls the civic stone/timber deck
+mix, bank-landing flare, mid-span waist, and quay surface articulation. The
+same shaped bridge coverage owns visible material and the physical route;
+quay joints, edge wear, and patina use continuous waterway progress and world
+coordinates without moving the shared walkable quay ribbon.
+
+`RegionalWaterVisualProfile` adds broad and fine current plus flow-aligned
+crests. Constructed waterways use their actual tangent, half-width, and signed
+bank distance, producing a darker deep core and lighter shallows while leaving
+the water material mask and collision ownership unchanged. Seed direction
+provides the same continuous treatment for non-constructed water. V56/V57's
+tonal-only studies and V58/V59's incomplete crest studies remain rejected;
+V60's depth-and-flow treatment is selected.
+
+The semantic civic-detail kit is declared in
+`assets/biomes/civic-details-manifest.json`. Its four modules came from the
+built-in Codex image generator on the ChatGPT subscription, not a metered API.
+The exact generation prompt and source hash live beside the source atlas in
+`assets/biomes/generated/canal-town-civic-life-atlas-v1-source.md`.
+`pnpm assets:derive-canal-civic-details` performs strict hash-gated cropping,
+chroma removal, trim/padding, and output verification. Runtime loading validates
+biome, route-distance, landmark-distance, family-weight, collision, light, and
+sprite metadata rather than inferring semantics from filenames.
+
+Placement scans real landmark cells for semantic eligibility before ranking
+them deterministically. It reserves the complete visible and collision
+footprint of the focal composition, preserves route cores, applies a
+data-driven repetition penalty, and caches one bounded immutable result per
+landmark site in the shared derived cache. V62/V63's priority-before-viability
+and oversized-module experiments produced zero legal placements and remain
+retained failures. V65 rendered the selected art but repeated the site-wide
+search per cache block, raising readiness to 20.869 seconds; V66's shared site
+cache reduced readiness to 13.096 seconds.
+
+The V66 fresh-scratch real-SSH proof captured exact `(0,0)` at walking,
+district, and regional zoom through the actual SSH/session/worker/render/ANSI
+path: 804,635 raw bytes and 75 synchronized frames, with position, zoom,
+OCTANT, dimensions, and hashes asserted. Generator startup was 1.801 seconds,
+origin preparation 8.503 seconds, readiness RSS about 457 MiB, and post-capture
+worker RSS about 542 MiB. The selected walking frame adds a two-person bench
+and a lantern/bollard/flower cluster; broader views retain them as small
+punctuation. Large empty paving, moving civic life, stalls, boats, commons,
+secondary frontage, crossing diversity, the other five place-family grammars,
+complete-atlas recapture, sustained Gate-D evidence, deployment, and physical
+Ghostty acceptance remain open. Full evidence is in
+`track-6-acceptance-atlas/composition-hierarchy-v66-real-ssh-cached-civic-life/`
+on the mounted research drive. Fresh SSH and agent/API authentication reset
+position to `(0,0)`; only active-session hot reload restores position. Full
+repository verification passes 44 files / 241 tests, 18/18 typecheck tasks,
+12/12 build tasks, 7/7 configured lint tasks, and strict source/derived-asset
+hash verification.

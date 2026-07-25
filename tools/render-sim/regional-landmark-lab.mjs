@@ -6,6 +6,7 @@ import sharp from 'sharp';
 import {
   loadRegionalAmbientKit,
   loadRegionalBiomeMaterialKit,
+  loadRegionalCivicDetailKit,
   loadRegionalEnvironmentContactKit,
   loadRegionalLandmarkKit,
   loadRegionalParcelComponentKit,
@@ -33,6 +34,68 @@ const WORLD_SEED = BigInt(process.env.MALDOROR_WORLD_SEED ?? '8801799478018485')
 const WIDTH = 320;
 const HEIGHT = 176;
 const FRAME_FILTER = process.env.MALDOROR_REGIONAL_LANDMARK_FRAME;
+const INFRASTRUCTURE_PROFILE_NAME = process.env.MALDOROR_INFRASTRUCTURE_PROFILE ?? 'production';
+const WATER_PROFILE_NAME = process.env.MALDOROR_WATER_PROFILE ?? 'production';
+const CIVIC_DETAIL_PROFILE_NAME = process.env.MALDOROR_CIVIC_DETAIL_PROFILE ?? 'production';
+const INFRASTRUCTURE_PROFILES = {
+  production: {},
+  baseline: {
+    civicBridgeDeckMix: 0,
+    bridgeLandingFlareScale: 1,
+    bridgeMidspanWaistScale: 1,
+    quaySurfaceArticulation: 0,
+  },
+  'civic-stone': {
+    civicBridgeDeckMix: 0.68,
+    bridgeLandingFlareScale: 1,
+    bridgeMidspanWaistScale: 1,
+    quaySurfaceArticulation: 0,
+  },
+  'civic-arched-worn': {
+    civicBridgeDeckMix: 0.58,
+    bridgeLandingFlareScale: 1.55,
+    bridgeMidspanWaistScale: 1.65,
+    quaySurfaceArticulation: 1,
+  },
+  'civic-arched-strong': {
+    civicBridgeDeckMix: 0.64,
+    bridgeLandingFlareScale: 3,
+    bridgeMidspanWaistScale: 3.2,
+    quaySurfaceArticulation: 1,
+  },
+};
+const INFRASTRUCTURE_PROFILE = INFRASTRUCTURE_PROFILES[INFRASTRUCTURE_PROFILE_NAME];
+if (!INFRASTRUCTURE_PROFILE) {
+  throw new Error(`Unknown infrastructure profile: ${INFRASTRUCTURE_PROFILE_NAME}`);
+}
+const WATER_PROFILES = {
+  production: {
+    detailCurrentStrength: 0.18,
+    overviewCurrentStrength: 0.52,
+  },
+  baseline: {
+    detailCurrentStrength: 0,
+    overviewCurrentStrength: 0,
+  },
+  'current-medium': {
+    detailCurrentStrength: 0.12,
+    overviewCurrentStrength: 0.3,
+  },
+  'current-strong': {
+    detailCurrentStrength: 0.18,
+    overviewCurrentStrength: 0.52,
+  },
+};
+const WATER_PROFILE = WATER_PROFILES[WATER_PROFILE_NAME];
+if (!WATER_PROFILE) throw new Error(`Unknown water profile: ${WATER_PROFILE_NAME}`);
+const CIVIC_DETAIL_PROFILES = {
+  production: { enabled: true },
+  disabled: { enabled: false },
+};
+const CIVIC_DETAIL_PROFILE = CIVIC_DETAIL_PROFILES[CIVIC_DETAIL_PROFILE_NAME];
+if (!CIVIC_DETAIL_PROFILE) {
+  throw new Error(`Unknown civic-detail profile: ${CIVIC_DETAIL_PROFILE_NAME}`);
+}
 let FRAMES = [
   { name: 'arrival-landmark-walking', centre: [0, 0], displayTileSize: 16 },
   { name: 'arrival-landmark-district', centre: [0, 0], displayTileSize: 8 },
@@ -72,6 +135,7 @@ const [
   routeKit,
   landmarkKit,
   ambientKit,
+  civicDetailKit,
   routeContactKit,
   parcelKit,
   environmentKit,
@@ -80,12 +144,18 @@ const [
   loadRegionalRouteMaterialKit(path.join(ROOT, 'assets/routes/manifest.json')),
   loadRegionalLandmarkKit(path.join(ROOT, 'assets/biomes/landmarks-manifest.json')),
   loadRegionalAmbientKit(path.join(ROOT, 'assets/biomes/ambient-manifest.json')),
+  loadRegionalCivicDetailKit(path.join(ROOT, 'assets/biomes/civic-details-manifest.json')),
   loadRegionalRouteContactKit(path.join(ROOT, 'assets/biomes/route-contacts-manifest.json')),
   loadRegionalParcelComponentKit(path.join(ROOT, 'assets/biomes/parcel-components-manifest.json')),
   loadRegionalEnvironmentContactKit(path.join(ROOT, 'assets/biomes/environment-contacts-manifest.json')),
 ]);
-if (new Set([landmarkKit.blockSize, ambientKit.blockSize, routeContactKit.blockSize]).size !== 1) {
-  throw new Error('Regional landmark, ambient, and route-contact block sizes disagree');
+if (new Set([
+  landmarkKit.blockSize,
+  ambientKit.blockSize,
+  civicDetailKit.blockSize,
+  routeContactKit.blockSize,
+]).size !== 1) {
+  throw new Error('Regional landmark, ambient, civic-detail, and route-contact block sizes disagree');
 }
 const compositor = new RegionalMaterialCompositor({
   worldSeed: WORLD_SEED,
@@ -102,6 +172,8 @@ const compositor = new RegionalMaterialCompositor({
   variantPeriodTiles: 5,
   textureScaleTiles: 7,
   maxOutputResolution: Math.min(biomeKit.sourceTileSize, routeKit.sourceTileSize),
+  infrastructureVisualProfile: INFRASTRUCTURE_PROFILE,
+  waterVisualProfile: WATER_PROFILE,
 });
 const world = new RegionalWorldTileProvider({
   worldSeed: WORLD_SEED,
@@ -110,6 +182,7 @@ const world = new RegionalWorldTileProvider({
   compositor,
   landmarks: landmarkKit.assets,
   ambient: ambientKit.assets,
+  civicDetails: CIVIC_DETAIL_PROFILE.enabled ? civicDetailKit.assets : [],
   routeContacts: routeContactKit.assets,
   parcelComponents: parcelKit.assets,
   environmentContacts: environmentKit.assets,
@@ -118,6 +191,8 @@ const world = new RegionalWorldTileProvider({
   ambientCellSize: ambientKit.cellSize,
   ambientDensity: ambientKit.density,
   ambientLandmarkClearance: ambientKit.landmarkClearance,
+  civicDetailCellSize: civicDetailKit.cellSize,
+  civicDetailDensity: CIVIC_DETAIL_PROFILE.enabled ? civicDetailKit.density : 0,
   routeContactCellSize: routeContactKit.cellSize,
   routeContactDensity: routeContactKit.density,
   routeContactLandmarkClearance: routeContactKit.landmarkClearance,
@@ -911,12 +986,19 @@ function walkableCellsConnected(cells) {
 
 const metrics = {
   worldSeed: String(WORLD_SEED),
+  infrastructureProfile: INFRASTRUCTURE_PROFILE_NAME,
+  infrastructureVisualProfile: INFRASTRUCTURE_PROFILE,
+  waterProfile: WATER_PROFILE_NAME,
+  waterVisualProfile: WATER_PROFILE,
+  civicDetailProfile: CIVIC_DETAIL_PROFILE_NAME,
   sourceDimensions: [WIDTH, HEIGHT],
   terminalDimensions: [WIDTH / 2, HEIGHT / 4],
   landmarkManifest: path.relative(ROOT, landmarkKit.manifestPath),
   landmarkAssets: landmarkKit.assets.length,
   ambientManifest: path.relative(ROOT, ambientKit.manifestPath),
   ambientAssets: ambientKit.assets.length,
+  civicDetailManifest: path.relative(ROOT, civicDetailKit.manifestPath),
+  civicDetailAssets: civicDetailKit.assets.length,
   routeContactManifest: path.relative(ROOT, routeContactKit.manifestPath),
   routeContactAssets: routeContactKit.assets.length,
   parcelComponentManifest: path.relative(ROOT, parcelKit.manifestPath),
@@ -949,6 +1031,7 @@ for (const frame of FRAMES) {
     compositorStats: compositor.getStats(),
     providerStats: world.getRegionalStats(),
     visibleAmbient: world.getAmbientPlacementsInBounds(...visibleBounds),
+    visibleCivicDetails: world.getCivicDetailPlacementsInBounds(...visibleBounds),
     visibleRouteContacts: world.getRouteContactPlacementsInBounds(...visibleBounds),
     visibleParcelComponents: world.getParcelComponentPlacementsInBounds(...visibleBounds),
     visibleEnvironmentContacts: world.getEnvironmentContactPlacementsInBounds(...visibleBounds),

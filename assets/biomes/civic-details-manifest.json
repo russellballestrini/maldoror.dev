@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "sourceTileSize": 48,
+  "blockSize": 32,
+  "cellSize": 1,
+  "density": 0.92,
+  "source": {
+    "file": "generated/canal-town-civic-life-atlas-v1-source.png",
+    "prompt": "generated/canal-town-civic-life-atlas-v1-source.md",
+    "sha256": "65cb523e5179aeaf014c1bcd4af679857bb594bf7af5bb7b4ce67f6f82172e3a",
+    "generation": "Codex built-in image generation on ChatGPT subscription; no metered API",
+    "derivation": "pnpm assets:derive-canal-civic-details"
+  },
+  "assets": [
+    {
+      "id": "canal-town-civic-bench-v1",
+      "file": "civic-details/canal-town-civic-bench-v1.png",
+      "family": "canal-town",
+      "role": "civic-detail",
+      "routeDistance": [2.2, 8.5],
+      "landmarkDistance": [2.5, 14],
+      "minimumFamilyWeight": 0.5,
+      "scale": 0.92,
+      "spriteTiles": [2, 2],
+      "collision": [[-1, 0], [0, 0]]
+    },
+    {
+      "id": "canal-town-civic-cart-v1",
+      "file": "civic-details/canal-town-civic-cart-v1.png",
+      "family": "canal-town",
+      "role": "civic-detail",
+      "routeDistance": [2.4, 7.5],
+      "landmarkDistance": [3.5, 13],
+      "minimumFamilyWeight": 0.55,
+      "scale": 0.9,
+      "spriteTiles": [2, 3],
+      "collision": [[-1, 0], [0, 0]]
+    },
+    {
+      "id": "canal-town-civic-lantern-v1",
+      "file": "civic-details/canal-town-civic-lantern-v1.png",
+      "family": "canal-town",
+      "role": "civic-detail",
+      "routeDistance": [2.1, 7.8],
+      "landmarkDistance": [2.5, 14],
+      "minimumFamilyWeight": 0.5,
+      "scale": 0.9,
+      "spriteTiles": [2, 2],
+      "collision": [[-1, 0], [0, 0]],
+      "emitsLight": true
+    },
+    {
+      "id": "canal-town-civic-fountain-v1",
+      "file": "civic-details/canal-town-civic-fountain-v1.png",
+      "family": "canal-town",
+      "role": "civic-detail",
+      "routeDistance": [3, 9],
+      "landmarkDistance": [4, 14],
+      "minimumFamilyWeight": 0.62,
+      "scale": 0.88,
+      "spriteTiles": [2, 3],
+      "collision": [[-1, 0], [0, 0]]
+    }
+  ]
+}

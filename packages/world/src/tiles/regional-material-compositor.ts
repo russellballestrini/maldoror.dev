@@ -70,6 +70,26 @@ export type RegionalTextureReconstruction =
   | 'hex-laplacian'
   | 'cellular-semantic';
 
+/** Tunable visual grammar for constructed civic infrastructure. Geometry
+ * remains owned by the route and waterway fields; these values let research
+ * harnesses compare material hierarchy and restrained cross-section changes
+ * without forking those physical authorities. */
+export interface RegionalInfrastructureVisualProfile {
+  civicBridgeDeckMix: number;
+  bridgeLandingFlareScale: number;
+  bridgeMidspanWaistScale: number;
+  quaySurfaceArticulation: number;
+}
+
+/** Scale-aware tonal structure for physically owned water. The source
+ * material still supplies colour and authored mass; this continuous field
+ * adds long current streaks that survive terminal reduction without becoming
+ * a repeated tile stamp. */
+export interface RegionalWaterVisualProfile {
+  detailCurrentStrength: number;
+  overviewCurrentStrength: number;
+}
+
 export interface RegionalMaterialCompositorConfig {
   worldSeed: bigint;
   field: BiomeSampler;
@@ -102,6 +122,8 @@ export interface RegionalMaterialCompositorConfig {
    * explicit baseline remains available to research harnesses; production can
    * select a measured candidate without changing asset or biome semantics. */
   textureReconstruction?: RegionalTextureReconstruction;
+  infrastructureVisualProfile?: Partial<RegionalInfrastructureVisualProfile>;
+  waterVisualProfile?: Partial<RegionalWaterVisualProfile>;
 }
 
 interface PreparedTextureLevel {
@@ -120,6 +142,16 @@ const RURAL = 3;
 const MOUNTAIN = 4;
 const ROUTE_KINDS: readonly RegionalRouteKind[] = ['trail', 'local-road', 'arterial'];
 const SEMANTIC_RESOLUTIONS = [4, 8, 16, 26, 51, 77, 102, 128, 154, 179, 205, 230, 256] as const;
+const DEFAULT_INFRASTRUCTURE_VISUAL_PROFILE: RegionalInfrastructureVisualProfile = {
+  civicBridgeDeckMix: 0.64,
+  bridgeLandingFlareScale: 3,
+  bridgeMidspanWaistScale: 3.2,
+  quaySurfaceArticulation: 1,
+};
+const DEFAULT_WATER_VISUAL_PROFILE: RegionalWaterVisualProfile = {
+  detailCurrentStrength: 0.18,
+  overviewCurrentStrength: 0.52,
+};
 
 /**
  * Continuous six-family material reconstruction in linear light.
@@ -147,6 +179,8 @@ export class RegionalMaterialCompositor {
   private readonly overviewTextureScaleTiles: number;
   private readonly overviewVariantPeriodTiles: number;
   private readonly textureReconstruction: RegionalTextureReconstruction;
+  private readonly infrastructureVisualProfile: RegionalInfrastructureVisualProfile;
+  private readonly waterVisualProfile: RegionalWaterVisualProfile;
   private readonly sourceSize: number;
   private readonly cache = new Map<string, Tile>();
   private readonly triangleWeights = new Float64Array(3);
@@ -172,6 +206,36 @@ export class RegionalMaterialCompositor {
       config.overviewVariantPeriodTiles ?? 31,
     );
     this.textureReconstruction = config.textureReconstruction ?? 'square-bilinear';
+    this.infrastructureVisualProfile = {
+      civicBridgeDeckMix: clamp01(
+        config.infrastructureVisualProfile?.civicBridgeDeckMix ??
+          DEFAULT_INFRASTRUCTURE_VISUAL_PROFILE.civicBridgeDeckMix,
+      ),
+      bridgeLandingFlareScale: Math.max(
+        0,
+        config.infrastructureVisualProfile?.bridgeLandingFlareScale ??
+          DEFAULT_INFRASTRUCTURE_VISUAL_PROFILE.bridgeLandingFlareScale,
+      ),
+      bridgeMidspanWaistScale: Math.max(
+        0,
+        config.infrastructureVisualProfile?.bridgeMidspanWaistScale ??
+          DEFAULT_INFRASTRUCTURE_VISUAL_PROFILE.bridgeMidspanWaistScale,
+      ),
+      quaySurfaceArticulation: clamp01(
+        config.infrastructureVisualProfile?.quaySurfaceArticulation ??
+          DEFAULT_INFRASTRUCTURE_VISUAL_PROFILE.quaySurfaceArticulation,
+      ),
+    };
+    this.waterVisualProfile = {
+      detailCurrentStrength: clamp01(
+        config.waterVisualProfile?.detailCurrentStrength ??
+          DEFAULT_WATER_VISUAL_PROFILE.detailCurrentStrength,
+      ),
+      overviewCurrentStrength: clamp01(
+        config.waterVisualProfile?.overviewCurrentStrength ??
+          DEFAULT_WATER_VISUAL_PROFILE.overviewCurrentStrength,
+      ),
+    };
     this.materials = Object.fromEntries(BIOME_FAMILIES.map((family) => {
       const sources = config.materials[family];
       if (sources.length === 0) throw new Error(`Regional material family is empty: ${family}`);
@@ -847,14 +911,63 @@ export class RegionalMaterialCompositor {
         let linearR = srgbToLinear(beneath.r);
         let linearG = srgbToLinear(beneath.g);
         let linearB = srgbToLinear(beneath.b);
-        const materialOpacity = sample.quayWeight * (resolution <= 8 ? 0.84 : 0.92);
+        const articulation = this.infrastructureVisualProfile.quaySurfaceArticulation;
+        const articulationDetail = articulation * (resolution <= 8 ? 0.38 : 1);
+        const edgeWearNoise = valueNoise(
+          sample.progress * 57,
+          sample.bankSide * 7.3,
+          this.seed32 ^ 0x19c7,
+        ) * 0.5 + 0.5;
+        const edgeWearWeight = smoothstep(0.52, 0.82, edgeWearNoise) *
+          (sample.watersideEdgeWeight * 0.34 + sample.landsideEdgeWeight * 0.16) *
+          articulationDetail;
+        const materialOpacity = sample.quayWeight * (resolution <= 8 ? 0.84 : 0.92) *
+          (1 - edgeWearWeight);
         linearR = lerp(linearR, quayTexture[0]!, materialOpacity);
         linearG = lerp(linearG, quayTexture[1]!, materialOpacity);
         linearB = lerp(linearB, quayTexture[2]!, materialOpacity);
-        const edgeOpacity = sample.watersideEdgeWeight * 0.42 + sample.landsideEdgeWeight * 0.14;
+        const edgeVariation = 0.54 + 0.58 * (
+          valueNoise(
+            sample.progress * 31,
+            sample.bankSide * 5.7,
+            this.seed32 ^ 0x71e3,
+          ) * 0.5 + 0.5
+        );
+        const edgeOpacity = (
+          sample.watersideEdgeWeight * 0.42 + sample.landsideEdgeWeight * 0.14
+        ) * lerp(1, edgeVariation, articulationDetail);
         linearR = lerp(linearR, linearR * 0.47, edgeOpacity);
         linearG = lerp(linearG, linearG * 0.5, edgeOpacity);
         linearB = lerp(linearB, linearB * 0.54, edgeOpacity);
+        // Quays need enough repeated masonry logic to read as constructed,
+        // but a perfectly even edge turns the entire canal into a ruler. The
+        // waterway progress coordinate supplies continuous stone courses on
+        // both banks; low-frequency world noise shifts individual joints and
+        // varies contact wear without moving the physical quay boundary.
+        if (articulation > 0.0001 && sample.quayWeight > 0.0001) {
+          const jointCoordinate = sample.progress * 37 + valueNoise(
+            worldX * 0.16,
+            worldY * 0.16,
+            this.seed32 ^ 0x36ad,
+          ) * 0.13;
+          const jointDistance = Math.abs(jointCoordinate - Math.round(jointCoordinate));
+          const jointWeight = (1 - smoothstep(
+            0.035,
+            resolution <= 8 ? 0.16 : 0.095,
+            jointDistance,
+          )) * sample.quayWeight * articulation;
+          const patinaNoise = valueNoise(
+            worldX * 0.72 + sample.bankSide * 3.1,
+            worldY * 0.72 - sample.bankSide * 2.3,
+            this.seed32 ^ 0x4b91,
+          ) * 0.5 + 0.5;
+          const patinaWeight = smoothstep(0.56, 0.86, patinaNoise) *
+            sample.quayWeight * articulation;
+          const jointShade = jointWeight * (resolution <= 8 ? 0.035 : 0.085);
+          linearR *= 1 - jointShade - patinaWeight * 0.045;
+          linearG *= 1 - jointShade * 0.9 - patinaWeight * 0.03;
+          linearB *= 1 - jointShade * 0.72 - patinaWeight * 0.055;
+        }
         row.push({
           r: linearToSrgb(linearR),
           g: linearToSrgb(linearG),
@@ -1100,6 +1213,7 @@ export class RegionalMaterialCompositor {
     const quayTexture = new Float64Array(3);
     const routeTexture = new Float64Array(3);
     const routeBaseTexture = new Float64Array(3);
+    const bridgeEdgeTexture = new Float64Array(3);
     const bridgeStructureTexture = new Float64Array(3);
     for (let y = 0; y < size; y++) {
       const row: RGB[] = [];
@@ -1169,6 +1283,76 @@ export class RegionalMaterialCompositor {
         let linear = groundLinear.map((value, channel) => (
           lerp(value, water[channel]!, waterMaterialWeight)
         ));
+        const currentStrength = size <= 8
+          ? this.waterVisualProfile.overviewCurrentStrength
+          : this.waterVisualProfile.detailCurrentStrength;
+        if (currentStrength > 0.0001 && waterMaterialWeight > 0.0001) {
+          const waterway = this.field.sampleConstructedWaterway?.(worldX, worldY);
+          let tangentX: number;
+          let tangentY: number;
+          if (waterway && waterway.signedDistance < 0.8) {
+            tangentX = waterway.tangentX;
+            tangentY = waterway.tangentY;
+          } else {
+            const angle = valueNoise(
+              worldX * 0.012,
+              worldY * 0.012,
+              this.seed32 ^ 0x27f1,
+            ) * Math.PI;
+            tangentX = Math.cos(angle);
+            tangentY = Math.sin(angle);
+          }
+          const along = worldX * tangentX + worldY * tangentY;
+          const across = worldX * -tangentY + worldY * tangentX;
+          const broadCurrent = valueNoise(
+            along * 0.045,
+            across * 0.46,
+            this.seed32 ^ 0x5a13,
+          );
+          const fineCurrent = valueNoise(
+            along * 0.13 + broadCurrent * 0.8,
+            across * 1.08,
+            this.seed32 ^ 0x6ce9,
+          );
+          const current = broadCurrent * 0.72 + fineCurrent * 0.28;
+          const waterStrength = currentStrength * waterMaterialWeight;
+          const phaseWarp = valueNoise(
+            along * 0.17,
+            across * 0.11,
+            this.seed32 ^ 0x1d8f,
+          ) * 2.7;
+          const crestPhase = across * (size <= 8 ? 2.05 : 4.4) +
+            along * (size <= 8 ? 0.08 : 0.22) + phaseWarp;
+          const crestSignal = Math.sin(crestPhase) * 0.72 +
+            Math.sin(crestPhase * 0.47 + broadCurrent * 2.2) * 0.28;
+          const crest = smoothstep(0.46, 0.9, crestSignal) * waterStrength;
+          const glint = smoothstep(0.42, 0.9, current) * waterStrength;
+          const constructedDepth = waterway && waterway.signedDistance < 0
+            ? smoothstep(
+                0.08,
+                0.82,
+                -waterway.signedDistance / Math.max(0.1, waterway.halfWidth),
+              )
+            : 0;
+          const bankShallow = waterway && waterway.signedDistance < 0
+            ? 1 - constructedDepth
+            : 0;
+          linear[0] = clamp01(
+            linear[0]! * (
+              1 + current * waterStrength * 0.32 - constructedDepth * waterStrength * 0.1
+            ) + glint * 0.01 + crest * 0.018 + bankShallow * waterStrength * 0.012,
+          );
+          linear[1] = clamp01(
+            linear[1]! * (
+              1 + current * waterStrength * 0.46 - constructedDepth * waterStrength * 0.055
+            ) + glint * 0.016 + crest * 0.032 + bankShallow * waterStrength * 0.022,
+          );
+          linear[2] = clamp01(
+            linear[2]! * (
+              1 + current * waterStrength * 0.62 + constructedDepth * waterStrength * 0.025
+            ) + glint * 0.022 + crest * 0.044 + bankShallow * waterStrength * 0.018,
+          );
+        }
         // A strong canal-town field turns the physically reconstructed shore
         // into a civic edge on its dry side. This is not a rectangular quay
         // sprite: the band follows the same continuous hydrology ownership as
@@ -1336,6 +1520,31 @@ export class RegionalMaterialCompositor {
                 routeTexture[channel]! * (channel === 0 ? 1.08 : channel === 1 ? 1.05 : 1.02) +
                   timberLift[channel]!,
               );
+              bridgeEdgeTexture[channel] = routeTexture[channel]!;
+            }
+            const civicBridgeWeight = townConstruction *
+              this.infrastructureVisualProfile.civicBridgeDeckMix *
+              (size <= 8 ? 0.72 : 1) *
+              (1 - approachBlend);
+            if (civicBridgeWeight > 0.0001 && quayTextures) {
+              this.sampleTextureField(
+                quayTextures,
+                textureX,
+                textureY,
+                0x7b19,
+                size <= 8 ? 3.8 : 2.2,
+                size,
+                quayTexture,
+                this.variantPeriodTiles,
+                false,
+              );
+              for (let channel = 0; channel < 3; channel++) {
+                routeTexture[channel] = lerp(
+                  routeTexture[channel]!,
+                  quayTexture[channel]!,
+                  civicBridgeWeight,
+                );
+              }
             }
           }
           const crossingOpacity = visualCrossingKind === 'ford' ? 0.48 : 1;
@@ -1371,6 +1580,8 @@ export class RegionalMaterialCompositor {
                 bankContact,
                 authoredWidth,
                 bridgeProgress,
+                this.infrastructureVisualProfile.bridgeLandingFlareScale,
+                this.infrastructureVisualProfile.bridgeMidspanWaistScale,
               )
             : routeShapeCoverage(
                 routeLayer.opacity,
@@ -1475,7 +1686,7 @@ export class RegionalMaterialCompositor {
             const railWeight = routeLayer.opacity * railZone * structurePresence *
               (0.22 + postBeam * 0.7);
             linear = linear.map((value, channel) => (
-              lerp(value, routeTexture[channel]!, railWeight * 0.84)
+              lerp(value, bridgeEdgeTexture[channel]!, railWeight * 0.84)
             ));
             if (lightFacing < 0) {
               linear = linear.map((value) => value * (1 - railWeight * -lightFacing * 0.1));
@@ -1517,6 +1728,8 @@ export class RegionalMaterialCompositor {
               Number.isFinite(routeLayer.sample.crossingProgress)
                 ? Math.abs(routeLayer.sample.crossingProgress)
                 : 0,
+              this.infrastructureVisualProfile.bridgeLandingFlareScale,
+              this.infrastructureVisualProfile.bridgeMidspanWaistScale,
             )
           : 0;
         if (waterCoverage >= 0.5 && bridgeCoverage < 0.5) materialRow[x] = 1;
@@ -1982,14 +2195,16 @@ function bridgeShapeCoverage(
   bankContact = 0,
   widthScale = 1,
   longitudinalProgress = 0,
+  landingFlareScale = 1,
+  midspanWaistScale = 1,
 ): number {
   const landingFlare = smoothstep(0.72, 0.98, longitudinalProgress) *
     (1 - smoothstep(1.04, 1.48, longitudinalProgress));
   const midspanWaist = 1 - smoothstep(0.16, 0.7, longitudinalProgress);
   const sectionCore = lerp(0.76, 0.98, bankContact) * widthScale +
-    landingFlare * 0.13 - midspanWaist * 0.055;
+    landingFlare * 0.13 * landingFlareScale - midspanWaist * 0.055 * midspanWaistScale;
   const sectionEdge = lerp(0.94, 1.2, bankContact) * widthScale +
-    landingFlare * 0.2 - midspanWaist * 0.085;
+    landingFlare * 0.2 * landingFlareScale - midspanWaist * 0.085 * midspanWaistScale;
   const crossSection = 1 - smoothstep(sectionCore, sectionEdge, normalizedDistance);
   return smoothstep(0.18, 0.7, routeCoverage) * crossSection;
 }

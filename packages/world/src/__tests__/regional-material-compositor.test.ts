@@ -70,6 +70,7 @@ function compositor(field: BiomeSampler, maxCachedTiles = 8): RegionalMaterialCo
     field,
     maxCachedTiles,
     materials: Object.fromEntries(BIOME_FAMILIES.map((family) => [family, [solidTile(family)]])) as Record<BiomeFamily, Tile[]>,
+    waterVisualProfile: { detailCurrentStrength: 0, overviewCurrentStrength: 0 },
   });
 }
 
@@ -115,6 +116,7 @@ function routedCompositor(routes: RegionalRouteSampler): RegionalMaterialComposi
     crossingMaterials: {
       bridge: [solidColourTile('crossing:bridge', { r: 210, g: 195, b: 170 })],
     },
+    waterVisualProfile: { detailCurrentStrength: 0, overviewCurrentStrength: 0 },
   });
 }
 
@@ -137,6 +139,45 @@ describe('RegionalMaterialCompositor', () => {
     expect(wetTown.getTile(0, 0).materialMask?.[4]?.[4]).toBe(1);
     expect(wetRuins.getTile(0, 0).pixels[4]![4]).toEqual(COLOURS.coast);
     expect(wetRuins.getTile(0, 0).materialMask?.[4]?.[4]).toBe(1);
+  });
+
+  it('adds deterministic flow-aligned depth to water without changing physical ownership', () => {
+    const constructedWaterway = {
+      id: 'test-canal',
+      progress: 0.5,
+      centreX: 0.5,
+      centreY: 0.5,
+      tangentX: 1,
+      tangentY: 0,
+      bankNormalX: 0,
+      bankNormalY: 1,
+      bankSide: 1 as const,
+      halfWidth: 2,
+      signedDistance: -1.4,
+    };
+    const field: BiomeSampler = {
+      sample: () => sample([0, 0, 1, 0, 0, 0], true),
+      sampleConstructedWaterway: () => constructedWaterway,
+    };
+    const materials = Object.fromEntries(BIOME_FAMILIES.map((family) => [
+      family,
+      [solidTile(family, 12)],
+    ])) as Record<BiomeFamily, Tile[]>;
+    const baseline = new RegionalMaterialCompositor({
+      worldSeed: 42n,
+      field,
+      materials,
+      waterVisualProfile: { detailCurrentStrength: 0, overviewCurrentStrength: 0 },
+    });
+    const first = new RegionalMaterialCompositor({ worldSeed: 42n, field, materials });
+    const second = new RegionalMaterialCompositor({ worldSeed: 42n, field, materials });
+    const baselineTile = baseline.getTile(0, 0);
+    const currentTile = first.getTile(0, 0);
+
+    expect(currentTile.pixels).toEqual(second.getTile(0, 0).pixels);
+    expect(currentTile.pixels).not.toEqual(baselineTile.pixels);
+    expect(currentTile.materialMask).toEqual(baselineTile.materialMask);
+    expect(currentTile.walkable).toBe(false);
   });
 
   it('reconstructs a smooth ecological handoff across neighbouring tiles', () => {
@@ -220,6 +261,41 @@ describe('RegionalMaterialCompositor', () => {
     expect(ferry.pixels[4]![4]).toEqual(COLOURS.coast);
     expect(ferry.materialMask?.[4]?.[4]).toBe(1);
     expect(ferry.walkable).toBe(false);
+  });
+
+  it('uses canal-town construction strength to turn a generic crossing into a civic bridge', () => {
+    const materials = Object.fromEntries(BIOME_FAMILIES.map((family) => [
+      family,
+      [solidTile(family, 12)],
+    ])) as Record<BiomeFamily, Tile[]>;
+    const make = (civicBridgeDeckMix: number) => new RegionalMaterialCompositor({
+      worldSeed: 42n,
+      field: { sample: () => sample([0.98, 0, 0.02, 0, 0, 0], true) },
+      routes: { sample: () => routeSample('local-road', 'bridge') },
+      materials,
+      routeMaterials: {
+        trail: [solidColourTile('route:trail', { r: 80, g: 55, b: 35 }, 12)],
+        'local-road': [solidColourTile('route:local-road', { r: 150, g: 105, b: 60 }, 12)],
+        arterial: [solidColourTile('route:arterial', { r: 190, g: 180, b: 165 }, 12)],
+      },
+      crossingMaterials: {
+        bridge: [solidColourTile('crossing:bridge', { r: 120, g: 80, b: 45 }, 12)],
+      },
+      landmarkFabricMaterials: {
+        'canal-town': [solidColourTile('quay:limestone', { r: 235, g: 220, b: 180 }, 12)],
+      },
+      infrastructureVisualProfile: { civicBridgeDeckMix },
+    });
+    const baseline = make(0).getTile(0, 0);
+    const civic = make(0.64).getTile(0, 0);
+    const centre = civic.pixels[6]![6]!;
+    const baselineCentre = baseline.pixels[6]![6]!;
+
+    expect(centre.r).toBeGreaterThan(baselineCentre.r);
+    expect(centre.g).toBeGreaterThan(baselineCentre.g);
+    expect(centre.b).toBeGreaterThan(baselineCentre.b);
+    expect(civic.materialMask?.[6]?.[6]).toBe(0);
+    expect(civic.walkable).toBe(true);
   });
 
   it('renders a bounded bridge landing without granting bridge traversal authority', () => {

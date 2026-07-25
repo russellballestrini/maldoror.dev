@@ -10,6 +10,7 @@ import {
 import {
   loadRegionalAmbientKit,
   loadRegionalBiomeMaterialKit,
+  loadRegionalCivicDetailKit,
   loadRegionalEnvironmentContactKit,
   loadRegionalLandmarkKit,
   loadRegionalParcelComponentKit,
@@ -22,6 +23,7 @@ export interface RegionalWorldAssetPaths {
   routeMaterials: string;
   landmarks: string;
   ambient: string;
+  civicDetails: string;
   routeContacts: string;
   parcelComponents: string;
   environmentContacts: string;
@@ -64,6 +66,7 @@ export function defaultRegionalWorldAssetPaths(rootOverride?: string): RegionalW
     routeMaterials: path.join(root, 'assets/routes/manifest.json'),
     landmarks: path.join(root, 'assets/biomes/landmarks-manifest.json'),
     ambient: path.join(root, 'assets/biomes/ambient-manifest.json'),
+    civicDetails: path.join(root, 'assets/biomes/civic-details-manifest.json'),
     routeContacts: path.join(root, 'assets/biomes/route-contacts-manifest.json'),
     parcelComponents: path.join(root, 'assets/biomes/parcel-components-manifest.json'),
     environmentContacts: path.join(root, 'assets/biomes/environment-contacts-manifest.json'),
@@ -82,6 +85,7 @@ export async function loadRegionalWorldKit(
     routeKit,
     landmarkKit,
     ambientKit,
+    civicDetailKit,
     routeContactKit,
     parcelKit,
     environmentKit,
@@ -90,6 +94,7 @@ export async function loadRegionalWorldKit(
     loadRegionalRouteMaterialKit(options.assets.routeMaterials),
     loadRegionalLandmarkKit(options.assets.landmarks),
     loadRegionalAmbientKit(options.assets.ambient),
+    loadRegionalCivicDetailKit(options.assets.civicDetails),
     loadRegionalRouteContactKit(options.assets.routeContacts),
     loadRegionalParcelComponentKit(options.assets.parcelComponents),
     loadRegionalEnvironmentContactKit(options.assets.environmentContacts),
@@ -137,6 +142,7 @@ export async function loadRegionalWorldKit(
       compositor,
       landmarks: landmarkKit.assets,
       ambient: ambientKit.assets,
+      civicDetails: civicDetailKit.assets,
       routeContacts: routeContactKit.assets,
       parcelComponents: parcelKit.assets,
       environmentContacts: environmentKit.assets,
@@ -145,6 +151,8 @@ export async function loadRegionalWorldKit(
       ambientCellSize: ambientKit.cellSize,
       ambientDensity: ambientKit.density,
       ambientLandmarkClearance: ambientKit.landmarkClearance,
+      civicDetailCellSize: civicDetailKit.cellSize,
+      civicDetailDensity: civicDetailKit.density,
       routeContactCellSize: routeContactKit.cellSize,
       routeContactDensity: routeContactKit.density,
       routeContactLandmarkClearance: routeContactKit.landmarkClearance,

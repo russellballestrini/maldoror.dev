@@ -4,6 +4,7 @@ import { BIOME_FAMILIES } from '@maldoror/world';
 import {
   loadRegionalAmbientKit,
   loadRegionalBiomeMaterialKit,
+  loadRegionalCivicDetailKit,
   loadRegionalEnvironmentContactKit,
   loadRegionalLandmarkKit,
   loadRegionalParcelComponentKit,
@@ -112,6 +113,31 @@ describe('regional biome material manifest', () => {
       expect(asset.sprite.width).toBe(5);
       expect(asset.sprite.height).toBe(4);
       expect(asset.routeDistance[0]).toBeGreaterThanOrEqual(2);
+      const alpha = spriteAlphaValues(asset.sprite);
+      expect(alpha.some((value) => value === 0)).toBe(true);
+      expect(alpha.some((value) => value > 0 && value < 255)).toBe(true);
+    }
+  });
+
+  it('loads the semantic canal-town civic-life kit with route and landmark bands', async () => {
+    const kit = await loadRegionalCivicDetailKit(
+      path.resolve('assets/biomes/civic-details-manifest.json'),
+    );
+    expect(kit.sourceTileSize).toBe(48);
+    expect(kit.blockSize).toBe(32);
+    expect(kit.cellSize).toBe(1);
+    expect(kit.density).toBeCloseTo(0.92);
+    expect(kit.assets).toHaveLength(4);
+    expect(kit.assets.every((asset) => (
+      asset.role === 'civic-detail' && asset.families[0] === 'canal-town' &&
+      asset.minimumFamilyWeight >= 0.5 && asset.routeDistance[0] > 2 &&
+      asset.landmarkDistance[1] <= 14 && asset.collision.length > 0
+    ))).toBe(true);
+    expect(kit.assets.filter((asset) => asset.emitsLight).map((asset) => asset.id))
+      .toEqual(['canal-town-civic-lantern-v1']);
+    expect(new Set(kit.assets.map((asset) => `${asset.sprite.width}x${asset.sprite.height}`)))
+      .toEqual(new Set(['2x2', '2x3']));
+    for (const asset of kit.assets) {
       const alpha = spriteAlphaValues(asset.sprite);
       expect(alpha.some((value) => value === 0)).toBe(true);
       expect(alpha.some((value) => value > 0 && value < 255)).toBe(true);

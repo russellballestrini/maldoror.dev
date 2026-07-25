@@ -12,6 +12,7 @@ import { db, schema } from '@maldoror/db';
 import { eq, and, isNull } from 'drizzle-orm';
 import type { WorkerManager } from './worker-manager.js';
 import { addChatMessage, addBotActivity } from './stats-server.js';
+import { LOGIN_ORIGIN } from '../game/login-origin.js';
 import type {
   ClientMessage,
   ServerMessage,
@@ -220,11 +221,10 @@ export class AgentSession extends EventEmitter {
       .set({ lastUsedAt: new Date() })
       .where(eq(schema.agentTokens.id, record.id));
 
-    // Get player position
+    // Preserve facing, but never restore a persisted position on a fresh agent
+    // login. Agent and SSH admission share the same canonical-origin contract.
     const playerState = await db
       .select({
-        x: schema.playerState.x,
-        y: schema.playerState.y,
         direction: schema.playerState.direction,
       })
       .from(schema.playerState)
@@ -233,24 +233,37 @@ export class AgentSession extends EventEmitter {
 
     if (playerState.length > 0) {
       const state = playerState[0]!;
-      this.position = { x: state.x, y: state.y };
       this.direction = (state.direction as Direction) || 'down';
     }
+    this.position = { x: LOGIN_ORIGIN.x, y: LOGIN_ORIGIN.y };
 
     // Mark as authenticated
     this.authenticated = true;
     this.userId = user.id;
     this.username = agentName || user.username;
 
-    // Set player online in database
-    await db
-      .update(schema.playerState)
-      .set({
+    // Persist the reset before exposing the player to the game worker.
+    if (playerState.length > 0) {
+      await db
+        .update(schema.playerState)
+        .set({
+          x: LOGIN_ORIGIN.x,
+          y: LOGIN_ORIGIN.y,
+          animationFrame: 0,
+          isOnline: true,
+          lastSeenAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.playerState.userId, this.userId!));
+    } else {
+      await db.insert(schema.playerState).values({
+        userId: this.userId!,
+        x: LOGIN_ORIGIN.x,
+        y: LOGIN_ORIGIN.y,
+        direction: this.direction,
         isOnline: true,
-        lastSeenAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(schema.playerState.userId, this.userId!));
+      });
+    }
 
     // Register with game worker so agent is visible to other players
     await this.workerManager.playerConnect(this.userId!, `agent-${this.userId}`, this.username!);

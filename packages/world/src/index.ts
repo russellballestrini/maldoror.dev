@@ -166,6 +166,7 @@ export {
   RegionalWorldTileProvider,
   type RegionalAmbientAsset,
   type RegionalAssetPlacement,
+  type RegionalCivicDetailAsset,
   type RegionalEnvironmentConstraints,
   type RegionalEnvironmentContactAsset,
   type RegionalLandmarkAsset,
