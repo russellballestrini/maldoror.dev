@@ -11,6 +11,9 @@ export {
   type BiomeWeights,
   type BiomeWorldFieldConfig,
   type BiomeWorldSample,
+  type ConstructedWaterwayBounds,
+  type ConstructedWaterwayDescriptor,
+  type ConstructedWaterwaySample,
 } from './biomes/biome-world-field.js';
 export {
   RegionalRouteField,
@@ -149,6 +152,14 @@ export {
   type RegionalWaterfrontSpatialCell,
   type RegionalWaterfrontSurfaceRole,
 } from './tiles/regional-waterfront-layout.js';
+export {
+  buildRegionalQuayLayout,
+  regionalQuayCellIsWalkable,
+  sampleRegionalQuayLayout,
+  type RegionalQuayLayout,
+  type RegionalQuayLayoutConfig,
+  type RegionalQuayLayoutSample,
+} from './tiles/regional-quay-layout.js';
 export {
   REGIONAL_MAX_PREPARED_VIEWPORT_AREA,
   RegionalWorldDerivedCache,

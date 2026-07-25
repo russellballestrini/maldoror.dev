@@ -22,8 +22,25 @@ describe('BiomeWorldField', () => {
 
   it('continues the western hydrology into a bounded arrival canal while keeping spawn dry', () => {
     const field = new BiomeWorldField(WORLD_SEED, { blockSize: 16, maxCachedBlocks: 8 });
+    expect(field.getConstructedWaterways()).toEqual([{
+      id: 'arrival-canal',
+      materialFamily: 'canal-town',
+      bounds: { minX: -28, minY: -16, maxX: 42, maxY: 2 },
+    }]);
     expect(field.sample(0, 0).isWater).toBe(false);
     expect(field.samplePhysical(0, 0).isWater).toBe(false);
+    expect(field.sampleConstructedWaterway(0, 0)).toMatchObject({
+      id: 'arrival-canal',
+      bankSide: 1,
+    });
+    expect(field.sampleConstructedWaterway(0, 0)!.signedDistance).toBeGreaterThan(2.7);
+    expect(field.sampleConstructedWaterway(0, -5)!.signedDistance).toBeLessThan(-2);
+    expect(Math.hypot(
+      field.sampleConstructedWaterway(0, -2)!.tangentX,
+      field.sampleConstructedWaterway(0, -2)!.tangentY,
+    )).toBeCloseTo(1, 8);
+    expect(field.sampleConstructedWaterway(80, 80)).toBeNull();
+    expect(field.sampleConstructedWaterway(0, -5, 'missing-waterway')).toBeNull();
 
     for (const [x, y] of [[-20, -6], [-10, -5], [0, -5], [10, -6], [36, -9]]) {
       const full = field.sample(x!, y!);

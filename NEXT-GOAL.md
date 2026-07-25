@@ -919,6 +919,31 @@ Completed foundations:
   `track-6-acceptance-atlas/composition-hierarchy-v44-real-ssh-canal-civic-material/FINDINGS.md`.
   Production remains `vb07c0d4`; no image generation or metered model call was
   used;
+- V45-V49 turn that bounded canal into shared civic infrastructure instead of
+  a painted water feature. One public constructed-waterway contract now exposes
+  continuous centre, tangent, normal, signed bank distance, side, width, and
+  progress; paired dry quay ribbons derive both walkable collision and
+  linear-light limestone material from that same geometry at every semantic
+  LOD. Two new low-profile frontages were generated through built-in
+  Codex/ChatGPT subscription image generation with exact prompts, source and
+  derived hashes, deterministic chroma/trim derivation, alpha validation, and
+  explicit bank-side/axis/function semantics; no metered API was used. V46's
+  clipped roof fragments, V47's tall generic waterfront vocabulary, and V48's
+  collision-only focal overlap remain retained rejections. V49 selects full
+  painted-footprint reservation plus bank-aware sparse placement. Its fresh
+  160x46 source-build SSH subset retains 802,689 raw bytes and 75 synchronized
+  frames across `(0,0)` walking/district/regional views, with every position,
+  zoom, and OCTANT assertion passing. This is still only an incremental
+  composition sub-gate: close arrival is too open, the bridge too orthogonal,
+  quay edges too regular, overview water too dull, frontage and lived detail
+  too sparse, and the grammar is not yet generalized across the six families.
+  Repository-wide verification passes 43 files / 236 tests, 18/18 typecheck
+  tasks, 12/12 build tasks, and 7/7 configured lint tasks.
+  Readiness is 11.445 seconds, post-capture worker RSS about 556 MiB, and
+  coordinator heap warnings reach 92%, so Gate D remains open. Evidence is in
+  `track-6-acceptance-atlas/composition-hierarchy-v49-real-ssh-authored-quay-frontage/FINDINGS.md`.
+  Production remains `vb07c0d4`; there was no deploy, restart, push, or
+  physical Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
@@ -937,9 +962,10 @@ Still open and therefore goal-blocking:
   compounds now include a selected two-sided canal-town focal core, but remain
   sparse research prototypes rather than a complete world layer. The core now
   has selected entrance-level constructed grounding plus water-owned semantic
-  quay material, but still lacks continuous usable quay circulation,
-  convincing bank-aware crossings, larger squares/commons, dense secondary
-  frontage, and
+  quay material, paired walkable arrival quays, and the first two bank-authored
+  low frontages, but still lacks irregular quay-edge/contact detail,
+  convincing bank-aware crossing silhouettes, larger squares/commons, dense
+  route-connected secondary frontage, and
   equivalent focal vocabularies for the other five families. Coast-specific
   waterfront diversity, far
   greater travel-scale entropy across route topology, hydrology, biome fields,
@@ -968,11 +994,13 @@ Still open and therefore goal-blocking:
   remains visually short of acceptance until approach wear, longer-span and
   topology-specific support vocabularies, crossing-family diversity, and the
   surrounding coast-composition failures close, followed by the fresh full
-  atlas. V44's bounded arrival canal and civic material correction is likewise
-  only a selected sub-gate: it still needs continuous physically usable paired
-  quays, a coherent waterfront parcel program, bridge silhouette/support
-  refinement, denser secondary frontage and props, and richer overview-water
-  reconstruction before a fresh full-atlas recapture can attempt Gate A.
+  atlas. V49's bounded arrival canal, paired walkable quays, and first
+  bank-authored frontage are likewise only a selected sub-gate. Bridge
+  silhouette/support refinement, irregular quay-edge wear and contact, denser
+  route-connected civic frontage and props, richer overview-water
+  reconstruction, boats and visible life, and equivalent grammar beyond the
+  canal-town origin remain required before a fresh full-atlas recapture can
+  attempt Gate A.
   Fresh post-correction deterministic traversal, the 30-minute terminal run,
   deployed-service/cgroup audit, and physical Ghostty acceptance also remain
   open.

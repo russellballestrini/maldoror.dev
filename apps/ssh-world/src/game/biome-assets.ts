@@ -152,6 +152,7 @@ interface ParcelComponentEntry {
   collision: Array<[number, number]>;
   programs?: RegionalParcelProgram[];
   waterfrontFunction?: RegionalWaterfrontFunction;
+  quayBankSide?: -1 | 1;
   emitsLight?: boolean;
 }
 
@@ -538,6 +539,7 @@ export async function loadRegionalParcelComponentKit(
       frontageStations: entry.frontageStations,
       programs: entry.programs,
       waterfrontFunction: entry.waterfrontFunction,
+      quayBankSide: entry.quayBankSide,
       collision: entry.collision,
       emitsLight: entry.emitsLight,
       sprite: await loadRegionalSprite(
@@ -775,8 +777,8 @@ function parseParcelComponentEntry(value: unknown, index: number): ParcelCompone
         value.frontageStations === undefined
       )) ||
       (value.compositionRole !== 'focal' && (
-        value.frontageAxis !== undefined || value.compositionSide !== undefined ||
-        value.frontageStations !== undefined
+        value.compositionSide !== undefined || value.frontageStations !== undefined ||
+        (value.frontageAxis !== undefined && value.quayBankSide === undefined)
       )) ||
       !isTileDimensions(value.spriteTiles) ||
       !Array.isArray(value.collision) || value.collision.length === 0 ||
@@ -788,6 +790,13 @@ function parseParcelComponentEntry(value: unknown, index: number): ParcelCompone
         !WATERFRONT_FUNCTIONS.includes(value.waterfrontFunction as RegionalWaterfrontFunction)) ||
       (value.waterfrontFunction !== undefined &&
         (!Array.isArray(value.programs) || !value.programs.includes('waterfront'))) ||
+      (value.quayBankSide !== undefined && value.quayBankSide !== -1 &&
+        value.quayBankSide !== 1) ||
+      (value.quayBankSide !== undefined && (
+        value.compositionRole !== undefined ||
+        value.frontageAxis === undefined || value.waterfrontFunction === undefined ||
+        !Array.isArray(value.programs) || !value.programs.includes('waterfront')
+      )) ||
       (value.emitsLight !== undefined && typeof value.emitsLight !== 'boolean') ||
       typeof value.scale !== 'number' || value.scale < 0.2 || value.scale > 1) {
     throw new Error(`Invalid regional parcel component entry at index ${index}`);
@@ -806,6 +815,7 @@ function parseParcelComponentEntry(value: unknown, index: number): ParcelCompone
     collision: value.collision as Array<[number, number]>,
     programs: value.programs as RegionalParcelProgram[] | undefined,
     waterfrontFunction: value.waterfrontFunction as RegionalWaterfrontFunction | undefined,
+    quayBankSide: value.quayBankSide as -1 | 1 | undefined,
     emitsLight: value.emitsLight as boolean | undefined,
   };
 }

@@ -4,6 +4,8 @@ import {
   type BiomeFamily,
   type BiomeWeights,
   type BiomeWorldSample,
+  type ConstructedWaterwayDescriptor,
+  type ConstructedWaterwaySample,
 } from '../biomes/biome-world-field.js';
 import type {
   RegionalCrossingKind,
@@ -30,9 +32,19 @@ import {
   sampleRegionalLandmarkFabricLayout,
   type RegionalLandmarkFabricLayout,
 } from './regional-landmark-fabric-layout.js';
+import {
+  sampleRegionalQuayLayout,
+  type RegionalQuayLayout,
+} from './regional-quay-layout.js';
 
 export interface BiomeSampler {
   sample(worldX: number, worldY: number): BiomeWorldSample;
+  getConstructedWaterways?(): readonly ConstructedWaterwayDescriptor[];
+  sampleConstructedWaterway?(
+    worldX: number,
+    worldY: number,
+    waterwayId?: string,
+  ): ConstructedWaterwaySample | null;
 }
 
 export interface RegionalRouteSampler {
@@ -760,6 +772,103 @@ export class RegionalMaterialCompositor {
       pixels,
       materialMask: base.materialMask,
       walkable: base.walkable || maximumWalkableSurfaceWeight > 0.08,
+      resolutions: { [String(resolution)]: pixels },
+    };
+    this.cache.set(key, tile);
+    while (this.cache.size > this.maxCachedTiles) {
+      const oldest = this.cache.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.cache.delete(oldest);
+    }
+    return tile;
+  }
+
+  /** Reconstruct a paired stone quay directly from one authoritative
+   * constructed-waterway SDF. The dry ribbon is a place-scale material layer;
+   * it never repaints water, and both banks share identical geometry at every
+   * tile boundary and semantic zoom. */
+  getQuayGroundTile(
+    tileX: number,
+    tileY: number,
+    layout: RegionalQuayLayout,
+  ): Tile {
+    return this.getQuayGroundTileAtResolution(tileX, tileY, this.sourceSize, layout);
+  }
+
+  getQuayGroundTileAtResolution(
+    tileX: number,
+    tileY: number,
+    requestedResolution: number,
+    layout: RegionalQuayLayout,
+  ): Tile {
+    const resolution = this.selectResolution(requestedResolution);
+    const key = `quay-ground:${layout.id}:${tileX},${tileY}@${resolution}`;
+    const cached = this.cache.get(key);
+    if (cached) {
+      this.cache.delete(key);
+      this.cache.set(key, cached);
+      return cached;
+    }
+    const base = this.getTileAtResolution(tileX, tileY, resolution);
+    const textures = this.landmarkFabricMaterials?.[layout.materialFamily] ??
+      this.routeMaterials?.['local-road'];
+    if (!textures || !this.field.sampleConstructedWaterway) return base;
+    const pixels: PixelGrid = [];
+    const quayTexture = new Float64Array(3);
+    const textureScaleTiles = resolution <= 8 ? 2.4 : this.textureScaleForResolution(resolution);
+    let maximumQuayWeight = 0;
+    for (let y = 0; y < resolution; y++) {
+      const row: RGB[] = [];
+      for (let x = 0; x < resolution; x++) {
+        const worldX = tileX + (x + 0.5) / resolution;
+        const worldY = tileY + (y + 0.5) / resolution;
+        const sample = sampleRegionalQuayLayout(
+          this.field.sampleConstructedWaterway(worldX, worldY, layout.waterwayId),
+          layout,
+        );
+        maximumQuayWeight = Math.max(maximumQuayWeight, sample.quayWeight);
+        const beneath = base.pixels[y]?.[x] ?? { r: 0, g: 0, b: 0 };
+        if (sample.quayWeight <= 0.0001 && sample.watersideEdgeWeight <= 0.0001 &&
+            sample.landsideEdgeWeight <= 0.0001) {
+          row.push(beneath);
+          continue;
+        }
+        this.sampleTextureField(
+          textures,
+          worldX,
+          worldY,
+          0x28b7,
+          textureScaleTiles,
+          resolution,
+          quayTexture,
+          this.variantPeriodTiles,
+          false,
+        );
+        let linearR = srgbToLinear(beneath.r);
+        let linearG = srgbToLinear(beneath.g);
+        let linearB = srgbToLinear(beneath.b);
+        const materialOpacity = sample.quayWeight * (resolution <= 8 ? 0.84 : 0.92);
+        linearR = lerp(linearR, quayTexture[0]!, materialOpacity);
+        linearG = lerp(linearG, quayTexture[1]!, materialOpacity);
+        linearB = lerp(linearB, quayTexture[2]!, materialOpacity);
+        const edgeOpacity = sample.watersideEdgeWeight * 0.42 + sample.landsideEdgeWeight * 0.14;
+        linearR = lerp(linearR, linearR * 0.47, edgeOpacity);
+        linearG = lerp(linearG, linearG * 0.5, edgeOpacity);
+        linearB = lerp(linearB, linearB * 0.54, edgeOpacity);
+        row.push({
+          r: linearToSrgb(linearR),
+          g: linearToSrgb(linearG),
+          b: linearToSrgb(linearB),
+        });
+      }
+      pixels.push(row);
+    }
+    const tile: Tile = {
+      id: `regional-quay-ground:${layout.id}:${tileX},${tileY}@${resolution}`,
+      name: 'Continuous regional canal quay',
+      pixels,
+      materialMask: base.materialMask,
+      walkable: base.walkable || maximumQuayWeight > 0.08,
       resolutions: { [String(resolution)]: pixels },
     };
     this.cache.set(key, tile);

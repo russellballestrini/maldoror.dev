@@ -12,6 +12,8 @@ import {
   BIOME_FAMILIES,
   type BiomeFamily,
   type BiomeWorldSample,
+  type ConstructedWaterwayDescriptor,
+  type ConstructedWaterwaySample,
 } from '../biomes/biome-world-field.js';
 import { spatialHash2DUnit } from '../spatial-hash.js';
 import type {
@@ -51,6 +53,12 @@ import {
   type RegionalLandmarkFabricLayout,
   type RegionalLandmarkFocalFootprint,
 } from './regional-landmark-fabric-layout.js';
+import {
+  buildRegionalQuayLayout,
+  regionalQuayCellIsWalkable,
+  sampleRegionalQuayLayout,
+  type RegionalQuayLayout,
+} from './regional-quay-layout.js';
 import { TileProvider, type TileProviderConfig } from './tile-provider.js';
 
 export interface RegionalVisualAsset {
@@ -113,6 +121,10 @@ export interface RegionalParcelComponentAsset extends RegionalVisualAsset {
    * still reuse it; specialized programs never infer function from its ID. */
   programs?: readonly RegionalParcelProgram[];
   waterfrontFunction?: RegionalWaterfrontFunction;
+  /** Constructed-waterway bank this unrotated facade was authored to occupy.
+   * Omitted assets remain valid for ordinary waterfront parcels, but are not
+   * eligible for continuous quay frontage. */
+  quayBankSide?: -1 | 1;
 }
 
 export interface RegionalEnvironmentConstraints {
@@ -160,6 +172,12 @@ export type RegionalLandmarkPlacement = RegionalAssetPlacement;
 export interface RegionalWorldBiomeSampler {
   sample(worldX: number, worldY: number): BiomeWorldSample;
   prewarm?(minX: number, minY: number, maxX: number, maxY: number): void;
+  getConstructedWaterways?(): readonly ConstructedWaterwayDescriptor[];
+  sampleConstructedWaterway?(
+    worldX: number,
+    worldY: number,
+    waterwayId?: string,
+  ): ConstructedWaterwaySample | null;
 }
 
 export interface RegionalWorldRouteSampler {
@@ -435,6 +453,7 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly routeContacts: readonly RegionalRouteContactAsset[];
   private readonly parcelComponents: readonly RegionalParcelComponentAsset[];
   private readonly environmentContacts: readonly RegionalEnvironmentContactAsset[];
+  private readonly quayLayouts: readonly RegionalQuayLayout[];
   private readonly blockSize: number;
   private readonly maxCachedBlocks: number;
   private readonly ambientCellSize: number;
@@ -481,6 +500,12 @@ export class RegionalWorldTileProvider extends TileProvider {
     this.routeContacts = config.routeContacts ?? [];
     this.parcelComponents = config.parcelComponents ?? [];
     this.environmentContacts = config.environmentContacts ?? [];
+    this.quayLayouts = (this.field.getConstructedWaterways?.() ?? []).map((waterway) => (
+      buildRegionalQuayLayout({
+        id: `quay:${waterway.id}`,
+        waterway,
+      })
+    ));
     this.blockSize = Math.max(16, config.blockSize ?? 32);
     this.maxCachedBlocks = Math.max(9, config.maxCachedBlocks ?? 64);
     this.ambientCellSize = Math.max(3, config.ambientCellSize ?? 4);
@@ -617,6 +642,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     const waterfront = parcel.waterfrontSurfaces.get(key);
     const landmarkFabric = parcel.landmarkFabricSurfaces.get(key);
     const environment = parcel.environmentSurfaces.get(key);
+    const quayLayout = this.quayLayoutAt(tileX, tileY);
     return environment
       ? this.compositor.getEnvironmentProgramGroundTile(
         tileX,
@@ -650,6 +676,8 @@ export class RegionalWorldTileProvider extends TileProvider {
         )
         : surface
         ? this.compositor.getParcelGroundTile(tileX, tileY, surface.layout, surface.routeKind)
+        : quayLayout
+        ? this.compositor.getQuayGroundTile(tileX, tileY, quayLayout)
         : this.compositor.getTile(tileX, tileY);
   }
 
@@ -663,6 +691,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     const waterfront = parcel.waterfrontSurfaces.get(key);
     const landmarkFabric = parcel.landmarkFabricSurfaces.get(key);
     const environment = parcel.environmentSurfaces.get(key);
+    const quayLayout = this.quayLayoutAt(tileX, tileY);
     return environment
       ? this.compositor.getEnvironmentProgramGroundTileAtResolution(
         tileX,
@@ -705,6 +734,13 @@ export class RegionalWorldTileProvider extends TileProvider {
           resolution,
           surface.layout,
           surface.routeKind,
+        )
+        : quayLayout
+        ? this.compositor.getQuayGroundTileAtResolution(
+          tileX,
+          tileY,
+          resolution,
+          quayLayout,
         )
         : this.compositor.getTileAtResolution(tileX, tileY, resolution);
   }
@@ -787,6 +823,8 @@ export class RegionalWorldTileProvider extends TileProvider {
         const waterfront = derived.waterfrontSurfaces.get(key);
         const landmarkFabric = derived.landmarkFabricSurfaces.get(key);
         const environment = derived.environmentSurfaces.get(key);
+        const quayLayout = this.quayLayoutAt(x, y);
+        const opensQuay = Boolean(quayLayout);
         const terrainTile = environment
           ? this.compositor.getEnvironmentProgramGroundTileAtResolution(
             x,
@@ -830,12 +868,22 @@ export class RegionalWorldTileProvider extends TileProvider {
               surface.layout,
               surface.routeKind,
             )
+            : quayLayout
+            ? this.compositor.getQuayGroundTileAtResolution(
+              x,
+              y,
+              normalizedResolution,
+              quayLayout,
+            )
             : this.compositor.getTileAtResolution(x, y, normalizedResolution);
         terrain.push({ x, y, tile: terrainTile });
         const authoredOverlay = super.getBuildingTileAt(x, y);
+        // A tall oblique facade may visually overhang a quay while its ground
+        // collision remains behind the protected ribbon. Do not cut the sprite
+        // into floating roof fragments at the walkable-cell boundary.
         const overlay = authoredOverlay ?? (connector?.protected ? null : derived.overlays.get(key) ?? null);
         if (overlay) overlays.push({ x, y, tile: overlay });
-        const opensAuthoredMass = connector?.protected || derived.environmentWalkable.has(key);
+        const opensAuthoredMass = connector?.protected || derived.environmentWalkable.has(key) || opensQuay;
         if (derived.environmentSolid.has(key) || (!opensAuthoredMass && (
           super.isBuildingAt(x, y) || derived.solid.has(key)
         ))) {
@@ -1110,10 +1158,10 @@ export class RegionalWorldTileProvider extends TileProvider {
     worldY: number,
     direction: BuildingDirection = 'north',
   ): BuildingTileData | null {
-    const authored = super.getBuildingTileAt(worldX, worldY, direction);
-    if (authored) return authored;
     const prepared = this.findPreparedViewport(worldX, worldY);
     if (prepared) return prepared.overlays.get(positionKey(worldX, worldY)) ?? null;
+    const authored = super.getBuildingTileAt(worldX, worldY, direction);
+    if (authored) return authored;
     const key = positionKey(worldX, worldY);
     const parcel = this.getParcelLayerBlock(worldX, worldY);
     if (parcel.connectors.get(key)?.protected) return null;
@@ -1133,6 +1181,8 @@ export class RegionalWorldTileProvider extends TileProvider {
   override isBuildingAt(worldX: number, worldY: number): boolean {
     const prepared = this.findPreparedViewport(worldX, worldY);
     if (prepared) return prepared.solid.has(positionKey(worldX, worldY));
+    const quayLayout = this.quayLayoutAt(worldX, worldY);
+    if (quayLayout) return false;
     const key = positionKey(worldX, worldY);
     const parcel = this.getParcelLayerBlock(worldX, worldY);
     if (parcel.environmentWalkable.has(key)) return false;
@@ -1303,6 +1353,17 @@ export class RegionalWorldTileProvider extends TileProvider {
             siteY: placement.siteY,
             anchorX: placement.anchorX,
             anchorY: placement.anchorY,
+            parcelId: placement.parcelId,
+            accessAxis: placement.accessAxis,
+            routeKind: placement.routeKind,
+            parcelLayers: placement.parcelLayers,
+            connectorLength: placement.connectorLength,
+            parcelPathId: placement.parcelPathId,
+            parcelStation: placement.parcelStation,
+            pathTangentX: placement.pathTangentX,
+            pathTangentY: placement.pathTangentY,
+            waterfrontId: placement.waterfrontId,
+            waterfrontFunction: placement.waterfrontFunction,
           });
         }
       }
@@ -1499,6 +1560,19 @@ export class RegionalWorldTileProvider extends TileProvider {
     return [...layouts.values()].sort((a, b) => a.id.localeCompare(b.id));
   }
 
+  getQuayLayoutsInBounds(
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number,
+  ): RegionalQuayLayout[] {
+    const bounds = normalizedPreparedBounds(minX, minY, maxX, maxY);
+    return this.quayLayouts.filter((layout) => (
+      layout.bounds.maxX >= bounds.minX && layout.bounds.minX <= bounds.maxX &&
+      layout.bounds.maxY >= bounds.minY && layout.bounds.minY <= bounds.maxY
+    ));
+  }
+
   getEnvironmentContactPlacementsInBounds(
     minX: number,
     minY: number,
@@ -1551,6 +1625,33 @@ export class RegionalWorldTileProvider extends TileProvider {
     this.preparedViewports.clear();
     if (this.clearSharedCachesOnDestroy) this.compositor.clear();
     super.destroy();
+  }
+
+  private quayLayoutAt(worldX: number, worldY: number): RegionalQuayLayout | null {
+    if (!this.field.sampleConstructedWaterway) return null;
+    const tileX = Math.floor(worldX);
+    const tileY = Math.floor(worldY);
+    for (const layout of this.quayLayouts) {
+      if (tileX + 1 < layout.bounds.minX || tileX > layout.bounds.maxX ||
+          tileY + 1 < layout.bounds.minY || tileY > layout.bounds.maxY) continue;
+      if (this.quayCellIsWalkable(tileX, tileY, layout)) return layout;
+    }
+    return null;
+  }
+
+  private quayCellIsWalkable(
+    tileX: number,
+    tileY: number,
+    layout: RegionalQuayLayout,
+  ): boolean {
+    const sampleWaterway = this.field.sampleConstructedWaterway;
+    if (!sampleWaterway) return false;
+    return regionalQuayCellIsWalkable(
+      Math.floor(tileX),
+      Math.floor(tileY),
+      layout,
+      (worldX, worldY, id) => sampleWaterway.call(this.field, worldX, worldY, id),
+    );
   }
 
   private findPreparedViewport(
@@ -1634,6 +1735,11 @@ export class RegionalWorldTileProvider extends TileProvider {
           placements.push(placement);
         }
         const entourage = this.buildLandmarkEntourage(placement);
+        const quayFrontage = this.buildLandmarkQuayFrontage(placement, entourage);
+        placements.push(...quayFrontage.filter((support) => (
+          support.anchorX >= originX && support.anchorX < originX + this.blockSize &&
+          support.anchorY >= originY && support.anchorY < originY + this.blockSize
+        )));
         placements.push(...entourage.filter((support) => (
           support.anchorX >= originX && support.anchorX < originX + this.blockSize &&
           support.anchorY >= originY && support.anchorY < originY + this.blockSize
@@ -2620,6 +2726,138 @@ export class RegionalWorldTileProvider extends TileProvider {
       reserveVisibleFootprint(support, reserved, 0);
     }
     return supports;
+  }
+
+  /** Populate the reserved dry band behind a constructed quay with a sparse,
+   * function-bearing frontage. Eligibility comes from manifest program tags,
+   * family compatibility, continuous waterway geometry, and physical route /
+   * terrain constraints. The selection is blue-noise-like in world space and
+   * never depends on asset IDs or sampled raster colours. */
+  private buildLandmarkQuayFrontage(
+    landmark: Placement,
+    existingSupports: readonly Placement[],
+  ): Placement[] {
+    const family = landmark.asset.families[0];
+    if (!family || !this.field.sampleConstructedWaterway) return [];
+    const assets = this.parcelComponents.filter((asset) => (
+      asset.families.includes(family) && asset.programs?.includes('waterfront') &&
+      asset.waterfrontFunction && asset.quayBankSide !== undefined && asset.frontageAxis
+    )).sort((a, b) => a.id.localeCompare(b.id));
+    if (assets.length === 0) return [];
+    const layouts = this.quayLayouts.filter((layout) => this.field.sampleConstructedWaterway!(
+      landmark.siteX,
+      landmark.siteY,
+      layout.waterwayId,
+    ) !== null);
+    if (layouts.length === 0) return [];
+
+    const occupied = new Set<string>();
+    const reservedVisible = new Set<string>();
+    for (const placement of [landmark, ...existingSupports]) {
+      for (const [offsetX, offsetY] of placement.asset.collision) {
+        occupied.add(positionKey(placement.anchorX + offsetX, placement.anchorY + offsetY));
+      }
+      reserveVisibleFootprint(placement, reservedVisible, 0);
+    }
+    const selected: Placement[] = [];
+    for (const layout of layouts) {
+      const candidatesByBank = new Map<-1 | 1, Array<{
+        x: number;
+        y: number;
+        progress: number;
+        tangentX: number;
+        tangentY: number;
+        score: number;
+      }>>([[-1, []], [1, []]]);
+      const minimumX = Math.max(Math.floor(layout.bounds.minX), landmark.siteX - 25);
+      const maximumX = Math.min(Math.ceil(layout.bounds.maxX), landmark.siteX + 25);
+      const minimumY = Math.max(Math.floor(layout.bounds.minY), landmark.siteY - 25);
+      const maximumY = Math.min(Math.ceil(layout.bounds.maxY), landmark.siteY + 25);
+      for (let y = minimumY; y <= maximumY; y++) {
+        for (let x = minimumX; x <= maximumX; x++) {
+          const waterway = this.field.sampleConstructedWaterway(x + 0.5, y + 0.5, layout.waterwayId);
+          const sample = sampleRegionalQuayLayout(waterway, layout);
+          if (!waterway || sample.frontageReserveWeight < 0.72) continue;
+          const terrain = this.field.sample(x, y);
+          const familyWeight = terrain.weights[BIOME_FAMILIES.indexOf(family)] ?? 0;
+          const route = this.routes.sample(x, y);
+          if (terrain.isWater || terrain.slope > 0.78 || familyWeight < 0.16 || route.distance < 2.2) {
+            continue;
+          }
+          const landmarkDistance = Math.hypot(x - landmark.siteX, y - landmark.siteY);
+          candidatesByBank.get(waterway.bankSide)!.push({
+            x,
+            y,
+            progress: waterway.progress,
+            tangentX: waterway.tangentX,
+            tangentY: waterway.tangentY,
+            score: this.hashUnit(x, y, 0x4eb7) - landmarkDistance * 0.012,
+          });
+        }
+      }
+
+      const perBankLimit = 3;
+      for (const bankSide of [-1, 1] as const) {
+        const accepted: Array<{
+          x: number;
+          y: number;
+          progress: number;
+          spriteWidth: number;
+        }> = [];
+        for (const candidate of candidatesByBank.get(bankSide)!.sort((a, b) => (
+          b.score - a.score || a.y - b.y || a.x - b.x
+        ))) {
+          if (accepted.length >= perBankLimit) break;
+          const frontageAxis: RegionalRouteContactAxis =
+            Math.abs(candidate.tangentX) >= Math.abs(candidate.tangentY)
+              ? 'east-west'
+              : 'north-south';
+          const eligible = assets.filter((asset) => (
+            asset.quayBankSide === bankSide && asset.frontageAxis === frontageAxis
+          ));
+          if (eligible.length === 0) continue;
+          const asset = eligible[Math.floor(
+            this.hashUnit(candidate.x, candidate.y, 0x7c31) * eligible.length,
+          ) % eligible.length]!;
+          if (accepted.some((other) => (
+            Math.hypot(candidate.x - other.x, candidate.y - other.y) <
+              (asset.sprite.width + other.spriteWidth) * 0.5 + 1.5 ||
+            Math.abs(candidate.progress - other.progress) < 0.065
+          ))) continue;
+          const collisionKeys = asset.collision.map(([offsetX, offsetY]) => (
+            positionKey(candidate.x + offsetX, candidate.y + offsetY)
+          ));
+          if (collisionKeys.some((key) => occupied.has(key)) ||
+              visibleFootprintIntersects(asset, candidate.x, candidate.y, reservedVisible) ||
+              !this.assetFits(candidate.x, candidate.y, asset)) continue;
+          for (const key of collisionKeys) occupied.add(key);
+          accepted.push({ ...candidate, spriteWidth: asset.sprite.width });
+          const placement: Placement = {
+            asset,
+            kind: 'ambient',
+            siteX: landmark.siteX,
+            siteY: landmark.siteY,
+            anchorX: candidate.x,
+            anchorY: candidate.y,
+            parcelId: `quay-frontage:${layout.id}`,
+            accessAxis: frontageAxis,
+            routeKind: this.routes.sample(landmark.siteX, landmark.siteY).routeKind ?? 'local-road',
+            parcelLayers: 1,
+            connectorLength: 0,
+            parcelPathId: layout.id,
+            parcelStation: candidate.progress,
+            pathTangentX: candidate.tangentX,
+            pathTangentY: candidate.tangentY,
+            waterfrontId: layout.id,
+            waterfrontFunction: asset.waterfrontFunction,
+          };
+          selected.push(placement);
+          reserveVisibleFootprint(placement, reservedVisible, 0);
+        }
+      }
+    }
+    return selected.sort((a, b) => a.anchorY - b.anchorY || a.anchorX - b.anchorX ||
+      a.asset.id.localeCompare(b.asset.id));
   }
 
   /** Derive walkable settlement ground from the placed focal contract. Large

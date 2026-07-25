@@ -5,6 +5,7 @@ import {
   type BiomeFamily,
   type BiomeWeights,
   type BiomeWorldSample,
+  type ConstructedWaterwaySample,
 } from '../biomes/biome-world-field.js';
 import type {
   RegionalLandmarkKind,
@@ -111,10 +112,40 @@ function makeWorld(
   sampleBiome: (x: number, y: number) => BiomeWorldSample = (x) => biomeSample(nearestFamily(x)),
   includeEnvironmentPrograms = false,
   derivedCache?: RegionalWorldDerivedCache,
+  includeQuay = false,
 ): RegionalWorldTileProvider {
+  const quayDescriptor = {
+    id: 'test-canal',
+    materialFamily: 'canal-town' as const,
+    bounds: { minX: -20, minY: 0, maxX: 20, maxY: 15 },
+  };
   const field = {
     sample: sampleBiome,
     prewarm: () => undefined,
+    getConstructedWaterways: () => includeQuay ? [quayDescriptor] : [],
+    sampleConstructedWaterway: (
+      x: number,
+      y: number,
+      id = quayDescriptor.id,
+    ): ConstructedWaterwaySample | null => {
+      if (!includeQuay || id !== quayDescriptor.id || x < -20 || x > 20 || y < 0 || y > 15) {
+        return null;
+      }
+      const bankSide: -1 | 1 = y < 10 ? -1 : 1;
+      return {
+        id,
+        progress: (x + 20) / 40,
+        centreX: x,
+        centreY: 10,
+        tangentX: 1,
+        tangentY: 0,
+        bankNormalX: 0,
+        bankNormalY: bankSide,
+        bankSide,
+        halfWidth: 1.25,
+        signedDistance: Math.abs(y - 10) - 1.25,
+      };
+    },
   };
   const routes = {
     sample: sampleRoute,
@@ -183,9 +214,11 @@ function makeWorld(
       families: [family],
       role: 'mass' as const,
       compositionRole: family === 'canal-town' && variant >= 4 ? 'focal' as const : undefined,
-      frontageAxis: family === 'canal-town' && variant >= 4
-        ? variant === 4 ? 'east-west' as const : 'north-south' as const
-        : undefined,
+      frontageAxis: family === 'canal-town' && variant < 2
+        ? 'east-west' as const
+        : family === 'canal-town' && variant >= 4
+          ? variant === 4 ? 'east-west' as const : 'north-south' as const
+          : undefined,
       compositionSide: family === 'canal-town' && variant >= 4
         ? variant === 4 || variant === 6 ? -1 as const : 1 as const
         : undefined,
@@ -197,6 +230,9 @@ function makeWorld(
         : undefined,
       waterfrontFunction: (family === 'canal-town' || family === 'coast') && variant < 2
         ? variant === 0 ? 'workshop' as const : 'boat-shed' as const
+        : undefined,
+      quayBankSide: family === 'canal-town' && variant < 2
+        ? variant === 0 ? -1 as const : 1 as const
         : undefined,
       sprite: sprite(COLOURS[family]),
       collision: [[0, 0]] as const,
@@ -591,6 +627,47 @@ describe('RegionalWorldTileProvider', () => {
     });
     expect(world.getRegionalStats().cachedWaterfrontPrograms).toBeGreaterThan(0);
     expect(world.getRegionalStats().cachedWaterfrontSurfaceCells).toBeGreaterThan(0);
+  });
+
+  it('projects constructed waterways into paired walkable quays with matching collision exports', () => {
+    const quayBiome = (_x: number, y: number): BiomeWorldSample => {
+      const wet = Math.abs(y - 10) <= 1.25;
+      return {
+        ...biomeSample('canal-town'),
+        waterDistance: wet ? 0 : Math.max(0, Math.abs(y - 10) - 1.25),
+        isWater: wet,
+        isRiver: wet,
+      };
+    };
+    const world = makeWorld(32, 32, routeSample, quayBiome, false, undefined, true);
+    expect(world.getQuayLayoutsInBounds(-4, 6, 4, 14)).toHaveLength(1);
+
+    const northQuay = world.getTileAtResolution(0, 7, 8);
+    const southQuay = world.getTileAtResolution(0, 12, 8);
+    expect(northQuay.id).toContain('regional-quay-ground:quay:test-canal');
+    expect(southQuay.id).toContain('regional-quay-ground:quay:test-canal');
+    expect(northQuay.walkable).toBe(true);
+    expect(southQuay.walkable).toBe(true);
+    expect(world.getTileAtResolution(0, 10, 8).walkable).toBe(false);
+    const frontage = world.getAmbientPlacementsInBounds(-20, 5, 20, 15)
+      .filter((placement) => placement.waterfrontId === 'quay:test-canal');
+    expect(frontage.length).toBeGreaterThanOrEqual(3);
+    expect(frontage.every((placement) => (
+      placement.waterfrontFunction && placement.parcelPathId === 'quay:test-canal'
+    ))).toBe(true);
+
+    // The legacy authored-building protocol anchors a 3x3 sprite at its
+    // bottom-centre. Use the upper tile row to model a facade overhang while
+    // the quay cell itself remains traversable.
+    world.setBuilding('quay-overhang', 0, 13, sprite({ r: 250, g: 20, b: 20 }));
+    expect(world.getBuildingTileAt(0, 12)).not.toBeNull();
+    expect(world.isBuildingAt(0, 12)).toBe(false);
+
+    const prepared = world.prepareViewport(-2, 7, 2, 13, 8);
+    expect(prepared.terrain.find((tile) => tile.x === 0 && tile.y === 12)?.tile.id)
+      .toContain('regional-quay-ground:quay:test-canal');
+    expect(prepared.overlays.some((tile) => tile.x === 0 && tile.y === 12)).toBe(true);
+    expect(prepared.solid.some(([x, y]) => x === 0 && y === 12)).toBe(false);
   });
 
   it('places sparse environment contacts only where declarative envelopes match', () => {

@@ -33,6 +33,38 @@ export interface BiomePhysicalSample {
   isRiver: boolean;
 }
 
+export interface ConstructedWaterwayBounds {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+/** Public geometric contract for a constructed waterway. Downstream place
+ * layers consume this semantic centreline instead of rediscovering a canal
+ * from raster colours or maintaining a second set of coordinates. */
+export interface ConstructedWaterwayDescriptor {
+  id: string;
+  materialFamily: BiomeFamily;
+  bounds: ConstructedWaterwayBounds;
+}
+
+export interface ConstructedWaterwaySample {
+  id: string;
+  progress: number;
+  centreX: number;
+  centreY: number;
+  tangentX: number;
+  tangentY: number;
+  /** Unit normal pointing from the centreline toward the sampled bank. */
+  bankNormalX: number;
+  bankNormalY: number;
+  bankSide: -1 | 1;
+  halfWidth: number;
+  /** Negative in water, zero at the bank, positive on adjacent dry ground. */
+  signedDistance: number;
+}
+
 export interface BiomeWorldFieldConfig {
   blockSize?: number;
   maxCachedBlocks?: number;
@@ -75,6 +107,12 @@ const FOREST = 1;
 const COAST = 2;
 const MOUNTAIN = 4;
 const RUINS = 5;
+const ARRIVAL_CANAL: ConstructedWaterwayDescriptor = {
+  id: 'arrival-canal',
+  materialFamily: 'canal-town',
+  bounds: { minX: -28, minY: -16, maxX: 42, maxY: 2 },
+};
+const CONSTRUCTED_WATERWAYS = [ARRIVAL_CANAL] as const;
 
 /**
  * Deterministic regional geography expressed as continuous family weights.
@@ -164,6 +202,19 @@ export class BiomeWorldField {
       isWater: elevation <= this.seaLevel || isRiver,
       isRiver,
     };
+  }
+
+  getConstructedWaterways(): readonly ConstructedWaterwayDescriptor[] {
+    return CONSTRUCTED_WATERWAYS;
+  }
+
+  sampleConstructedWaterway(
+    worldX: number,
+    worldY: number,
+    waterwayId = ARRIVAL_CANAL.id,
+  ): ConstructedWaterwaySample | null {
+    if (waterwayId !== ARRIVAL_CANAL.id) return null;
+    return this.sampleArrivalCanal(worldX, worldY);
   }
 
   prewarm(minX: number, minY: number, maxX: number, maxY: number): void {
@@ -526,35 +577,72 @@ export class BiomeWorldField {
    * creates a narrow neck at the sea, a readable route crossing, and a rounder
    * terminal basin without a rectangular stamp or coordinate-grid seam. */
   private distanceToArrivalCanal(worldX: number, worldY: number): number {
-    if (worldX < -28 || worldX > 42 || worldY < -16 || worldY > 2) {
-      return Number.POSITIVE_INFINITY;
-    }
+    return this.sampleArrivalCanal(worldX, worldY)?.signedDistance ?? Number.POSITIVE_INFINITY;
+  }
+
+  private sampleArrivalCanal(worldX: number, worldY: number): ConstructedWaterwaySample | null {
+    const { bounds } = ARRIVAL_CANAL;
+    if (worldX < bounds.minX || worldX > bounds.maxX ||
+        worldY < bounds.minY || worldY > bounds.maxY) return null;
     const startX = -24;
     const startY = -7;
     const controlX = -4;
     const controlY = -2.8;
     const endX = 36;
     const endY = -9;
-    let nearest = Number.POSITIVE_INFINITY;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    let nearestProgress = 0;
+    let nearestX = startX;
+    let nearestY = startY;
+    let nearestTangentX = 1;
+    let nearestTangentY = 0;
     let previousX = startX;
     let previousY = startY;
-    let previousWidth = 2.18;
+    let previousProgress = 0;
     for (let step = 1; step <= 32; step++) {
       const t = step / 32;
       const inverse = 1 - t;
       const x = inverse * inverse * startX + 2 * inverse * t * controlX + t * t * endX;
       const y = inverse * inverse * startY + 2 * inverse * t * controlY + t * t * endY;
-      const width = 2.18 + Math.sin(Math.PI * t) * 0.34 + smoothstep(0.78, 1, t) * 0.54;
-      nearest = Math.min(
-        nearest,
-        segmentDistance(worldX, worldY, previousX, previousY, x, y) -
-          (previousWidth + width) / 2,
-      );
+      const dx = x - previousX;
+      const dy = y - previousY;
+      const lengthSquared = dx * dx + dy * dy;
+      const projection = lengthSquared > 0
+        ? clamp(((worldX - previousX) * dx + (worldY - previousY) * dy) / lengthSquared)
+        : 0;
+      const projectedX = previousX + dx * projection;
+      const projectedY = previousY + dy * projection;
+      const distance = Math.hypot(worldX - projectedX, worldY - projectedY);
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestProgress = previousProgress + (t - previousProgress) * projection;
+        nearestX = projectedX;
+        nearestY = projectedY;
+        const tangentLength = Math.max(1e-9, Math.hypot(dx, dy));
+        nearestTangentX = dx / tangentLength;
+        nearestTangentY = dy / tangentLength;
+      }
       previousX = x;
       previousY = y;
-      previousWidth = width;
+      previousProgress = t;
     }
-    return nearest;
+    const halfWidth = arrivalCanalHalfWidth(nearestProgress);
+    const cross = nearestTangentX * (worldY - nearestY) -
+      nearestTangentY * (worldX - nearestX);
+    const bankSide: -1 | 1 = cross < 0 ? -1 : 1;
+    return {
+      id: ARRIVAL_CANAL.id,
+      progress: nearestProgress,
+      centreX: nearestX,
+      centreY: nearestY,
+      tangentX: nearestTangentX,
+      tangentY: nearestTangentY,
+      bankNormalX: -nearestTangentY * bankSide,
+      bankNormalY: nearestTangentX * bankSide,
+      bankSide,
+      halfWidth,
+      signedDistance: nearestDistance - halfWidth,
+    };
   }
 
   private makeNoise(
@@ -626,6 +714,11 @@ function segmentDistance(px: number, py: number, x0: number, y0: number, x1: num
   const lengthSquared = dx * dx + dy * dy;
   const projection = lengthSquared > 0 ? clamp(((px - x0) * dx + (py - y0) * dy) / lengthSquared) : 0;
   return Math.hypot(px - (x0 + dx * projection), py - (y0 + dy * projection));
+}
+
+function arrivalCanalHalfWidth(progress: number): number {
+  return 2.18 + Math.sin(Math.PI * progress) * 0.34 +
+    smoothstep(0.78, 1, progress) * 0.54;
 }
 
 function gaussian(value: number, centre: number, spread: number): number {

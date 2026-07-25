@@ -153,10 +153,10 @@ describe('regional biome material manifest', () => {
     expect(kit.minimumLayers).toBe(2);
     expect(kit.maximumLayers).toBe(3);
     expect(kit.layerSpacing).toBe(5);
-    expect(kit.assets).toHaveLength(39);
+    expect(kit.assets).toHaveLength(41);
     for (const family of BIOME_FAMILIES) {
       expect(kit.assets.filter((asset) => asset.families.includes(family))).toHaveLength(
-        family === 'canal-town' ? 9 : 6,
+        family === 'canal-town' ? 11 : 6,
       );
     }
     for (const asset of kit.assets) {
@@ -182,7 +182,7 @@ describe('regional biome material manifest', () => {
       asset.frontageStations.every((station) => station >= -0.85 && station <= 0.85)
     ))).toBe(true);
     const waterfront = kit.assets.filter((asset) => asset.programs?.includes('waterfront'));
-    expect(waterfront).toHaveLength(5);
+    expect(waterfront).toHaveLength(7);
     expect(new Set(waterfront.map((asset) => asset.waterfrontFunction))).toEqual(new Set([
       'boat-shed',
       'fish-processing',
@@ -190,6 +190,11 @@ describe('regional biome material manifest', () => {
       'shelter',
       'workshop',
     ]));
+    const quayFrontage = waterfront.filter((asset) => asset.quayBankSide !== undefined);
+    expect(quayFrontage).toHaveLength(2);
+    expect(new Set(quayFrontage.map((asset) => asset.quayBankSide))).toEqual(new Set([-1, 1]));
+    expect(quayFrontage.every((asset) => asset.frontageAxis === 'east-west')).toBe(true);
+    expect(new Set(quayFrontage.map((asset) => asset.sprite.width))).toEqual(new Set([10, 13]));
     expect(kit.assets.find((asset) => asset.id === 'canal-town-facade-parcel-mass-v1')?.sprite)
       .toBe(ambient.assets.find((asset) => asset.id === 'canal-town-facade-planter-v2')?.sprite);
   });

@@ -32,6 +32,20 @@
         "derived": "parcel-components/canal-town-vertical-street-block-parcel-component-v1.png",
         "derivedSha256": "2a0f8701e39cbe4b8b7b137f0639eb208f2fa3d215dc6298d8cfb22ae1a877a1",
         "generation": "built-in Codex/ChatGPT image generation subscription; no metered API"
+      },
+      {
+        "source": "generated/canal-town-near-bank-market-frontage-v1-source.png",
+        "sourceSha256": "3ea403cefc4a57ac781160181c5ba225a392093c355178b1ea8c47eb051e8458",
+        "derived": "parcel-components/canal-town-near-bank-market-frontage-v1.png",
+        "derivedSha256": "7d53d0e9c7444b34a5165a5a145ae67e65113165dc70eb36ea5430d21301db5d",
+        "generation": "built-in Codex/ChatGPT image generation subscription; no metered API"
+      },
+      {
+        "source": "generated/canal-town-far-bank-warehouse-frontage-v1-source.png",
+        "sourceSha256": "76a572ebd9399a8a41592df25c7cdb6ee9c09ee404c99da0035528a6fb6c69d0",
+        "derived": "parcel-components/canal-town-far-bank-warehouse-frontage-v1.png",
+        "derivedSha256": "f6f061b190e3be1c8d32b59457f403fbcafd21c2cd73666e726274139ce2949f",
+        "generation": "built-in Codex/ChatGPT image generation subscription; no metered API"
       }
     ],
     "note": "Ambient silhouettes and dedicated parcel modules have explicit roles; no pixel or filename inference decides runtime placement or collision."
@@ -53,6 +67,8 @@
     { "id": "canal-town-quay-workshop-parcel-component-v1", "file": "parcel-components/canal-town-quay-workshop-parcel-component-v1.png", "family": "canal-town", "role": "mass", "programs": ["waterfront"], "waterfrontFunction": "workshop", "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]] },
     { "id": "canal-town-market-pavilion-parcel-component-v1", "file": "parcel-components/canal-town-market-pavilion-parcel-component-v1.png", "family": "canal-town", "role": "mass", "programs": ["waterfront"], "waterfrontFunction": "market", "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-1, 0], [0, 0], [1, 0]] },
     { "id": "canal-town-boat-shed-parcel-component-v1", "file": "parcel-components/canal-town-boat-shed-parcel-component-v1.png", "family": "canal-town", "role": "mass", "programs": ["waterfront"], "waterfrontFunction": "boat-shed", "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]] },
+    { "id": "canal-town-near-bank-market-frontage-v1", "file": "parcel-components/canal-town-near-bank-market-frontage-v1.png", "family": "canal-town", "role": "mass", "frontageAxis": "east-west", "quayBankSide": 1, "programs": ["waterfront"], "waterfrontFunction": "market", "scale": 0.98, "spriteTiles": [10, 4], "collision": [[-4, 0], [-3, 0], [-2, 0], [-1, 0], [1, 0], [2, 0], [3, 0], [4, 0]], "emitsLight": true },
+    { "id": "canal-town-far-bank-warehouse-frontage-v1", "file": "parcel-components/canal-town-far-bank-warehouse-frontage-v1.png", "family": "canal-town", "role": "mass", "frontageAxis": "east-west", "quayBankSide": -1, "programs": ["waterfront"], "waterfrontFunction": "workshop", "scale": 0.98, "spriteTiles": [13, 4], "collision": [[-6, 0], [-5, 0], [-4, 0], [-3, 0], [-2, 0], [-1, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0], [6, 0]], "emitsLight": true },
     { "id": "canal-town-connected-frontage-parcel-component-v1", "file": "parcel-components/canal-town-connected-frontage-parcel-component-v1.png", "family": "canal-town", "role": "mass", "compositionRole": "focal", "frontageAxis": "east-west", "compositionSide": -1, "frontageStations": [-0.34, 0.38], "scale": 0.98, "spriteTiles": [16, 7], "collision": [[-8, 0], [-7, 0], [-6, 0], [-5, 0], [-4, 0], [-3, 0], [-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0], [6, 0], [7, 0]], "emitsLight": true },
     { "id": "canal-town-vertical-street-block-parcel-component-v1", "file": "parcel-components/canal-town-vertical-street-block-parcel-component-v1.png", "family": "canal-town", "role": "mass", "compositionRole": "focal", "frontageAxis": "north-south", "compositionSide": 1, "frontageStations": [-0.24], "scale": 0.96, "spriteTiles": [10, 14], "collision": [[-1, 0], [0, 0], [1, 0], [2, 0], [3, 0], [4, 0]], "emitsLight": true },
     { "id": "canal-town-market-courtyard-block-parcel-component-v1", "file": "parcel-components/canal-town-market-courtyard-block-parcel-component-v1.png", "family": "canal-town", "role": "mass", "compositionRole": "focal", "frontageAxis": "north-south", "compositionSide": -1, "frontageStations": [0.31], "scale": 0.96, "spriteTiles": [10, 14], "collision": [[-4, 0], [-3, 0], [-2, 0], [-1, 0], [0, 0], [1, 0]], "emitsLight": true },
