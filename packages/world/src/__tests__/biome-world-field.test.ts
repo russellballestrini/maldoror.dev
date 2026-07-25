@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { BIOME_FAMILIES, BiomeWorldField } from '../biomes/biome-world-field.js';
+import {
+  BIOME_FAMILIES,
+  BiomeWorldField,
+  CANAL_TOWN_ARRIVAL_CIVIC_BRANCHES,
+} from '../biomes/biome-world-field.js';
 
 const WORLD_SEED = 8801799478018485n;
 
@@ -57,6 +61,29 @@ describe('BiomeWorldField', () => {
     for (const [x, y] of [[-4, 0], [0, 1], [17, -2], [42, -9]]) {
       expect(field.sample(x!, y!).isWater).toBe(false);
     }
+  });
+
+  it('frames the dry arrival with the selected physically authoritative civic canals', () => {
+    const field = new BiomeWorldField(WORLD_SEED, {
+      blockSize: 16,
+      maxCachedBlocks: 8,
+      arrivalCivicBranches: CANAL_TOWN_ARRIVAL_CIVIC_BRANCHES,
+    });
+    expect(field.getConstructedWaterways().map((waterway) => waterway.id)).toEqual([
+      'arrival-canal',
+      'arrival-civic-west',
+      'arrival-civic-east',
+    ]);
+    expect(field.sample(0, 0).isWater).toBe(false);
+    expect(field.samplePhysical(0, 0).isWater).toBe(false);
+    expect(field.sampleConstructedWaterway(0, 0, 'arrival-civic-west')?.signedDistance)
+      .toBeGreaterThan(4.8);
+    expect(field.sampleConstructedWaterway(-6.9, 4)?.id).toBe('arrival-civic-west');
+    expect(field.sampleConstructedWaterway(-6.9, 4)?.signedDistance).toBeLessThan(-1.2);
+    expect(field.sampleConstructedWaterway(7, 4)?.id).toBe('arrival-civic-east');
+    expect(field.sampleConstructedWaterway(7, 4)?.signedDistance).toBeLessThan(-1.1);
+    expect(field.sampleConstructedWaterway(-6.9, 4, 'arrival-canal')).toBeNull();
+    expect(field.sampleConstructedWaterway(80, 80)).toBeNull();
   });
 
   it('is exactly independent of internal cache-block boundaries', () => {

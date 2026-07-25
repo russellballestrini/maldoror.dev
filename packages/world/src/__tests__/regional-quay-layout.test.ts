@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { BiomeWorldField } from '../biomes/biome-world-field.js';
+import {
+  BiomeWorldField,
+  CANAL_TOWN_ARRIVAL_CIVIC_BRANCHES,
+} from '../biomes/biome-world-field.js';
 import {
   buildRegionalQuayLayout,
   regionalQuayCellIsWalkable,
@@ -48,5 +51,34 @@ describe('regional quay layout', () => {
     expect(regionalQuayCellIsWalkable(0, -8, layout, sampleWaterway)).toBe(true);
     expect(regionalQuayCellIsWalkable(0, -5, layout, sampleWaterway)).toBe(false);
     expect(regionalQuayCellIsWalkable(0, 0, layout, sampleWaterway)).toBe(false);
+  });
+
+  it('projects bilateral walkable quays from both selected civic canals', () => {
+    const field = new BiomeWorldField(WORLD_SEED, {
+      blockSize: 16,
+      maxCachedBlocks: 8,
+      arrivalCivicBranches: CANAL_TOWN_ARRIVAL_CIVIC_BRANCHES,
+    });
+    const layouts = new Map(field.getConstructedWaterways().slice(1).map((waterway) => [
+      waterway.id,
+      buildRegionalQuayLayout({ id: `quay:${waterway.id}`, waterway }),
+    ]));
+    const isWalkable = (x: number, y: number, waterwayId: string) => {
+      const layout = layouts.get(waterwayId)!;
+      return regionalQuayCellIsWalkable(
+        x,
+        y,
+        layout,
+        (sampleX, sampleY, id) => field.sampleConstructedWaterway(sampleX, sampleY, id),
+      );
+    };
+
+    expect([...layouts.keys()]).toEqual(['arrival-civic-west', 'arrival-civic-east']);
+    expect(isWalkable(-9, 4, 'arrival-civic-west')).toBe(true);
+    expect(isWalkable(-5, 4, 'arrival-civic-west')).toBe(true);
+    expect(isWalkable(-7, 4, 'arrival-civic-west')).toBe(false);
+    expect(isWalkable(5, 4, 'arrival-civic-east')).toBe(true);
+    expect(isWalkable(9, 4, 'arrival-civic-east')).toBe(true);
+    expect(isWalkable(7, 4, 'arrival-civic-east')).toBe(false);
   });
 });

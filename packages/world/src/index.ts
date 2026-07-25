@@ -5,7 +5,9 @@ export { CanalTownWorldField, type CanalTownWorldSample } from './tiles/canal-to
 export {
   BIOME_FAMILIES,
   BiomeWorldField,
+  CANAL_TOWN_ARRIVAL_CIVIC_BRANCHES,
   REGIONAL_BASIN_SIZE,
+  type ArrivalCivicBranchConfig,
   type BiomeFamily,
   type BiomePhysicalSample,
   type BiomeWeights,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   BiomeWorldField,
+  CANAL_TOWN_ARRIVAL_CIVIC_BRANCHES,
   type BiomeWeights,
   type BiomeWorldSample,
 } from '../biomes/biome-world-field.js';
@@ -27,6 +28,31 @@ describe('RegionalRouteField', () => {
       x: 0,
       y: 0,
       priority: 0,
+      landmarkKind: 'arrival',
+    });
+  });
+
+  it('routes against the selected civic hydrology while preserving the dry arrival', () => {
+    const biomes = new BiomeWorldField(SEED, {
+      blockSize: 16,
+      arrivalCivicBranches: CANAL_TOWN_ARRIVAL_CIVIC_BRANCHES,
+    });
+    const routes = new RegionalRouteField(SEED, biomes, {
+      blockSize: 16,
+      pathStep: 4,
+      maxCachedBlocks: 96,
+      maxCachedPaths: 512,
+    });
+
+    expect(biomes.samplePhysical(-7, 4).isWater).toBe(true);
+    expect(biomes.samplePhysical(7, 4).isWater).toBe(true);
+    expect(routes.sample(-7, 4).isRoute).toBe(false);
+    expect(routes.sample(7, 4).isRoute).toBe(false);
+    expect(biomes.samplePhysical(0, 0).isWater).toBe(false);
+    expect(routes.sample(0, 0)).toMatchObject({
+      isRoute: true,
+      isWalkableRoute: true,
+      routeKind: 'arterial',
       landmarkKind: 'arrival',
     });
   });

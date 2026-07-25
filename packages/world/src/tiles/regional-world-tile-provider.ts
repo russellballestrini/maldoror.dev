@@ -276,6 +276,8 @@ export interface RegionalWorldTileProviderConfig extends TileProviderConfig {
   ambientLandmarkClearance?: number;
   civicDetailCellSize?: number;
   civicDetailDensity?: number;
+  quayWidth?: number;
+  quayFrontageDepth?: number;
   routeContactCellSize?: number;
   routeContactDensity?: number;
   routeContactLandmarkClearance?: number;
@@ -526,6 +528,8 @@ export class RegionalWorldTileProvider extends TileProvider {
       buildRegionalQuayLayout({
         id: `quay:${waterway.id}`,
         waterway,
+        quayWidth: config.quayWidth,
+        frontageDepth: config.quayFrontageDepth,
       })
     ));
     this.blockSize = Math.max(16, config.blockSize ?? 32);

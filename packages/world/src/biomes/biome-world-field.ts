@@ -70,7 +70,46 @@ export interface BiomeWorldFieldConfig {
   maxCachedBlocks?: number;
   seaLevel?: number;
   filterHalo?: number;
+  /** Optional bounded canals used by arrival compositions. They remain one
+   * physical authority: render, route crossings, quays, collision, and
+   * frontage all consume the resulting descriptors. */
+  arrivalCivicBranch?: ArrivalCivicBranchConfig;
+  arrivalCivicBranches?: readonly ArrivalCivicBranchConfig[];
 }
+
+export interface ArrivalCivicBranchConfig {
+  id?: string;
+  start: readonly [number, number];
+  control: readonly [number, number];
+  end: readonly [number, number];
+  baseHalfWidth: number;
+  middleWidening?: number;
+  terminalWidening?: number;
+}
+
+/** Selected V87 arrival composition. The pair stays explicit data so the
+ * runtime, research harness, hydrology, routes, quays, collision, and authored
+ * frontage all consume the same finite canal geometry. */
+export const CANAL_TOWN_ARRIVAL_CIVIC_BRANCHES = [
+  {
+    id: 'arrival-civic-west',
+    start: [-6.4, -6.5],
+    control: [-7.1, 2.5],
+    end: [-6.2, 17],
+    baseHalfWidth: 1.25,
+    middleWidening: 0.18,
+    terminalWidening: 0.12,
+  },
+  {
+    id: 'arrival-civic-east',
+    start: [6.4, -5.8],
+    control: [7.2, 3],
+    end: [6.1, 17],
+    baseHalfWidth: 1.25,
+    middleWidening: 0.18,
+    terminalWidening: 0.12,
+  },
+] as const satisfies readonly ArrivalCivicBranchConfig[];
 
 interface PreparedNoise {
   noise: FastNoiseLite;
@@ -112,7 +151,25 @@ const ARRIVAL_CANAL: ConstructedWaterwayDescriptor = {
   materialFamily: 'canal-town',
   bounds: { minX: -28, minY: -16, maxX: 42, maxY: 2 },
 };
-const CONSTRUCTED_WATERWAYS = [ARRIVAL_CANAL] as const;
+interface ArrivalCanalGeometry {
+  descriptor: ConstructedWaterwayDescriptor;
+  start: readonly [number, number];
+  control: readonly [number, number];
+  end: readonly [number, number];
+  baseHalfWidth: number;
+  middleWidening: number;
+  terminalWidening: number;
+}
+
+const PRIMARY_ARRIVAL_CANAL: ArrivalCanalGeometry = {
+  descriptor: ARRIVAL_CANAL,
+  start: [-24, -7],
+  control: [-4, -2.8],
+  end: [36, -9],
+  baseHalfWidth: 2.18,
+  middleWidening: 0.34,
+  terminalWidening: 0.54,
+};
 
 /**
  * Deterministic regional geography expressed as continuous family weights.
@@ -129,6 +186,7 @@ export class BiomeWorldField {
   private readonly maxCachedBlocks: number;
   private readonly seaLevel: number;
   private readonly filterHalo: number;
+  private readonly constructedWaterways: readonly ArrivalCanalGeometry[];
   private readonly cache = new Map<string, CachedBlock>();
   private readonly riverSegmentCache = new Map<string, RiverSegment[]>();
   private accessClock = 0;
@@ -151,6 +209,20 @@ export class BiomeWorldField {
     this.maxCachedBlocks = Math.max(4, config.maxCachedBlocks ?? 48);
     this.seaLevel = clamp(config.seaLevel ?? 0.44);
     this.filterHalo = Math.max(10, config.filterHalo ?? 12);
+    const civicBranches = config.arrivalCivicBranches ??
+      (config.arrivalCivicBranch ? [config.arrivalCivicBranch] : []);
+    this.constructedWaterways = [PRIMARY_ARRIVAL_CANAL, ...civicBranches.map(
+      (branch, index) => arrivalCivicBranchGeometry(
+        branch,
+        branch.id ?? (index === 0 ? 'arrival-civic-branch' : `arrival-civic-branch-${index + 1}`),
+      ),
+    )];
+    const waterwayIds = new Set(this.constructedWaterways.map(
+      (waterway) => waterway.descriptor.id,
+    ));
+    if (waterwayIds.size !== this.constructedWaterways.length) {
+      throw new Error('Constructed arrival waterways must have unique IDs');
+    }
     this.warpNoiseX = this.makeNoise(0x391a, 1 / 118, 'FBm', 3, 0.23);
     this.warpNoiseY = this.makeNoise(0x75b1, 1 / 131, 'FBm', 3, -0.51);
     this.continentNoise = this.makeNoise(0x1b63, 1 / 194, 'FBm', 5, 0.12);
@@ -205,16 +277,23 @@ export class BiomeWorldField {
   }
 
   getConstructedWaterways(): readonly ConstructedWaterwayDescriptor[] {
-    return CONSTRUCTED_WATERWAYS;
+    return this.constructedWaterways.map((waterway) => waterway.descriptor);
   }
 
   sampleConstructedWaterway(
     worldX: number,
     worldY: number,
-    waterwayId = ARRIVAL_CANAL.id,
+    waterwayId?: string,
   ): ConstructedWaterwaySample | null {
-    if (waterwayId !== ARRIVAL_CANAL.id) return null;
-    return this.sampleArrivalCanal(worldX, worldY);
+    const geometries = waterwayId === undefined
+      ? this.constructedWaterways
+      : this.constructedWaterways.filter((waterway) => waterway.descriptor.id === waterwayId);
+    let nearest: ConstructedWaterwaySample | null = null;
+    for (const geometry of geometries) {
+      const sample = this.sampleArrivalCanal(worldX, worldY, geometry);
+      if (sample && (!nearest || sample.signedDistance < nearest.signedDistance)) nearest = sample;
+    }
+    return nearest;
   }
 
   prewarm(minX: number, minY: number, maxX: number, maxY: number): void {
@@ -569,27 +648,30 @@ export class BiomeWorldField {
   ): number {
     return Math.min(
       this.distanceToRiver(worldX, worldY, segments),
-      this.distanceToArrivalCanal(worldX, worldY),
+      this.distanceToArrivalCanals(worldX, worldY),
     );
   }
 
   /** Signed distance to a finite quadratic canal centreline. A varying width
    * creates a narrow neck at the sea, a readable route crossing, and a rounder
    * terminal basin without a rectangular stamp or coordinate-grid seam. */
-  private distanceToArrivalCanal(worldX: number, worldY: number): number {
-    return this.sampleArrivalCanal(worldX, worldY)?.signedDistance ?? Number.POSITIVE_INFINITY;
+  private distanceToArrivalCanals(worldX: number, worldY: number): number {
+    return this.sampleConstructedWaterway(worldX, worldY)?.signedDistance ??
+      Number.POSITIVE_INFINITY;
   }
 
-  private sampleArrivalCanal(worldX: number, worldY: number): ConstructedWaterwaySample | null {
-    const { bounds } = ARRIVAL_CANAL;
+  private sampleArrivalCanal(
+    worldX: number,
+    worldY: number,
+    geometry: ArrivalCanalGeometry,
+  ): ConstructedWaterwaySample | null {
+    const { descriptor, start, control, end } = geometry;
+    const { bounds } = descriptor;
     if (worldX < bounds.minX || worldX > bounds.maxX ||
         worldY < bounds.minY || worldY > bounds.maxY) return null;
-    const startX = -24;
-    const startY = -7;
-    const controlX = -4;
-    const controlY = -2.8;
-    const endX = 36;
-    const endY = -9;
+    const [startX, startY] = start;
+    const [controlX, controlY] = control;
+    const [endX, endY] = end;
     let nearestDistance = Number.POSITIVE_INFINITY;
     let nearestProgress = 0;
     let nearestX = startX;
@@ -626,12 +708,12 @@ export class BiomeWorldField {
       previousY = y;
       previousProgress = t;
     }
-    const halfWidth = arrivalCanalHalfWidth(nearestProgress);
+    const halfWidth = arrivalCanalHalfWidth(nearestProgress, geometry);
     const cross = nearestTangentX * (worldY - nearestY) -
       nearestTangentY * (worldX - nearestX);
     const bankSide: -1 | 1 = cross < 0 ? -1 : 1;
     return {
-      id: ARRIVAL_CANAL.id,
+      id: descriptor.id,
       progress: nearestProgress,
       centreX: nearestX,
       centreY: nearestY,
@@ -716,9 +798,42 @@ function segmentDistance(px: number, py: number, x0: number, y0: number, x1: num
   return Math.hypot(px - (x0 + dx * projection), py - (y0 + dy * projection));
 }
 
-function arrivalCanalHalfWidth(progress: number): number {
-  return 2.18 + Math.sin(Math.PI * progress) * 0.34 +
-    smoothstep(0.78, 1, progress) * 0.54;
+function arrivalCivicBranchGeometry(
+  config: ArrivalCivicBranchConfig,
+  id: string,
+): ArrivalCanalGeometry {
+  const baseHalfWidth = Math.max(1.1, config.baseHalfWidth);
+  const middleWidening = Math.max(0, config.middleWidening ?? 0.24);
+  const terminalWidening = Math.max(0, config.terminalWidening ?? 0.2);
+  const maximumHalfWidth = baseHalfWidth + middleWidening + terminalWidening;
+  // The descriptor includes enough dry context for paired quays and frontage,
+  // not just the wet pixels of the Bezier curve.
+  const padding = maximumHalfWidth + 7;
+  const xs = [config.start[0], config.control[0], config.end[0]];
+  const ys = [config.start[1], config.control[1], config.end[1]];
+  return {
+    descriptor: {
+      id,
+      materialFamily: 'canal-town',
+      bounds: {
+        minX: Math.floor(Math.min(...xs) - padding),
+        minY: Math.floor(Math.min(...ys) - padding),
+        maxX: Math.ceil(Math.max(...xs) + padding),
+        maxY: Math.ceil(Math.max(...ys) + padding),
+      },
+    },
+    start: [...config.start],
+    control: [...config.control],
+    end: [...config.end],
+    baseHalfWidth,
+    middleWidening,
+    terminalWidening,
+  };
+}
+
+function arrivalCanalHalfWidth(progress: number, geometry: ArrivalCanalGeometry): number {
+  return geometry.baseHalfWidth + Math.sin(Math.PI * progress) * geometry.middleWidening +
+    smoothstep(0.78, 1, progress) * geometry.terminalWidening;
 }
 
 function gaussian(value: number, centre: number, spread: number): number {

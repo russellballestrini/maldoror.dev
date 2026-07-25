@@ -348,6 +348,30 @@ world-space compositor. Garden boundaries have their own continuous texture
 blend without a water material mask; water retains ownership of constructed
 curbs, wet contact, reflections, collision, and terminal animation phases.
 
+## Paired civic arrival waterways
+
+The selected canal-town arrival now exposes three bounded waterway descriptors:
+one curved east-west channel and two narrow north-south civic branches. The two
+branches frame a dry central causeway without becoming a special rendered
+overlay. `BiomeWorldField` owns their continuous centreline, tangent, normal,
+width, side, progress, signed bank distance, and bounds. Routes sample the same
+physical water; each descriptor generates its own bilateral quay layout; the
+provider uses those layouts for material, walkability, collision, reserved
+frontage, and semantic waterfront placement.
+
+`CANAL_TOWN_ARRIVAL_CIVIC_BRANCHES` is the canonical selected V87 geometry.
+The runtime kit and renderer import it directly. Research can still pass an
+empty or alternate branch list, which retained the V67 baseline and V68-V86
+failures without duplicating the production coordinates. Exact origin remains
+dry, an arterial route, and a walkable landmark tile. Tests pin both wet cores,
+four walkable quay samples, route avoidance, origin access, and compact
+bank-side frontage metadata.
+
+This is one bounded canal-town composition, not a generalized city generator.
+The visibly straight banks, missing boats/landings, sparse secondary frontage,
+and absence of equivalent hydrology-led grammar in the other five families are
+still acceptance failures.
+
 ## Current limits
 
 This is a live production foundation, not the end-state world or a

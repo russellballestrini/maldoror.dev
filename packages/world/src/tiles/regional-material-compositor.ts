@@ -76,6 +76,8 @@ export type RegionalTextureReconstruction =
  * without forking those physical authorities. */
 export interface RegionalInfrastructureVisualProfile {
   civicBridgeDeckMix: number;
+  detailCivicStreetMix: number;
+  overviewCivicStreetMix: number;
   bridgeLandingFlareScale: number;
   bridgeMidspanWaistScale: number;
   quaySurfaceArticulation: number;
@@ -144,6 +146,8 @@ const ROUTE_KINDS: readonly RegionalRouteKind[] = ['trail', 'local-road', 'arter
 const SEMANTIC_RESOLUTIONS = [4, 8, 16, 26, 51, 77, 102, 128, 154, 179, 205, 230, 256] as const;
 const DEFAULT_INFRASTRUCTURE_VISUAL_PROFILE: RegionalInfrastructureVisualProfile = {
   civicBridgeDeckMix: 0.64,
+  detailCivicStreetMix: 0.62,
+  overviewCivicStreetMix: 0.36,
   bridgeLandingFlareScale: 3,
   bridgeMidspanWaistScale: 3.2,
   quaySurfaceArticulation: 1,
@@ -210,6 +214,14 @@ export class RegionalMaterialCompositor {
       civicBridgeDeckMix: clamp01(
         config.infrastructureVisualProfile?.civicBridgeDeckMix ??
           DEFAULT_INFRASTRUCTURE_VISUAL_PROFILE.civicBridgeDeckMix,
+      ),
+      detailCivicStreetMix: clamp01(
+        config.infrastructureVisualProfile?.detailCivicStreetMix ??
+          DEFAULT_INFRASTRUCTURE_VISUAL_PROFILE.detailCivicStreetMix,
+      ),
+      overviewCivicStreetMix: clamp01(
+        config.infrastructureVisualProfile?.overviewCivicStreetMix ??
+          DEFAULT_INFRASTRUCTURE_VISUAL_PROFILE.overviewCivicStreetMix,
       ),
       bridgeLandingFlareScale: Math.max(
         0,
@@ -1485,7 +1497,9 @@ export class RegionalMaterialCompositor {
           // biome field owns where this contextual material is eligible.
           const civicStreetWeight = visualCrossingKind === null &&
               routeLayer.sample.routeKind !== 'trail'
-            ? townConstruction * (size <= 8 ? 0.24 : 0.38)
+            ? townConstruction * (size <= 8
+              ? this.infrastructureVisualProfile.overviewCivicStreetMix
+              : this.infrastructureVisualProfile.detailCivicStreetMix)
             : 0;
           if (civicStreetWeight > 0.0001 && quayTextures) {
             this.sampleTextureField(

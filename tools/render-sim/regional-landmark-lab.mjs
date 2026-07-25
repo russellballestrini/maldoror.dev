@@ -16,6 +16,7 @@ import {
 import {
   BIOME_FAMILIES,
   BiomeWorldField,
+  CANAL_TOWN_ARRIVAL_CIVIC_BRANCHES,
   RegionalMaterialCompositor,
   RegionalRouteField,
   RegionalWorldTileProvider,
@@ -37,10 +38,15 @@ const FRAME_FILTER = process.env.MALDOROR_REGIONAL_LANDMARK_FRAME;
 const INFRASTRUCTURE_PROFILE_NAME = process.env.MALDOROR_INFRASTRUCTURE_PROFILE ?? 'production';
 const WATER_PROFILE_NAME = process.env.MALDOROR_WATER_PROFILE ?? 'production';
 const CIVIC_DETAIL_PROFILE_NAME = process.env.MALDOROR_CIVIC_DETAIL_PROFILE ?? 'production';
+const ARRIVAL_WATERWAY_PROFILE_NAME =
+  process.env.MALDOROR_ARRIVAL_WATERWAY_PROFILE ?? 'production';
+const QUAY_PROFILE_NAME = process.env.MALDOROR_QUAY_PROFILE ?? 'production';
 const INFRASTRUCTURE_PROFILES = {
   production: {},
   baseline: {
     civicBridgeDeckMix: 0,
+    detailCivicStreetMix: 0.38,
+    overviewCivicStreetMix: 0.24,
     bridgeLandingFlareScale: 1,
     bridgeMidspanWaistScale: 1,
     quaySurfaceArticulation: 0,
@@ -62,6 +68,14 @@ const INFRASTRUCTURE_PROFILES = {
     bridgeLandingFlareScale: 3,
     bridgeMidspanWaistScale: 3.2,
     quaySurfaceArticulation: 1,
+  },
+  'civic-street-light': {
+    detailCivicStreetMix: 0.62,
+    overviewCivicStreetMix: 0.36,
+  },
+  'civic-street-bright': {
+    detailCivicStreetMix: 0.78,
+    overviewCivicStreetMix: 0.48,
   },
 };
 const INFRASTRUCTURE_PROFILE = INFRASTRUCTURE_PROFILES[INFRASTRUCTURE_PROFILE_NAME];
@@ -96,6 +110,99 @@ const CIVIC_DETAIL_PROFILE = CIVIC_DETAIL_PROFILES[CIVIC_DETAIL_PROFILE_NAME];
 if (!CIVIC_DETAIL_PROFILE) {
   throw new Error(`Unknown civic-detail profile: ${CIVIC_DETAIL_PROFILE_NAME}`);
 }
+const ARRIVAL_WATERWAY_PROFILES = {
+  production: { arrivalCivicBranches: CANAL_TOWN_ARRIVAL_CIVIC_BRANCHES },
+  baseline: { arrivalCivicBranches: [] },
+  'paired-narrow': {
+    arrivalCivicBranch: {
+      start: [-22, 5.6],
+      control: [-1, 6.4],
+      end: [30, 5.1],
+      baseHalfWidth: 1.45,
+      middleWidening: 0.18,
+      terminalWidening: 0.16,
+    },
+  },
+  'paired-civic': {
+    arrivalCivicBranch: {
+      start: [-22, 5.3],
+      control: [-1, 5.9],
+      end: [30, 4.8],
+      baseHalfWidth: 1.85,
+      middleWidening: 0.28,
+      terminalWidening: 0.24,
+    },
+  },
+  'paired-bold': {
+    arrivalCivicBranch: {
+      start: [-23, 4.8],
+      control: [0, 5.4],
+      end: [32, 4.2],
+      baseHalfWidth: 2.25,
+      middleWidening: 0.36,
+      terminalWidening: 0.3,
+    },
+  },
+  'side-canals-narrow': {
+    arrivalCivicBranches: CANAL_TOWN_ARRIVAL_CIVIC_BRANCHES,
+  },
+  'side-canals-civic': {
+    arrivalCivicBranches: [
+      {
+        id: 'arrival-civic-west',
+        start: [-6.6, -6.5],
+        control: [-7.3, 2.5],
+        end: [-6.4, 18],
+        baseHalfWidth: 1.55,
+        middleWidening: 0.24,
+        terminalWidening: 0.16,
+      },
+      {
+        id: 'arrival-civic-east',
+        start: [6.6, -5.8],
+        control: [7.4, 3],
+        end: [6.3, 18],
+        baseHalfWidth: 1.55,
+        middleWidening: 0.24,
+        terminalWidening: 0.16,
+      },
+    ],
+  },
+  'side-canals-bold': {
+    arrivalCivicBranches: [
+      {
+        id: 'arrival-civic-west',
+        start: [-6.2, -6.5],
+        control: [-6.8, 2.5],
+        end: [-6, 18],
+        baseHalfWidth: 1.9,
+        middleWidening: 0.28,
+        terminalWidening: 0.2,
+      },
+      {
+        id: 'arrival-civic-east',
+        start: [6.2, -5.8],
+        control: [6.9, 3],
+        end: [5.9, 18],
+        baseHalfWidth: 1.9,
+        middleWidening: 0.28,
+        terminalWidening: 0.2,
+      },
+    ],
+  },
+};
+const ARRIVAL_WATERWAY_PROFILE = ARRIVAL_WATERWAY_PROFILES[ARRIVAL_WATERWAY_PROFILE_NAME];
+if (!ARRIVAL_WATERWAY_PROFILE) {
+  throw new Error(`Unknown arrival-waterway profile: ${ARRIVAL_WATERWAY_PROFILE_NAME}`);
+}
+const QUAY_PROFILES = {
+  production: {},
+  baseline: {},
+  'civic-wide': { quayWidth: 2.45, quayFrontageDepth: 4.2 },
+  'civic-broad': { quayWidth: 3.05, quayFrontageDepth: 3.8 },
+};
+const QUAY_PROFILE = QUAY_PROFILES[QUAY_PROFILE_NAME];
+if (!QUAY_PROFILE) throw new Error(`Unknown quay profile: ${QUAY_PROFILE_NAME}`);
 let FRAMES = [
   { name: 'arrival-landmark-walking', centre: [0, 0], displayTileSize: 16 },
   { name: 'arrival-landmark-district', centre: [0, 0], displayTileSize: 8 },
@@ -123,7 +230,11 @@ if (CENTRE_OVERRIDE) {
 }
 
 fs.mkdirSync(OUTPUT, { recursive: true });
-const field = new BiomeWorldField(WORLD_SEED, { blockSize: 16, maxCachedBlocks: 32 });
+const field = new BiomeWorldField(WORLD_SEED, {
+  blockSize: 16,
+  maxCachedBlocks: 32,
+  ...ARRIVAL_WATERWAY_PROFILE,
+});
 const routes = new RegionalRouteField(WORLD_SEED, field, {
   blockSize: 32,
   maxCachedBlocks: 128,
@@ -193,6 +304,7 @@ const world = new RegionalWorldTileProvider({
   ambientLandmarkClearance: ambientKit.landmarkClearance,
   civicDetailCellSize: civicDetailKit.cellSize,
   civicDetailDensity: CIVIC_DETAIL_PROFILE.enabled ? civicDetailKit.density : 0,
+  ...QUAY_PROFILE,
   routeContactCellSize: routeContactKit.cellSize,
   routeContactDensity: routeContactKit.density,
   routeContactLandmarkClearance: routeContactKit.landmarkClearance,
@@ -991,6 +1103,10 @@ const metrics = {
   waterProfile: WATER_PROFILE_NAME,
   waterVisualProfile: WATER_PROFILE,
   civicDetailProfile: CIVIC_DETAIL_PROFILE_NAME,
+  arrivalWaterwayProfile: ARRIVAL_WATERWAY_PROFILE_NAME,
+  arrivalWaterwayConfig: ARRIVAL_WATERWAY_PROFILE,
+  quayProfile: QUAY_PROFILE_NAME,
+  quayConfig: QUAY_PROFILE,
   sourceDimensions: [WIDTH, HEIGHT],
   terminalDimensions: [WIDTH / 2, HEIGHT / 4],
   landmarkManifest: path.relative(ROOT, landmarkKit.manifestPath),

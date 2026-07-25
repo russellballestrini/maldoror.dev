@@ -2,6 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   BiomeWorldField,
+  CANAL_TOWN_ARRIVAL_CIVIC_BRANCHES,
   RegionalMaterialCompositor,
   RegionalRouteField,
   RegionalWorldDerivedCache,
@@ -102,6 +103,7 @@ export async function loadRegionalWorldKit(
   const field = new BiomeWorldField(options.worldSeed, {
     blockSize: 16,
     maxCachedBlocks: 48,
+    arrivalCivicBranches: CANAL_TOWN_ARRIVAL_CIVIC_BRANCHES,
   });
   const routes = new RegionalRouteField(options.worldSeed, field, {
     blockSize: 32,

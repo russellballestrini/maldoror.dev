@@ -978,6 +978,29 @@ Completed foundations:
   source and derived-asset hash verification also passes.
   Production remains `vb07c0d4`; there was no deploy, service restart, push,
   complete Gate-A claim, Gate-D claim, or physical Ghostty claim;
+- V67-V89 generalize the arrival field to multiple finite constructed
+  waterways, then select two narrow north-south civic canals around the dry
+  origin causeway. One canonical branch constant now feeds the live kit and
+  research renderer; hydrology, routes, material, collision, bilateral quays,
+  and bank-aware frontage all consume the same descriptors. The horizontal
+  branch, wider side canals, wider quays, over-bright street, and ineffective
+  focal-search expansion remain retained rejections; the failed focal-search
+  code was removed. Compact waterfront assets now carry explicit axis and bank
+  semantics. V88 proves the normal production profile exactly matches the V87
+  selected source hashes at walking/district/regional zoom. V89's fresh
+  source-build SSH subset retains 805,712 raw bytes and 75 synchronized frames
+  at exact `(0,0)`, with position, zoom, OCTANT, dimensions, and hashes
+  asserted. Cold readiness was 19.020 seconds (generator 1.848, origin 9.973),
+  readiness RSS about 442 MiB, and post-capture worker RSS about 543 MiB. The
+  result is materially closer to the target's canal-framed hierarchy, but still
+  has large empty ochre space, straight quay edges, sparse frontage, and no
+  moving people, boats, or stalls. Evidence is in
+  `track-6-acceptance-atlas/composition-hierarchy-v89-real-ssh-paired-civic-canals/FINDINGS.md`.
+  Repository-wide verification passes 44 files / 244 tests, 18/18 typecheck
+  tasks, 12/12 build tasks, 7/7 configured lint tasks, and strict civic-asset
+  derivation.
+  Production remains `vb07c0d4`; there was no deploy, service restart, push,
+  complete Gate-A claim, Gate-D claim, or physical Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
@@ -1028,14 +1051,13 @@ Still open and therefore goal-blocking:
   remains visually short of acceptance until approach wear, longer-span and
   topology-specific support vocabularies, crossing-family diversity, and the
   surrounding coast-composition failures close, followed by the fresh full
-  atlas. V66 adds selected bridge shaping, quay articulation, canal depth and
-  current, and two static route-connected civic-life modules to V49's bounded
-  arrival canal and paired walkable quays, but is likewise only a selected
-  sub-gate. Crossing and support diversity, stronger bank contact, larger
-  commons, denser route-connected secondary frontage, moving people, stalls,
-  boats, less empty paving, and equivalent grammar beyond the canal-town
-  origin remain required before a fresh full-atlas recapture can attempt Gate
-  A.
+  atlas. V89 adds selected paired civic canals and a lighter central causeway
+  to V66's bridge shaping, quay articulation, canal depth/current, and two
+  static civic-life modules, but is likewise only a selected sub-gate.
+  Crossing and support diversity, irregular bank contact, larger commons,
+  denser route-connected secondary frontage, moving people, stalls, boats,
+  less empty paving, and equivalent grammar beyond the canal-town origin
+  remain required before a fresh full-atlas recapture can attempt Gate A.
   Fresh post-correction deterministic traversal, the 30-minute terminal run,
   deployed-service/cgroup audit, and physical Ghostty acceptance also remain
   open.

@@ -217,10 +217,10 @@ describe('regional biome material manifest', () => {
       'workshop',
     ]));
     const quayFrontage = waterfront.filter((asset) => asset.quayBankSide !== undefined);
-    expect(quayFrontage).toHaveLength(2);
+    expect(quayFrontage).toHaveLength(5);
     expect(new Set(quayFrontage.map((asset) => asset.quayBankSide))).toEqual(new Set([-1, 1]));
     expect(quayFrontage.every((asset) => asset.frontageAxis === 'east-west')).toBe(true);
-    expect(new Set(quayFrontage.map((asset) => asset.sprite.width))).toEqual(new Set([10, 13]));
+    expect(new Set(quayFrontage.map((asset) => asset.sprite.width))).toEqual(new Set([5, 10, 13]));
     expect(kit.assets.find((asset) => asset.id === 'canal-town-facade-parcel-mass-v1')?.sprite)
       .toBe(ambient.assets.find((asset) => asset.id === 'canal-town-facade-planter-v2')?.sprite);
   });

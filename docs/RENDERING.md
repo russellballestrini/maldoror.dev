@@ -519,3 +519,37 @@ position to `(0,0)`; only active-session hot reload restores position. Full
 repository verification passes 44 files / 241 tests, 18/18 typecheck tasks,
 12/12 build tasks, 7/7 configured lint tasks, and strict source/derived-asset
 hash verification.
+
+### Paired civic canals and a legible arrival causeway (2026-07-25)
+
+V67-V89 replace the origin's single-water-edge composition with three finite
+waterway descriptors: the existing curved arrival canal plus two narrow civic
+canals framing the dry central causeway. The selected branch coordinates live
+once in `CANAL_TOWN_ARRIVAL_CIVIC_BRANCHES`; the live world kit and research
+renderer pass that same data to hydrology, route generation, rendering,
+collision, bilateral quays, and bank-aware frontage. `(0,0)` remains a dry,
+walkable arterial landmark.
+
+The retained ladder rejects a second horizontal canal, wider side canals,
+wider quays, and an over-bright causeway. An attempted expanded focal search
+did not recover missing frontage and was removed. V85 selects restrained
+limestone street mixing; V87 selects the paired narrow side canals; V88 proves
+the normal production profile is byte-identical to that explicit candidate at
+walking `f07d160c...`, district `29dafb42...`, and regional `b3742514...`.
+
+V89 proves the promoted source through three fresh-scratch real-SSH captures at
+exact `(0,0)`: 805,712 raw bytes, 75 synchronized frames, and asserted zoom,
+OCTANT, dimensions, and hashes. Cold readiness was 19.020 seconds (generator
+1.848, origin preparation 9.973), readiness RSS about 442 MiB, and post-capture
+worker RSS about 543 MiB. The full decision, rejected ladder, hashes, faithful
+images, and teardown proof are under
+`track-6-acceptance-atlas/composition-hierarchy-v89-real-ssh-paired-civic-canals/`.
+
+The new hierarchy is visibly stronger, especially at district and regional
+zoom, but the arrival remains too empty and static relative to the gallery
+target. Boats, stalls, moving inhabitants, flower/vegetation masses, irregular
+edge contact, secondary frontage, the other five place-family grammars, a new
+complete atlas, Gate-D endurance, deployment, and physical Ghostty acceptance
+remain open. Repository verification passes 44 files / 244 tests, 18/18
+typecheck tasks, 12/12 build tasks, 7/7 configured lint tasks, and strict civic
+asset derivation. Production still reports `vb07c0d4`.
