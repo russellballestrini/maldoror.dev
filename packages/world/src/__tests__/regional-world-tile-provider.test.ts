@@ -24,6 +24,7 @@ import {
   type RegionalLandmarkAsset,
   type RegionalParcelComponentAsset,
   type RegionalPackedPreparedViewport,
+  type RegionalQuayDetailAsset,
   type RegionalRouteContactAsset,
 } from '../tiles/regional-world-tile-provider.js';
 
@@ -64,6 +65,39 @@ function sprite(colour: RGB): BuildingSprite {
     ],
   };
 }
+
+const QUAY_DETAILS: readonly RegionalQuayDetailAsset[] = [
+  {
+    id: 'quay-detail:water:horizontal',
+    families: ['canal-town'],
+    role: 'quay-detail',
+    surface: 'water',
+    waterwayAxis: 'east-west',
+    bankDistance: [-1.25, -0.1],
+    progressRange: [0.05, 0.95],
+    minimumFamilyWeight: 0.7,
+    minimumSpacing: 5,
+    maximumPerLandmark: 1,
+    placementPriority: 1,
+    sprite: sprite({ r: 52, g: 90, b: 138 }),
+    collision: [[-1, 0], [0, 0], [1, 0]],
+  },
+  {
+    id: 'quay-detail:quay:horizontal',
+    families: ['canal-town'],
+    role: 'quay-detail',
+    surface: 'quay',
+    waterwayAxis: 'east-west',
+    bankDistance: [0.2, 1.45],
+    progressRange: [0.05, 0.95],
+    minimumFamilyWeight: 0.7,
+    minimumSpacing: 5,
+    maximumPerLandmark: 1,
+    placementPriority: 0.9,
+    sprite: sprite({ r: 230, g: 180, b: 90 }),
+    collision: [[0, 0]],
+  },
+];
 
 function biomeSample(family: BiomeFamily): BiomeWorldSample {
   const index = BIOME_FAMILIES.indexOf(family);
@@ -115,6 +149,7 @@ function makeWorld(
   derivedCache?: RegionalWorldDerivedCache,
   includeQuay = false,
   includeCivicDetails = false,
+  includeQuayDetails = false,
 ): RegionalWorldTileProvider {
   const quayDescriptor = {
     id: 'test-canal',
@@ -279,6 +314,7 @@ function makeWorld(
     landmarks,
     ambient,
     civicDetails: includeCivicDetails ? civicDetails : [],
+    quayDetails: includeQuayDetails ? QUAY_DETAILS : [],
     routeContacts,
     parcelComponents,
     environmentContacts,
@@ -289,6 +325,7 @@ function makeWorld(
     ambientLandmarkClearance: 4,
     civicDetailCellSize: 1,
     civicDetailDensity: 1,
+    quayDetailDensity: 1,
     routeContactCellSize: 10,
     routeContactDensity: 1,
     routeContactLandmarkClearance: 4,
@@ -712,6 +749,67 @@ describe('RegionalWorldTileProvider', () => {
       .toContain('regional-quay-ground:quay:test-canal');
     expect(prepared.overlays.some((tile) => tile.x === 0 && tile.y === 12)).toBe(true);
     expect(prepared.solid.some(([x, y]) => x === 0 && y === 12)).toBe(false);
+  });
+
+  it('binds deterministic semantic activity to the declared water and quay surfaces', () => {
+    const quayBiome = (_x: number, y: number): BiomeWorldSample => {
+      const wet = Math.abs(y - 10) <= 1.25;
+      return {
+        ...biomeSample('canal-town'),
+        waterDistance: wet ? 0 : Math.max(0, Math.abs(y - 10) - 1.25),
+        isWater: wet,
+        isRiver: wet,
+      };
+    };
+    const first = makeWorld(
+      32, 32, routeSample, quayBiome, false, undefined, true, false, true,
+    );
+    const alternateBlocks = makeWorld(
+      48, 32, routeSample, quayBiome, false, undefined, true, false, true,
+    );
+
+    // Populate the alternate cache in the reverse direction before comparing
+    // the canonical composition. Placement must not depend on traversal order
+    // or the cache's tiling geometry.
+    for (let x = 56; x >= -24; x -= 8) alternateBlocks.getBuildingTileAt(x, 10);
+    const placements = first.getQuayDetailPlacementsInBounds(-24, -4, 56, 20);
+    const replay = alternateBlocks.getQuayDetailPlacementsInBounds(-24, -4, 56, 20);
+    expect(placements).toEqual(replay);
+    expect(placements).toHaveLength(QUAY_DETAILS.length);
+    expect(new Set(placements.map((placement) => placement.assetId)))
+      .toEqual(new Set(QUAY_DETAILS.map((asset) => asset.id)));
+    expect(new Set(placements.map((placement) => (
+      `${placement.assetId}:${placement.anchorX},${placement.anchorY}`
+    ))).size).toBe(placements.length);
+    expect(placements.every((placement) => (
+      placement.kind === 'quay-detail' && placement.siteX === 0 && placement.siteY === 0 &&
+      placement.parcelPathId === 'quay:test-canal' &&
+      placement.waterfrontId === 'quay:test-canal' && placement.accessAxis === 'east-west'
+    ))).toBe(true);
+
+    const assets = new Map(QUAY_DETAILS.map((asset) => [asset.id, asset]));
+    for (const placement of placements) {
+      const asset = assets.get(placement.assetId)!;
+      for (const [offsetX, offsetY] of asset.collision) {
+        const x = placement.anchorX + offsetX;
+        const y = placement.anchorY + offsetY;
+        const terrain = first.getTile(x, y);
+        expect(first.getBuildingTileAt(x, y)).not.toBeNull();
+        if (asset.surface === 'water') {
+          expect(terrain.walkable, `water detail escaped at ${x},${y}`).toBe(false);
+        } else {
+          expect(terrain.id, `quay detail escaped at ${x},${y}`)
+            .toContain('regional-quay-ground:quay:test-canal');
+          expect(terrain.walkable).toBe(true);
+        }
+      }
+    }
+    expect(first.isBuildingAt(0, 0)).toBe(false);
+    expect(first.getTile(0, 0).walkable).toBe(true);
+    expect(first.getRegionalStats()).toMatchObject({
+      quayDetailAssets: QUAY_DETAILS.length,
+      cachedQuayDetailPlacements: placements.length,
+    });
   });
 
   it('places sparse environment contacts only where declarative envelopes match', () => {

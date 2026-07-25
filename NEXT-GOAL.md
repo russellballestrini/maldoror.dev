@@ -1024,6 +1024,36 @@ Completed foundations:
   derivation, and `git diff --check`.
   Production remains `vb07c0d4`; there was no deploy, service restart, push,
   complete Gate-A claim, Gate-D claim, or physical Ghostty claim;
+- V98-V106 add the first semantic water-edge life layer to those shared canals.
+  Six new modules—two axis-specific boats, mooring, fish unloading, fish stall,
+  and water vegetation—were generated through built-in Codex/ChatGPT
+  subscription image generation with exact prompt, source/derived hashes,
+  deterministic chroma/trim derivation, alpha checks, and explicit physical
+  semantics; no metered API was used. Placement scans continuous constructed
+  waterways rather than names or coordinates: manifests own water/quay
+  surface, tangent axis, signed bank-distance and progress bands, family
+  threshold, spacing, count, priority, collision, and light behavior. Stable
+  nearest-landmark ownership and an immutable per-site cache remove V99's
+  duplicate claims and V100/V101's route-distance exclusion of side canals.
+  V102 restores all three canals; V103's selected general near-origin weight
+  brings a second boat into the walking frame. V104 exposes 3/7/8 details at
+  walking/district/regional scale. V105 disables only this layer and is
+  byte-identical to the V96 baseline at all three scales. V106's fresh
+  source-build SSH subset retains 804,585 raw bytes and 75 synchronized frames
+  at exact `(0,0)`, with position, zoom, OCTANT, dimensions, and hashes
+  asserted. Cold readiness was 15.816 seconds (generator 2.007, origin 10.435),
+  readiness RSS about 456 MiB, and post-capture worker RSS about 545 MiB.
+  Boats remain in physical water, quay activity remains on walkable quay, and
+  the origin remains dry, open, and walkable. Evidence is in
+  `track-6-acceptance-atlas/composition-hierarchy-v106-real-ssh-semantic-quay-life/FINDINGS.md`.
+  Repository-wide verification passes 44 files / 247 tests, 18/18 typecheck
+  tasks, 12/12 build tasks, 7/7 configured lint tasks, strict six-asset
+  derivation, and `git diff --check`. This is still static first vocabulary:
+  moving inhabitants/boats, temporal market activity, stronger side-canal
+  frontage, larger commons, and equivalent contact grammar for the other five
+  families remain open. Production remains `vb07c0d4`; there was no deploy,
+  service restart, push, complete Gate-A claim, Gate-D claim, or physical
+  Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
@@ -1042,10 +1072,10 @@ Still open and therefore goal-blocking:
   compounds now include a selected two-sided canal-town focal core, but remain
   sparse research prototypes rather than a complete world layer. The core now
   has selected entrance-level constructed grounding plus water-owned semantic
-  quay material, paired walkable arrival quays, and the first two bank-authored
-  low frontages and modest deterministic landside-edge variation, but still
-  lacks convincing waterside contact detail, bank-aware crossing silhouettes,
-  larger squares/commons, dense
+  quay material, paired walkable arrival quays, the first two bank-authored low
+  frontages, modest deterministic landside-edge variation, and a first static
+  semantic water/quay activity vocabulary, but still lacks bank-aware crossing
+  silhouettes, temporal/moving waterfront life, larger squares/commons, dense
   route-connected secondary frontage, and
   equivalent focal vocabularies for the other five families. Coast-specific
   waterfront diversity, far
@@ -1075,12 +1105,14 @@ Still open and therefore goal-blocking:
   remains visually short of acceptance until approach wear, longer-span and
   topology-specific support vocabularies, crossing-family diversity, and the
   surrounding coast-composition failures close, followed by the fresh full
-  atlas. V97 adds modest physical quay-edge variation to V89's paired civic
-  canals and lighter central causeway, building on V66's bridge shaping, quay
-  articulation, canal depth/current, and two
-  static civic-life modules, but is likewise only a selected sub-gate.
+  atlas. V106 adds static boats, fish work/market silhouettes, mooring, and
+  water vegetation on top of V97's modest physical quay-edge variation and
+  V89's paired civic canals and lighter central causeway, building on V66's
+  bridge shaping, quay articulation, canal depth/current, and two static
+  civic-life modules, but is likewise only a selected sub-gate.
   Crossing and support diversity, richer bank contact, larger commons,
-  denser route-connected secondary frontage, moving people, stalls, boats,
+  denser route-connected secondary frontage, moving people, working/moving
+  boats and stalls,
   less empty paving, and equivalent grammar beyond the canal-town origin
   remain required before a fresh full-atlas recapture can attempt Gate A.
   Fresh post-correction deterministic traversal, the 30-minute terminal run,

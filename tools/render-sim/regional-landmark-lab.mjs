@@ -10,6 +10,7 @@ import {
   loadRegionalEnvironmentContactKit,
   loadRegionalLandmarkKit,
   loadRegionalParcelComponentKit,
+  loadRegionalQuayDetailKit,
   loadRegionalRouteMaterialKit,
   loadRegionalRouteContactKit,
 } from '../../apps/ssh-world/dist/game/biome-assets.js';
@@ -39,6 +40,7 @@ const FRAME_FILTER = process.env.MALDOROR_REGIONAL_LANDMARK_FRAME;
 const INFRASTRUCTURE_PROFILE_NAME = process.env.MALDOROR_INFRASTRUCTURE_PROFILE ?? 'production';
 const WATER_PROFILE_NAME = process.env.MALDOROR_WATER_PROFILE ?? 'production';
 const CIVIC_DETAIL_PROFILE_NAME = process.env.MALDOROR_CIVIC_DETAIL_PROFILE ?? 'production';
+const QUAY_DETAIL_PROFILE_NAME = process.env.MALDOROR_QUAY_DETAIL_PROFILE ?? 'production';
 const ARRIVAL_WATERWAY_PROFILE_NAME =
   process.env.MALDOROR_ARRIVAL_WATERWAY_PROFILE ?? 'production';
 const QUAY_PROFILE_NAME = process.env.MALDOROR_QUAY_PROFILE ?? 'production';
@@ -207,6 +209,12 @@ const QUAY_PROFILES = {
 };
 const QUAY_PROFILE = QUAY_PROFILES[QUAY_PROFILE_NAME];
 if (!QUAY_PROFILE) throw new Error(`Unknown quay profile: ${QUAY_PROFILE_NAME}`);
+const QUAY_DETAIL_PROFILES = {
+  production: { enabled: true },
+  disabled: { enabled: false },
+};
+const QUAY_DETAIL_PROFILE = QUAY_DETAIL_PROFILES[QUAY_DETAIL_PROFILE_NAME];
+if (!QUAY_DETAIL_PROFILE) throw new Error(`Unknown quay-detail profile: ${QUAY_DETAIL_PROFILE_NAME}`);
 let FRAMES = [
   { name: 'arrival-landmark-walking', centre: [0, 0], displayTileSize: 16 },
   { name: 'arrival-landmark-district', centre: [0, 0], displayTileSize: 8 },
@@ -251,6 +259,7 @@ const [
   landmarkKit,
   ambientKit,
   civicDetailKit,
+  quayDetailKit,
   routeContactKit,
   parcelKit,
   environmentKit,
@@ -260,6 +269,7 @@ const [
   loadRegionalLandmarkKit(path.join(ROOT, 'assets/biomes/landmarks-manifest.json')),
   loadRegionalAmbientKit(path.join(ROOT, 'assets/biomes/ambient-manifest.json')),
   loadRegionalCivicDetailKit(path.join(ROOT, 'assets/biomes/civic-details-manifest.json')),
+  loadRegionalQuayDetailKit(path.join(ROOT, 'assets/biomes/quay-details-manifest.json')),
   loadRegionalRouteContactKit(path.join(ROOT, 'assets/biomes/route-contacts-manifest.json')),
   loadRegionalParcelComponentKit(path.join(ROOT, 'assets/biomes/parcel-components-manifest.json')),
   loadRegionalEnvironmentContactKit(path.join(ROOT, 'assets/biomes/environment-contacts-manifest.json')),
@@ -268,9 +278,10 @@ if (new Set([
   landmarkKit.blockSize,
   ambientKit.blockSize,
   civicDetailKit.blockSize,
+  quayDetailKit.blockSize,
   routeContactKit.blockSize,
 ]).size !== 1) {
-  throw new Error('Regional landmark, ambient, civic-detail, and route-contact block sizes disagree');
+  throw new Error('Regional landmark, ambient, civic-detail, quay-detail, and route-contact block sizes disagree');
 }
 const compositor = new RegionalMaterialCompositor({
   worldSeed: WORLD_SEED,
@@ -298,6 +309,7 @@ const world = new RegionalWorldTileProvider({
   landmarks: landmarkKit.assets,
   ambient: ambientKit.assets,
   civicDetails: CIVIC_DETAIL_PROFILE.enabled ? civicDetailKit.assets : [],
+  quayDetails: QUAY_DETAIL_PROFILE.enabled ? quayDetailKit.assets : [],
   routeContacts: routeContactKit.assets,
   parcelComponents: parcelKit.assets,
   environmentContacts: environmentKit.assets,
@@ -308,6 +320,7 @@ const world = new RegionalWorldTileProvider({
   ambientLandmarkClearance: ambientKit.landmarkClearance,
   civicDetailCellSize: civicDetailKit.cellSize,
   civicDetailDensity: CIVIC_DETAIL_PROFILE.enabled ? civicDetailKit.density : 0,
+  quayDetailDensity: QUAY_DETAIL_PROFILE.enabled ? quayDetailKit.density : 0,
   ...QUAY_PROFILE,
   routeContactCellSize: routeContactKit.cellSize,
   routeContactDensity: routeContactKit.density,
@@ -1107,6 +1120,7 @@ const metrics = {
   waterProfile: WATER_PROFILE_NAME,
   waterVisualProfile: WATER_PROFILE,
   civicDetailProfile: CIVIC_DETAIL_PROFILE_NAME,
+  quayDetailProfile: QUAY_DETAIL_PROFILE_NAME,
   arrivalWaterwayProfile: ARRIVAL_WATERWAY_PROFILE_NAME,
   arrivalWaterwayConfig: ARRIVAL_WATERWAY_PROFILE,
   quayProfile: QUAY_PROFILE_NAME,
@@ -1119,6 +1133,8 @@ const metrics = {
   ambientAssets: ambientKit.assets.length,
   civicDetailManifest: path.relative(ROOT, civicDetailKit.manifestPath),
   civicDetailAssets: civicDetailKit.assets.length,
+  quayDetailManifest: path.relative(ROOT, quayDetailKit.manifestPath),
+  quayDetailAssets: quayDetailKit.assets.length,
   routeContactManifest: path.relative(ROOT, routeContactKit.manifestPath),
   routeContactAssets: routeContactKit.assets.length,
   parcelComponentManifest: path.relative(ROOT, parcelKit.manifestPath),
@@ -1152,6 +1168,7 @@ for (const frame of FRAMES) {
     providerStats: world.getRegionalStats(),
     visibleAmbient: world.getAmbientPlacementsInBounds(...visibleBounds),
     visibleCivicDetails: world.getCivicDetailPlacementsInBounds(...visibleBounds),
+    visibleQuayDetails: world.getQuayDetailPlacementsInBounds(...visibleBounds),
     visibleRouteContacts: world.getRouteContactPlacementsInBounds(...visibleBounds),
     visibleParcelComponents: world.getParcelComponentPlacementsInBounds(...visibleBounds),
     visibleEnvironmentContacts: world.getEnvironmentContactPlacementsInBounds(...visibleBounds),

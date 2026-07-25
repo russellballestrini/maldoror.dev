@@ -377,10 +377,41 @@ water or leave an invisible collision wall. Frontage reservation follows the
 same edge. Unconfigured layouts remain straight, preserving a byte-exact
 research baseline and generic caller behavior.
 
+### Semantic quay life
+
+The first water-edge activity layer is a declarative extension of the same
+constructed-waterway contract. Six canal-town assets carry explicit
+`quay-detail` semantics: water or quay surface, north-south/east-west/any
+waterway axis, signed bank-distance and progress envelopes, minimum family
+weight, spacing, maximum count per landmark, placement priority, collision,
+and optional light emission. Runtime behavior never branches on an asset ID,
+filename, or sampled colour.
+
+Candidates come from continuous waterway samples inside the bounded landmark
+reach. Every collision cell is revalidated against its declared physical
+surface: boats and vegetation require wet cells; quay activity requires dry,
+walkable quay weight away from the route core. Complete detail silhouettes
+reserve against one another, and quay-side silhouettes also reserve against
+the established landmark composition. Water objects may visually cross the
+screen-space shore edge when their physical collision remains in water, which
+preserves useful isometric occlusion without inventing walkable water.
+
+Off-route canal cells cannot use route-sampled `landmarkDistance` as ownership
+authority. Instead, each candidate selects the nearest valid route landmark in
+a bounded neighbourhood with deterministic tie breaks. One immutable
+composition is cached per owner site, so neighbouring blocks, cache sizes, and
+traversal order cannot duplicate or move it. A modest general distance term
+keeps useful activity near the arrival without introducing a coordinate table.
+
+V104 selects three visible details at walking scale, seven at district scale,
+and eight at regional scale. V105 disables only this layer and exactly restores
+the V96 source hashes. Tests pin unique ownership, cache-size/traversal
+identity, physical water/quay fit, and an unobstructed `(0,0)`.
+
 This is one bounded canal-town composition, not a generalized city generator.
-The regular waterside curbs, missing boats/landings, sparse secondary frontage,
-and absence of equivalent hydrology-led grammar in the other five families are
-still acceptance failures.
+The regular waterside curbs, static rather than moving/temporal activity,
+sparse secondary frontage, and absence of equivalent hydrology-led grammar in
+the other five families are still acceptance failures.
 
 ## Current limits
 
@@ -394,3 +425,12 @@ intentionally sparse until regional/biome composition is proven.
 The active-session hot-reload path now preserves position and view state through
 a worker replacement, with a real SSH proof retained under the mounted research
 tree. The complete physical-display and performance gate remains open.
+
+V106 proves the selected semantic quay layer through three fresh-scratch
+real-SSH captures at exact `(0,0)`: 804,585 raw bytes, 75 synchronized frames,
+and asserted zoom, OCTANT mode, dimensions, and hashes. Cold readiness was
+15.816 seconds (generator 2.007, origin preparation 10.435), readiness RSS
+about 456 MiB, and post-capture worker RSS about 545 MiB. Full evidence and
+retained failures are under
+`track-6-acceptance-atlas/composition-hierarchy-v106-real-ssh-semantic-quay-life/`.
+Production still reports `vb07c0d4`; no deployment or service restart occurred.

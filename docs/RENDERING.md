@@ -586,3 +586,46 @@ acceptance remain open. Repository verification passes 44 files / 245 tests,
 18/18 typecheck tasks, 12/12 build tasks, 7/7 configured lint tasks, strict
 civic-asset derivation, and `git diff --check`. Production still reports
 `vb07c0d4`.
+
+### Semantic water-edge life (2026-07-25)
+
+V98-V106 add a first authored activity vocabulary to the shared canal
+geometry: east-west and north-south boats, a quay mooring cluster, fish
+unloading, a fish stall, and floating vegetation. The source sheet was made
+with Codex built-in image generation on the user's ChatGPT subscription; no
+metered API was used. Prompt, source hash, strict deterministic crops, chroma
+removal, derived hashes/dimensions, alpha coverage, partial-alpha presence, and
+transparent corners are retained.
+
+Placement is semantic rather than image- or name-driven. Manifest fields own
+physical water/quay surface, tangent axis, signed bank-distance and waterway
+progress envelopes, family threshold, spacing, maximum count, priority,
+collision, and lights. Candidate and every collision cell must fit the same
+continuous constructed-waterway/quay geometry used by material and traversal.
+A bounded nearest-valid-landmark calculation owns each candidate; deterministic
+ties and one immutable cache entry per landmark keep composition exact across
+cache blocks and traversal order.
+
+V99's neighbouring-site duplicates and V100/V101's route-distance exclusion of
+off-route canal cells remain retained failures. V102 restores side-canal life;
+V103 selects the stronger general near-origin weight. V104 then shows 3/7/8
+details at walking/district/regional scale with source hashes
+`b312ecba...`, `c3ac84dc...`, and `9b914e80...`. V105 disables only this layer
+and is byte-identical to the V96 pre-feature hashes at all three scales.
+
+V106 proves the selected source through three fresh-scratch real-SSH captures
+at exact `(0,0)`: 804,585 raw bytes, 75 synchronized frames, and asserted zoom,
+OCTANT mode, dimensions, and hashes. Cold readiness was 15.816 seconds
+(generator 2.007, origin preparation 10.435), readiness RSS about 456 MiB, and
+post-capture worker RSS about 545 MiB. The complete decision, generated-asset
+provenance, rejected ladder, hashes, faithful images, and teardown proof are
+under
+`track-6-acceptance-atlas/composition-hierarchy-v106-real-ssh-semantic-quay-life/`.
+
+This is a static first layer, not living-waterfront completion. Moving boats
+and workers, temporal market state, stronger side-canal frontage, larger
+commons, the other five family grammars, fresh complete-atlas proof, Gate-D
+endurance, deployment, and physical Ghostty acceptance remain open. Repository
+verification passes 44 files / 247 tests, 18/18 typecheck tasks, 12/12 build
+tasks, 7/7 configured lint tasks, strict six-asset derivation, and
+`git diff --check`. Production still reports `vb07c0d4`.

@@ -96,6 +96,25 @@ export interface RegionalCivicDetailAsset extends RegionalVisualAsset {
   minimumFamilyWeight: number;
 }
 
+export type RegionalQuayDetailSurface = 'water' | 'quay';
+export type RegionalQuayDetailAxis = 'north-south' | 'east-west' | 'any';
+
+/** Authored water-edge activity whose placement is governed by continuous
+ * constructed-waterway geometry. The manifest declares its physical surface,
+ * tangent axis, signed bank-distance envelope, spacing, and bounded count; no
+ * behavior is inferred from IDs or raster colours. */
+export interface RegionalQuayDetailAsset extends RegionalVisualAsset {
+  role: 'quay-detail';
+  surface: RegionalQuayDetailSurface;
+  waterwayAxis: RegionalQuayDetailAxis;
+  bankDistance: readonly [number, number];
+  progressRange: readonly [number, number];
+  minimumFamilyWeight: number;
+  minimumSpacing: number;
+  maximumPerLandmark: number;
+  placementPriority: number;
+}
+
 export type RegionalRouteContactAxis = 'north-south' | 'east-west';
 
 export interface RegionalRouteContactAsset extends RegionalVisualAsset {
@@ -156,8 +175,8 @@ export interface RegionalEnvironmentContactAsset extends RegionalVisualAsset {
 
 export interface RegionalAssetPlacement {
   assetId: string;
-  kind: 'landmark' | 'ambient' | 'civic-detail' | 'environment-contact' | 'route-contact' |
-    'parcel-component';
+  kind: 'landmark' | 'ambient' | 'civic-detail' | 'quay-detail' | 'environment-contact' |
+    'route-contact' | 'parcel-component';
   families: readonly BiomeFamily[];
   siteX: number;
   siteY: number;
@@ -266,6 +285,7 @@ export interface RegionalWorldTileProviderConfig extends TileProviderConfig {
   landmarks: readonly RegionalLandmarkAsset[];
   ambient?: readonly RegionalAmbientAsset[];
   civicDetails?: readonly RegionalCivicDetailAsset[];
+  quayDetails?: readonly RegionalQuayDetailAsset[];
   routeContacts?: readonly RegionalRouteContactAsset[];
   parcelComponents?: readonly RegionalParcelComponentAsset[];
   environmentContacts?: readonly RegionalEnvironmentContactAsset[];
@@ -276,6 +296,7 @@ export interface RegionalWorldTileProviderConfig extends TileProviderConfig {
   ambientLandmarkClearance?: number;
   civicDetailCellSize?: number;
   civicDetailDensity?: number;
+  quayDetailDensity?: number;
   quayWidth?: number;
   quayEdgeVariation?: number;
   quayFrontageDepth?: number;
@@ -300,8 +321,8 @@ export interface RegionalWorldTileProviderConfig extends TileProviderConfig {
 
 interface Placement {
   asset: RegionalVisualAsset;
-  kind: 'landmark' | 'ambient' | 'civic-detail' | 'environment-contact' | 'route-contact' |
-    'parcel-component';
+  kind: 'landmark' | 'ambient' | 'civic-detail' | 'quay-detail' | 'environment-contact' |
+    'route-contact' | 'parcel-component';
   landmarkKind?: RegionalLandmarkKind;
   siteX: number;
   siteY: number;
@@ -424,6 +445,7 @@ export class RegionalWorldDerivedCache {
   readonly environmentContactPlacementCache = new Map<string, Placement | null>();
   readonly environmentProgramCache = new Map<string, CachedEnvironmentProgram | null>();
   readonly civicDetailPlacementCache = new Map<string, readonly Placement[]>();
+  readonly quayDetailPlacementCache = new Map<string, readonly Placement[]>();
   accessClock = 0;
 
   clear(): void {
@@ -434,6 +456,7 @@ export class RegionalWorldDerivedCache {
     this.environmentContactPlacementCache.clear();
     this.environmentProgramCache.clear();
     this.civicDetailPlacementCache.clear();
+    this.quayDetailPlacementCache.clear();
     this.accessClock = 0;
   }
 }
@@ -449,6 +472,7 @@ const PACKED_PREPARED_VIEWPORT_CACHE = new WeakMap<
 >();
 const LANDMARK_ANCHOR_REACH = 7;
 const LANDMARK_ENTOURAGE_REACH = 18;
+const LANDMARK_QUAY_DETAIL_REACH = 28;
 const PARCEL_SIDE_OFFSET = 3;
 export const REGIONAL_MAX_PREPARED_VIEWPORT_AREA = 8192;
 const ENVIRONMENT_PROGRAM_REACH = 40;
@@ -471,6 +495,7 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly landmarks: readonly RegionalLandmarkAsset[];
   private readonly ambient: readonly RegionalAmbientAsset[];
   private readonly civicDetails: readonly RegionalCivicDetailAsset[];
+  private readonly quayDetails: readonly RegionalQuayDetailAsset[];
   private readonly routeContacts: readonly RegionalRouteContactAsset[];
   private readonly parcelComponents: readonly RegionalParcelComponentAsset[];
   private readonly environmentContacts: readonly RegionalEnvironmentContactAsset[];
@@ -482,6 +507,7 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly ambientLandmarkClearance: number;
   private readonly civicDetailCellSize: number;
   private readonly civicDetailDensity: number;
+  private readonly quayDetailDensity: number;
   private readonly routeContactCellSize: number;
   private readonly routeContactDensity: number;
   private readonly routeContactLandmarkClearance: number;
@@ -510,6 +536,7 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly environmentContactPlacementCache: Map<string, Placement | null>;
   private readonly environmentProgramCache: Map<string, CachedEnvironmentProgram | null>;
   private readonly civicDetailPlacementCache: Map<string, readonly Placement[]>;
+  private readonly quayDetailPlacementCache: Map<string, readonly Placement[]>;
   private readonly preparedViewports = new Map<string, ImportedPreparedViewport>();
 
   constructor(config: RegionalWorldTileProviderConfig) {
@@ -522,6 +549,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     this.landmarks = config.landmarks;
     this.ambient = config.ambient ?? [];
     this.civicDetails = config.civicDetails ?? [];
+    this.quayDetails = config.quayDetails ?? [];
     this.routeContacts = config.routeContacts ?? [];
     this.parcelComponents = config.parcelComponents ?? [];
     this.environmentContacts = config.environmentContacts ?? [];
@@ -541,6 +569,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     this.ambientLandmarkClearance = Math.max(4, config.ambientLandmarkClearance ?? 9);
     this.civicDetailCellSize = Math.max(1, Math.min(12, config.civicDetailCellSize ?? 1));
     this.civicDetailDensity = Math.max(0, Math.min(1, config.civicDetailDensity ?? 0.92));
+    this.quayDetailDensity = Math.max(0, Math.min(1, config.quayDetailDensity ?? 0.9));
     this.routeContactCellSize = Math.max(6, config.routeContactCellSize ?? 10);
     this.routeContactDensity = Math.max(0, Math.min(1, config.routeContactDensity ?? 0.55));
     this.routeContactLandmarkClearance = Math.max(4, config.routeContactLandmarkClearance ?? 10);
@@ -572,6 +601,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     this.environmentContactPlacementCache = this.derivedCache.environmentContactPlacementCache;
     this.environmentProgramCache = this.derivedCache.environmentProgramCache;
     this.civicDetailPlacementCache = this.derivedCache.civicDetailPlacementCache;
+    this.quayDetailPlacementCache = this.derivedCache.quayDetailPlacementCache;
     for (const asset of this.landmarks) {
       if (asset.families.length === 0 || asset.landmarkKinds.length === 0) {
         throw new Error(`Regional landmark has no semantic compatibility: ${asset.id}`);
@@ -593,6 +623,20 @@ export class RegionalWorldTileProvider extends TileProvider {
           asset.landmarkDistance[1] < asset.landmarkDistance[0] ||
           asset.minimumFamilyWeight < 0 || asset.minimumFamilyWeight > 1) {
         throw new Error(`Regional civic-detail asset has invalid semantics: ${asset.id}`);
+      }
+    }
+    for (const asset of this.quayDetails) {
+      if (asset.role !== 'quay-detail' || asset.families.length === 0 ||
+          asset.collision.length === 0 ||
+          !['water', 'quay'].includes(asset.surface) ||
+          !['north-south', 'east-west', 'any'].includes(asset.waterwayAxis) ||
+          asset.bankDistance[1] < asset.bankDistance[0] ||
+          asset.progressRange[0] < 0 || asset.progressRange[1] > 1 ||
+          asset.progressRange[1] < asset.progressRange[0] ||
+          asset.minimumFamilyWeight < 0 || asset.minimumFamilyWeight > 1 ||
+          asset.minimumSpacing < 0 || asset.maximumPerLandmark < 1 ||
+          asset.placementPriority < 0 || asset.placementPriority > 1) {
+        throw new Error(`Regional quay-detail asset has invalid semantics: ${asset.id}`);
       }
     }
     for (const asset of this.routeContacts) {
@@ -620,6 +664,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       ...this.landmarks,
       ...this.ambient,
       ...this.civicDetails,
+      ...this.quayDetails,
       ...this.routeContacts,
       ...this.parcelComponents,
       ...this.environmentContacts,
@@ -1238,6 +1283,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     landmarkAssets: number;
     ambientAssets: number;
     civicDetailAssets: number;
+    quayDetailAssets: number;
     environmentContactAssets: number;
     routeContactAssets: number;
     parcelComponentAssets: number;
@@ -1246,6 +1292,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     cachedLandmarkPlacements: number;
     cachedAmbientPlacements: number;
     cachedCivicDetailPlacements: number;
+    cachedQuayDetailPlacements: number;
     cachedEnvironmentContactPlacements: number;
     cachedRouteContactPlacements: number;
     cachedParcelGroups: number;
@@ -1272,6 +1319,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       landmarkAssets: this.landmarks.length,
       ambientAssets: this.ambient.length,
       civicDetailAssets: this.civicDetails.length,
+      quayDetailAssets: this.quayDetails.length,
       environmentContactAssets: this.environmentContacts.length,
       routeContactAssets: this.routeContacts.length,
       parcelComponentAssets: this.parcelComponents.length,
@@ -1294,6 +1342,12 @@ export class RegionalWorldTileProvider extends TileProvider {
       cachedCivicDetailPlacements: [...this.blockCache.values()].reduce(
         (total, block) => total + block.placements.filter(
           (placement) => placement.kind === 'civic-detail',
+        ).length,
+        0,
+      ),
+      cachedQuayDetailPlacements: [...this.blockCache.values()].reduce(
+        (total, block) => total + block.placements.filter(
+          (placement) => placement.kind === 'quay-detail',
         ).length,
         0,
       ),
@@ -1454,6 +1508,47 @@ export class RegionalWorldTileProvider extends TileProvider {
     }
     return placements.sort((a, b) => a.anchorY - b.anchorY || a.anchorX - b.anchorX ||
       a.assetId.localeCompare(b.assetId));
+  }
+
+  getQuayDetailPlacementsInBounds(
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number,
+  ): RegionalAssetPlacement[] {
+    const placements = new Map<string, RegionalAssetPlacement>();
+    const firstBlockX = floorDiv(Math.floor(minX), this.blockSize);
+    const lastBlockX = floorDiv(Math.floor(maxX), this.blockSize);
+    const firstBlockY = floorDiv(Math.floor(minY), this.blockSize);
+    const lastBlockY = floorDiv(Math.floor(maxY), this.blockSize);
+    for (let blockY = firstBlockY; blockY <= lastBlockY; blockY++) {
+      for (let blockX = firstBlockX; blockX <= lastBlockX; blockX++) {
+        for (const placement of this.getBlock(blockX, blockY).placements) {
+          if (placement.kind !== 'quay-detail' || placement.anchorX < minX ||
+              placement.anchorX > maxX || placement.anchorY < minY || placement.anchorY > maxY) {
+            continue;
+          }
+          const value: RegionalAssetPlacement = {
+            assetId: placement.asset.id,
+            kind: 'quay-detail',
+            families: placement.asset.families,
+            siteX: placement.siteX,
+            siteY: placement.siteY,
+            anchorX: placement.anchorX,
+            anchorY: placement.anchorY,
+            accessAxis: placement.accessAxis,
+            parcelPathId: placement.parcelPathId,
+            parcelStation: placement.parcelStation,
+            pathTangentX: placement.pathTangentX,
+            pathTangentY: placement.pathTangentY,
+            waterfrontId: placement.waterfrontId,
+          };
+          placements.set(`${value.assetId}:${value.anchorX},${value.anchorY}`, value);
+        }
+      }
+    }
+    return [...placements.values()].sort((a, b) => a.anchorY - b.anchorY ||
+      a.anchorX - b.anchorX || a.assetId.localeCompare(b.assetId));
   }
 
   override getLightSourcesInBounds(
@@ -1805,11 +1900,14 @@ export class RegionalWorldTileProvider extends TileProvider {
     const placements: Placement[] = [];
     const civicReservedPlacements: Placement[] = [];
     const landmarkFabricSurfaces = new Map<string, LandmarkFabricSurface>();
+    const landmarkCompositionReach = this.quayDetails.length > 0
+      ? LANDMARK_QUAY_DETAIL_REACH
+      : LANDMARK_ENTOURAGE_REACH;
     const landmarkSites = this.routes.getLandmarkSites?.(
-      originX - LANDMARK_ENTOURAGE_REACH,
-      originY - LANDMARK_ENTOURAGE_REACH,
-      originX + this.blockSize - 1 + LANDMARK_ENTOURAGE_REACH,
-      originY + this.blockSize - 1 + LANDMARK_ENTOURAGE_REACH,
+      originX - landmarkCompositionReach,
+      originY - landmarkCompositionReach,
+      originX + this.blockSize - 1 + landmarkCompositionReach,
+      originY + this.blockSize - 1 + landmarkCompositionReach,
     );
     if (landmarkSites) {
       for (const site of landmarkSites) {
@@ -1848,6 +1946,13 @@ export class RegionalWorldTileProvider extends TileProvider {
         }
       }
     }
+    const quayDetails = this.buildQuayDetailPlacements(
+      originX,
+      originY,
+      civicReservedPlacements,
+    );
+    civicReservedPlacements.push(...quayDetails);
+    placements.push(...quayDetails);
     placements.push(...this.buildCivicDetailPlacements(
       originX,
       originY,
@@ -3078,6 +3183,233 @@ export class RegionalWorldTileProvider extends TileProvider {
       }
     }
     return placements;
+  }
+
+  /** Bind authored activity to continuous constructed-waterway contact. Each
+   * manifest asset owns a signed bank-distance envelope, physical surface,
+   * tangent axis, spacing, bounded count, and priority. The algorithm scans
+   * geometry rather than names, then caches one immutable result per landmark
+   * so block traversal order cannot change the composition. */
+  private buildQuayDetailPlacements(
+    originX: number,
+    originY: number,
+    composition: readonly Placement[],
+  ): Placement[] {
+    if (this.quayDetails.length === 0 || this.quayDetailDensity <= 0 ||
+        !this.field.sampleConstructedWaterway) return [];
+    const landmarks = composition
+      .filter((placement) => placement.kind === 'landmark')
+      .sort((a, b) => a.siteY - b.siteY || a.siteX - b.siteX || a.asset.id.localeCompare(b.asset.id));
+    const visible: Placement[] = [];
+    for (const landmark of landmarks) {
+      const cacheKey = `${landmark.siteX},${landmark.siteY}:${landmark.asset.id}`;
+      const cached = this.quayDetailPlacementCache.get(cacheKey);
+      if (cached) {
+        this.quayDetailPlacementCache.delete(cacheKey);
+        this.quayDetailPlacementCache.set(cacheKey, cached);
+        visible.push(...cached.filter((placement) => (
+          placement.anchorX >= originX && placement.anchorX < originX + this.blockSize &&
+          placement.anchorY >= originY && placement.anchorY < originY + this.blockSize
+        )));
+        continue;
+      }
+
+      const reservedVisible = new Set<string>();
+      const detailVisible = new Set<string>();
+      const occupied = new Set<string>();
+      for (const placement of composition) {
+        if (placement.siteX !== landmark.siteX || placement.siteY !== landmark.siteY) continue;
+        reserveVisibleFootprint(placement, reservedVisible, 0);
+        for (const [offsetX, offsetY] of placement.asset.collision) {
+          occupied.add(positionKey(placement.anchorX + offsetX, placement.anchorY + offsetY));
+        }
+      }
+      const eligibleLayouts = this.quayLayouts.filter((layout) => !(
+        layout.bounds.maxX < landmark.siteX - LANDMARK_QUAY_DETAIL_REACH ||
+        layout.bounds.minX > landmark.siteX + LANDMARK_QUAY_DETAIL_REACH ||
+        layout.bounds.maxY < landmark.siteY - LANDMARK_QUAY_DETAIL_REACH ||
+        layout.bounds.minY > landmark.siteY + LANDMARK_QUAY_DETAIL_REACH
+      ));
+      const ownershipLandmarks = (this.routes.getLandmarkSites?.(
+        landmark.siteX - LANDMARK_QUAY_DETAIL_REACH * 2,
+        landmark.siteY - LANDMARK_QUAY_DETAIL_REACH * 2,
+        landmark.siteX + LANDMARK_QUAY_DETAIL_REACH * 2,
+        landmark.siteY + LANDMARK_QUAY_DETAIL_REACH * 2,
+      ) ?? [])
+        .map((site) => this.createPlacement(site.x, site.y))
+        .filter((placement): placement is Placement => placement !== null);
+      const selected: Placement[] = [];
+      const orderedAssets = [...this.quayDetails].sort((a, b) => (
+        b.placementPriority - a.placementPriority || a.id.localeCompare(b.id)
+      ));
+      for (const asset of orderedAssets) {
+        const candidates: Array<{
+          layout: RegionalQuayLayout;
+          waterway: ConstructedWaterwaySample;
+          axis: RegionalRouteContactAxis;
+          x: number;
+          y: number;
+          score: number;
+        }> = [];
+        for (const layout of eligibleLayouts) {
+          const minimumX = Math.max(
+            Math.floor(layout.bounds.minX),
+            landmark.siteX - LANDMARK_QUAY_DETAIL_REACH,
+          );
+          const maximumX = Math.min(
+            Math.ceil(layout.bounds.maxX),
+            landmark.siteX + LANDMARK_QUAY_DETAIL_REACH,
+          );
+          const minimumY = Math.max(
+            Math.floor(layout.bounds.minY),
+            landmark.siteY - LANDMARK_QUAY_DETAIL_REACH,
+          );
+          const maximumY = Math.min(
+            Math.ceil(layout.bounds.maxY),
+            landmark.siteY + LANDMARK_QUAY_DETAIL_REACH,
+          );
+          for (let y = minimumY; y <= maximumY; y++) {
+            for (let x = minimumX; x <= maximumX; x++) {
+              const waterway = this.field.sampleConstructedWaterway!(
+                x + 0.5,
+                y + 0.5,
+                layout.waterwayId,
+              );
+              if (!waterway || waterway.progress < asset.progressRange[0] ||
+                  waterway.progress > asset.progressRange[1] ||
+                  waterway.signedDistance < asset.bankDistance[0] ||
+                  waterway.signedDistance > asset.bankDistance[1] ||
+                  this.hashUnit(x, y, stringHash(asset.id) ^ 0x67a3) > this.quayDetailDensity) {
+                continue;
+              }
+              const axis: RegionalRouteContactAxis =
+                Math.abs(waterway.tangentX) >= Math.abs(waterway.tangentY)
+                  ? 'east-west'
+                  : 'north-south';
+              if (asset.waterwayAxis !== 'any' && asset.waterwayAxis !== axis) continue;
+              const biome = this.field.sample(x, y);
+              const familyWeight = Math.max(...asset.families.map((family) => (
+                biome.weights[BIOME_FAMILIES.indexOf(family)] ?? 0
+              )));
+              const route = this.routes.sample(x, y);
+              const landmarkDistance = Math.hypot(x - landmark.siteX, y - landmark.siteY);
+              const owner = ownershipLandmarks.reduce<Placement | null>((best, option) => {
+                if (!best) return option;
+                const bestDistance = Math.hypot(x - best.siteX, y - best.siteY);
+                const optionDistance = Math.hypot(x - option.siteX, y - option.siteY);
+                if (optionDistance < bestDistance - 1e-7) return option;
+                if (Math.abs(optionDistance - bestDistance) > 1e-7) return best;
+                return option.siteY < best.siteY ||
+                  (option.siteY === best.siteY && option.siteX < best.siteX) ||
+                  (option.siteY === best.siteY && option.siteX === best.siteX &&
+                    option.asset.id.localeCompare(best.asset.id) < 0)
+                  ? option
+                  : best;
+              }, null);
+              if (!owner || owner.siteX !== landmark.siteX || owner.siteY !== landmark.siteY ||
+                  owner.asset.id !== landmark.asset.id) continue;
+              if (familyWeight < asset.minimumFamilyWeight ||
+                  (asset.surface === 'water' && !biome.isWater) ||
+                  (asset.surface === 'quay' && (
+                    biome.isWater ||
+                    sampleRegionalQuayLayout(waterway, layout).quayWeight < 0.5 ||
+                    route.distance < 1.35
+                  ))) continue;
+              const envelopeMiddle = (asset.bankDistance[0] + asset.bankDistance[1]) * 0.5;
+              const envelopeError = Math.abs(waterway.signedDistance - envelopeMiddle);
+              candidates.push({
+                layout,
+                waterway,
+                axis,
+                x,
+                y,
+                score: this.hashUnit(x, y, stringHash(asset.id) ^ 0x39d1) -
+                  landmarkDistance * 0.025 - envelopeError * 0.035,
+              });
+            }
+          }
+        }
+        candidates.sort((a, b) => b.score - a.score || a.y - b.y || a.x - b.x ||
+          a.layout.id.localeCompare(b.layout.id));
+        let accepted = 0;
+        for (const candidate of candidates) {
+          if (accepted >= asset.maximumPerLandmark) break;
+          if (selected.some((other) => Math.hypot(
+            candidate.x - other.anchorX,
+            candidate.y - other.anchorY,
+          ) < (asset.minimumSpacing + (other.asset as RegionalQuayDetailAsset).minimumSpacing) * 0.5)) {
+            continue;
+          }
+          if (!this.quayDetailFits(candidate.x, candidate.y, candidate.layout, asset) ||
+              visibleFootprintIntersects(asset, candidate.x, candidate.y, detailVisible) ||
+              (asset.surface === 'quay' &&
+                visibleFootprintIntersects(asset, candidate.x, candidate.y, reservedVisible))) continue;
+          const collisionKeys = asset.collision.map(([offsetX, offsetY]) => (
+            positionKey(candidate.x + offsetX, candidate.y + offsetY)
+          ));
+          if (collisionKeys.some((key) => occupied.has(key))) continue;
+          const placement: Placement = {
+            asset,
+            kind: 'quay-detail',
+            siteX: landmark.siteX,
+            siteY: landmark.siteY,
+            anchorX: candidate.x,
+            anchorY: candidate.y,
+            accessAxis: candidate.axis,
+            parcelPathId: candidate.layout.id,
+            parcelStation: candidate.waterway.progress,
+            pathTangentX: candidate.waterway.tangentX,
+            pathTangentY: candidate.waterway.tangentY,
+            waterfrontId: candidate.layout.id,
+          };
+          for (const key of collisionKeys) occupied.add(key);
+          reserveVisibleFootprint(placement, reservedVisible, 0);
+          reserveVisibleFootprint(placement, detailVisible, 0);
+          selected.push(placement);
+          accepted++;
+        }
+      }
+      const stable = selected.sort((a, b) => a.anchorY - b.anchorY || a.anchorX - b.anchorX ||
+        a.asset.id.localeCompare(b.asset.id));
+      this.quayDetailPlacementCache.set(cacheKey, stable);
+      while (this.quayDetailPlacementCache.size > this.maxCachedBlocks * 4) {
+        const oldest = this.quayDetailPlacementCache.keys().next().value as string | undefined;
+        if (oldest === undefined) break;
+        this.quayDetailPlacementCache.delete(oldest);
+      }
+      visible.push(...stable.filter((placement) => (
+        placement.anchorX >= originX && placement.anchorX < originX + this.blockSize &&
+        placement.anchorY >= originY && placement.anchorY < originY + this.blockSize
+      )));
+    }
+    return visible.sort((a, b) => a.anchorY - b.anchorY || a.anchorX - b.anchorX ||
+      a.asset.id.localeCompare(b.asset.id));
+  }
+
+  private quayDetailFits(
+    anchorX: number,
+    anchorY: number,
+    layout: RegionalQuayLayout,
+    asset: RegionalQuayDetailAsset,
+  ): boolean {
+    for (const [offsetX, offsetY] of asset.collision) {
+      const x = anchorX + offsetX;
+      const y = anchorY + offsetY;
+      const waterway = this.field.sampleConstructedWaterway?.(
+        x + 0.5,
+        y + 0.5,
+        layout.waterwayId,
+      );
+      if (!waterway || waterway.signedDistance < asset.bankDistance[0] ||
+          waterway.signedDistance > asset.bankDistance[1]) return false;
+      const biome = this.field.sample(x, y);
+      if (asset.surface === 'water') {
+        if (!biome.isWater) return false;
+      } else if (biome.isWater ||
+          sampleRegionalQuayLayout(waterway, layout).quayWeight < 0.35 ||
+          this.routes.sample(x, y).distance < 1.35) return false;
+    }
+    return true;
   }
 
   /** Populate only the social shoulder of an authored route landmark. The

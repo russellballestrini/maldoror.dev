@@ -12,6 +12,9 @@ import {
   type RegionalLandmarkAsset,
   type RegionalParcelComponentAsset,
   type RegionalParcelProgram,
+  type RegionalQuayDetailAsset,
+  type RegionalQuayDetailAxis,
+  type RegionalQuayDetailSurface,
   type RegionalWaterfrontFunction,
   type RegionalRouteContactAsset,
   type RegionalRouteContactAxis,
@@ -65,6 +68,14 @@ export interface RegionalCivicDetailKit {
   cellSize: number;
   density: number;
   assets: RegionalCivicDetailAsset[];
+}
+
+export interface RegionalQuayDetailKit {
+  manifestPath: string;
+  sourceTileSize: number;
+  blockSize: number;
+  density: number;
+  assets: RegionalQuayDetailAsset[];
 }
 
 export interface RegionalRouteContactKit {
@@ -149,6 +160,25 @@ interface CivicDetailEntry extends AmbientEntry {
   minimumFamilyWeight: number;
 }
 
+interface QuayDetailEntry {
+  id: string;
+  file: string;
+  family: BiomeFamily;
+  role: 'quay-detail';
+  surface: RegionalQuayDetailSurface;
+  waterwayAxis: RegionalQuayDetailAxis;
+  bankDistance: [number, number];
+  progressRange: [number, number];
+  minimumFamilyWeight: number;
+  minimumSpacing: number;
+  maximumPerLandmark: number;
+  placementPriority: number;
+  scale: number;
+  spriteTiles: [number, number];
+  collision: Array<[number, number]>;
+  emitsLight?: boolean;
+}
+
 interface RouteContactEntry extends AmbientEntry {
   accessAxis: RegionalRouteContactAxis;
   anchorTile: [number, number];
@@ -189,6 +219,8 @@ const ROUTE_KINDS: readonly RegionalRouteKind[] = ['trail', 'local-road', 'arter
 const CROSSING_KINDS: readonly RegionalCrossingKind[] = ['ford', 'bridge', 'ferry'];
 const LANDMARK_KINDS: readonly RegionalLandmarkKind[] = ['arrival', 'settlement', 'ruin', 'waystation'];
 const ROUTE_CONTACT_AXES: readonly RegionalRouteContactAxis[] = ['north-south', 'east-west'];
+const QUAY_DETAIL_SURFACES: readonly RegionalQuayDetailSurface[] = ['water', 'quay'];
+const QUAY_DETAIL_AXES: readonly RegionalQuayDetailAxis[] = ['north-south', 'east-west', 'any'];
 const PARCEL_PROGRAMS: readonly RegionalParcelProgram[] = ['waterfront'];
 const WATERFRONT_FUNCTIONS: readonly RegionalWaterfrontFunction[] = [
   'boat-shed',
@@ -497,6 +529,59 @@ export async function loadRegionalCivicDetailKit(
     });
   }
   return { manifestPath: absoluteManifest, sourceTileSize, blockSize, cellSize, density, assets };
+}
+
+/** Load water/quay contact silhouettes with explicit continuous-waterway
+ * envelopes. Surface, tangent axis, signed bank distance, spacing, count, and
+ * priority are all manifest-owned; filenames and pixels remain inert. */
+export async function loadRegionalQuayDetailKit(
+  manifestPath: string,
+): Promise<RegionalQuayDetailKit> {
+  const absoluteManifest = path.resolve(manifestPath);
+  const manifestDirectory = path.dirname(absoluteManifest);
+  const raw = JSON.parse(await fs.promises.readFile(absoluteManifest, 'utf8')) as unknown;
+  if (!isRecord(raw) || raw.version !== 1 || !Number.isInteger(raw.sourceTileSize) ||
+      !Number.isInteger(raw.blockSize) || typeof raw.density !== 'number' ||
+      !Array.isArray(raw.assets)) {
+    throw new Error(`Invalid regional quay-detail manifest: ${absoluteManifest}`);
+  }
+  const sourceTileSize = Number(raw.sourceTileSize);
+  const blockSize = Number(raw.blockSize);
+  const density = Number(raw.density);
+  if (sourceTileSize < 16 || sourceTileSize > 192 || blockSize < 16 || blockSize > 128 ||
+      density < 0 || density > 1) {
+    throw new Error(`Regional quay-detail dimensions are invalid: ${absoluteManifest}`);
+  }
+  const entries = raw.assets.map((value, index) => parseQuayDetailEntry(value, index));
+  const ids = new Set(entries.map((entry) => entry.id));
+  if (entries.length === 0 || ids.size !== entries.length) {
+    throw new Error('Regional quay-detail manifest must contain unique assets');
+  }
+  const assets: RegionalQuayDetailAsset[] = [];
+  for (const entry of entries) {
+    assets.push({
+      id: entry.id,
+      families: [entry.family],
+      role: entry.role,
+      surface: entry.surface,
+      waterwayAxis: entry.waterwayAxis,
+      bankDistance: entry.bankDistance,
+      progressRange: entry.progressRange,
+      minimumFamilyWeight: entry.minimumFamilyWeight,
+      minimumSpacing: entry.minimumSpacing,
+      maximumPerLandmark: entry.maximumPerLandmark,
+      placementPriority: entry.placementPriority,
+      collision: entry.collision,
+      emitsLight: entry.emitsLight,
+      sprite: await loadRegionalSprite(
+        resolveAssetPath(manifestDirectory, entry.file),
+        sourceTileSize,
+        entry.scale,
+        entry.spriteTiles,
+      ),
+    });
+  }
+  return { manifestPath: absoluteManifest, sourceTileSize, blockSize, density, assets };
 }
 
 /** Load paired, genuinely authored route-contact axes. Orientation is manifest
@@ -821,6 +906,45 @@ function parseCivicDetailEntry(value: unknown, index: number): CivicDetailEntry 
   };
 }
 
+function parseQuayDetailEntry(value: unknown, index: number): QuayDetailEntry {
+  if (!isRecord(value) || typeof value.id !== 'string' || typeof value.file !== 'string' ||
+      !BIOME_FAMILIES.includes(value.family as BiomeFamily) || value.role !== 'quay-detail' ||
+      !QUAY_DETAIL_SURFACES.includes(value.surface as RegionalQuayDetailSurface) ||
+      !QUAY_DETAIL_AXES.includes(value.waterwayAxis as RegionalQuayDetailAxis) ||
+      !isSignedRange(value.bankDistance, 8) || !isUnitRange(value.progressRange) ||
+      typeof value.minimumFamilyWeight !== 'number' || value.minimumFamilyWeight < 0 ||
+      value.minimumFamilyWeight > 1 || typeof value.minimumSpacing !== 'number' ||
+      value.minimumSpacing < 0 || value.minimumSpacing > 64 ||
+      typeof value.maximumPerLandmark !== 'number' ||
+      !Number.isInteger(value.maximumPerLandmark) || value.maximumPerLandmark < 1 ||
+      value.maximumPerLandmark > 8 || typeof value.placementPriority !== 'number' ||
+      value.placementPriority < 0 || value.placementPriority > 1 ||
+      typeof value.scale !== 'number' || value.scale < 0.2 || value.scale > 1 ||
+      !isTileDimensions(value.spriteTiles) || !Array.isArray(value.collision) ||
+      value.collision.length === 0 || !value.collision.every(isCollisionOffset) ||
+      (value.emitsLight !== undefined && typeof value.emitsLight !== 'boolean')) {
+    throw new Error(`Invalid regional quay-detail entry at index ${index}`);
+  }
+  return {
+    id: value.id,
+    file: value.file,
+    family: value.family as BiomeFamily,
+    role: 'quay-detail',
+    surface: value.surface as RegionalQuayDetailSurface,
+    waterwayAxis: value.waterwayAxis as RegionalQuayDetailAxis,
+    bankDistance: value.bankDistance as [number, number],
+    progressRange: value.progressRange as [number, number],
+    minimumFamilyWeight: value.minimumFamilyWeight,
+    minimumSpacing: value.minimumSpacing,
+    maximumPerLandmark: value.maximumPerLandmark,
+    placementPriority: value.placementPriority,
+    scale: value.scale,
+    spriteTiles: value.spriteTiles as [number, number],
+    collision: value.collision as Array<[number, number]>,
+    emitsLight: value.emitsLight as boolean | undefined,
+  };
+}
+
 function parseRouteContactEntry(value: unknown, index: number): RouteContactEntry {
   const ambient = parseAmbientEntry(value, index);
   if (!isRecord(value) || !ROUTE_CONTACT_AXES.includes(value.accessAxis as RegionalRouteContactAxis) ||
@@ -1138,6 +1262,18 @@ function isNumericRange(value: unknown, maximum: number): value is [number, numb
   return Array.isArray(value) && value.length === 2 &&
     value.every((part) => typeof part === 'number' && Number.isFinite(part) && part >= 0 && part <= maximum) &&
     value[1]! >= value[0]!;
+}
+
+function isSignedRange(value: unknown, maximumMagnitude: number): value is [number, number] {
+  return Array.isArray(value) && value.length === 2 &&
+    value.every((part) => typeof part === 'number' && Number.isFinite(part) &&
+      Math.abs(part) <= maximumMagnitude) && value[1]! >= value[0]!;
+}
+
+function isUnitRange(value: unknown): value is [number, number] {
+  return Array.isArray(value) && value.length === 2 &&
+    value.every((part) => typeof part === 'number' && Number.isFinite(part) &&
+      part >= 0 && part <= 1) && value[1]! >= value[0]!;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

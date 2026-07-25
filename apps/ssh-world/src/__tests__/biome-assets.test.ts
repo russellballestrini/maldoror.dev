@@ -8,6 +8,7 @@ import {
   loadRegionalEnvironmentContactKit,
   loadRegionalLandmarkKit,
   loadRegionalParcelComponentKit,
+  loadRegionalQuayDetailKit,
   loadRegionalRouteMaterialKit,
   loadRegionalRouteContactKit,
 } from '../game/biome-assets.js';
@@ -140,6 +141,40 @@ describe('regional biome material manifest', () => {
     for (const asset of kit.assets) {
       const alpha = spriteAlphaValues(asset.sprite);
       expect(alpha.some((value) => value === 0)).toBe(true);
+      expect(alpha.some((value) => value > 0 && value < 255)).toBe(true);
+    }
+  });
+
+  it('loads semantic quay life with explicit waterway and physical-surface contracts', async () => {
+    const kit = await loadRegionalQuayDetailKit(
+      path.resolve('assets/biomes/quay-details-manifest.json'),
+    );
+    expect(kit.sourceTileSize).toBe(48);
+    expect(kit.blockSize).toBe(32);
+    expect(kit.density).toBeCloseTo(0.94);
+    expect(kit.assets).toHaveLength(6);
+    expect(new Set(kit.assets.map((asset) => asset.surface)))
+      .toEqual(new Set(['water', 'quay']));
+    expect(new Set(kit.assets.map((asset) => asset.waterwayAxis)))
+      .toEqual(new Set(['east-west', 'north-south', 'any']));
+    expect(kit.assets.filter((asset) => asset.surface === 'water')).toHaveLength(3);
+    expect(kit.assets.filter((asset) => asset.surface === 'quay')).toHaveLength(3);
+    expect(kit.assets.every((asset) => (
+      asset.role === 'quay-detail' && asset.families[0] === 'canal-town' &&
+      asset.minimumFamilyWeight >= 0.15 && asset.minimumSpacing >= 4.5 &&
+      asset.maximumPerLandmark >= 1 && asset.maximumPerLandmark <= 2 &&
+      asset.progressRange[0] >= 0 && asset.progressRange[1] <= 1 &&
+      asset.bankDistance[1] >= asset.bankDistance[0] && asset.collision.length > 0
+    ))).toBe(true);
+    expect(kit.assets.every((asset) => (
+      asset.surface === 'water'
+        ? asset.bankDistance[1] < 0
+        : asset.bankDistance[0] > 0
+    ))).toBe(true);
+    for (const asset of kit.assets) {
+      const alpha = spriteAlphaValues(asset.sprite);
+      expect(alpha.some((value) => value === 0)).toBe(true);
+      expect(alpha.some((value) => value > 0)).toBe(true);
       expect(alpha.some((value) => value > 0 && value < 255)).toBe(true);
     }
   });

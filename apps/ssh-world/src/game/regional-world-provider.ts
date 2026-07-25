@@ -16,6 +16,7 @@ import {
   loadRegionalEnvironmentContactKit,
   loadRegionalLandmarkKit,
   loadRegionalParcelComponentKit,
+  loadRegionalQuayDetailKit,
   loadRegionalRouteContactKit,
   loadRegionalRouteMaterialKit,
 } from './biome-assets.js';
@@ -26,6 +27,7 @@ export interface RegionalWorldAssetPaths {
   landmarks: string;
   ambient: string;
   civicDetails: string;
+  quayDetails: string;
   routeContacts: string;
   parcelComponents: string;
   environmentContacts: string;
@@ -69,6 +71,7 @@ export function defaultRegionalWorldAssetPaths(rootOverride?: string): RegionalW
     landmarks: path.join(root, 'assets/biomes/landmarks-manifest.json'),
     ambient: path.join(root, 'assets/biomes/ambient-manifest.json'),
     civicDetails: path.join(root, 'assets/biomes/civic-details-manifest.json'),
+    quayDetails: path.join(root, 'assets/biomes/quay-details-manifest.json'),
     routeContacts: path.join(root, 'assets/biomes/route-contacts-manifest.json'),
     parcelComponents: path.join(root, 'assets/biomes/parcel-components-manifest.json'),
     environmentContacts: path.join(root, 'assets/biomes/environment-contacts-manifest.json'),
@@ -88,6 +91,7 @@ export async function loadRegionalWorldKit(
     landmarkKit,
     ambientKit,
     civicDetailKit,
+    quayDetailKit,
     routeContactKit,
     parcelKit,
     environmentKit,
@@ -97,6 +101,7 @@ export async function loadRegionalWorldKit(
     loadRegionalLandmarkKit(options.assets.landmarks),
     loadRegionalAmbientKit(options.assets.ambient),
     loadRegionalCivicDetailKit(options.assets.civicDetails),
+    loadRegionalQuayDetailKit(options.assets.quayDetails),
     loadRegionalRouteContactKit(options.assets.routeContacts),
     loadRegionalParcelComponentKit(options.assets.parcelComponents),
     loadRegionalEnvironmentContactKit(options.assets.environmentContacts),
@@ -146,6 +151,7 @@ export async function loadRegionalWorldKit(
       landmarks: landmarkKit.assets,
       ambient: ambientKit.assets,
       civicDetails: civicDetailKit.assets,
+      quayDetails: quayDetailKit.assets,
       routeContacts: routeContactKit.assets,
       parcelComponents: parcelKit.assets,
       environmentContacts: environmentKit.assets,
@@ -156,6 +162,7 @@ export async function loadRegionalWorldKit(
       ambientLandmarkClearance: ambientKit.landmarkClearance,
       civicDetailCellSize: civicDetailKit.cellSize,
       civicDetailDensity: civicDetailKit.density,
+      quayDetailDensity: quayDetailKit.density,
       quayEdgeVariation: CANAL_TOWN_QUAY_EDGE_VARIATION,
       routeContactCellSize: routeContactKit.cellSize,
       routeContactDensity: routeContactKit.density,
