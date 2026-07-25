@@ -209,11 +209,10 @@ describe('RegionalMaterialCompositor', () => {
   it('lays walkable bridge material over water but leaves ferries as water', () => {
     const bridge = routedCompositor({ sample: () => routeSample('local-road', 'bridge') }).getTile(0, 0);
     const bridgeCentre = bridge.pixels[4]![4]!;
-    expect(Math.hypot(
-      bridgeCentre.r - 210,
-      bridgeCentre.g - 195,
-      bridgeCentre.b - 170,
-    )).toBeLessThan(6);
+    expect(bridgeCentre.r).toBeGreaterThan(210);
+    expect(bridgeCentre.g).toBeGreaterThanOrEqual(195);
+    expect(bridgeCentre.b).toBeGreaterThanOrEqual(170);
+    expect(bridgeCentre.r - bridgeCentre.b).toBeGreaterThan(30);
     expect(bridge.materialMask?.[4]?.[4]).toBe(0);
     expect(bridge.walkable).toBe(true);
 

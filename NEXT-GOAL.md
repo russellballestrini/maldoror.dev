@@ -371,7 +371,7 @@ research area, linked from this file:
 9. production deployment commit and rollback procedure;
 10. explicit physical-Ghostty operator acceptance.
 
-## Execution ledger — 2026-07-24 (not completion)
+## Execution ledger — 2026-07-24–25 (not completion)
 
 Completed foundations:
 
@@ -897,6 +897,28 @@ Completed foundations:
   / 231 tests, 18/18 typecheck tasks, 12/12 build tasks, 7/7 configured lint
   tasks, and clean diff validation. Production remains `vb07c0d4`; no image
   generation or metered model call was used;
+- the V42-V44 composition ladder corrects the V41 origin's missing water and
+  circulation hierarchy at the world-model level. A bounded curved arrival
+  canal now participates in the same signed hydrology distance used by full
+  terrain and physical collision; the route solver therefore creates a real
+  bridge while exact `(0,0)` stays dry. V42's terminal basin is retained as a
+  rejection because the route went around its end. V43 selects the extended
+  physical canal and crossing; V44 adds contextual authored limestone to strong
+  canal-town streets and a restrained linear-light lift to bridge timber. The
+  faithful 160x46 source-build SSH subset retains 798,387 raw bytes and 75
+  synchronized frames across walking/district/regional views, with every
+  position, zoom, and OCTANT assertion passing. This is a selected composition
+  sub-gate only: overview water is still dull/blocky, the bridge is too large
+  and orthogonal, the centre is sparse, continuous usable quays and dense
+  secondary waterfront frontage are absent, and physical Ghostty acceptance is
+  still unperformed. Full verification is 42 files / 232 tests, 18/18
+  typecheck tasks, 12/12 build tasks, and 7/7 configured lint tasks. Fresh
+  readiness is 10.833 seconds, worker RSS reaches about 548 MiB after capture,
+  and coordinator heap warnings reach 87%, so Gate D also remains open.
+  Evidence is in
+  `track-6-acceptance-atlas/composition-hierarchy-v44-real-ssh-canal-civic-material/FINDINGS.md`.
+  Production remains `vb07c0d4`; no image generation or metered model call was
+  used;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
@@ -946,7 +968,11 @@ Still open and therefore goal-blocking:
   remains visually short of acceptance until approach wear, longer-span and
   topology-specific support vocabularies, crossing-family diversity, and the
   surrounding coast-composition failures close, followed by the fresh full
-  atlas.
+  atlas. V44's bounded arrival canal and civic material correction is likewise
+  only a selected sub-gate: it still needs continuous physically usable paired
+  quays, a coherent waterfront parcel program, bridge silhouette/support
+  refinement, denser secondary frontage and props, and richer overview-water
+  reconstruction before a fresh full-atlas recapture can attempt Gate A.
   Fresh post-correction deterministic traversal, the 30-minute terminal run,
   deployed-service/cgroup audit, and physical Ghostty acceptance also remain
   open.

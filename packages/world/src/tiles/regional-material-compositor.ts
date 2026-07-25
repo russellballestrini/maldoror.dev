@@ -1184,6 +1184,51 @@ export class RegionalMaterialCompositor {
               );
             }
           }
+          // Constructed streets inside a strong canal-town fabric should read
+          // as part of that place rather than as the same dark earth ribbon
+          // used between settlements. Borrow a restrained amount of the
+          // authored limestone vocabulary for local roads and arterials. The
+          // continuous route SDF still owns geometry and collision, while the
+          // biome field owns where this contextual material is eligible.
+          const civicStreetWeight = visualCrossingKind === null &&
+              routeLayer.sample.routeKind !== 'trail'
+            ? townConstruction * (size <= 8 ? 0.24 : 0.38)
+            : 0;
+          if (civicStreetWeight > 0.0001 && quayTextures) {
+            this.sampleTextureField(
+              quayTextures,
+              worldX,
+              worldY,
+              0x6ad3,
+              size <= 8 ? textureScaleTiles : 1.6,
+              size,
+              quayTexture,
+              this.variantPeriodTiles,
+              false,
+            );
+            for (let channel = 0; channel < 3; channel++) {
+              routeTexture[channel] = lerp(
+                routeTexture[channel]!,
+                quayTexture[channel]!,
+                civicStreetWeight,
+              );
+            }
+          }
+          // Preserve timber identity but lift it out of the road shadow band.
+          // The values are linear-light channel lifts, deliberately warmer at
+          // walking scale and quieter in overview LODs.
+          if (isBridge) {
+            const timberLift = size <= 8
+              ? [0.022, 0.012, 0.003]
+              : [0.055, 0.03, 0.008];
+            for (let channel = 0; channel < 3; channel++) {
+              routeTexture[channel] = Math.min(
+                1,
+                routeTexture[channel]! * (channel === 0 ? 1.08 : channel === 1 ? 1.05 : 1.02) +
+                  timberLift[channel]!,
+              );
+            }
+          }
           const crossingOpacity = visualCrossingKind === 'ford' ? 0.48 : 1;
           const crossingAuthoredOpacity = surfaceStyle
             ? (size <= 8 ? surfaceStyle.overviewOpacity : surfaceStyle.detailOpacity)

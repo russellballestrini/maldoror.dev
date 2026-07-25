@@ -20,6 +20,28 @@ describe('BiomeWorldField', () => {
     }
   });
 
+  it('continues the western hydrology into a bounded arrival canal while keeping spawn dry', () => {
+    const field = new BiomeWorldField(WORLD_SEED, { blockSize: 16, maxCachedBlocks: 8 });
+    expect(field.sample(0, 0).isWater).toBe(false);
+    expect(field.samplePhysical(0, 0).isWater).toBe(false);
+
+    for (const [x, y] of [[-20, -6], [-10, -5], [0, -5], [10, -6], [36, -9]]) {
+      const full = field.sample(x!, y!);
+      const physical = field.samplePhysical(x!, y!);
+      expect(full.isWater).toBe(true);
+      expect(physical.isWater).toBe(true);
+      expect(physical.waterDistance).toBe(0);
+      if (x! >= -10) {
+        expect(full.isRiver).toBe(true);
+        expect(physical.isRiver).toBe(true);
+      }
+    }
+
+    for (const [x, y] of [[-4, 0], [0, 1], [17, -2], [42, -9]]) {
+      expect(field.sample(x!, y!).isWater).toBe(false);
+    }
+  });
+
   it('is exactly independent of internal cache-block boundaries', () => {
     const fine = new BiomeWorldField(WORLD_SEED, { blockSize: 16, maxCachedBlocks: 8 });
     const coarse = new BiomeWorldField(WORLD_SEED, { blockSize: 32, maxCachedBlocks: 8 });

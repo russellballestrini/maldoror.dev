@@ -148,7 +148,11 @@ export class BiomeWorldField {
       Math.abs(this.elevationAt(tileX - 1, tileY) - this.elevationAt(tileX + 1, tileY)) / 2,
       Math.abs(this.elevationAt(tileX, tileY - 1) - this.elevationAt(tileX, tileY + 1)) / 2,
     );
-    const riverDistance = this.distanceToRiver(tileX, tileY, this.riverSegmentsAt(tileX, tileY));
+    const riverDistance = this.distanceToHydrology(
+      tileX,
+      tileY,
+      this.riverSegmentsAt(tileX, tileY),
+    );
     const coastDistance = elevation <= this.seaLevel
       ? 0
       : (elevation - this.seaLevel) / Math.max(0.0025, slope);
@@ -297,7 +301,7 @@ export class BiomeWorldField {
           Math.abs(this.elevationAt(worldX - 1, worldY) - this.elevationAt(worldX + 1, worldY)) / 2,
           Math.abs(this.elevationAt(worldX, worldY - 1) - this.elevationAt(worldX, worldY + 1)) / 2,
         );
-        const riverDistance = this.distanceToRiver(worldX, worldY, segments);
+        const riverDistance = this.distanceToHydrology(worldX, worldY, segments);
         const coastDistance = elevationHere <= this.seaLevel
           ? 0
           : (elevationHere - this.seaLevel) / Math.max(0.0025, slopeHere);
@@ -497,6 +501,58 @@ export class BiomeWorldField {
         previousX = x;
         previousY = y;
       }
+    }
+    return nearest;
+  }
+
+  /** Fold the singular arrival's constructed inlet into the same signed
+   * hydrology answer as natural rivers. The western coast already reaches the
+   * district edge; this bounded canal continues that water into the civic
+   * fabric, bends around the dry spawn, and terminates in a working basin.
+   * Terrain, route solving, collision, crossing classification, and rendering
+   * therefore agree that it is water instead of treating it as decoration. */
+  private distanceToHydrology(
+    worldX: number,
+    worldY: number,
+    segments: RiverSegment[],
+  ): number {
+    return Math.min(
+      this.distanceToRiver(worldX, worldY, segments),
+      this.distanceToArrivalCanal(worldX, worldY),
+    );
+  }
+
+  /** Signed distance to a finite quadratic canal centreline. A varying width
+   * creates a narrow neck at the sea, a readable route crossing, and a rounder
+   * terminal basin without a rectangular stamp or coordinate-grid seam. */
+  private distanceToArrivalCanal(worldX: number, worldY: number): number {
+    if (worldX < -28 || worldX > 42 || worldY < -16 || worldY > 2) {
+      return Number.POSITIVE_INFINITY;
+    }
+    const startX = -24;
+    const startY = -7;
+    const controlX = -4;
+    const controlY = -2.8;
+    const endX = 36;
+    const endY = -9;
+    let nearest = Number.POSITIVE_INFINITY;
+    let previousX = startX;
+    let previousY = startY;
+    let previousWidth = 2.18;
+    for (let step = 1; step <= 32; step++) {
+      const t = step / 32;
+      const inverse = 1 - t;
+      const x = inverse * inverse * startX + 2 * inverse * t * controlX + t * t * endX;
+      const y = inverse * inverse * startY + 2 * inverse * t * controlY + t * t * endY;
+      const width = 2.18 + Math.sin(Math.PI * t) * 0.34 + smoothstep(0.78, 1, t) * 0.54;
+      nearest = Math.min(
+        nearest,
+        segmentDistance(worldX, worldY, previousX, previousY, x, y) -
+          (previousWidth + width) / 2,
+      );
+      previousX = x;
+      previousY = y;
+      previousWidth = width;
     }
     return nearest;
   }

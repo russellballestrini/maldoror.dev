@@ -77,7 +77,7 @@ describe('RegionalRouteField', () => {
     expect(beyondArrivalEndpoint.signedDistance).toBe(Number.POSITIVE_INFINITY);
     expect(beyondArrivalEndpoint.isRoute).toBe(false);
 
-    for (const [x, y] of [[0, -8], [2, -6], [4, 4], [8, 8]]) {
+    for (const [x, y] of [[0, -8], [1, -6], [4, 4], [8, 8]]) {
       const sample = routes.sample(x!, y!);
       expect(Number.isFinite(sample.distance)).toBe(true);
       expect(Math.abs(sample.signedDistance)).toBeCloseTo(sample.distance, 5);
