@@ -1490,6 +1490,33 @@ Completed foundations:
   remains `vb07c0d4` with main PID `1022033`, worker PID `1022180`, and the same
   start timestamp; there was no deploy, service restart, push, production
   database write, complete-gate claim, or physical Ghostty claim;
+- V156 completes a fresh current-source run of the unchanged 144-capture Gate A
+  matrix after V49--V155. One owned scratch database and loopback-only real SSH
+  lane retain 24 predetermined walkable sites, all six families and six
+  transitions, walking/district/regional zooms, two Ghostty-class viewports,
+  and day-clear/night-clear/day-rain/night-storm. All 144 raw streams, 144
+  faithful replays, 30 contact sheets, and 288 raw/image hashes validate; the
+  run contains 3,588 synchronized frames and 63,239,496 raw bytes. Capture
+  duration is 5.926/13.994/15.745/16.381 s p50/p95/p99/max. Direct inspection
+  of all six complete all-environment sheets against `TARGET.png` nevertheless
+  **rejects Gate A**. V155 materially improves walking-scale painterly detail,
+  V153 removes uniform icon wallpaper, broad boundaries remain soft, and the
+  exact origin now reads as a real paired-quay canal place. Those improvements
+  do not generalise: most other sites are attractive but empty material fields
+  with isolated silhouettes; district and regional views collapse toward the
+  same under-authored macro image; routes lack surrounding thresholds and
+  frontage; waterfront success remains local; weather flattens family identity;
+  and night-storm still compresses sparse sites toward a common near-black
+  field. Eleven animated-weather captures also settle below the requested 25
+  synchronized frames (minimum 18), retained as an explicit timing caveat.
+  Full matrices, ledgers, hashes, sheets, startup observations, direct-review
+  findings, and the next composition requirement are retained in
+  `track-6-acceptance-atlas/acceptance-atlas-v4-current-source/FINDINGS.md`.
+  No image generation or metered model call was used. This is audit completion,
+  not visual acceptance: Gate A, Gate C, sustained/deployed Gate D, deployment,
+  and explicit physical Ghostty acceptance remain open. Production remains
+  `vb07c0d4`; there was no deploy, service restart, push, production database
+  write, complete-gate claim, or physical Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
