@@ -302,6 +302,11 @@ export type RegionalPreparedViewportPayload =
   | RegionalPreparedViewport
   | RegionalPackedPreparedViewport;
 
+export type RegionalAmbientDistributionProfile =
+  | 'uniform-blue-noise'
+  | 'density-field-blue-noise'
+  | 'cluster-field-blue-noise';
+
 export interface RegionalWorldTileProviderConfig extends TileProviderConfig {
   field: RegionalWorldBiomeSampler;
   routes: RegionalWorldRouteSampler;
@@ -317,6 +322,10 @@ export interface RegionalWorldTileProviderConfig extends TileProviderConfig {
   maxCachedBlocks?: number;
   ambientCellSize?: number;
   ambientDensity?: number;
+  /** Family-neutral macro distribution layered above the local blue-noise-like
+   * priority thinning. Research can compare profiles without changing asset,
+   * terrain, route, collision, or cache semantics. */
+  ambientDistributionProfile?: RegionalAmbientDistributionProfile;
   ambientLandmarkClearance?: number;
   civicDetailCellSize?: number;
   civicDetailDensity?: number;
@@ -536,6 +545,7 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly maxCachedBlocks: number;
   private readonly ambientCellSize: number;
   private readonly ambientDensity: number;
+  private readonly ambientDistributionProfile: RegionalAmbientDistributionProfile;
   private readonly ambientLandmarkClearance: number;
   private readonly civicDetailCellSize: number;
   private readonly civicDetailDensity: number;
@@ -601,6 +611,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     this.maxCachedBlocks = Math.max(9, config.maxCachedBlocks ?? 64);
     this.ambientCellSize = Math.max(3, config.ambientCellSize ?? 4);
     this.ambientDensity = Math.max(0, Math.min(1, config.ambientDensity ?? 0.86));
+    this.ambientDistributionProfile = config.ambientDistributionProfile ?? 'uniform-blue-noise';
     this.ambientLandmarkClearance = Math.max(4, config.ambientLandmarkClearance ?? 9);
     this.civicDetailCellSize = Math.max(1, Math.min(12, config.civicDetailCellSize ?? 1));
     this.civicDetailDensity = Math.max(0, Math.min(1, config.civicDetailDensity ?? 0.92));
@@ -1425,6 +1436,7 @@ export class RegionalWorldTileProvider extends TileProvider {
   getRegionalStats(): {
     landmarkAssets: number;
     ambientAssets: number;
+    ambientDistributionProfile: RegionalAmbientDistributionProfile;
     civicDetailAssets: number;
     quayDetailAssets: number;
     environmentContactAssets: number;
@@ -1463,6 +1475,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     return {
       landmarkAssets: this.landmarks.length,
       ambientAssets: this.ambient.length,
+      ambientDistributionProfile: this.ambientDistributionProfile,
       civicDetailAssets: this.civicDetails.length,
       quayDetailAssets: this.quayDetails.length,
       environmentContactAssets: this.environmentContacts.length,
@@ -3490,7 +3503,8 @@ export class RegionalWorldTileProvider extends TileProvider {
         if (candidate.x < originX || candidate.x >= originX + this.blockSize ||
             candidate.y < originY || candidate.y >= originY + this.blockSize ||
             !this.isAmbientPriorityMaximum(cellX, cellY) ||
-            this.hashUnit(cellX, cellY, 0x4d17) > this.ambientDensity) continue;
+            this.hashUnit(cellX, cellY, 0x4d17) > this.ambientDensity *
+              this.ambientDistributionWeight(candidate.x, candidate.y)) continue;
         const route = this.routes.sample(candidate.x, candidate.y);
         if (route.landmarkDistance < this.ambientLandmarkClearance) continue;
         const biome = this.field.sample(candidate.x, candidate.y);
@@ -4216,6 +4230,68 @@ export class RegionalWorldTileProvider extends TileProvider {
     return true;
   }
 
+  /** Macro density is a separate deterministic layer above local repulsion.
+   * Uniform preserves the historical control. Density-field follows an
+   * adaptive intensity map; cluster-field first defines active regions, then
+   * lets the same priority thinning place physically eligible samples inside them. */
+  private ambientDistributionWeight(worldX: number, worldY: number): number {
+    switch (this.ambientDistributionProfile) {
+      case 'uniform-blue-noise':
+        return 1;
+      case 'density-field-blue-noise': {
+        const value = this.ambientDensityField(worldX, worldY, 48, 0x35b9);
+        return 0.18 + smoothUnit(value) * 0.82;
+      }
+      case 'cluster-field-blue-noise': {
+        const cellSize = 48;
+        const cellX = floorDiv(Math.floor(worldX), cellSize);
+        const cellY = floorDiv(Math.floor(worldY), cellSize);
+        let influence = 0;
+        for (let offsetY = -1; offsetY <= 1; offsetY++) {
+          for (let offsetX = -1; offsetX <= 1; offsetX++) {
+            const clusterX = cellX + offsetX;
+            const clusterY = cellY + offsetY;
+            const centreX = (clusterX + 0.12 + this.hashUnit(clusterX, clusterY, 0x6f13) * 0.76) *
+              cellSize;
+            const centreY = (clusterY + 0.12 + this.hashUnit(clusterX, clusterY, 0x29d7) * 0.76) *
+              cellSize;
+            const radius = cellSize * (
+              0.34 + this.hashUnit(clusterX, clusterY, 0x4ca1) * 0.2
+            );
+            const proximity = Math.max(0, 1 - Math.hypot(worldX - centreX, worldY - centreY) /
+              radius);
+            const strength = 0.7 + this.hashUnit(clusterX, clusterY, 0x7b45) * 0.3;
+            influence = Math.max(influence, smoothUnit(proximity) * strength);
+          }
+        }
+        return 0.2 + Math.sqrt(influence) * 0.8;
+      }
+    }
+  }
+
+  private ambientDensityField(
+    worldX: number,
+    worldY: number,
+    scale: number,
+    salt: number,
+  ): number {
+    const cellX = floorDiv(Math.floor(worldX), scale);
+    const cellY = floorDiv(Math.floor(worldY), scale);
+    const localX = smoothUnit((worldX - cellX * scale) / scale);
+    const localY = smoothUnit((worldY - cellY * scale) / scale);
+    const north = linearMix(
+      this.hashUnit(cellX, cellY, salt),
+      this.hashUnit(cellX + 1, cellY, salt),
+      localX,
+    );
+    const south = linearMix(
+      this.hashUnit(cellX, cellY + 1, salt),
+      this.hashUnit(cellX + 1, cellY + 1, salt),
+      localX,
+    );
+    return linearMix(north, south, localY);
+  }
+
   private selectAmbientAsset(
     worldX: number,
     worldY: number,
@@ -4559,6 +4635,15 @@ function validatePreparedCoordinate(
 
 function floorDiv(value: number, divisor: number): number {
   return Math.floor(value / divisor);
+}
+
+function smoothUnit(value: number): number {
+  const bounded = Math.max(0, Math.min(1, value));
+  return bounded * bounded * (3 - 2 * bounded);
+}
+
+function linearMix(from: number, to: number, amount: number): number {
+  return from + (to - from) * amount;
 }
 
 function positiveMod(value: number, divisor: number): number {

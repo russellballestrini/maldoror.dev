@@ -1237,6 +1237,32 @@ Completed foundations:
   deployment, or physical Ghostty acceptance. Production remains `vb07c0d4`;
   there was no deploy, service restart, push, complete-gate claim, or physical
   Ghostty claim;
+- V148 addresses the shared mountain/ruins ambient-wallpaper failure with a
+  family-neutral hierarchy above the existing deterministic local priority
+  thinning. Three faithful provider profiles remain switchable and retained:
+  the historical uniform control, a smooth 48-tile density field, and a
+  jittered 48-tile cluster field with variable radius/strength. Two aligned
+  approximately 384-tile audits show the selected cluster profile raising
+  macro-cell count variation from 0.5758 to 0.7851 in mountain and from 0.4107
+  to 0.6001 in ruins, while median nearest-anchor separation rises from 10.198
+  to 11.402 and 10.440 to 11.705 tiles respectively. Direct review of all six
+  faithful regional frames rejects uniform wallpaper and the broadly even
+  density fade; the cluster field creates deliberate clearings and
+  concentrations around unchanged authored terrain/routes. A single typed
+  production constant now drives session creation plus the landmark and
+  traversal labs, and unoverridden selected-production captures reproduce the
+  explicit cluster captures byte-for-byte at both sites. Regression coverage
+  proves all three profiles exact across 32- and 47-tile block sizes over
+  signed coordinates with no duplicate anchors. Research, raw metrics,
+  selected and rejected captures, primary-source links, and hashes are in
+  `track-4-world-composition/ambient-hierarchy-v148-three-profile/FINDINGS.md`.
+  Repository verification passes 44 files / 252 tests, 18/18 typecheck tasks,
+  12/12 build tasks, 7/7 configured lint tasks, and `git diff --check`. This
+  closes uniform macro density, not the limited ambient silhouette vocabulary,
+  mountain ridges, ruins walls/courtyards, living actors, fresh full-atlas
+  proof, sustained Gate D, deployment, or physical Ghostty acceptance.
+  Production remains `vb07c0d4`; there was no deploy, service restart, push,
+  complete-gate claim, or physical Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without

@@ -15,6 +15,9 @@ import {
   loadRegionalRouteContactKit,
 } from '../../apps/ssh-world/dist/game/biome-assets.js';
 import {
+  REGIONAL_AMBIENT_DISTRIBUTION_PROFILE,
+} from '../../apps/ssh-world/dist/game/regional-world-provider.js';
+import {
   BIOME_FAMILIES,
   BiomeWorldField,
   CANAL_TOWN_ARRIVAL_CIVIC_BRANCHES,
@@ -38,6 +41,16 @@ const WORLD_SEED = BigInt(process.env.MALDOROR_WORLD_SEED ?? '8801799478018485')
 const WIDTH = 320;
 const HEIGHT = 176;
 const FRAME_FILTER = process.env.MALDOROR_REGIONAL_LANDMARK_FRAME;
+const AMBIENT_DISTRIBUTION_PROFILE =
+  process.env.MALDOROR_AMBIENT_DISTRIBUTION_PROFILE ??
+  REGIONAL_AMBIENT_DISTRIBUTION_PROFILE;
+if (![
+  'uniform-blue-noise',
+  'density-field-blue-noise',
+  'cluster-field-blue-noise',
+].includes(AMBIENT_DISTRIBUTION_PROFILE)) {
+  throw new Error(`Unknown ambient distribution profile: ${AMBIENT_DISTRIBUTION_PROFILE}`);
+}
 const INFRASTRUCTURE_PROFILE_NAME = process.env.MALDOROR_INFRASTRUCTURE_PROFILE ?? 'production';
 const WATER_PROFILE_NAME = process.env.MALDOROR_WATER_PROFILE ?? 'production';
 const CIVIC_DETAIL_PROFILE_NAME = process.env.MALDOROR_CIVIC_DETAIL_PROFILE ?? 'production';
@@ -325,6 +338,7 @@ const world = new RegionalWorldTileProvider({
   maxCachedBlocks: 64,
   ambientCellSize: ambientKit.cellSize,
   ambientDensity: ambientKit.density,
+  ambientDistributionProfile: AMBIENT_DISTRIBUTION_PROFILE,
   ambientLandmarkClearance: ambientKit.landmarkClearance,
   civicDetailCellSize: civicDetailKit.cellSize,
   civicDetailDensity: CIVIC_DETAIL_PROFILE.enabled ? civicDetailKit.density : 0,
@@ -1124,6 +1138,8 @@ function walkableCellsConnected(cells) {
 
 const metrics = {
   worldSeed: String(WORLD_SEED),
+  ambientDistributionProfile: AMBIENT_DISTRIBUTION_PROFILE,
+  ambientDistributionAudit: auditAmbientDistribution(FRAMES[0].centre),
   infrastructureProfile: INFRASTRUCTURE_PROFILE_NAME,
   infrastructureVisualProfile: INFRASTRUCTURE_PROFILE,
   waterProfile: WATER_PROFILE_NAME,
@@ -1209,6 +1225,66 @@ for (const frame of FRAMES) {
 }
 fs.writeFileSync(path.join(OUTPUT, 'metrics.json'), `${JSON.stringify(metrics, null, 2)}\n`);
 console.log(JSON.stringify({ output: OUTPUT, ...metrics }, null, 2));
+
+function auditAmbientDistribution(centre) {
+  const macroCellSize = 48;
+  const radius = 192;
+  const minCellX = Math.floor((centre[0] - radius) / macroCellSize);
+  const minCellY = Math.floor((centre[1] - radius) / macroCellSize);
+  const maxCellX = Math.floor((centre[0] + radius - 1) / macroCellSize);
+  const maxCellY = Math.floor((centre[1] + radius - 1) / macroCellSize);
+  const bounds = [
+    minCellX * macroCellSize,
+    minCellY * macroCellSize,
+    (maxCellX + 1) * macroCellSize - 1,
+    (maxCellY + 1) * macroCellSize - 1,
+  ];
+  const placements = world.getAmbientPlacementsInBounds(...bounds);
+  const counts = [];
+  for (let cellY = minCellY; cellY <= maxCellY; cellY++) {
+    for (let cellX = minCellX; cellX <= maxCellX; cellX++) {
+      counts.push(placements.filter((placement) => (
+        Math.floor(placement.anchorX / macroCellSize) === cellX &&
+        Math.floor(placement.anchorY / macroCellSize) === cellY
+      )).length);
+    }
+  }
+  const mean = counts.reduce((sum, count) => sum + count, 0) / counts.length;
+  const standardDeviation = Math.sqrt(counts.reduce((sum, count) => (
+    sum + (count - mean) ** 2
+  ), 0) / counts.length);
+  const nearestDistances = placements.map((placement, index) => {
+    let nearest = Number.POSITIVE_INFINITY;
+    for (let candidateIndex = 0; candidateIndex < placements.length; candidateIndex++) {
+      if (candidateIndex === index) continue;
+      const candidate = placements[candidateIndex];
+      nearest = Math.min(nearest, Math.hypot(
+        placement.anchorX - candidate.anchorX,
+        placement.anchorY - candidate.anchorY,
+      ));
+    }
+    return nearest;
+  }).filter(Number.isFinite).sort((a, b) => a - b);
+  const sortedCounts = [...counts].sort((a, b) => a - b);
+  return {
+    centre,
+    bounds,
+    macroCellSize,
+    macroCellCount: counts.length,
+    placementCount: placements.length,
+    countMean: Number(mean.toFixed(4)),
+    countStandardDeviation: Number(standardDeviation.toFixed(4)),
+    countCoefficientOfVariation: Number((standardDeviation / Math.max(mean, 1e-9)).toFixed(4)),
+    emptyMacroCellRate: Number((counts.filter((count) => count === 0).length / counts.length).toFixed(4)),
+    minimumMacroCellCount: sortedCounts[0] ?? 0,
+    medianMacroCellCount: sortedCounts[Math.floor(sortedCounts.length / 2)] ?? 0,
+    maximumMacroCellCount: sortedCounts.at(-1) ?? 0,
+    minimumNearestDistance: Number((nearestDistances[0] ?? 0).toFixed(4)),
+    medianNearestDistance: Number((
+      nearestDistances[Math.floor(nearestDistances.length / 2)] ?? 0
+    ).toFixed(4)),
+  };
+}
 
 function auditLandmarkFabrics(layouts) {
   const audits = layouts.map((layout) => {

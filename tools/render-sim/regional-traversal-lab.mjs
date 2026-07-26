@@ -20,6 +20,9 @@ import {
   loadRegionalRouteMaterialKit,
 } from '../../apps/ssh-world/dist/game/biome-assets.js';
 import {
+  REGIONAL_AMBIENT_DISTRIBUTION_PROFILE,
+} from '../../apps/ssh-world/dist/game/regional-world-provider.js';
+import {
   BiomeWorldField,
   RegionalMaterialCompositor,
   RegionalRouteField,
@@ -113,6 +116,7 @@ function createWorld() {
     maxCachedBlocks: 64,
     ambientCellSize: ambientKit.cellSize,
     ambientDensity: ambientKit.density,
+    ambientDistributionProfile: REGIONAL_AMBIENT_DISTRIBUTION_PROFILE,
     ambientLandmarkClearance: ambientKit.landmarkClearance,
     routeContactCellSize: routeContactKit.cellSize,
     routeContactDensity: routeContactKit.density,

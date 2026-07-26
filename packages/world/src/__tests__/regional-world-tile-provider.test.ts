@@ -18,6 +18,7 @@ import { rasterizeRegionalLandmarkFabricLayout } from '../tiles/regional-landmar
 import {
   RegionalWorldDerivedCache,
   RegionalWorldTileProvider,
+  type RegionalAmbientDistributionProfile,
   type RegionalAmbientAsset,
   type RegionalCivicDetailAsset,
   type RegionalEnvironmentContactAsset,
@@ -175,6 +176,7 @@ function makeWorld(
   quayAxis: 'east-west' | 'north-south' = 'east-west',
   additionalParcelComponents: readonly RegionalParcelComponentAsset[] = [],
   additionalLandmarkSites: readonly RegionalLandmarkSite[] = [],
+  ambientDistributionProfile: RegionalAmbientDistributionProfile = 'uniform-blue-noise',
 ): RegionalWorldTileProvider {
   const quayDescriptor = {
     id: 'test-canal',
@@ -371,6 +373,7 @@ function makeWorld(
     maxCachedBlocks,
     ambientCellSize: 4,
     ambientDensity: 1,
+    ambientDistributionProfile,
     ambientLandmarkClearance: 4,
     civicDetailCellSize: 1,
     civicDetailDensity: 1,
@@ -588,6 +591,46 @@ describe('RegionalWorldTileProvider', () => {
       expect(Math.abs(placement.anchorY)).toBeGreaterThanOrEqual(2);
       const occupied = world.isBuildingAt(placement.anchorX, placement.anchorY);
       expect(occupied || protectedCells.has(`${placement.anchorX},${placement.anchorY}`)).toBe(true);
+    }
+  });
+
+  it('keeps every ambient distribution profile coordinate-stable across block sizes', () => {
+    const profiles: readonly RegionalAmbientDistributionProfile[] = [
+      'uniform-blue-noise',
+      'density-field-blue-noise',
+      'cluster-field-blue-noise',
+    ];
+    const noRoute = (x: number, y: number): RegionalRouteSample => ({
+      ...routeSample(x, y),
+      distance: 24,
+      signedDistance: 24,
+      isRoute: false,
+      isWalkableRoute: false,
+      routeKind: null,
+      routeId: null,
+      landmarkKind: null,
+      landmarkDistance: Number.POSITIVE_INFINITY,
+    });
+    const mountain = () => biomeSample('mountain');
+    const bounds = [-256, 128, 256, 640] as const;
+
+    for (const profile of profiles) {
+      const first = makeWorld(
+        32, 32, noRoute, mountain, false, undefined, false, false, false,
+        'east-west', [], [], profile,
+      );
+      const second = makeWorld(
+        47, 32, noRoute, mountain, false, undefined, false, false, false,
+        'east-west', [], [], profile,
+      );
+      const placements = first.getAmbientPlacementsInBounds(...bounds);
+      const replay = second.getAmbientPlacementsInBounds(...bounds);
+      expect(placements.length).toBeGreaterThan(20);
+      expect(replay).toEqual(placements);
+      expect(first.getRegionalStats().ambientDistributionProfile).toBe(profile);
+      expect(new Set(placements.map((placement) => (
+        `${placement.anchorX},${placement.anchorY}`
+      ))).size).toBe(placements.length);
     }
   });
 

@@ -8,6 +8,7 @@ import {
   RegionalRouteField,
   RegionalWorldDerivedCache,
   RegionalWorldTileProvider,
+  type RegionalAmbientDistributionProfile,
 } from '@maldoror/world';
 import {
   loadRegionalAmbientKit,
@@ -49,6 +50,11 @@ export interface RegionalSessionWorldOptions {
   maxPreparedViewports?: number;
   clearSharedCachesOnDestroy?: boolean;
 }
+
+/** Evidence-selected production profile. Keep research controls switchable,
+ * but make every faithful runtime seam share the same selected composition. */
+export const REGIONAL_AMBIENT_DISTRIBUTION_PROFILE =
+  'cluster-field-blue-noise' satisfies RegionalAmbientDistributionProfile;
 
 /** One worker-owned regional kit. Raster assets, semantic fields, routes, and
  * material caches are shared; each SSH session receives its own provider for
@@ -159,6 +165,7 @@ export async function loadRegionalWorldKit(
       maxCachedBlocks: 64,
       ambientCellSize: ambientKit.cellSize,
       ambientDensity: ambientKit.density,
+      ambientDistributionProfile: REGIONAL_AMBIENT_DISTRIBUTION_PROFILE,
       ambientLandmarkClearance: ambientKit.landmarkClearance,
       civicDetailCellSize: civicDetailKit.cellSize,
       civicDetailDensity: civicDetailKit.density,

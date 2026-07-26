@@ -167,6 +167,7 @@ export {
   REGIONAL_MAX_PREPARED_VIEWPORT_AREA,
   RegionalWorldDerivedCache,
   RegionalWorldTileProvider,
+  type RegionalAmbientDistributionProfile,
   type RegionalAmbientAsset,
   type RegionalAssetPlacement,
   type RegionalCivicDetailAsset,
