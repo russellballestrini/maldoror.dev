@@ -1,6 +1,6 @@
 import type { BiomeFamily } from '../biomes/biome-world-field.js';
 
-/** Continuous settlement-ground geometry derived from explicitly authored
+/** Continuous landmark-place ground derived from explicitly authored
  * focal footprints. The raster never inspects filenames or source pixels: the
  * manifest declares frontage axis, side, and entrance stations, while the
  * provider supplies the visible world-space bounds of each placed focal. */

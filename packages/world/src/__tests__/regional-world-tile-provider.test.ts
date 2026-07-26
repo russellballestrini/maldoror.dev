@@ -304,20 +304,22 @@ function makeWorld(
       : [[0, -1], [0, 1]] as const,
   })));
   const parcelComponents: RegionalParcelComponentAsset[] = BIOME_FAMILIES.flatMap((family) =>
-    Array.from({ length: family === 'canal-town' ? 7 : 6 }, (_, variant) => ({
+    Array.from({ length: family === 'canal-town' ? 9 : 6 }, (_, variant) => ({
       id: `parcel:${family}:${variant}`,
       families: [family],
       role: 'mass' as const,
-      compositionRole: family === 'canal-town' && variant >= 4 ? 'focal' as const : undefined,
+      compositionRole: family === 'canal-town' && variant >= 4 && variant <= 6
+        ? 'focal' as const
+        : undefined,
       frontageAxis: family === 'canal-town' && variant < 2
         ? 'east-west' as const
-        : family === 'canal-town' && variant >= 4
+        : family === 'canal-town' && variant >= 4 && variant <= 6
           ? variant === 4 ? 'east-west' as const : 'north-south' as const
           : undefined,
-      compositionSide: family === 'canal-town' && variant >= 4
+      compositionSide: family === 'canal-town' && variant >= 4 && variant <= 6
         ? variant === 4 || variant === 6 ? -1 as const : 1 as const
         : undefined,
-      frontageStations: family === 'canal-town' && variant >= 4
+      frontageStations: family === 'canal-town' && variant >= 4 && variant <= 6
         ? variant === 4 ? [-0.3, 0.35] as const : [variant === 5 ? -0.24 : 0.31] as const
         : undefined,
       programs: (family === 'canal-town' || family === 'coast') && variant < 2
@@ -457,7 +459,7 @@ describe('RegionalWorldTileProvider', () => {
     expect(world.getTileAtResolution(0, 0, 4).pixels).toHaveLength(4);
     expect(world.getRegionalStats().ambientAssets).toBe(BIOME_FAMILIES.length * 2);
     expect(world.getRegionalStats().routeContactAssets).toBe(BIOME_FAMILIES.length * 2);
-    expect(world.getRegionalStats().parcelComponentAssets).toBe(BIOME_FAMILIES.length * 6 + 1);
+    expect(world.getRegionalStats().parcelComponentAssets).toBe(BIOME_FAMILIES.length * 6 + 3);
     expect(world.getRegionalStats().environmentContactAssets).toBe(2);
   });
 
@@ -649,6 +651,69 @@ describe('RegionalWorldTileProvider', () => {
     expect(fabricCell).toBeDefined();
     expect(world.getTileAtResolution(fabricCell!.x, fabricCell!.y, 4).id)
       .toContain('regional-landmark-fabric:landmark-fabric:0:0:arrival');
+  });
+
+  it('builds a route-connected non-urban place without leaking its focal into parcels', () => {
+    const forestFocals: RegionalParcelComponentAsset[] = ([-1, 1] as const).map((side) => ({
+      id: `forest-place-focal:${side}`,
+      families: ['forest'],
+      role: 'mass',
+      visualGroup: 'forest-place-log',
+      compositionRole: 'focal',
+      frontageAxis: 'east-west',
+      compositionSide: side,
+      frontageStations: [0],
+      sprite: sprite({ r: 94, g: 72, b: side < 0 ? 38 : 46 }),
+      collision: [[0, 0]],
+    }));
+    const duplicateSupport: RegionalParcelComponentAsset = {
+      id: 'forest-place-log-support-duplicate',
+      families: ['forest'],
+      role: 'mass',
+      visualGroup: 'forest-place-log',
+      sprite: sprite({ r: 94, g: 72, b: 38 }),
+      collision: [[0, 0]],
+    };
+    const world = makeWorld(
+      32,
+      32,
+      routeSample,
+      (x) => biomeSample(nearestFamily(x)),
+      false,
+      undefined,
+      false,
+      false,
+      false,
+      'east-west',
+      [...forestFocals, duplicateSupport],
+    );
+    const entourage = world.getAmbientPlacementsInBounds(20, -22, 60, 22)
+      .filter((placement) => placement.siteX === 40 && placement.siteY === 0);
+    const placedFocals = entourage.filter((placement) => (
+      placement.assetId.startsWith('forest-place-focal:')
+    ));
+    expect(placedFocals).toHaveLength(1);
+    expect(placedFocals[0]?.families).toEqual(['forest']);
+    expect(entourage.some((placement) => (
+      placement.assetId === duplicateSupport.id
+    ))).toBe(false);
+
+    const fabrics = world.getLandmarkFabricLayoutsInBounds(20, -22, 60, 22)
+      .filter((layout) => layout.id.includes(':40:0:waystation'));
+    expect(fabrics).toHaveLength(1);
+    expect(fabrics[0]?.materialFamily).toBe('forest');
+    expect(fabrics[0]?.aprons.map((apron) => apron.role).sort())
+      .toEqual(['approach', 'threshold']);
+    const cells = rasterizeRegionalLandmarkFabricLayout(fabrics[0]!);
+    expect(Math.min(...cells.map((cell) => routeSample(cell.x, cell.y).distance)))
+      .toBeLessThanOrEqual(1);
+    expect(cells.every((cell) => world.getTile(cell.x, cell.y).walkable)).toBe(true);
+
+    const parcelComponents = world.getParcelComponentPlacementsInBounds(-32, -48, 232, 48);
+    expect(parcelComponents.length).toBeGreaterThan(0);
+    expect(parcelComponents.some((placement) => (
+      placement.assetId.startsWith('forest-place-focal:')
+    ))).toBe(false);
   });
 
   it('orients focal frontage from the landmark route when off-route samples lose direction', () => {

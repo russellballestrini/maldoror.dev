@@ -1117,6 +1117,33 @@ Completed foundations:
   fresh complete atlas, sustained Gate D, deployment, and physical Ghostty
   acceptance remain open. Production remains `vb07c0d4`; there was no deploy,
   service restart, push, complete-gate claim, or physical Ghostty claim;
+- V131-V134 add the first non-canal authored place grammar at current forest
+  waystations. V131 rejects a stale historic landmark coordinate, re-locates
+  the current deterministic north-south site `(92,43)`, and retains the sparse
+  three-scale baseline. V132 activates the existing generic focal/frontage/
+  access-apron contract with the already-authored log shelter and hunter's
+  lean-to, but is rejected after a test exposes landmark focals leaking into
+  ordinary parcel rows. V133 closes that leak but is visually rejected because
+  orientation-specific semantic IDs sharing one shelter raster produce a
+  duplicate silhouette in the same district composition. V134 introduces
+  manifest-owned `visualGroup` identity, so semantic role/axis variants share
+  one repetition budget without filename or family conditionals. The selected
+  north-south camp contains a log-shelter focal, distinct support silhouettes,
+  and a 24-cell threshold/approach whose minimum route distance is 0, with
+  walkable and rendered-surface rates both 1. A second 97.8%-forest east-west
+  waystation at `(-412,211)` independently selects the other axis: its 29-cell
+  access fabric reaches route distance `0.0277`, remains entirely walkable and
+  rendered, and all visible focal-site visual groups are unique. All six
+  walking/district/regional captures are retained under
+  `track-6-acceptance-atlas/composition-hierarchy-v134-forest-visual-group-place/FINDINGS.md`.
+  Repository verification passes 44 files / 251 tests, 18/18 typecheck tasks,
+  12/12 build tasks, 7/7 configured lint tasks, and `git diff --check`. This is
+  a selected forest-waystation tranche, not forest completion: open fields,
+  living forest activity, crossing/topology diversity, the other four
+  non-canal families, fresh full-atlas proof, sustained Gate D, deployment,
+  and physical Ghostty acceptance remain open. Production remains `vb07c0d4`;
+  there was no deploy, service restart, push, complete-gate claim, or physical
+  Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
@@ -1143,7 +1170,8 @@ Still open and therefore goal-blocking:
   still lacks bank-aware crossing silhouettes, moving inhabitants, temporal
   work/market states, larger squares/commons, dense
   route-connected frontage beyond this bounded origin tranche, and
-  equivalent focal vocabularies for the other five families. Coast-specific
+  a complete forest vocabulary, and equivalent focal vocabularies for the
+  other four non-canal families. Coast-specific
   waterfront diversity, far
   greater travel-scale entropy across route topology, hydrology, biome fields,
   ambient clusters, landmarks, and parcel programs, authoritative traversal,
@@ -1182,7 +1210,8 @@ Still open and therefore goal-blocking:
   Crossing and support diversity, richer bank contact, larger commons,
   denser frontage beyond the origin, moving people, working stalls
   and unloading,
-  less empty paving, and equivalent grammar beyond the canal-town origin
+  less empty paving, and equivalent complete grammar beyond the bounded
+  canal-town origin and two forest-waystation orientations
   remain required before a fresh full-atlas recapture can attempt Gate A.
   Fresh post-correction deterministic traversal, the 30-minute terminal run,
   deployed-service/cgroup audit, and physical Ghostty acceptance also remain

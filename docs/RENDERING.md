@@ -713,3 +713,39 @@ Repository verification passes 44 files / 250 tests, 18/18 typecheck tasks,
 canal-town increment: the other five family grammars, larger commons, moving
 inhabitants and work cycles, complete-atlas proof, sustained Gate D, deployment,
 and physical Ghostty acceptance remain open.
+
+### Forest route-connected place grammar (2026-07-26)
+
+V131-V134 extend the hierarchy system beyond canal-town for the first time.
+V131 deliberately refreshes the evidence instead of reusing a landmark
+coordinate made stale by route-generator evolution. The current deterministic
+north-south forest waystation is `(92,43)`; its baseline had good individual
+grove/understory art but no route-facing shelter or readable place hierarchy at
+district and regional scale.
+
+The selected grammar reuses the existing log shelter and hunter's lean-to as
+manifest-declared focal variants for both route axes. The runtime does not
+branch on forest names, filenames, or coordinates. Focal assets remain
+exclusive to landmark compositions, and their declared station produces the
+same generic continuous threshold/approach material already used by authored
+settlements. A new optional `visualGroup` field lets role- and axis-specific
+semantic entries declare that they share one authored silhouette. Entourage
+selection budgets repetition by that group rather than by ID, preventing
+semantic aliases from faking visual diversity.
+
+V132 is retained because it exposed focal leakage into generic parcel rows.
+V133 is retained because visual inspection caught two copies of the log
+shelter in one district frame. V134 closes both defects. At `(92,43)`, its
+24-cell access fabric reaches route distance 0 and is 100% walkable/rendered;
+at the independent 97.8%-forest east-west waystation `(-412,211)`, the 29-cell
+fabric reaches route distance `0.0277` and is likewise 100% walkable/rendered.
+Both orientations retain unique visual groups across all visible focal-site
+members. Walking/district/regional renderer-buffer hashes are recorded in
+`track-6-acceptance-atlas/composition-hierarchy-v134-forest-visual-group-place/FINDINGS.md`.
+
+Repository verification passes 44 files / 251 tests, 18/18 typecheck tasks,
+12/12 build tasks, 7/7 configured lint tasks, and `git diff --check`.
+Production still reports `vb07c0d4`. This is not forest or Gate-A completion:
+open-field composition, living forest activity, crossings and route topology,
+the other four non-canal place families, fresh complete-atlas proof, sustained
+load, deployment, and physical Ghostty acceptance remain open.

@@ -191,6 +191,7 @@ interface ParcelComponentEntry {
   file: string;
   family: BiomeFamily;
   role: 'mass';
+  visualGroup?: string;
   compositionRole?: 'focal';
   frontageAxis?: RegionalRouteContactAxis;
   compositionSide?: -1 | 1;
@@ -690,6 +691,7 @@ export async function loadRegionalParcelComponentKit(
       id: entry.id,
       families: [entry.family],
       role: entry.role,
+      visualGroup: entry.visualGroup,
       compositionRole: entry.compositionRole,
       frontageAxis: entry.frontageAxis,
       compositionSide: entry.compositionSide,
@@ -977,6 +979,10 @@ function parseParcelComponentEntry(value: unknown, index: number): ParcelCompone
       typeof value.id !== 'string' || value.id.length === 0 ||
       typeof value.file !== 'string' || value.file.length === 0 ||
       !BIOME_FAMILIES.includes(value.family as BiomeFamily) ||
+      (value.visualGroup !== undefined && (
+        typeof value.visualGroup !== 'string' || value.visualGroup.length === 0 ||
+        value.visualGroup.length > 96
+      )) ||
       (value.compositionRole !== undefined && value.compositionRole !== 'focal') ||
       (value.frontageAxis !== undefined &&
         !ROUTE_CONTACT_AXES.includes(value.frontageAxis as RegionalRouteContactAxis)) ||
@@ -1029,6 +1035,7 @@ function parseParcelComponentEntry(value: unknown, index: number): ParcelCompone
     file: value.file,
     family: value.family as BiomeFamily,
     role: 'mass',
+    visualGroup: value.visualGroup as string | undefined,
     compositionRole: value.compositionRole as 'focal' | undefined,
     frontageAxis: value.frontageAxis as RegionalRouteContactAxis | undefined,
     compositionSide: value.compositionSide as -1 | 1 | undefined,

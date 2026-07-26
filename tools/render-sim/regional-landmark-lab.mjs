@@ -23,6 +23,7 @@ import {
   RegionalRouteField,
   RegionalWorldTileProvider,
   rasterizeRegionalEnvironmentProgramLayout,
+  rasterizeRegionalLandmarkFabricLayout,
   sampleRegionalParcelLayout,
   sampleRegionalWaterfrontLayout,
 } from '../../packages/world/dist/index.js';
@@ -1172,6 +1173,7 @@ for (const frame of FRAMES) {
     frame.centre[1] + halfHeight,
   ];
   const visibleAmbient = world.getAmbientPlacementsInBounds(...visibleBounds);
+  const visibleLandmarkFabrics = world.getLandmarkFabricLayoutsInBounds(...visibleBounds);
   metrics.frames.push({
     ...frame,
     elapsedMs: Number((performance.now() - startedAt).toFixed(2)),
@@ -1181,6 +1183,19 @@ for (const frame of FRAMES) {
     compositorStats: compositor.getStats(),
     providerStats: world.getRegionalStats(),
     visibleAmbient,
+    landmarkCompositionAudit: auditLandmarkCompositions(visibleAmbient),
+    visibleLandmarkFabrics: visibleLandmarkFabrics.map((layout) => ({
+      id: layout.id,
+      materialFamily: layout.materialFamily,
+      site: [layout.siteX, layout.siteY],
+      aprons: layout.aprons.map((apron) => ({
+        id: apron.id,
+        role: apron.role,
+        axis: apron.axis,
+        centre: [apron.centreX, apron.centreY],
+      })),
+    })),
+    landmarkFabricAudit: auditLandmarkFabrics(visibleLandmarkFabrics),
     quayFrontageAudit: auditQuayFrontage(visibleAmbient),
     visibleCivicDetails: world.getCivicDetailPlacementsInBounds(...visibleBounds),
     visibleQuayDetails: world.getQuayDetailPlacementsInBounds(...visibleBounds),
@@ -1194,6 +1209,76 @@ for (const frame of FRAMES) {
 }
 fs.writeFileSync(path.join(OUTPUT, 'metrics.json'), `${JSON.stringify(metrics, null, 2)}\n`);
 console.log(JSON.stringify({ output: OUTPUT, ...metrics }, null, 2));
+
+function auditLandmarkFabrics(layouts) {
+  const audits = layouts.map((layout) => {
+    const cells = rasterizeRegionalLandmarkFabricLayout(layout);
+    const routeDistances = cells.map((cell) => routes.sample(cell.x, cell.y).distance);
+    const walkableCells = cells.filter((cell) => world.getTile(cell.x, cell.y).walkable).length;
+    const surfaceCells = cells.filter((cell) => (
+      world.getTile(cell.x, cell.y).id.includes(`regional-landmark-fabric:${layout.id}`)
+    )).length;
+    const thresholdCount = layout.aprons.filter((apron) => apron.role === 'threshold').length;
+    const approachCount = layout.aprons.filter((apron) => apron.role === 'approach').length;
+    const minimumRouteDistance = Math.min(...routeDistances);
+    return {
+      id: layout.id,
+      materialFamily: layout.materialFamily,
+      cellCount: cells.length,
+      thresholdCount,
+      approachCount,
+      minimumRouteDistance,
+      walkableRate: cells.length > 0 ? walkableCells / cells.length : 0,
+      renderedSurfaceRate: cells.length > 0 ? surfaceCells / cells.length : 0,
+      valid: cells.length > 0 && thresholdCount > 0 && thresholdCount === approachCount &&
+        minimumRouteDistance <= 1 && walkableCells === cells.length && surfaceCells > 0,
+    };
+  });
+  return {
+    layoutCount: audits.length,
+    allValid: audits.every((audit) => audit.valid),
+    audits,
+  };
+}
+
+function auditLandmarkCompositions(placements) {
+  const assetById = new Map(parcelKit.assets.map((asset) => [asset.id, asset]));
+  const focalIds = new Set(parcelKit.assets
+    .filter((asset) => asset.compositionRole === 'focal')
+    .map((asset) => asset.id));
+  const focalSites = new Set(placements
+    .filter((placement) => focalIds.has(placement.assetId))
+    .map((placement) => `${placement.siteX},${placement.siteY}`));
+  const compositions = [...focalSites].sort().map((site) => {
+    const members = placements.filter((placement) => (
+      `${placement.siteX},${placement.siteY}` === site
+    ));
+    const groups = members.map((placement) => {
+      const asset = assetById.get(placement.assetId);
+      return asset?.visualGroup ?? `asset:${placement.assetId}`;
+    });
+    const counts = Object.fromEntries([...new Set(groups)].sort().map((group) => [
+      group,
+      groups.filter((candidate) => candidate === group).length,
+    ]));
+    const duplicateVisualGroups = Object.entries(counts)
+      .filter(([, count]) => count > 1)
+      .map(([group]) => group);
+    return {
+      site,
+      memberCount: members.length,
+      assetIds: members.map((placement) => placement.assetId).sort(),
+      visualGroups: counts,
+      duplicateVisualGroups,
+      valid: duplicateVisualGroups.length === 0,
+    };
+  });
+  return {
+    compositionCount: compositions.length,
+    allVisualGroupsUnique: compositions.every((composition) => composition.valid),
+    compositions,
+  };
+}
 
 function auditQuayFrontage(placements) {
   const frontage = placements.filter((placement) => placement.waterfrontId !== undefined);

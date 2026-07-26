@@ -149,7 +149,11 @@ export type RegionalWaterfrontFunction =
 
 export interface RegionalParcelComponentAsset extends RegionalVisualAsset {
   role: 'mass';
-  /** A rare authored urban-fabric anchor that should establish the local
+  /** Manifest-owned identity for semantic entries that share one authored
+   * silhouette. Selection budgets repetition by this group rather than by ID,
+   * so axis/role variants cannot masquerade as visual variety. */
+  visualGroup?: string;
+  /** A rare authored place-fabric anchor that should establish the local
    * composition before smaller support masses are placed. Omitted assets are
    * ordinary supports; this semantic is manifest-owned, never pixel-inferred. */
   compositionRole?: 'focal';
@@ -2887,7 +2891,12 @@ export class RegionalWorldTileProvider extends TileProvider {
   ): RegionalParcelComponentAsset | null {
     const family = contact.asset.families[0];
     const candidates = this.parcelComponents
-      .filter((asset) => family && asset.families.includes(family))
+      // Landmark focals establish one deliberately rare hierarchy and own
+      // route-facing access fabric. Reusing them as generic parcel rows would
+      // turn that hierarchy into repeating scenery and detach the authored
+      // frontage contract from its parent site.
+      .filter((asset) => family && asset.families.includes(family) &&
+        !isFocalCompositionAsset(asset))
       .sort((a, b) => a.id.localeCompare(b.id));
     if (candidates.length === 0) return null;
     const base = Math.floor(this.hashUnit(contact.siteX, contact.siteY, 0x72b5) * candidates.length);
@@ -3094,7 +3103,8 @@ export class RegionalWorldTileProvider extends TileProvider {
         anchorY,
       };
       supports.push(support);
-      assetUsage.set(asset.id, (assetUsage.get(asset.id) ?? 0) + 1);
+      const usageKey = assetVisualGroup(asset);
+      assetUsage.set(usageKey, (assetUsage.get(usageKey) ?? 0) + 1);
       reserveVisibleFootprint(support, reserved, 0);
     }
     return supports;
@@ -3370,7 +3380,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     return null;
   }
 
-  /** Derive walkable settlement ground from the placed focal contract. Large
+  /** Derive walkable place ground from the placed focal contract. Large
    * art establishes the enclosing mass; a separate continuous material layer
    * joins only its declared entrance stations to circulation. This prevents
    * collision, traversal, or ground ownership from being guessed from pixels. */
@@ -3452,9 +3462,10 @@ export class RegionalWorldTileProvider extends TileProvider {
         biome.weights[BIOME_FAMILIES.indexOf(family)] ?? 0
       )));
       const variation = this.hashUnit(worldX, worldY, stringHash(asset.id)) * 0.09;
-      const repetitionPenalty = (assetUsage.get(asset.id) ?? 0) * 0.24;
+      const usageKey = assetVisualGroup(asset);
+      const repetitionPenalty = (assetUsage.get(usageKey) ?? 0) * 0.24;
       const focal = isFocalCompositionAsset(asset);
-      if (focal && (assetUsage.get(asset.id) ?? 0) > 0) continue;
+      if (focal && (assetUsage.get(usageKey) ?? 0) > 0) continue;
       const hierarchyBias = preferFocal ? (focal ? 2 : 0) : (focal ? -2 : 0);
       const score = parentCompatibility * 0.68 + localCompatibility * 0.32 +
         variation + hierarchyBias - repetitionPenalty;
@@ -4432,6 +4443,12 @@ function positionKey(x: number, y: number): string {
 
 function isFocalCompositionAsset(asset: RegionalVisualAsset): asset is RegionalParcelComponentAsset {
   return 'compositionRole' in asset && asset.compositionRole === 'focal';
+}
+
+function assetVisualGroup(asset: RegionalVisualAsset): string {
+  return 'visualGroup' in asset && typeof asset.visualGroup === 'string'
+    ? `group:${asset.visualGroup}`
+    : `asset:${asset.id}`;
 }
 
 function visibleSpriteWorldBounds(placement: Placement): {

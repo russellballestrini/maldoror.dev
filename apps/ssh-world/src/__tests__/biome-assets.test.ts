@@ -220,10 +220,10 @@ describe('regional biome material manifest', () => {
     expect(kit.minimumLayers).toBe(2);
     expect(kit.maximumLayers).toBe(3);
     expect(kit.layerSpacing).toBe(5);
-    expect(kit.assets).toHaveLength(45);
+    expect(kit.assets).toHaveLength(49);
     for (const family of BIOME_FAMILIES) {
       expect(kit.assets.filter((asset) => asset.families.includes(family))).toHaveLength(
-        family === 'canal-town' ? 15 : 6,
+        family === 'canal-town' ? 15 : family === 'forest' ? 10 : 6,
       );
     }
     for (const asset of kit.assets) {
@@ -235,14 +235,24 @@ describe('regional biome material manifest', () => {
       expect(asset.collision.length).toBeGreaterThan(0);
     }
     const focal = kit.assets.filter((asset) => asset.compositionRole === 'focal');
-    expect(focal).toHaveLength(3);
+    expect(focal).toHaveLength(7);
     expect(new Set(focal.map((asset) => asset.frontageAxis)))
       .toEqual(new Set(['east-west', 'north-south']));
-    expect(focal.find((asset) => asset.frontageAxis === 'east-west')?.sprite.width).toBe(16);
-    expect(focal.filter((asset) => asset.frontageAxis === 'north-south'))
-      .toHaveLength(2);
+    expect(focal.find((asset) => asset.id === 'canal-town-connected-frontage-parcel-component-v1')
+      ?.sprite.width).toBe(16);
+    const forestFocals = focal.filter((asset) => asset.families.includes('forest'));
+    expect(forestFocals).toHaveLength(4);
+    expect(new Set(forestFocals.map((asset) => asset.frontageAxis)))
+      .toEqual(new Set(['east-west', 'north-south']));
+    expect(new Set(forestFocals.map((asset) => asset.compositionSide)))
+      .toEqual(new Set([-1, 1]));
+    expect(new Set(forestFocals.map((asset) => asset.visualGroup)))
+      .toEqual(new Set(['forest-log-shelter-v1', 'forest-hunter-lean-to-v1']));
+    expect(forestFocals.every((asset) => asset.sprite.width === 5 && asset.sprite.height === 4))
+      .toBe(true);
     expect(new Set(focal
-      .filter((asset) => asset.frontageAxis === 'north-south')
+      .filter((asset) => asset.families.includes('canal-town') &&
+        asset.frontageAxis === 'north-south')
       .map((asset) => asset.compositionSide))).toEqual(new Set([-1, 1]));
     expect(focal.every((asset) => (
       asset.frontageStations !== undefined && asset.frontageStations.length >= 1 &&
