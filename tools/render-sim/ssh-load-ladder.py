@@ -21,6 +21,7 @@ import select
 import signal
 import struct
 import termios
+import threading
 import time
 import urllib.request
 from dataclasses import dataclass, field
@@ -241,10 +242,39 @@ class Client:
 
 
 def runtime(port: int) -> dict[str, Any]:
-    with urllib.request.urlopen(f"http://127.0.0.1:{port}/runtime", timeout=5) as response:
+    # The coordinator rejects a missing worker IPC response after five seconds.
+    # Give that explicit 503 enough time to arrive instead of racing it with a
+    # client-side socket timeout that loses the more useful server result.
+    with urllib.request.urlopen(f"http://127.0.0.1:{port}/runtime", timeout=7) as response:
         if response.status != 200:
             raise RuntimeError(f"runtime endpoint returned {response.status}")
         return json.load(response)
+
+
+def runtime_while_pumping(port: int, clients: list[Client]) -> dict[str, Any]:
+    """Sample worker runtime without ever stopping SSH PTY drainage."""
+    result: list[dict[str, Any]] = []
+    failures: list[BaseException] = []
+
+    def sample() -> None:
+        try:
+            result.append(runtime(port))
+        except BaseException as error:  # Re-raised on the harness thread below.
+            failures.append(error)
+
+    thread = threading.Thread(target=sample, name="maldoror-runtime-sample", daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 10.0
+    while thread.is_alive() and time.monotonic() < deadline:
+        pump(clients, 0.02)
+    thread.join(timeout=0.1)
+    if thread.is_alive():
+        raise TimeoutError("runtime sampler did not finish within 10 seconds")
+    if failures:
+        raise failures[0]
+    if not result:
+        raise RuntimeError("runtime sampler returned no result")
+    return result[0]
 
 
 def wait_ready(
@@ -346,7 +376,7 @@ def run_rung(
     movement_interval: float,
     max_tree_rss_mib: float,
 ) -> dict[str, Any]:
-    before = runtime(stats_port)
+    before = runtime_while_pumping(stats_port, clients)
     if before["active_sessions"] != len(clients):
         raise RuntimeError(f"rung began with {before['active_sessions']} sessions, expected {len(clients)}")
     baselines = {
@@ -362,35 +392,70 @@ def run_rung(
     process_before = process_tree_snapshot(root_pid)
     process_peak = process_before
     worker_samples = [before["worker"]] if before.get("worker") else []
+    runtime_sample_failures: list[dict[str, Any]] = []
+    sampler_stop = threading.Event()
     started = time.monotonic()
     next_process_sample = started
-    next_worker_sample = started + 1.0
+
+    def sample_worker_runtime() -> None:
+        # Worker statistics are diagnostic evidence, not part of SSH output
+        # transport. Keep this probe off the PTY-draining loop so a slow IPC
+        # response cannot manufacture backpressure or disconnects.
+        if sampler_stop.wait(1.0):
+            return
+        while not sampler_stop.is_set():
+            sample_started = time.monotonic()
+            try:
+                window = runtime(stats_port)
+                if window.get("worker"):
+                    worker_samples.append(window["worker"])
+            except Exception as error:
+                runtime_sample_failures.append({
+                    "elapsedMs": round((time.monotonic() - started) * 1000, 3),
+                    "type": type(error).__name__,
+                    "message": str(error),
+                })
+            elapsed = time.monotonic() - sample_started
+            if sampler_stop.wait(max(0.0, 2.0 - elapsed)):
+                return
+
+    sampler = threading.Thread(
+        target=sample_worker_runtime,
+        name=f"maldoror-worker-sampler-{len(clients)}",
+        daemon=True,
+    )
+    sampler.start()
     for index, client in enumerate(clients):
         client.next_input_at = started + 0.5 + index * 0.02
-    while time.monotonic() - started < duration:
-        pump(clients, 0.02)
-        now = time.monotonic()
-        for client in clients:
-            if not client.alive:
-                raise RuntimeError(f"{client.fixture_id} disconnected during rung {len(clients)}")
-            if now >= client.next_input_at:
-                if client.send_movement(now):
-                    client.next_input_at = now + movement_interval
-        if now >= next_process_sample:
-            sample = process_tree_snapshot(root_pid)
-            if sample["rssMiB"] > process_peak["rssMiB"]:
-                process_peak = sample
-            if sample["rssMiB"] > max_tree_rss_mib:
-                raise RuntimeError(
-                    f"process tree exceeded {max_tree_rss_mib:.1f} MiB envelope: "
-                    f"{sample['rssMiB']:.1f} MiB"
-                )
-            next_process_sample = now + 0.5
-        if now >= next_worker_sample:
-            window = runtime(stats_port)
-            if window.get("worker"):
-                worker_samples.append(window["worker"])
-            next_worker_sample = now + 2.0
+    try:
+        while time.monotonic() - started < duration:
+            pump(clients, 0.02)
+            now = time.monotonic()
+            for client in clients:
+                if not client.alive:
+                    raise RuntimeError(f"{client.fixture_id} disconnected during rung {len(clients)}")
+                if now >= client.next_input_at:
+                    if client.send_movement(now):
+                        client.next_input_at = now + movement_interval
+            if now >= next_process_sample:
+                sample = process_tree_snapshot(root_pid)
+                if sample["rssMiB"] > process_peak["rssMiB"]:
+                    process_peak = sample
+                if sample["rssMiB"] > max_tree_rss_mib:
+                    raise RuntimeError(
+                        f"process tree exceeded {max_tree_rss_mib:.1f} MiB envelope: "
+                        f"{sample['rssMiB']:.1f} MiB"
+                    )
+                next_process_sample = now + 0.5
+    finally:
+        sampler_stop.set()
+        sampler.join(timeout=8.0)
+        if sampler.is_alive():
+            runtime_sample_failures.append({
+                "elapsedMs": round((time.monotonic() - started) * 1000, 3),
+                "type": "SamplerShutdownTimeout",
+                "message": "background runtime sampler did not stop within eight seconds",
+            })
     # Do not let the rung finish on an input that has not yet produced an
     # authoritative, visible position change. A pending movement can span a
     # slow render under load; counting the next unrelated frame made the old
@@ -402,7 +467,7 @@ def run_rung(
     if stalled:
         raise RuntimeError(f"movement never became visible for clients: {stalled}")
 
-    after = runtime(stats_port)
+    after = runtime_while_pumping(stats_port, clients)
     if after["active_sessions"] != len(clients):
         raise RuntimeError(f"rung ended with {after['active_sessions']} sessions, expected {len(clients)}")
     process_after = process_tree_snapshot(root_pid)
@@ -465,6 +530,7 @@ def run_rung(
             "processesAtPeak": process_peak["processes"],
         },
         "worker": summarize_worker_samples(worker_samples),
+        "runtimeSampleFailures": runtime_sample_failures,
         "clients": client_rows,
     }
 
@@ -677,6 +743,28 @@ def main() -> int:
         }
         if not churn["reconnectedAtExactOrigin"]:
             raise RuntimeError("reconnected clients did not return at exact origin")
+    except Exception as error:
+        atomic_json(output / "failure-metrics.json", {
+            "generatedAt": generated_at,
+            "status": "failed",
+            "error": {
+                "type": type(error).__name__,
+                "message": str(error),
+            },
+            "warmups": warmups,
+            "completedRungs": rungs,
+            "clientsAtFailure": [{
+                "fixtureId": client.fixture_id,
+                "alive": client.alive,
+                "ready": client.ready,
+                "originConfirmed": client.origin_confirmed,
+                "totalBytes": client.total_bytes,
+                "frames": client.frames,
+                "movementResponses": len(client.movement_response_ms),
+                "currentPosition": client.current_position,
+            } for client in active],
+        })
+        raise
     finally:
         for client in active:
             client.close()

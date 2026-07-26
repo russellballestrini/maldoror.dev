@@ -1619,6 +1619,43 @@ Completed foundations:
   Ghostty acceptance remain open. Production remains `vb07c0d4`; there was no
   deploy, service restart, push, production database write, complete-gate
   claim, or physical Ghostty claim;
+- V160 corrects the cold-login thundering herd and completes the first genuine
+  ten-minute-per-rung 5/10/20-presence real-SSH ladder on V158 source, while
+  **rejecting Gate D at 20 presences**. The retained unmodified cold retry lets
+  only one of five clients reach exact-origin readiness and records four
+  PostgreSQL connection timeouts in concurrent `WorkerSession.start()` sprite
+  loads. A cold leader followed by four concurrent warm initializers is also
+  retained and rejected after reproducing three connection timeouts. The
+  selected process-local admission queue therefore serializes the short
+  database/world/renderer/first-frame stage, exposes cold/active/pending state,
+  cancels queued disconnects, and leaves established gameplay concurrent. A
+  fresh-idle five-client smoke reaches exact `(0,0)` for all clients, measures
+  43.375 ms input p95 and 178.415 ms frame p99 over 30 seconds, reconnects two
+  clients at exact origin, and cleans to zero sessions. The final 160x46
+  loopback OpenSSH ladder then runs 600.096/600.165/600.237 seconds at 5/10/20
+  presences with zero frame drops, drain events, recovery requests, recovery
+  keyframes, or runtime-sampler failures. Input p95 is 42.868/50.201/**135.774**
+  ms, frame p99 is 181.350/382.891/**752.541** ms, one-core CPU is
+  32.713/59.965/87.745%, and peak tree RSS is 870.758/662.258/858.551 MiB. The
+  20-client response violates the fixed 100 ms target and has 5.615-second
+  input and 5.493-second frame maxima; worker utilization reaches 1.0 while the
+  coordinator and transport remain healthy. The measuring harness itself is
+  hardened so `/runtime` sampling cannot stop PTY drainage and every failure
+  writes atomic client/rung evidence. Two-client churn restores 20 sessions at
+  exact origin and final cleanup reaches zero. Focused verification passes 4/4
+  admission tests, Python byte-compilation, current-source SSH build, and diff
+  hygiene; the build reproduces a 10,120,821-byte runtime pack and
+  17,643,726-byte six-viewport prewarm. Full failures, metrics, logs, hashes,
+  diagnosis, and limitations are retained in
+  `track-7-performance/route-frontage-v158/load-ladder-v1-sustained/FINDINGS.md`.
+  This closes a cold-admission defect, not Gate D: worker/render reuse at 20
+  presences, mode-separated bandwidth, a production-cgroup run, the larger
+  physical Ghostty viewport, and the mixed movement/zoom/weather proof remain
+  open. Full SSH-world verification passes 21 files / 86 tests. Production
+  remains `vb07c0d4` with main PID `1022033`, worker PID
+  `1022180`, and the same start timestamp; there was no deploy, service restart,
+  push, production database write, complete-gate claim, or physical Ghostty
+  claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
@@ -1628,11 +1665,13 @@ Still open and therefore goal-blocking:
 
 - the regional stack is now the live authoritative provider with exact-origin
   readiness, real SSH latency, movement/camera/zoom transport, and one bounded
-  six-second production capture. The selected source build passes a loopback
-  real-SSH 5/10/20-presence ladder, but the 30-minute mixed run, separated
-  mode/keyframe bandwidth audit, first-cohort cold-start correction, deployed
-  cgroup observation, larger physical Ghostty viewport, and operator use remain
-  unproven;
+  six-second production capture. The selected source build now completes a
+  loopback real-SSH 5/10/20-presence ladder and corrects the first-cohort cold
+  admission failure in scratch, but 20 presences miss the fixed 100 ms p95
+  response target and expose multi-second worker/render tails. Worker reuse and
+  scheduling, the 30-minute mixed movement/zoom/weather run, separated
+  mode/keyframe bandwidth audit, deployed cgroup observation, larger physical
+  Ghostty viewport, and operator use remain unproven;
 - the first six-family landmark silhouettes and shared-boundary parcel
   compounds now include a selected two-sided canal-town focal core, but remain
   sparse research prototypes rather than a complete world layer. The core now
@@ -1670,8 +1709,10 @@ Still open and therefore goal-blocking:
 - the fresh V159 24-coordinate multi-zoom/time/weather atlas is complete as an
   honest **failed** visual audit on V158 source. Gate A remains open until the
   recorded multi-parent composition, route/crossing/frontage, overview-LOD,
-  cold-reliability, and dynamically enumerated material-boundary failures are
-  corrected and the exact fixed atlas passes on a fresh build. The selected
+  and dynamically enumerated material-boundary failures are corrected and the
+  exact fixed atlas passes on a fresh build. V160 corrects process-local cold
+  session admission in scratch, but is not deployed and exposes a separate
+  20-presence worker-latency failure. The selected
   night/storm and water/route/quay corrections have now been tested by the
   fresh complete atlas and proven insufficient; neither is a substitute for
   the next post-correction full proof. The selected

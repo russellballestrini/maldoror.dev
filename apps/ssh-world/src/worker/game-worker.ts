@@ -10,6 +10,10 @@ import type { PlayerInput, NPCVisualState, Sprite, WorldLifeState } from '@maldo
 import type { NPCCreateData } from '../utils/npc-storage.js';
 import type { ProviderConfig } from '@maldoror/ai';
 import { WorkerSession } from './worker-session.js';
+import {
+  SessionAdmissionCancelledError,
+  SessionAdmissionQueue,
+} from './session-admission-queue.js';
 import { loadAllTerrainTilesFromDisk } from '../utils/terrain-storage.js';
 import {
   setTerrainTiles,
@@ -347,6 +351,7 @@ export interface WorkerRuntimeSnapshot {
     delay_max_ms: number;
   };
   prewarm: ReturnType<RegionalPrewarmService['getStats']> | null;
+  admission: ReturnType<SessionAdmissionQueue['getStats']>;
   session_stats: ReturnType<WorkerSession['getRuntimeStats']>[];
 }
 
@@ -387,6 +392,12 @@ let regionalDefaultAvatar: Sprite | null = null;
 let regionalAssetSource: WorkerRuntimeSnapshot['regional_asset_source'] = 'legacy';
 let regionalOriginSource: WorkerRuntimeSnapshot['regional_origin_source'] = 'legacy';
 const workerSessions: Map<string, WorkerSession> = new Map();
+// Session initialization crosses PostgreSQL, sprite lookup, prepared-world
+// import, and first-frame rendering on one worker event loop. Even after the
+// shared regional cache is warm, concurrent initializers can starve connection
+// setup long enough to fail otherwise healthy logins. Gameplay becomes fully
+// concurrent after this short, observable admission stage.
+const sessionAdmissionQueue = new SessionAdmissionQueue(1);
 let shuttingDown = false;
 const workerEventLoopDelay = monitorEventLoopDelay({ resolution: 1 });
 workerEventLoopDelay.enable();
@@ -481,6 +492,7 @@ async function shutdownWorker(reason: 'ipc' | 'SIGTERM'): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   console.log(`[Worker] Shutdown requested (${reason})`);
+  sessionAdmissionQueue.cancelAll();
 
   for (const session of workerSessions.values()) {
     await session.destroy();
@@ -771,8 +783,19 @@ process.on('message', async (msg: MainToWorkerMessage) => {
         workerSessions.set(msg.sessionId, session);
         console.log(`[Worker] Created session ${msg.sessionId.slice(0, 8)}... (${workerSessions.size} total)`);
 
-        // Start the session (async, don't block IPC)
-        session.start().catch(async err => {
+        // One successful cold leader establishes the process-local database,
+        // prepared-world and renderer caches. A bounded warm queue then drains
+        // reconnect waves without a thundering herd of session initialization.
+        sessionAdmissionQueue.enqueue(msg.sessionId, async () => {
+          if (workerSessions.get(msg.sessionId) !== session) {
+            throw new SessionAdmissionCancelledError(msg.sessionId);
+          }
+          await session.start();
+          if (workerSessions.get(msg.sessionId) !== session) {
+            throw new SessionAdmissionCancelledError(msg.sessionId);
+          }
+        }).catch(async err => {
+          if (err instanceof SessionAdmissionCancelledError) return;
           console.error(`[Worker] Session ${msg.sessionId.slice(0, 8)}... start error:`, err);
           if (workerSessions.get(msg.sessionId) === session) {
             workerSessions.delete(msg.sessionId);
@@ -787,6 +810,7 @@ process.on('message', async (msg: MainToWorkerMessage) => {
       case 'destroy_session': {
         const session = workerSessions.get(msg.sessionId);
         if (session) {
+          sessionAdmissionQueue.cancel(msg.sessionId);
           await session.destroy();
           workerSessions.delete(msg.sessionId);
           console.log(`[Worker] Destroyed session ${msg.sessionId.slice(0, 8)}... (${workerSessions.size} remaining)`);
@@ -858,6 +882,7 @@ process.on('message', async (msg: MainToWorkerMessage) => {
               delay_max_ms: delayMilliseconds(workerEventLoopDelay.max),
             },
             prewarm: regionalPrewarmService?.getStats() ?? null,
+            admission: sessionAdmissionQueue.getStats(),
             session_stats: [...workerSessions.values()].map((session) => session.getRuntimeStats()),
           },
         });
