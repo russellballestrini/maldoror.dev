@@ -1263,6 +1263,36 @@ Completed foundations:
   proof, sustained Gate D, deployment, or physical Ghostty acceptance.
   Production remains `vb07c0d4`; there was no deploy, service restart, push,
   complete-gate claim, or physical Ghostty claim;
+- V149 closes a living-world runtime split-brain in source. Two production
+  residents with full sprites and schedules were persisted beside the arrival
+  district, but `NPCManager` still collided against the retired chunk
+  generator: the Dog's `(-9,1)` quay cell and exact `(0,0)` are walkable in the
+  visible regional world and blocked in the legacy world. Regional mode now
+  installs one exclusive physical authority; the old generator remains only
+  the explicit rollback lane. Persisted roam discs coalesce into bounded
+  resolution-1 collision packages generated off-thread, imported and coverage-
+  checked before movement begins. A deterministic four-neighbour shortest-path
+  motor caches the remaining route, validates dynamic collision per step, and
+  never escapes the resident's roam disc. New resident creation atomically
+  prepares a complete replacement collision set before the body becomes tick-
+  visible. The faithful production-seed lab coalesces both resident envelopes
+  into 1,976 cells, generates them off-thread in 5,520.888 ms, imports in
+  14.164 ms, and resolves the Unicorn's 15-step route in 2.279 ms plus the
+  Dog's 21-step route in 3.401 ms with zero main-thread material fallbacks. An
+  owned migrated scratch runtime then loads both residents and sprites, reports
+  `npc_count=2` with `npc_collision_authority=regional`, and checkpoints both
+  bodies at their resolved work destinations. Its sampled worker event-loop
+  p99 is 3.697 ms and RSS 468.383 MiB, but the retained 46.501-second cold
+  regional readiness remains unacceptable. Full evidence and the exact routes
+  are under
+  `living-world-research/v149-regional-inhabitant-navigation/FINDINGS.md`.
+  Repository verification passes 47 files / 261 tests, 18/18 typecheck tasks,
+  12/12 build tasks, 7/7 configured lint tasks, and `git diff --check`. This is
+  source and isolated-runtime proof, not a public deploy, visual inhabitant
+  observation, Gate C, or physical Ghostty acceptance. Production remains
+  `vb07c0d4` with the same PID/start timestamp; there was no deploy, service
+  restart, push, production database write, complete-gate claim, or physical
+  Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without

@@ -29,6 +29,11 @@ import {
   stableLifeHash,
   type LifePosition,
 } from './npc-life-simulation.js';
+import { findBoundedNPCPath } from './npc-pathfinding.js';
+import {
+  npcNavigationBoundsForHome,
+  type NPCNavigationBounds,
+} from './npc-navigation-bounds.js';
 
 /**
  * Player position for AI calculations
@@ -74,6 +79,11 @@ export class NPCManager {
   private readonly worldSeed: string;
   private readonly tickRate: number;
   private relationshipFamiliarity: Map<string, number> = new Map();
+  private npcPaths: Map<string, {
+    targetX: number;
+    targetY: number;
+    steps: Array<{ x: number; y: number }>;
+  }> = new Map();
 
   constructor(options: { worldSeed?: string; tickRate?: number } = {}) {
     this.worldSeed = options.worldSeed ?? '0';
@@ -424,12 +434,16 @@ export class NPCManager {
       npc.lifeState.destinationY,
     );
     if (!desired || (desired.x === npc.x && desired.y === npc.y)) {
+      this.npcPaths.delete(npc.npcId);
       npc.targetX = null;
       npc.targetY = null;
       npc.isMoving = false;
       npc.animationFrame = 0;
       npc.behaviorState = 'idle';
       return;
+    }
+    if (npc.targetX !== desired.x || npc.targetY !== desired.y) {
+      this.npcPaths.delete(npc.npcId);
     }
     npc.behaviorState = 'wandering';
     npc.targetX = desired.x;
@@ -502,34 +516,25 @@ export class NPCManager {
     // Update direction based on movement
     npc.direction = this.getDirection(moveX, moveY);
 
-    // Check collision
-    const newX = npc.x + moveX;
-    const newY = npc.y + moveY;
-
-    if (this.isBlocked(newX, newY)) {
-      // Try alternate direction
-      if (moveX !== 0 && dy !== 0) {
-        // Was moving horizontally, try vertical
-        moveX = 0;
-        moveY = Math.sign(dy);
-        npc.direction = this.getDirection(moveX, moveY);
-        if (!this.isBlocked(npc.x, npc.y + moveY)) {
-          npc.y += moveY;
-          return true;
-        }
-      } else if (moveY !== 0 && dx !== 0) {
-        // Was moving vertically, try horizontal
-        moveY = 0;
-        moveX = Math.sign(dx);
-        npc.direction = this.getDirection(moveX, moveY);
-        if (!this.isBlocked(npc.x + moveX, npc.y)) {
-          npc.x += moveX;
-          return true;
-        }
-      }
-
-      // Completely blocked - cancel target
-      return false;
+    let newX = npc.x + moveX;
+    let newY = npc.y + moveY;
+    const cachedDetour = this.nextPathStep(npc, false);
+    if (cachedDetour) {
+      moveX = cachedDetour.x - npc.x;
+      moveY = cachedDetour.y - npc.y;
+      newX = cachedDetour.x;
+      newY = cachedDetour.y;
+      npc.direction = this.getDirection(moveX, moveY);
+    } else if (this.isBlocked(newX, newY)) {
+      const detour = this.nextPathStep(npc, true);
+      if (!detour) return false;
+      moveX = detour.x - npc.x;
+      moveY = detour.y - npc.y;
+      newX = detour.x;
+      newY = detour.y;
+      npc.direction = this.getDirection(moveX, moveY);
+    } else {
+      this.npcPaths.delete(npc.npcId);
     }
 
     // Move
@@ -538,6 +543,50 @@ export class NPCManager {
     npc.isMoving = true;
 
     return true;
+  }
+
+  private nextPathStep(npc: NPCState, allowSearch: boolean): { x: number; y: number } | null {
+    if (npc.targetX === null || npc.targetY === null) return null;
+    const cached = this.npcPaths.get(npc.npcId);
+    if (cached && cached.targetX === npc.targetX && cached.targetY === npc.targetY) {
+      const next = cached.steps[0];
+      if (next && Math.abs(next.x - npc.x) + Math.abs(next.y - npc.y) === 1 &&
+          !this.isBlocked(next.x, next.y)) {
+        cached.steps.shift();
+        if (cached.steps.length === 0) this.npcPaths.delete(npc.npcId);
+        return next;
+      }
+      this.npcPaths.delete(npc.npcId);
+    }
+    if (!allowSearch) return null;
+
+    const steps = findBoundedNPCPath({
+      startX: npc.x,
+      startY: npc.y,
+      targetX: npc.targetX,
+      targetY: npc.targetY,
+      homeX: npc.spawnX,
+      homeY: npc.spawnY,
+      roamRadius: npc.config.roamRadius,
+      tieBreaker: stableLifeHash(
+        npc.npcId,
+        npc.targetX,
+        npc.targetY,
+        'motor-path',
+      ),
+      isBlocked: (x, y) => this.isBlocked(x, y),
+    });
+    if (!steps) return null;
+    const next = steps.shift();
+    if (!next) return null;
+    if (steps.length > 0) {
+      this.npcPaths.set(npc.npcId, {
+        targetX: npc.targetX,
+        targetY: npc.targetY,
+        steps,
+      });
+    }
+    return next;
   }
 
   /**
@@ -576,6 +625,7 @@ export class NPCManager {
     npc.direction = direction;
     npc.targetX = null;
     npc.targetY = null;
+    this.npcPaths.delete(npcId);
     npc.behaviorState = 'idle';
 
     if (withinRoamRadius && !this.isBlocked(newX, newY)) {
@@ -731,6 +781,15 @@ export class NPCManager {
     return { ...this.worldLifeState };
   }
 
+  getNavigationBounds(padding = 2): NPCNavigationBounds[] {
+    return [...this.npcs.values()].map((npc) => npcNavigationBoundsForHome(
+      npc.spawnX,
+      npc.spawnY,
+      npc.config.roamRadius,
+      padding,
+    ));
+  }
+
   /**
    * Get NPC count
    */
@@ -744,6 +803,7 @@ export class NPCManager {
   removeNPC(npcId: string): void {
     this.npcs.delete(npcId);
     this.sprites.delete(npcId);
+    this.npcPaths.delete(npcId);
   }
 
   /**
@@ -752,5 +812,6 @@ export class NPCManager {
   clear(): void {
     this.npcs.clear();
     this.sprites.clear();
+    this.npcPaths.clear();
   }
 }

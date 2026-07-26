@@ -133,6 +133,37 @@ describe('NPCManager persistent body state', () => {
     ]);
   });
 
+  it('caches one bounded detour while a persisted intent crosses authored collision', async () => {
+    storage.loadAllNPCs.mockResolvedValueOnce([{
+      ...record,
+      spawnX: 0,
+      spawnY: 0,
+      roamRadius: 5,
+      persistedX: 0,
+      persistedY: 0,
+      motorState: {
+        ...record.motorState!,
+        targetX: 2,
+        targetY: 0,
+        ticksUntilNextDecision: 1000,
+      },
+    }]);
+    const collision = vi.fn((x: number, y: number) => (
+      x === 1 && y >= -1 && y <= 1
+    ));
+    const manager = new NPCManager({ tickRate: 1000 });
+    manager.setCollisionChecker(collision);
+    await manager.loadFromDB();
+
+    for (let tick = 0; tick < 4; tick++) manager.tickAll([]);
+    const searchCollisionChecks = collision.mock.calls.length;
+    for (let tick = 4; tick < 24; tick++) manager.tickAll([]);
+
+    expect(manager.getNPC(record.id)).toMatchObject({ x: 2, y: 0, targetX: null, targetY: null });
+    expect(searchCollisionChecks).toBeGreaterThan(20);
+    expect(collision.mock.calls.length - searchCollisionChecks).toBeLessThan(10);
+  });
+
   it('advances and atomically checkpoints world time, inhabitant needs, and audit facts', async () => {
     storage.loadWorldLifeState.mockResolvedValueOnce({
       worldId: 'primary',

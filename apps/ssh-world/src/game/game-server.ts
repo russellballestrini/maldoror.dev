@@ -8,6 +8,14 @@ import {
   TerminalWorldLifeProjector,
   type TerminalWorldLifeProjection,
 } from './terminal-world-life-projector.js';
+import {
+  resolveNPCWorldCollision,
+  type NPCWorldCollisionChecker,
+} from './npc-world-collision.js';
+import {
+  npcNavigationBoundsForHome,
+  type NPCNavigationBounds,
+} from './npc-navigation-bounds.js';
 
 interface GameServerConfig {
   worldSeed: bigint;
@@ -60,6 +68,10 @@ export class GameServer {
   private globalSpriteReloadCallback: SpriteReloadCallback | null = null;
   private globalNPCCreatedCallback: NPCCreatedCallback | null = null;
   private recentChat: ChatMessage[] = [];
+  /** Canonical regional-world collision when the regional provider is active.
+   * The legacy chunk generator remains an explicit rollback authority only. */
+  private npcWorldCollisionChecker: NPCWorldCollisionChecker | null = null;
+  private npcNavigationPreparer: ((bounds: NPCNavigationBounds) => Promise<void>) | null = null;
   // Building positions for NPC collision: Map of "anchorX,anchorY" -> true
   private buildingAnchors: Set<string> = new Set();
   // Road callbacks for broadcasting to all players
@@ -496,9 +508,13 @@ export class GameServer {
    * Check if a position is blocked by terrain or buildings
    */
   private isPositionBlocked(x: number, y: number): boolean {
-    // Check terrain walkability (use generator directly for walkable property)
-    const tile = this.chunkGenerator.getTileAt(x, y);
-    if (!tile.walkable) {
+    const worldBlocked = resolveNPCWorldCollision(
+      this.npcWorldCollisionChecker,
+      () => this.chunkGenerator.getTileAt(x, y).walkable,
+      x,
+      y,
+    );
+    if (worldBlocked) {
       return true;
     }
 
@@ -517,6 +533,11 @@ export class GameServer {
    * Create a new NPC
    */
   async createNPC(data: NPCCreateData): Promise<NPCVisualState> {
+    await this.npcNavigationPreparer?.(npcNavigationBoundsForHome(
+      data.spawnX,
+      data.spawnY,
+      data.roamRadius ?? 15,
+    ));
     const state = await this.npcManager.addNPC(data);
 
     // Notify global callback for worker IPC
@@ -608,6 +629,28 @@ export class GameServer {
    */
   setNPCCollisionChecker(checker: (x: number, y: number) => boolean): void {
     this.npcManager.setCollisionChecker(checker);
+  }
+
+  /** Install the same physical world authority rendered to SSH sessions. User
+   * buildings remain an additional collision layer inside isPositionBlocked. */
+  setNPCWorldCollisionChecker(checker: NPCWorldCollisionChecker | null): void {
+    this.npcWorldCollisionChecker = checker;
+  }
+
+  /** Prepare a new inhabitant's complete roam envelope before its persisted
+   * body is made tick-visible to the world. */
+  setNPCNavigationPreparer(
+    prepare: ((bounds: NPCNavigationBounds) => Promise<void>) | null,
+  ): void {
+    this.npcNavigationPreparer = prepare;
+  }
+
+  getNPCCollisionAuthority(): 'regional' | 'legacy' {
+    return this.npcWorldCollisionChecker ? 'regional' : 'legacy';
+  }
+
+  getNPCNavigationBounds(): NPCNavigationBounds[] {
+    return this.npcManager.getNavigationBounds();
   }
 
   /**

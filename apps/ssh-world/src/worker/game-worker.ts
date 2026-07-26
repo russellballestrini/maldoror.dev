@@ -11,7 +11,12 @@ import type { NPCCreateData } from '../utils/npc-storage.js';
 import type { ProviderConfig } from '@maldoror/ai';
 import { WorkerSession } from './worker-session.js';
 import { loadAllTerrainTilesFromDisk } from '../utils/terrain-storage.js';
-import { setTerrainTiles, type RegionalPreparedViewportPayload } from '@maldoror/world';
+import {
+  setTerrainTiles,
+  REGIONAL_MAX_PREPARED_VIEWPORT_AREA,
+  type RegionalPreparedViewportPayload,
+  type RegionalWorldTileProvider,
+} from '@maldoror/world';
 import {
   loadCanalTownDefaultAvatar,
   loadCanalTownKit,
@@ -23,6 +28,7 @@ import {
   type LoadedRegionalWorldKit,
 } from '../game/regional-world-provider.js';
 import { RegionalPrewarmService } from '../game/regional-prewarm-service.js';
+import { coalesceNPCNavigationBounds } from '../game/npc-navigation-bounds.js';
 import { getHeapStatistics } from 'node:v8';
 import { monitorEventLoopDelay, performance } from 'node:perf_hooks';
 
@@ -320,6 +326,8 @@ export interface AllSessionStatesResponse {
 export interface WorkerRuntimeSnapshot {
   pid: number;
   sessions: number;
+  npc_count: number;
+  npc_collision_authority: ReturnType<GameServer['getNPCCollisionAuthority']>;
   memory: {
     rss_mib: number;
     heap_used_mib: number;
@@ -369,6 +377,7 @@ let worldSeed: bigint = 0n;
 let providerConfig: ProviderConfig = { provider: 'openai', model: 'gpt-image-1-mini' };
 let canalTownKit: LoadedCanalTownKit | null = null;
 let regionalWorldKit: LoadedRegionalWorldKit | null = null;
+let regionalNPCCollisionWorld: RegionalWorldTileProvider | null = null;
 let regionalPrewarmService: RegionalPrewarmService | null = null;
 let regionalOriginViewport: RegionalPreparedViewportPayload | null = null;
 let regionalDefaultAvatar: Sprite | null = null;
@@ -390,6 +399,61 @@ const REGIONAL_ORIGIN_PREWARM = {
   bounds: { minX: -20, minY: -20, maxX: 20, maxY: 20 },
   resolution: 12,
 } as const;
+const REGIONAL_NPC_MAX_NAVIGATION_REGIONS = 15;
+
+/** Build a complete replacement collision view, then swap authority in one
+ * synchronous turn. Existing inhabitants continue using the previous complete
+ * provider while any new roam envelope is generated off-thread. */
+async function installRegionalNPCCollisionWorld(
+  additionalBounds: Parameters<typeof coalesceNPCNavigationBounds>[0] = [],
+): Promise<void> {
+  const kit = regionalWorldKit;
+  const service = regionalPrewarmService;
+  const origin = regionalOriginViewport;
+  const server = gameServer;
+  if (!kit || !service || !origin || !server) return;
+
+  const navigationBounds = coalesceNPCNavigationBounds(
+    [...server.getNPCNavigationBounds(), ...additionalBounds],
+    REGIONAL_NPC_MAX_NAVIGATION_REGIONS,
+    REGIONAL_MAX_PREPARED_VIEWPORT_AREA,
+  );
+  const nextWorld = kit.createSessionWorld({
+    maxPreparedViewports: REGIONAL_NPC_MAX_NAVIGATION_REGIONS + 1,
+    clearSharedCachesOnDestroy: false,
+  });
+  const navigationStartedAt = performance.now();
+  try {
+    nextWorld.importPreparedViewport(origin);
+    for (const bounds of navigationBounds) {
+      const prepared = await service.prepare(bounds, 1);
+      nextWorld.importPreparedViewport(prepared.viewport);
+      if (!nextWorld.hasPreparedViewportCoverage(
+        bounds.minX,
+        bounds.minY,
+        bounds.maxX,
+        bounds.maxY,
+        1,
+      )) {
+        throw new Error('Imported NPC navigation package did not cover its requested bounds');
+      }
+    }
+    server.setNPCWorldCollisionChecker((x, y) => (
+      !nextWorld.getTileAtResolution(x, y, 1).walkable ||
+      nextWorld.isBuildingAt(x, y)
+    ));
+    const previousWorld = regionalNPCCollisionWorld;
+    regionalNPCCollisionWorld = nextWorld;
+    previousWorld?.destroy();
+    console.log(
+      `[Worker] NPC collision authority regional; ${navigationBounds.length} navigation ` +
+      `regions prepared in ${Math.round(performance.now() - navigationStartedAt)}ms`,
+    );
+  } catch (error) {
+    nextWorld.destroy();
+    throw error;
+  }
+}
 
 function send(message: WorkerToMainMessage): void {
   if (process.send) {
@@ -428,11 +492,6 @@ async function shutdownWorker(reason: 'ipc' | 'SIGTERM'): Promise<void> {
     await regionalPrewarmService.stop();
     regionalPrewarmService = null;
   }
-  regionalWorldKit?.clearSharedCaches();
-  regionalWorldKit = null;
-  regionalOriginViewport = null;
-  regionalDefaultAvatar = null;
-
   if (gameServer) {
     let lastError: unknown;
     for (let attempt = 1; attempt <= 3; attempt++) {
@@ -448,6 +507,13 @@ async function shutdownWorker(reason: 'ipc' | 'SIGTERM'): Promise<void> {
     }
     if (lastError) throw lastError;
   }
+
+  regionalNPCCollisionWorld?.destroy();
+  regionalNPCCollisionWorld = null;
+  regionalWorldKit?.clearSharedCaches();
+  regionalWorldKit = null;
+  regionalOriginViewport = null;
+  regionalDefaultAvatar = null;
 
   process.exit(0);
 }
@@ -520,6 +586,13 @@ process.on('message', async (msg: MainToWorkerMessage) => {
 
         // Load NPCs from database
         await gameServer.loadNPCs();
+
+        if (regionalWorldKit && regionalPrewarmService && regionalOriginViewport) {
+          await installRegionalNPCCollisionWorld();
+          gameServer.setNPCNavigationPreparer((bounds) => (
+            installRegionalNPCCollisionWorld([bounds])
+          ));
+        }
 
         gameServer.start();
         send({ type: 'ready' });
@@ -753,6 +826,8 @@ process.on('message', async (msg: MainToWorkerMessage) => {
           runtime: {
             pid: process.pid,
             sessions: workerSessions.size,
+            npc_count: gameServer?.getNPCCount() ?? 0,
+            npc_collision_authority: gameServer?.getNPCCollisionAuthority() ?? 'legacy',
             memory: {
               rss_mib: Number((memory.rss / mib).toFixed(3)),
               heap_used_mib: Number((memory.heapUsed / mib).toFixed(3)),
