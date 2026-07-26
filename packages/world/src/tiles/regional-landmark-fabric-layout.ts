@@ -6,7 +6,10 @@ import type { BiomeFamily } from '../biomes/biome-world-field.js';
  * provider supplies the visible world-space bounds of each placed focal. */
 
 export type RegionalLandmarkFabricAxis = 'north-south' | 'east-west';
-export type RegionalLandmarkFabricConnectionMode = 'route-threshold' | 'internal-spine';
+export type RegionalLandmarkFabricConnectionMode =
+  | 'route-threshold'
+  | 'internal-spine'
+  | 'shared-common';
 
 export interface RegionalLandmarkFocalFootprint {
   id: string;
@@ -32,7 +35,7 @@ export interface RegionalLandmarkFabricLayoutConfig {
 
 export interface RegionalLandmarkFabricApron {
   id: string;
-  role: 'threshold' | 'approach' | 'spine';
+  role: 'threshold' | 'approach' | 'spine' | 'common';
   axis: RegionalLandmarkFabricAxis;
   centreX: number;
   centreY: number;
@@ -70,6 +73,7 @@ export interface RegionalLandmarkFabricSample {
   pavingWeight: number;
   thresholdWeight: number;
   approachWeight: number;
+  commonWeight: number;
   edgeWeight: number;
 }
 
@@ -90,9 +94,14 @@ export function buildRegionalLandmarkFabricLayout(
   const aprons = config.focals.flatMap((focal, index) => (
     buildAprons(config, focal, index, connectionMode)
   ));
-  if (connectionMode === 'internal-spine') {
+  if (connectionMode !== 'route-threshold') {
     const spine = buildInternalSpine(config);
     if (spine) aprons.unshift(spine);
+  }
+  if (connectionMode === 'shared-common') {
+    const common = buildSharedCommon(config);
+    if (!common) return null;
+    aprons.unshift(common);
   }
   if (aprons.length === 0) return null;
   const feather = 0.32;
@@ -133,6 +142,7 @@ export function sampleRegionalLandmarkFabricLayout(
   let pavingWeight = 0;
   let thresholdWeight = 0;
   let approachWeight = 0;
+  let commonWeight = 0;
   let edgeWeight = 0;
   for (const index of spatial?.apronIndices ?? []) {
     const apron = layout.aprons[index]!;
@@ -171,9 +181,12 @@ export function sampleRegionalLandmarkFabricLayout(
       );
     } else {
       approachWeight = Math.max(approachWeight, candidatePaving);
+      if (apron.role === 'common') {
+        commonWeight = Math.max(commonWeight, candidatePaving);
+      }
     }
   }
-  return { pavingWeight, thresholdWeight, approachWeight, edgeWeight };
+  return { pavingWeight, thresholdWeight, approachWeight, commonWeight, edgeWeight };
 }
 
 /** Conservative tile cover; exact opacity remains a per-pixel SDF sample. */
@@ -202,9 +215,9 @@ function buildAprons(
   const siteCoordinate = northSouth ? config.siteX : config.siteY;
   // Stop approaches just outside the protected arterial core. The underlying
   // route SDF owns the final join, so thresholds cannot repaint circulation.
-  const coreEdge = connectionMode === 'internal-spine'
-    ? siteCoordinate
-    : siteCoordinate + focal.compositionSide * 1.35;
+  const coreEdge = connectionMode === 'route-threshold'
+    ? siteCoordinate + focal.compositionSide * 1.35
+    : siteCoordinate;
   const alongMinimum = northSouth ? focal.minY : focal.minX;
   const alongMaximum = northSouth ? focal.maxY : focal.maxX;
   const centreAlong = (alongMinimum + alongMaximum) / 2;
@@ -269,7 +282,9 @@ function buildAprons(
 function buildInternalSpine(
   config: RegionalLandmarkFabricLayoutConfig,
 ): RegionalLandmarkFabricApron | null {
-  const axis = config.focals[0]?.frontageAxis;
+  const axis = config.connectionMode === 'shared-common'
+    ? sharedCommonAxis(config.focals)
+    : config.focals[0]?.frontageAxis;
   if (!axis) return null;
   const focals = config.focals.filter((focal) => focal.frontageAxis === axis);
   if (focals.length === 0) return null;
@@ -299,6 +314,44 @@ function buildInternalSpine(
     phase: hashUnit(config.seed ^ 0x6e31, focals.length, 1) * Math.PI * 2,
     frontageCoordinate: centreAcross,
   };
+}
+
+/** A route-connected district needs a legible public destination rather than
+ * only a hairline between props. The common exists only when manifest-authored
+ * frontages of one axis face it from both sides. Its bounded rounded mass is
+ * centered on the provider-selected access-path station; no asset ID, family
+ * switch, or raster colour decides the geometry. */
+function buildSharedCommon(
+  config: RegionalLandmarkFabricLayoutConfig,
+): RegionalLandmarkFabricApron | null {
+  const axis = sharedCommonAxis(config.focals);
+  if (!axis) return null;
+  const northSouth = axis === 'north-south';
+  const halfAlong = 3.6 + hashUnit(config.seed ^ 0x3f17, config.focals.length, 0) * 0.7;
+  const halfAcross = 2.6 + hashUnit(config.seed ^ 0x71a3, config.focals.length, 1) * 0.5;
+  return {
+    id: `${config.id}:shared-common`,
+    role: 'common',
+    axis,
+    centreX: config.siteX,
+    centreY: config.siteY,
+    halfAlong,
+    halfAcross,
+    cornerRadius: 0.72 + hashUnit(config.seed ^ 0x29d7, config.focals.length, 2) * 0.18,
+    phase: hashUnit(config.seed ^ 0x4b91, config.focals.length, 3) * Math.PI * 2,
+    frontageCoordinate: northSouth ? config.siteX : config.siteY,
+  };
+}
+
+function sharedCommonAxis(
+  focals: readonly RegionalLandmarkFocalFootprint[],
+): RegionalLandmarkFabricAxis | null {
+  for (const axis of ['north-south', 'east-west'] as const) {
+    const sides = new Set(focals.filter((focal) => focal.frontageAxis === axis)
+      .map((focal) => focal.compositionSide));
+    if (sides.has(-1) && sides.has(1)) return axis;
+  }
+  return null;
 }
 
 function buildSpatialIndex(

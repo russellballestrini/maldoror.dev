@@ -14,7 +14,14 @@ import type {
 } from '../routes/regional-route-field.js';
 import { RegionalMaterialCompositor } from '../tiles/regional-material-compositor.js';
 import { rasterizeRegionalEnvironmentProgramLayout } from '../tiles/regional-environment-program-layout.js';
-import { rasterizeRegionalLandmarkFabricLayout } from '../tiles/regional-landmark-fabric-layout.js';
+import {
+  rasterizeRegionalLandmarkFabricLayout,
+  sampleRegionalLandmarkFabricLayout,
+} from '../tiles/regional-landmark-fabric-layout.js';
+import {
+  rasterizeRegionalParcelPath,
+  type RegionalParcelPath,
+} from '../tiles/regional-parcel-path.js';
 import {
   RegionalWorldDerivedCache,
   RegionalWorldTileProvider,
@@ -183,6 +190,7 @@ function makeWorld(
   ambientCompositionProfile: RegionalAmbientCompositionProfile = 'single',
   ambientPlaceFabricProfile: RegionalAmbientPlaceFabricProfile = 'terrain-only',
   ambientPlaceAccessProfile: RegionalAmbientPlaceAccessProfile = 'isolated',
+  includeLandmarkSites = true,
 ): RegionalWorldTileProvider {
   const quayDescriptor = {
     id: 'test-canal',
@@ -265,7 +273,9 @@ function makeWorld(
       }).sort((a, b) => a.distance - b.distance || a.x - b.x).slice(0, limit);
     },
     getLandmarkSites: (minX: number, minY: number, maxX: number, maxY: number): RegionalLandmarkSite[] =>
-      [...SITES.filter(([x]) => x >= minX && x <= maxX && 0 >= minY && 0 <= maxY)
+      [...(includeLandmarkSites ? SITES : []).filter(
+        ([x]) => x >= minX && x <= maxX && 0 >= minY && 0 <= maxY,
+      )
         .map(([x, _family, landmarkKind]) => ({
           id: `site:${x}`,
           x,
@@ -888,6 +898,126 @@ describe('RegionalWorldTileProvider', () => {
       ambientPlaceAccessProfile: 'route-frontage',
     });
     expect(first.getRegionalStats().cachedAmbientPlaceConnectorCells).toBeGreaterThan(0);
+  });
+
+  it('reserves two opposite focal parents and a walkable shared common before frontage', () => {
+    const continuousRoute = (x: number, y: number): RegionalRouteSample => ({
+      ...routeSample(x, y),
+      directionX: 1,
+      directionY: 0,
+    });
+    const placeBiome = () => biomeSample('canal-town');
+    const oppositeFrontage: RegionalParcelComponentAsset = {
+      id: 'parcel:canal-town:shared-common-opposite',
+      families: ['canal-town'],
+      role: 'mass',
+      visualGroup: 'focal:canal-town:shared-common-opposite',
+      compositionRole: 'focal',
+      frontageAxis: 'east-west',
+      compositionSide: 1,
+      frontageStations: [0],
+      sprite: sprite(COLOURS['canal-town']),
+      collision: [[0, 0]],
+    };
+    const first = makeWorld(
+      32, 64, continuousRoute, placeBiome, false, undefined, false, false, false,
+      'east-west', [oppositeFrontage], [], 'cluster-field-blue-noise',
+      'hierarchical-place-field', 'shared-common', 'route-frontage', false,
+    );
+    const replay = makeWorld(
+      47, 64, continuousRoute, placeBiome, false, undefined, false, false, false,
+      'east-west', [oppositeFrontage], [], 'cluster-field-blue-noise',
+      'hierarchical-place-field', 'shared-common', 'route-frontage', false,
+    );
+    const bounds = [-96, -96, 128, 128] as const;
+    const parents = first.getAmbientPlacementsInBounds(...bounds).filter((placement) => (
+      placement.parcelPathId?.endsWith(':common')
+    ));
+    const replayParents = replay.getAmbientPlacementsInBounds(...bounds).filter((placement) => (
+      placement.parcelPathId?.endsWith(':common')
+    ));
+    const layouts = first.getLandmarkFabricLayoutsInBounds(...bounds).filter((layout) => (
+      layout.connectionMode === 'shared-common'
+    ));
+    expect(parents).toEqual(replayParents);
+    const inspectPrograms = first as unknown as {
+      getAmbientPlaceProgram(cellX: number, cellY: number): {
+        placements: readonly {
+          asset: { id: string };
+          anchorX: number;
+          anchorY: number;
+        }[];
+        publicFocalKeys?: readonly string[];
+        accessPath?: RegionalParcelPath;
+        fabric?: { layout: { id: string } };
+      } | null;
+    };
+    const publicPrograms: Array<NonNullable<ReturnType<
+      typeof inspectPrograms.getAmbientPlaceProgram
+    >>> = [];
+    for (let cellY = -8; cellY <= 8; cellY++) {
+      for (let cellX = -8; cellX <= 8; cellX++) {
+        const program = inspectPrograms.getAmbientPlaceProgram(cellX, cellY);
+        if (program?.publicFocalKeys) publicPrograms.push(program);
+      }
+    }
+    expect(publicPrograms.length).toBeGreaterThan(0);
+    expect(publicPrograms.every((program) => (
+      program.publicFocalKeys?.length === 2 && program.publicFocalKeys.every((identity) => (
+        program.placements.some((placement) => (
+          `${placement.asset.id}@${placement.anchorX},${placement.anchorY}` === identity
+        ))
+      ))
+    ))).toBe(true);
+    expect(layouts.length).toBeGreaterThan(0);
+    const physicallyDisconnectedLayouts = layouts.filter((layout) => {
+      const program = publicPrograms.find((candidate) => candidate.fabric?.layout.id === layout.id);
+      if (!program?.accessPath) return true;
+      const access = rasterizeRegionalParcelPath(program.accessPath);
+      return !access.some((cell) => cell.core) || access.filter((cell) => cell.protected)
+        .some((cell) => first.isBuildingAt(cell.x, cell.y) || !first.getTile(cell.x, cell.y).walkable);
+    });
+    expect(physicallyDisconnectedLayouts, JSON.stringify({
+      layouts: layouts.map((layout) => layout.id),
+      programs: publicPrograms.map((program) => ({
+        layout: program.fabric?.layout.id,
+        accessPath: program.accessPath?.id,
+      })),
+    })).toEqual([]);
+    expect(layouts.every((layout) => {
+      const commons = layout.aprons.filter((apron) => apron.role === 'common');
+      const common = commons[0];
+      if (!common || commons.length !== 1 ||
+          layout.aprons.filter((apron) => apron.role === 'spine').length !== 1 ||
+          layout.aprons.filter((apron) => apron.role === 'approach').length < 2) return false;
+      const northSouth = common.axis === 'north-south';
+      const publicCore = [
+        [common.centreX, common.centreY],
+        [
+          common.centreX + (northSouth ? 0 : common.halfAlong * 0.45),
+          common.centreY + (northSouth ? common.halfAlong * 0.45 : 0),
+        ],
+        [
+          common.centreX - (northSouth ? 0 : common.halfAlong * 0.45),
+          common.centreY - (northSouth ? common.halfAlong * 0.45 : 0),
+        ],
+        [
+          common.centreX + (northSouth ? common.halfAcross * 0.45 : 0),
+          common.centreY + (northSouth ? 0 : common.halfAcross * 0.45),
+        ],
+        [
+          common.centreX - (northSouth ? common.halfAcross * 0.45 : 0),
+          common.centreY - (northSouth ? 0 : common.halfAcross * 0.45),
+        ],
+      ] as const;
+      return publicCore.every(([x, y]) => (
+        sampleRegionalLandmarkFabricLayout(x, y, layout).pavingWeight > 0.9 &&
+        first.getTile(Math.floor(x), Math.floor(y)).walkable
+      ));
+    })).toBe(true);
+    expect(first.getRegionalStats()).toMatchObject({
+      ambientPlaceFabricProfile: 'shared-common',
+    });
   });
 
   it('places deterministic civic details only on route-safe landmark shoulders', () => {

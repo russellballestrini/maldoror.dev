@@ -53,6 +53,7 @@ import {
 import {
   buildRegionalLandmarkFabricLayout,
   rasterizeRegionalLandmarkFabricLayout,
+  sampleRegionalLandmarkFabricLayout,
   type RegionalLandmarkFabricConnectionMode,
   type RegionalLandmarkFabricLayout,
   type RegionalLandmarkFocalFootprint,
@@ -342,7 +343,10 @@ export type RegionalAmbientCompositionProfile =
 /** Wilderness ensembles normally retain the biome beneath their structures.
  * Internal paving is an explicit profile for denser civic sites because every
  * continuous high-resolution surface has a real preparation cost. */
-export type RegionalAmbientPlaceFabricProfile = 'terrain-only' | 'internal-spine';
+export type RegionalAmbientPlaceFabricProfile =
+  | 'terrain-only'
+  | 'internal-spine'
+  | 'shared-common';
 
 /** Whether a meso place remains an isolated wilderness composition or proves
  * a walkable connection to the regional route graph and authors frontage along
@@ -458,6 +462,7 @@ interface EnvironmentProgramSurface {
 interface LandmarkFabricSurface {
   routeKind: RegionalRouteKind;
   layout: RegionalLandmarkFabricLayout;
+  compositionCost?: number;
 }
 
 interface CachedEnvironmentProgram {
@@ -492,9 +497,12 @@ interface CachedBlock {
 interface AmbientPlaceProgram {
   root: Placement;
   placements: readonly Placement[];
+  fallbackPlacements?: readonly Placement[];
   accessPath?: RegionalParcelPath;
   accessRouteKind?: RegionalRouteKind;
   accessTargetKey?: string;
+  publicFocalKeys?: readonly string[];
+  fabric?: LandmarkFabricSurface;
 }
 
 interface AmbientBlockComposition {
@@ -604,6 +612,8 @@ const AMBIENT_PLACE_ROOT_MAX_OFFSET = 14;
 const AMBIENT_CONNECTED_PLACE_FOCAL_REACH = 9;
 const AMBIENT_PLACE_ROUTE_REACH = 48;
 const AMBIENT_PLACE_TARGET_ACCESS_LENGTH = 20;
+const AMBIENT_SHARED_COMMON_HALF_DEPTH = 2.9;
+const AMBIENT_SHARED_COMMON_PARENT_LIMIT = 2;
 const AMBIENT_ISOLATED_PLACE_SOURCE_REACH = AMBIENT_PLACE_ROOT_MAX_OFFSET +
   AMBIENT_PLACE_PROGRAM_REACH;
 // A connected program can affect a block through either its authored masses
@@ -2401,7 +2411,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       civicReservedPlacements,
     );
     placements.push(...ambientComposition.placements);
-    if (this.ambientPlaceFabricProfile === 'internal-spine') {
+    if (this.ambientPlaceFabricProfile !== 'terrain-only') {
       for (const program of ambientComposition.placePrograms) {
         const fabric = this.getAmbientPlaceFabric(program);
         if (!fabric) continue;
@@ -3679,6 +3689,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     landmark: Placement,
     entourage: readonly Placement[],
     connectionMode: RegionalLandmarkFabricConnectionMode = 'route-threshold',
+    siteOverride?: { x: number; y: number },
   ): LandmarkFabricSurface | null {
     const focals: RegionalLandmarkFocalFootprint[] = [];
     for (const placement of entourage) {
@@ -3708,14 +3719,14 @@ export class RegionalWorldTileProvider extends TileProvider {
         landmark.siteX,
         landmark.siteY,
       ).primary,
-      siteX: landmark.siteX + 0.5,
-      siteY: landmark.siteY + 0.5,
+      siteX: siteOverride?.x ?? landmark.siteX + 0.5,
+      siteY: siteOverride?.y ?? landmark.siteY + 0.5,
       seed: this.seed32 ^ stringHash(`${landmark.siteX},${landmark.siteY}`),
       focals,
       connectionMode,
     });
     if (!layout) return null;
-    if (connectionMode === 'internal-spine' && rasterizeRegionalLandmarkFabricLayout(layout)
+    if (connectionMode !== 'route-threshold' && rasterizeRegionalLandmarkFabricLayout(layout)
       .some((cell) => {
         const terrain = this.field.sample(cell.x, cell.y);
         return terrain.isWater || terrain.slope > 0.78;
@@ -3727,7 +3738,10 @@ export class RegionalWorldTileProvider extends TileProvider {
    * and sampled terrain. Overlapping source blocks reuse one validated layout
    * instead of rebuilding the same spatial index and land proof repeatedly. */
   private getAmbientPlaceFabric(program: AmbientPlaceProgram): LandmarkFabricSurface | null {
-    const cacheKey = `${program.root.siteX},${program.root.siteY}:${program.root.asset.id}`;
+    if (program.fabric) return program.fabric;
+    if (this.ambientPlaceFabricProfile !== 'internal-spine') return null;
+    const cacheKey = `${this.ambientPlaceFabricProfile}:${program.root.siteX},` +
+      `${program.root.siteY}:${program.root.asset.id}`;
     if (this.ambientPlaceFabricCache.has(cacheKey)) {
       const cached = this.ambientPlaceFabricCache.get(cacheKey) ?? null;
       this.ambientPlaceFabricCache.delete(cacheKey);
@@ -3889,31 +3903,86 @@ export class RegionalWorldTileProvider extends TileProvider {
         program.root.anchorY,
         establishedReserved,
       )) continue;
-      const accepted: Placement[] = [];
-      for (const placement of program.placements) {
-        if (visibleFootprintIntersects(
-          placement.asset,
-          placement.anchorX,
-          placement.anchorY,
-          establishedReserved,
-        )) continue;
-        accepted.push(placement);
+      const acceptAgainstEstablished = (candidates: readonly Placement[]): Placement[] => {
+        const result: Placement[] = [];
+        for (const placement of candidates) {
+          if (visibleFootprintIntersects(
+            placement.asset,
+            placement.anchorX,
+            placement.anchorY,
+            establishedReserved,
+          )) continue;
+          result.push(placement);
+        }
+        return result;
+      };
+      let selectedProgram = program;
+      let accepted = acceptAgainstEstablished(program.placements);
+      const publicParentsSurvive = !program.publicFocalKeys ||
+        program.publicFocalKeys.every((identity) => (
+          accepted.some((placement) => placementIdentity(placement) === identity)
+        ));
+      if ((!accepted.includes(program.root) || !publicParentsSurvive) &&
+          program.fallbackPlacements) {
+        accepted = acceptAgainstEstablished(program.fallbackPlacements);
+        selectedProgram = {
+          root: program.root,
+          placements: program.fallbackPlacements,
+          accessPath: program.accessPath,
+          accessRouteKind: program.accessRouteKind,
+          accessTargetKey: program.accessTargetKey,
+        };
       }
-      if (!accepted.includes(program.root)) continue;
+      if (!accepted.includes(selectedProgram.root)) continue;
+      if (selectedProgram.publicFocalKeys && !selectedProgram.publicFocalKeys.every((identity) => (
+        accepted.some((placement) => placementIdentity(placement) === identity)
+      ))) continue;
       const acceptedProgram = {
-        root: program.root,
+        root: selectedProgram.root,
         placements: accepted,
-        accessPath: program.accessPath,
-        accessRouteKind: program.accessRouteKind,
-        accessTargetKey: program.accessTargetKey,
+        accessPath: selectedProgram.accessPath,
+        accessRouteKind: selectedProgram.accessRouteKind,
+        accessTargetKey: selectedProgram.accessTargetKey,
+        publicFocalKeys: selectedProgram.publicFocalKeys,
+        fabric: selectedProgram.fabric,
       } satisfies AmbientPlaceProgram;
       const siteKey = positionKey(program.root.siteX, program.root.siteY);
       const reserved = new Set<string>();
       for (const placement of accepted) reserveVisibleFootprint(placement, reserved, 1);
+      // Whole-footprint admission belongs to the district successor. Preserve
+      // the legacy terrain-only/internal-spine acceptance contract exactly:
+      // their access path used to be connector geometry, not program mass.
+      if (selectedProgram.fabric) {
+        for (const cell of selectedProgram.accessPath
+          ? rasterizeRegionalParcelPath(selectedProgram.accessPath)
+          : []) {
+          if (cell.protected) reserved.add(positionKey(cell.x, cell.y));
+        }
+        for (const cell of rasterizeRegionalLandmarkFabricLayout(selectedProgram.fabric.layout)) {
+          if (sampleRegionalLandmarkFabricLayout(
+            cell.x + 0.5,
+            cell.y + 0.5,
+            selectedProgram.fabric.layout,
+          ).pavingWeight > 0.2) reserved.add(positionKey(cell.x, cell.y));
+        }
+        if (setsIntersect(reserved, establishedReserved) && program.fallbackPlacements) {
+          const fallbackAccepted = acceptAgainstEstablished(program.fallbackPlacements);
+          if (!fallbackAccepted.includes(program.root)) continue;
+          accepted = fallbackAccepted;
+          acceptedProgram.placements = fallbackAccepted;
+          acceptedProgram.publicFocalKeys = undefined;
+          acceptedProgram.fabric = undefined;
+          reserved.clear();
+          for (const placement of fallbackAccepted) reserveVisibleFootprint(placement, reserved, 1);
+        } else if (setsIntersect(reserved, establishedReserved)) continue;
+      }
       candidatePrograms.set(siteKey, {
         program: acceptedProgram,
         reserved,
-        priority: this.hashUnit(program.root.siteX, program.root.siteY, 0x3f71),
+        // A proved shared destination is the parent composition. It must not
+        // lose its whole reserved common to a nearby fallback prop cluster
+        // merely because that cluster won an unrelated hash tie-break.
+        priority: this.ambientPlaceProgramPriority(acceptedProgram),
       });
     }
     const rejectedPrograms = new Set<string>();
@@ -3944,7 +4013,10 @@ export class RegionalWorldTileProvider extends TileProvider {
     for (const placement of placements) {
       const siteKey = positionKey(placement.siteX, placement.siteY);
       const belongsToPlace = uniquePrograms.has(siteKey);
-      if (sourcePlaceSites.has(siteKey) && !belongsToPlace) continue;
+      if (sourcePlaceSites.has(siteKey) && !belongsToPlace && !(
+        this.ambientPlaceFabricProfile === 'shared-common' &&
+        placement.parcelPathId === undefined
+      )) continue;
       if ((!belongsToPlace && visibleFootprintIntersects(
         placement.asset,
         placement.anchorX,
@@ -4050,7 +4122,8 @@ export class RegionalWorldTileProvider extends TileProvider {
   }
 
   private getAmbientPlaceProgram(cellX: number, cellY: number): AmbientPlaceProgram | null {
-    const cacheKey = `${this.ambientPlaceAccessProfile}:${cellX},${cellY}`;
+    const cacheKey = `${this.ambientPlaceFabricProfile}:${this.ambientPlaceAccessProfile}:` +
+      `${cellX},${cellY}`;
     if (this.ambientPlaceProgramCache.has(cacheKey)) {
       const cached = this.ambientPlaceProgramCache.get(cacheKey) ?? null;
       this.ambientPlaceProgramCache.delete(cacheKey);
@@ -4181,18 +4254,83 @@ export class RegionalWorldTileProvider extends TileProvider {
     if (this.ambientPlaceAccessProfile === 'route-frontage' && !access) {
       return this.cacheAmbientPlaceProgram(cacheKey, null);
     }
-    const frontage = access
+    const fallbackFrontage = access
       ? this.buildAmbientPlaceFrontage(root, basePlacements, access.path, access.routeKind)
       : [];
-    const stable = Object.freeze([...basePlacements, ...frontage]
+    const fallbackStable = Object.freeze([...basePlacements, ...fallbackFrontage]
       .map((placement) => Object.freeze({ ...placement })));
-    return this.cacheAmbientPlaceProgram(cacheKey, Object.freeze({
+    const sharedCommon = access && this.ambientPlaceFabricProfile === 'shared-common' &&
+      !this.ambientPlaceAccessIntersectsCivic(access.path)
+      ? this.buildAmbientSharedCommon(root, basePlacements, access.path, access.targetKey)
+      : null;
+    const sharedParentByIdentity = new Map((sharedCommon?.parents ?? []).map((placement) => (
+      [placementIdentity(placement), placement]
+    )));
+    const basePlacementKeys = new Set(basePlacements.map(placementIdentity));
+    const publicParentKeys = new Set(sharedCommon?.parents.map(placementIdentity) ?? []);
+    const sharedCorePlacements = sharedCommon ? [
+      ...basePlacements.map((placement) => (
+        sharedParentByIdentity.get(placementIdentity(placement)) ?? placement
+      )).filter((placement) => (
+        placement === root || publicParentKeys.has(placementIdentity(placement)) ||
+        !visibleFootprintIntersectsLandmarkFabric(
+          placement,
+          sharedCommon.fabric.layout,
+          0.52,
+        )
+      )),
+      ...sharedCommon.parents.filter((placement) => (
+        !basePlacementKeys.has(placementIdentity(placement))
+      )),
+    ] : basePlacements;
+    const commonFrontage = sharedCommon
+      ? this.buildAmbientSharedCommonFrontage(
+        root,
+        sharedCommon.parents,
+        sharedCommon.fabric,
+        sharedCorePlacements,
+      )
+      : [];
+    const districtPlacements = [...sharedCorePlacements, ...commonFrontage];
+    const fabricReserved = new Set(sharedCommon
+      ? rasterizeRegionalLandmarkFabricLayout(sharedCommon.fabric.layout).map((cell) => (
+        positionKey(cell.x, cell.y)
+      ))
+      : []);
+    const frontage = access
+      ? this.buildAmbientPlaceFrontage(
+        root,
+        districtPlacements,
+        access.path,
+        access.routeKind,
+        fabricReserved,
+      )
+      : [];
+    const stable = Object.freeze([...districtPlacements, ...frontage]
+      .map((placement) => Object.freeze({ ...placement })));
+    const sharedProgram = Object.freeze({
       root: stable[0]!,
       placements: stable,
+      fallbackPlacements: sharedCommon ? fallbackStable : undefined,
       accessPath: access?.path,
       accessRouteKind: access?.routeKind,
       accessTargetKey: access?.targetKey,
-    }));
+      publicFocalKeys: sharedCommon?.parents.map(placementIdentity),
+      fabric: sharedCommon?.fabric,
+    }) satisfies AmbientPlaceProgram;
+    if (sharedProgram.fabric && sharedProgram.accessPath && setsIntersect(
+      this.ambientPlaceProgramReservation(sharedProgram),
+      this.ambientAccessCivicReserved(sharedProgram.accessPath),
+    )) {
+      return this.cacheAmbientPlaceProgram(cacheKey, Object.freeze({
+        root: fallbackStable[0]!,
+        placements: fallbackStable,
+        accessPath: access?.path,
+        accessRouteKind: access?.routeKind,
+        accessTargetKey: access?.targetKey,
+      }));
+    }
+    return this.cacheAmbientPlaceProgram(cacheKey, sharedProgram);
   }
 
   private cacheAmbientPlaceProgram(
@@ -4206,6 +4344,33 @@ export class RegionalWorldTileProvider extends TileProvider {
       this.ambientPlaceProgramCache.delete(oldest);
     }
     return program;
+  }
+
+  private ambientPlaceProgramPriority(program: AmbientPlaceProgram): number {
+    return program.fabric
+      ? 2 - Math.min(1, (program.fabric.compositionCost ?? 0) / 100) +
+        this.hashUnit(program.root.siteX, program.root.siteY, 0x3f71) * 0.0001
+      : this.hashUnit(program.root.siteX, program.root.siteY, 0x3f71);
+  }
+
+  private ambientPlaceProgramReservation(program: AmbientPlaceProgram): Set<string> {
+    const reserved = new Set<string>();
+    for (const placement of program.placements) reserveVisibleFootprint(placement, reserved, 1);
+    for (const cell of program.accessPath
+      ? rasterizeRegionalParcelPath(program.accessPath)
+      : []) {
+      if (cell.protected) reserved.add(positionKey(cell.x, cell.y));
+    }
+    if (program.fabric) {
+      for (const cell of rasterizeRegionalLandmarkFabricLayout(program.fabric.layout)) {
+        if (sampleRegionalLandmarkFabricLayout(
+          cell.x + 0.5,
+          cell.y + 0.5,
+          program.fabric.layout,
+        ).pavingWeight > 0.2) reserved.add(positionKey(cell.x, cell.y));
+      }
+    }
+    return reserved;
   }
 
   /** Ensure a route-connected place has one manifest-declared doorway even
@@ -4403,6 +4568,264 @@ export class RegionalWorldTileProvider extends TileProvider {
     return null;
   }
 
+  /** Promote a proved access path into a small district destination. Two
+   * manifest-authored, visually distinct focal parents face a widened common
+   * from opposite sides. Terrain, collision, path, and complete visible
+   * footprints are proven before any secondary frontage can compete. */
+  private buildAmbientSharedCommon(
+    root: Placement,
+    established: readonly Placement[],
+    path: RegionalParcelPath,
+    accessTargetKey: string,
+  ): { parents: Placement[]; fabric: LandmarkFabricSurface } | null {
+    const target = established.find((placement): placement is Placement & {
+      asset: RegionalParcelComponentAsset;
+    } => (
+      placementIdentity(placement) === accessTargetKey &&
+      isFocalCompositionAsset(placement.asset) &&
+      placement.asset.frontageAxis !== undefined &&
+      placement.asset.compositionSide !== undefined &&
+      placement.asset.frontageStations !== undefined
+    ));
+    if (!target) return null;
+    const entrances = ambientPlaceEntrances(target);
+    if (entrances.length === 0) return null;
+    const otherOccupied = new Set<string>();
+    const placementReserved = new Set<string>();
+    for (const placement of established) {
+      const identity = placementIdentity(placement);
+      const protectedParent = placement === root || identity === accessTargetKey;
+      if (protectedParent) reserveVisibleFootprint(placement, placementReserved, 1);
+      for (const [offsetX, offsetY] of placement.asset.collision) {
+        if (placement === root && identity !== accessTargetKey) {
+          otherOccupied.add(positionKey(
+            placement.anchorX + offsetX,
+            placement.anchorY + offsetY,
+          ));
+        }
+      }
+    }
+    const pathReserved = new Set(rasterizeRegionalParcelPath(path).map((cell) => (
+      positionKey(cell.x, cell.y)
+    )));
+    const axis = target.asset.frontageAxis;
+    const targetSide = target.asset.compositionSide;
+    if (!axis || targetSide === undefined) return null;
+    const oppositeSide = -targetSide as -1 | 1;
+    const targetVisualGroup = assetVisualGroup(target.asset);
+    const targetBiome = this.field.sample(target.anchorX, target.anchorY);
+    const candidates = this.parcelComponents.filter((asset) => (
+      isFocalCompositionAsset(asset) && asset.frontageAxis === axis &&
+      asset.compositionSide === oppositeSide && asset.frontageStations !== undefined &&
+      (!asset.programs || asset.programs.length === 0) &&
+      assetVisualGroup(asset) !== targetVisualGroup
+    )).map((asset) => {
+      const compatibility = Math.max(...asset.families.map((family) => (
+        targetBiome.weights[BIOME_FAMILIES.indexOf(family)] ?? 0
+      )));
+      const parentAffinity = asset.families.some((family) => root.asset.families.includes(family))
+        ? 0.18
+        : 0;
+      return {
+        asset,
+        compatibility,
+        score: compatibility * 0.78 + parentAffinity + this.hashUnit(
+          target.anchorX,
+          target.anchorY,
+          stringHash(asset.id) ^ 0x19b7,
+        ) * 0.12,
+      };
+    }).filter(({ compatibility }) => compatibility >= 0.16)
+      .sort((a, b) => b.score - a.score || a.asset.id.localeCompare(b.asset.id));
+    const endStation = sampleRegionalParcelPath(path, path.arcLength);
+    for (const entrance of entrances) {
+      const northSouth = axis === 'north-south';
+      const entranceAlong = northSouth ? entrance.y : entrance.x;
+      const entranceAcross = northSouth ? entrance.x : entrance.y;
+      for (let nudgeIndex = 0; nudgeIndex <= 12; nudgeIndex++) {
+        const commonAlong = entranceAlong + symmetricSearchOffset(nudgeIndex);
+        for (const extraDepth of [0, 0.5, 1, 1.5, 2, 2.5, 3, 4]) {
+          const commonAcross = entranceAcross - targetSide * (
+            AMBIENT_SHARED_COMMON_HALF_DEPTH + extraDepth
+          );
+          const commonSite = northSouth
+            ? { x: commonAcross, y: commonAlong }
+            : { x: commonAlong, y: commonAcross };
+          for (const { asset } of candidates) {
+            const crossSpan = northSouth ? asset.sprite.width : asset.sprite.height;
+            for (let separation = 0; separation <= 4; separation++) {
+              const crossOffset = AMBIENT_SHARED_COMMON_HALF_DEPTH +
+                crossSpan * 0.5 + 0.75 + separation;
+              const centreX = commonSite.x + (northSouth ? oppositeSide * crossOffset : 0);
+              const centreY = commonSite.y + (northSouth ? 0 : oppositeSide * crossOffset);
+              const anchor = visualCentreAnchor(asset, centreX, centreY);
+              const collisionIntersectsAccess = asset.collision.some(([offsetX, offsetY]) => (
+                pathReserved.has(positionKey(
+                  anchor.anchorX + offsetX,
+                  anchor.anchorY + offsetY,
+                ))
+              ));
+              const assetFits = this.assetFits(anchor.anchorX, anchor.anchorY, asset);
+              const visibleCollision = visibleFootprintIntersects(
+                asset,
+                anchor.anchorX,
+                anchor.anchorY,
+                placementReserved,
+              );
+              if (!assetFits || collisionIntersectsAccess || visibleCollision) {
+                continue;
+              }
+              const parentMetadata = {
+                parcelId: `place:${root.siteX}:${root.siteY}`,
+                parcelPathId: `${path.id}:common`,
+                parcelStation: path.arcLength,
+                pathTangentX: endStation.tangentX,
+                pathTangentY: endStation.tangentY,
+              };
+              const parents: Placement[] = [
+                { ...target, ...parentMetadata },
+                {
+                  asset,
+                  kind: 'ambient',
+                  siteX: root.siteX,
+                  siteY: root.siteY,
+                  ...anchor,
+                  ...parentMetadata,
+                },
+              ];
+              if (parents.length !== AMBIENT_SHARED_COMMON_PARENT_LIMIT) continue;
+              const fabric = this.createLandmarkFabricSurface(
+                root,
+                parents,
+                'shared-common',
+                commonSite,
+              );
+              if (!fabric) continue;
+              const fabricIntersectsEstablished = [...otherOccupied].some((key) => {
+                const [x, y] = key.split(',').map(Number) as [number, number];
+                return sampleRegionalLandmarkFabricLayout(x + 0.5, y + 0.5, fabric.layout)
+                  .pavingWeight > 0.52;
+              });
+              if (fabricIntersectsEstablished) continue;
+              return {
+                parents,
+                fabric: {
+                  ...fabric,
+                  // Extended geometric search is a rescue lane. Record how
+                  // far the valid solution moved from the authored doorway so
+                  // a compact neighbouring district wins overlap arbitration.
+                  compositionCost: nudgeIndex + extraDepth * 2 + separation * 0.5,
+                },
+              };
+            }
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  /** Continue the two civic parents into short, non-repeating frontage wings.
+   * The shared common remains the parent geometry: each authored focal grows
+   * at most one support at either frontage end, outside the paved SDF and all
+   * complete visible footprints. This is a bounded ensemble, not a repeated
+   * density stamp. */
+  private buildAmbientSharedCommonFrontage(
+    root: Placement,
+    parents: readonly Placement[],
+    fabric: LandmarkFabricSurface,
+    established: readonly Placement[],
+  ): Placement[] {
+    const common = fabric.layout.aprons.find((apron) => apron.role === 'common');
+    if (!common || parents.length !== AMBIENT_SHARED_COMMON_PARENT_LIMIT) return [];
+    const northSouth = common.axis === 'north-south';
+    const reserved = new Set<string>();
+    const usage = new Map<string, number>();
+    for (const placement of established) {
+      reserveVisibleFootprint(placement, reserved, 0);
+      const visualGroup = assetVisualGroup(placement.asset);
+      usage.set(visualGroup, (usage.get(visualGroup) ?? 0) + 1);
+    }
+    for (const cell of rasterizeRegionalLandmarkFabricLayout(fabric.layout)) {
+      if (sampleRegionalLandmarkFabricLayout(
+        cell.x + 0.5,
+        cell.y + 0.5,
+        fabric.layout,
+      ).pavingWeight > 0.32) reserved.add(positionKey(cell.x, cell.y));
+    }
+    const frontage: Placement[] = [];
+    for (const parent of [...parents].sort((a, b) => (
+      a.anchorY - b.anchorY || a.anchorX - b.anchorX ||
+      a.asset.id.localeCompare(b.asset.id)
+    ))) {
+      const bounds = visibleSpriteWorldBounds(parent);
+      if (!bounds) continue;
+      const parentAlongMinimum = northSouth ? bounds.minY : bounds.minX;
+      const parentAlongMaximum = (northSouth ? bounds.maxY : bounds.maxX) + 1;
+      const parentAcrossCentre = northSouth
+        ? (bounds.minX + bounds.maxX + 1) * 0.5
+        : (bounds.minY + bounds.maxY + 1) * 0.5;
+      for (const direction of [-1, 1] as const) {
+        let selected: Placement | null = null;
+        for (let separation = 0; separation <= 3 && !selected; separation++) {
+          for (let nudgeIndex = 0; nudgeIndex <= 4 && !selected; nudgeIndex++) {
+            const provisionalAlong = direction < 0
+              ? parentAlongMinimum - 2.5 - separation
+              : parentAlongMaximum + 2.5 + separation;
+            const provisionalAcross = parentAcrossCentre + symmetricSearchOffset(nudgeIndex);
+            const provisionalX = Math.round(northSouth ? provisionalAcross : provisionalAlong);
+            const provisionalY = Math.round(northSouth ? provisionalAlong : provisionalAcross);
+            const biome = this.field.sample(provisionalX, provisionalY);
+            const route = this.routes.sample(provisionalX, provisionalY);
+            const asset = this.selectAmbientPlaceFrontageAsset(
+              provisionalX,
+              provisionalY,
+              root,
+              biome,
+              route,
+              usage,
+              true,
+            );
+            if (!asset) continue;
+            const alongSpan = northSouth ? asset.sprite.height : asset.sprite.width;
+            const centreAlong = direction < 0
+              ? parentAlongMinimum - alongSpan * 0.5 - 0.7 - separation
+              : parentAlongMaximum + alongSpan * 0.5 + 0.7 + separation;
+            const centreAcross = provisionalAcross;
+            const anchor = visualCentreAnchor(
+              asset,
+              northSouth ? centreAcross : centreAlong,
+              northSouth ? centreAlong : centreAcross,
+            );
+            const localTerrain = this.field.sample(anchor.anchorX, anchor.anchorY);
+            if (localTerrain.slope > 0.82 ||
+                !this.assetFits(anchor.anchorX, anchor.anchorY, asset) ||
+                visibleFootprintIntersects(asset, anchor.anchorX, anchor.anchorY, reserved)) {
+              continue;
+            }
+            selected = {
+              asset,
+              kind: 'ambient',
+              siteX: root.siteX,
+              siteY: root.siteY,
+              ...anchor,
+              parcelId: `place:${root.siteX}:${root.siteY}`,
+              parcelPathId: `${fabric.layout.id}:frontage`,
+              pathTangentX: northSouth ? 0 : direction,
+              pathTangentY: northSouth ? direction : 0,
+            };
+          }
+        }
+        if (!selected) continue;
+        frontage.push(selected);
+        const visualGroup = assetVisualGroup(selected.asset);
+        usage.set(visualGroup, (usage.get(visualGroup) ?? 0) + 1);
+        reserveVisibleFootprint(selected, reserved, 0);
+      }
+    }
+    return frontage;
+  }
+
   /** Extend the focal cluster along its proved access path. Arc-length
    * stations, local biome weights, route distance, manifest roles, and full
    * visible-footprint reservation choose the masses; ecotones can therefore
@@ -4412,8 +4835,9 @@ export class RegionalWorldTileProvider extends TileProvider {
     established: readonly Placement[],
     path: RegionalParcelPath,
     routeKind: RegionalRouteKind,
+    additionalReserved: ReadonlySet<string> = new Set(),
   ): Placement[] {
-    const reserved = new Set<string>();
+    const reserved = new Set<string>(additionalReserved);
     const usage = new Map<string, number>();
     for (const placement of established) {
       reserveVisibleFootprint(placement, reserved, 1);
@@ -4484,6 +4908,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     biome: BiomeWorldSample,
     route: RegionalRouteSample,
     usage: ReadonlyMap<string, number>,
+    requireUnused = false,
   ): RegionalVisualAsset | null {
     const candidates: RegionalVisualAsset[] = [
       ...this.parcelComponents.filter((asset) => (
@@ -4505,6 +4930,7 @@ export class RegionalWorldTileProvider extends TileProvider {
         ? 0.16
         : 0;
       const visualGroup = assetVisualGroup(asset);
+      if (requireUnused && (usage.get(visualGroup) ?? 0) > 0) continue;
       const repetitionPenalty = (usage.get(visualGroup) ?? 0) * 0.31;
       const variation = this.hashUnit(worldX, worldY, stringHash(asset.id) ^ 0x5c91) * 0.14;
       const score = compatibility * 0.78 + parentAffinity + variation - repetitionPenalty;
@@ -4540,16 +4966,16 @@ export class RegionalWorldTileProvider extends TileProvider {
           ))) continue;
       const siteKey = positionKey(program.root.siteX, program.root.siteY);
       const cells = this.getAmbientPlaceAccessCells(program.accessPath);
-      const civicReserved = this.ambientAccessCivicReserved(program.accessPath);
-      const intersectsOtherComposition = cells.some((cell) => {
+      const intersectsOtherComposition = this.ambientPlaceAccessIntersectsCivic(
+        program.accessPath,
+      ) || (!program.fabric && cells.some((cell) => {
         if (!cell.protected) return false;
         const key = positionKey(cell.x, cell.y);
-        if (civicReserved.has(key)) return true;
         for (const [otherSiteKey, reserved] of programReserved) {
           if (otherSiteKey !== siteKey && reserved.has(key)) return true;
         }
         return false;
-      });
+      }));
       if (intersectsOtherComposition) continue;
       for (const cell of cells) {
         if (cell.x < originX || cell.x >= originX + this.blockSize ||
@@ -4566,6 +4992,18 @@ export class RegionalWorldTileProvider extends TileProvider {
       }
     }
     return connectors;
+  }
+
+  /** A shared public destination is not admissible when the protected part of
+   * its only route connection crosses a deterministic civic composition. Keep
+   * this identical to the late connector veto so a disconnected common can
+   * never survive merely because material and connection layers are queried
+   * through different cache blocks. */
+  private ambientPlaceAccessIntersectsCivic(path: RegionalParcelPath): boolean {
+    const civicReserved = this.ambientAccessCivicReserved(path);
+    return this.getAmbientPlaceAccessCells(path).some((cell) => (
+      cell.protected && civicReserved.has(positionKey(cell.x, cell.y))
+    ));
   }
 
   /** Rebuild the bounded civic reservation around a complete access path so
@@ -5836,6 +6274,28 @@ function visibleFootprintIntersects(
   return false;
 }
 
+function visibleFootprintIntersectsLandmarkFabric(
+  placement: Placement,
+  layout: RegionalLandmarkFabricLayout,
+  minimumPavingWeight: number,
+): boolean {
+  const [offsetX, offsetY] = getSpriteAnchor(placement.asset);
+  for (let tileY = 0; tileY < placement.asset.sprite.height; tileY++) {
+    for (let tileX = 0; tileX < placement.asset.sprite.width; tileX++) {
+      const tile = placement.asset.sprite.tiles[tileY]?.[tileX];
+      if (!tile || !hasVisiblePixels(tile)) continue;
+      const worldX = placement.anchorX + tileX - offsetX;
+      const worldY = placement.anchorY + tileY - offsetY;
+      if (sampleRegionalLandmarkFabricLayout(
+        worldX + 0.5,
+        worldY + 0.5,
+        layout,
+      ).pavingWeight > minimumPavingWeight) return true;
+    }
+  }
+  return false;
+}
+
 function reserveVisibleFootprint(
   placement: Placement,
   reserved: Set<string>,
@@ -5994,6 +6454,20 @@ function centredFocalAnchor(
   return {
     anchorX: Math.round(desiredCentreX - relativeCentreX),
     anchorY: Math.round(desiredCentreY - relativeCentreY),
+  };
+}
+
+function visualCentreAnchor(
+  asset: RegionalVisualAsset,
+  centreX: number,
+  centreY: number,
+): { anchorX: number; anchorY: number } {
+  const [spriteAnchorX, spriteAnchorY] = getSpriteAnchor(asset);
+  const relativeCentreX = (asset.sprite.width - 1) * 0.5 - spriteAnchorX;
+  const relativeCentreY = (asset.sprite.height - 1) * 0.5 - spriteAnchorY;
+  return {
+    anchorX: Math.round(centreX - relativeCentreX),
+    anchorY: Math.round(centreY - relativeCentreY),
   };
 }
 

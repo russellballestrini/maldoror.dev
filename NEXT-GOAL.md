@@ -1656,6 +1656,47 @@ Completed foundations:
   `1022180`, and the same start timestamp; there was no deploy, service restart,
   push, production database write, complete-gate claim, or physical Ghostty
   claim;
+- V161 selects the first bounded non-origin two-parent public-space grammar as
+  a composition foundation while **continuing to reject Gate A**. The new
+  experimental `shared-common` profile reuses one route-proved
+  manifest-declared doorway as a public parent, finds one visually distinct
+  opposite-side focal through the same semantic manifest, and reserves both
+  complete visible footprints around one enlarged common, internal spine, two
+  thresholds, and two approaches before up to four non-repeating frontage
+  wings can compete. Terrain, slope, collision, protected access, public-core
+  walkability, full civic composition, visual-group usage, and shared material
+  SDFs own acceptance; no family-name or asset-ID case table owns selection.
+  Extended search remains a rescue lane, but its solved displacement/depth/
+  separation cost now lets the tighter valid common win overlap arbitration,
+  restoring the stronger five-mass mountain composition without a fixture
+  exception. Rejected owners may retain only collision-safe satellite masses
+  outside public-space and connector reservations. The synthetic stress proof
+  retains exactly two public parents per admitted program, one common and one
+  spine, at least two approaches, five of five strongly paved and walkable
+  public-core samples, and an exact protected access path that remains
+  collision-free and walkable even where multiple curves merge onto one
+  physical connector surface. The selected six fixed frames contain 2/4/5/6/
+  4/2 ambient masses for coast/forest/mountain/ruins/rural/transition, 0/35/19/
+  15/25/0 visible connector cells, and 1--3 structurally valid shared-common
+  layouts intersecting each crop. Direct original-resolution inspection of
+  common-centred forest and ruins frames finally shows four distinct structures
+  enclosing broad warm public clearings, and mountain materially improves;
+  coast remains sparse, rural still reads partly as scattered objects, and the
+  forest/mountain transition is essentially unchanged. Complete A--J controls,
+  failed candidates, final metrics, hashes, logs, direct-review findings, and
+  limitations are retained in
+  `track-4-world-composition/regional-multi-parent-district-v161/FINDINGS.md`.
+  Repository verification passes 50 files / 282 tests, 18/18 typecheck tasks,
+  7/7 configured lint tasks, 12/12 build tasks, lab syntax, and diff hygiene;
+  the build produces a 10,120,821-byte runtime pack and 17,643,726-byte
+  six-viewport prewarm. No image generation or metered model call was used.
+  This profile is not enabled in production and does not justify another full
+  atlas yet: coast/rural/transition generalization, continuous neighboring
+  parcels/frontage, overview-specific aggregation, structure-bound life/light/
+  weather, Gate C, sustained/deployed Gate D, deployment, and explicit physical
+  Ghostty acceptance remain open. Production remains `vb07c0d4`; there was no
+  deploy, service restart, push, production database write, complete-gate
+  claim, or physical Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
@@ -1685,10 +1726,13 @@ Still open and therefore goal-blocking:
   work/market states, larger squares/commons, dense
   route-connected frontage beyond this bounded origin tranche, and
   complete forest, coast, rural, mountain, and ruins vocabularies. V158's
-  route-frontage meso place field now supplies the first non-origin multi-mass
-  layer with proved circulation, and V159's full fixed atlas proves that a few
-  connected macro compounds are not a substitute for continuous frontage,
-  crossings, public space, activity, or settlement fabric.
+  route-frontage meso place field supplies the first non-origin multi-mass
+  layer with proved circulation; V161's selected experimental successor adds
+  the first two-parent shared commons and bounded frontage wings, with strong
+  local forest/ruins evidence but no production enablement. V159's full fixed
+  atlas and V161's still-sparse coast/rural/transition frames prove that a few
+  connected public compounds are not a substitute for continuous frontage,
+  crossings, activity, or settlement fabric.
   Coast-specific waterfront diversity, far
   greater travel-scale entropy across route topology, hydrology, biome fields,
   ambient clusters, landmarks, and parcel programs, authoritative traversal,
@@ -1708,9 +1752,11 @@ Still open and therefore goal-blocking:
   growth/decay, and production multi-human integration remain open;
 - the fresh V159 24-coordinate multi-zoom/time/weather atlas is complete as an
   honest **failed** visual audit on V158 source. Gate A remains open until the
-  recorded multi-parent composition, route/crossing/frontage, overview-LOD,
+  remaining multi-parent generalization, route/crossing/frontage, overview-LOD,
   and dynamically enumerated material-boundary failures are corrected and the
-  exact fixed atlas passes on a fresh build. V160 corrects process-local cold
+  exact fixed atlas passes on a fresh build. V161 closes only the first bounded
+  forest/ruins public-common case; it has not earned production enablement or
+  an atlas rerun. V160 corrects process-local cold
   session admission in scratch, but is not deployed and exposes a separate
   20-presence worker-latency failure. The selected
   night/storm and water/route/quay corrections have now been tested by the

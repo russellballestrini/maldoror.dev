@@ -127,4 +127,54 @@ describe('regional landmark fabric layout', () => {
       layout,
     ).approachWeight).toBeGreaterThan(0.9);
   });
+
+  it('builds a shared common only between opposite manifest frontages', () => {
+    const config = {
+      id: 'place-fabric:shared',
+      materialFamily: 'rural' as const,
+      siteX: 12.5,
+      siteY: -7.5,
+      seed: 0x7319,
+      connectionMode: 'shared-common' as const,
+      focals: [
+        {
+          id: 'north-barn',
+          frontageAxis: 'east-west' as const,
+          compositionSide: -1 as const,
+          frontageStations: [0],
+          minX: 8,
+          minY: -15,
+          maxX: 13,
+          maxY: -11,
+        },
+        {
+          id: 'south-market',
+          frontageAxis: 'east-west' as const,
+          compositionSide: 1 as const,
+          frontageStations: [0],
+          minX: 12,
+          minY: -4,
+          maxX: 17,
+          maxY: 0,
+        },
+      ],
+    };
+    const layout = buildRegionalLandmarkFabricLayout(config)!;
+    expect(layout).toEqual(buildRegionalLandmarkFabricLayout(config));
+    expect(layout.connectionMode).toBe('shared-common');
+    expect(layout.aprons.filter((apron) => apron.role === 'common')).toHaveLength(1);
+    expect(layout.aprons.filter((apron) => apron.role === 'spine')).toHaveLength(1);
+    expect(layout.aprons.filter((apron) => apron.role === 'approach')).toHaveLength(2);
+    expect(layout.aprons.filter((apron) => apron.role === 'threshold')).toHaveLength(2);
+    expect(sampleRegionalLandmarkFabricLayout(12.5, -7.5, layout)).toMatchObject({
+      pavingWeight: 1,
+      approachWeight: 1,
+    });
+    expect(rasterizeRegionalLandmarkFabricLayout(layout).length).toBeGreaterThan(70);
+
+    expect(buildRegionalLandmarkFabricLayout({
+      ...config,
+      focals: config.focals.slice(0, 1),
+    })).toBeNull();
+  });
 });

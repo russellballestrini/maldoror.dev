@@ -708,18 +708,19 @@ export class RegionalMaterialCompositor {
         const beneathR = srgbToLinear(beneath.r);
         const beneathG = srgbToLinear(beneath.g);
         const beneathB = srgbToLinear(beneath.b);
-        const sourceMix = authoredFabric ? 0.22 : 0.46;
+        const sourceMix = authoredFabric ? 0.22 - sample.commonWeight * 0.12 : 0.46;
         const warmth = authoredFabric
           ? sample.thresholdWeight * 0.008 + (patch + 1) * 0.0015
           : 0.012 + sample.thresholdWeight * 0.052 + (patch + 1) * 0.005;
         const paverScale = authoredFabric
-          ? 0.78 + sample.thresholdWeight * 0.025 + grain * 0.01
+          ? 0.78 + sample.thresholdWeight * 0.025 + sample.commonWeight * 0.12 + grain * 0.01
           : 1.06 + sample.thresholdWeight * 0.08 + grain * 0.02;
         const paverR = clamp01(lerp(routeTexture[0]!, beneathR, sourceMix) * paverScale + warmth);
         const paverG = clamp01(lerp(routeTexture[1]!, beneathG, sourceMix) * (paverScale + 0.005) + warmth * 0.55);
         const paverB = clamp01(lerp(routeTexture[2]!, beneathB, sourceMix) * (paverScale - 0.02) + warmth * 0.16);
         const opacity = sample.pavingWeight * (authoredFabric
-          ? 0.46 + sample.thresholdWeight * 0.27 + sample.approachWeight * 0.03
+          ? 0.46 + sample.thresholdWeight * 0.27 + sample.approachWeight * 0.03 +
+            sample.commonWeight * 0.32
           : 0.7 + sample.thresholdWeight * 0.18);
         let linearR = lerp(beneathR, paverR, opacity);
         let linearG = lerp(beneathG, paverG, opacity);

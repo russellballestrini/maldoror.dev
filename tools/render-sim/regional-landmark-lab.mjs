@@ -30,6 +30,7 @@ import {
   RegionalWorldTileProvider,
   rasterizeRegionalEnvironmentProgramLayout,
   rasterizeRegionalLandmarkFabricLayout,
+  sampleRegionalLandmarkFabricLayout,
   sampleRegionalParcelLayout,
   sampleRegionalWaterfrontLayout,
 } from '../../packages/world/dist/index.js';
@@ -60,7 +61,7 @@ const RUN_AMBIENT_DISTRIBUTION_AUDIT =
 if (!['single', 'bounded-ensemble', 'hierarchical-place-field'].includes(AMBIENT_COMPOSITION_PROFILE)) {
   throw new Error(`Unknown ambient composition profile: ${AMBIENT_COMPOSITION_PROFILE}`);
 }
-if (!['terrain-only', 'internal-spine'].includes(AMBIENT_PLACE_FABRIC_PROFILE)) {
+if (!['terrain-only', 'internal-spine', 'shared-common'].includes(AMBIENT_PLACE_FABRIC_PROFILE)) {
   throw new Error(`Unknown ambient place-fabric profile: ${AMBIENT_PLACE_FABRIC_PROFILE}`);
 }
 if (!['isolated', 'route-frontage'].includes(AMBIENT_PLACE_ACCESS_PROFILE)) {
@@ -1373,11 +1374,43 @@ function auditLandmarkFabrics(layouts) {
     const thresholdCount = layout.aprons.filter((apron) => apron.role === 'threshold').length;
     const approachCount = layout.aprons.filter((apron) => apron.role === 'approach').length;
     const spineCount = layout.aprons.filter((apron) => apron.role === 'spine').length;
+    const commons = layout.aprons.filter((apron) => apron.role === 'common');
+    const commonCount = commons.length;
+    const common = commons[0];
+    const publicCore = common ? [
+      [common.centreX, common.centreY],
+      [
+        common.centreX + (common.axis === 'north-south' ? 0 : common.halfAlong * 0.45),
+        common.centreY + (common.axis === 'north-south' ? common.halfAlong * 0.45 : 0),
+      ],
+      [
+        common.centreX - (common.axis === 'north-south' ? 0 : common.halfAlong * 0.45),
+        common.centreY - (common.axis === 'north-south' ? common.halfAlong * 0.45 : 0),
+      ],
+      [
+        common.centreX + (common.axis === 'north-south' ? common.halfAcross * 0.45 : 0),
+        common.centreY + (common.axis === 'north-south' ? 0 : common.halfAcross * 0.45),
+      ],
+      [
+        common.centreX - (common.axis === 'north-south' ? common.halfAcross * 0.45 : 0),
+        common.centreY - (common.axis === 'north-south' ? 0 : common.halfAcross * 0.45),
+      ],
+    ] : [];
+    const publicCorePaved = publicCore.filter(([x, y]) => (
+      sampleRegionalLandmarkFabricLayout(x, y, layout).pavingWeight > 0.9
+    )).length;
+    const publicCoreWalkable = publicCore.filter(([x, y]) => (
+      world.getTile(Math.floor(x), Math.floor(y)).walkable
+    )).length;
     const minimumRouteDistance = Math.min(...routeDistances);
     const routeValid = layout.connectionMode === 'route-threshold' &&
       minimumRouteDistance <= 1 && thresholdCount > 0 && thresholdCount === approachCount;
     const internalValid = layout.connectionMode === 'internal-spine' &&
       spineCount === 1 && thresholdCount > 0 && thresholdCount === approachCount;
+    const sharedCommonValid = layout.connectionMode === 'shared-common' &&
+      commonCount === 1 && spineCount === 1 && thresholdCount >= 2 &&
+      thresholdCount === approachCount && publicCore.length === 5 &&
+      publicCorePaved === publicCore.length && publicCoreWalkable === publicCore.length;
     return {
       id: layout.id,
       materialFamily: layout.materialFamily,
@@ -1386,11 +1419,15 @@ function auditLandmarkFabrics(layouts) {
       thresholdCount,
       approachCount,
       spineCount,
+      commonCount,
+      publicCorePaved,
+      publicCoreWalkable,
       minimumRouteDistance,
       walkableRate: cells.length > 0 ? walkableCells / cells.length : 0,
       renderedSurfaceRate: cells.length > 0 ? surfaceCells / cells.length : 0,
-      valid: cells.length > 0 && (routeValid || internalValid) &&
-        walkableCells === cells.length && surfaceCells > 0,
+      valid: cells.length > 0 && (routeValid || internalValid || sharedCommonValid) &&
+        (layout.connectionMode === 'shared-common' || walkableCells === cells.length) &&
+        surfaceCells > 0,
     };
   });
   return {
