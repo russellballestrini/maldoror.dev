@@ -4,6 +4,7 @@ import {
   BiomeWorldField,
   CANAL_TOWN_ARRIVAL_CIVIC_BRANCHES,
   CANAL_TOWN_QUAY_EDGE_VARIATION,
+  REGIONAL_MATERIAL_TEXTURE_PROFILE,
   RegionalMaterialCompositor,
   RegionalRouteField,
   RegionalWorldDerivedCache,
@@ -126,8 +127,7 @@ export async function loadRegionalWorldKit(
     routeSurfaceStyles: routeKit.routeSurfaceStyles,
     crossingSurfaceStyles: routeKit.crossingSurfaceStyles,
     maxCachedTiles: 4096,
-    variantPeriodTiles: 5,
-    textureScaleTiles: 7,
+    ...REGIONAL_MATERIAL_TEXTURE_PROFILE,
     maxOutputResolution: Math.min(biomeKit.sourceTileSize, routeKit.sourceTileSize),
   });
   const derivedCache = new RegionalWorldDerivedCache();

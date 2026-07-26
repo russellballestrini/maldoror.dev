@@ -24,6 +24,7 @@ import {
 } from '../../apps/ssh-world/dist/game/regional-world-provider.js';
 import {
   BiomeWorldField,
+  REGIONAL_MATERIAL_TEXTURE_PROFILE,
   RegionalMaterialCompositor,
   RegionalRouteField,
   RegionalWorldTileProvider,
@@ -98,8 +99,7 @@ function createWorld() {
     routeSurfaceStyles: routeKit.routeSurfaceStyles,
     crossingSurfaceStyles: routeKit.crossingSurfaceStyles,
     maxCachedTiles: 4096,
-    variantPeriodTiles: 5,
-    textureScaleTiles: 7,
+    ...REGIONAL_MATERIAL_TEXTURE_PROFILE,
     maxOutputResolution: Math.min(biomeKit.sourceTileSize, routeKit.sourceTileSize),
   });
   const world = new RegionalWorldTileProvider({

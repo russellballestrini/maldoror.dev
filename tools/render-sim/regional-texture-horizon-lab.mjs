@@ -17,9 +17,10 @@ import { loadRegionalBiomeMaterialKit } from '../../apps/ssh-world/dist/game/bio
 const ROOT = path.resolve(import.meta.dirname, '../..');
 const MANIFEST_PATH = path.join(ROOT, 'assets/biomes/manifest.json');
 const OUTPUT = process.env.MALDOROR_TEXTURE_HORIZON_OUTPUT ??
-  '/mnt/donto-data/donto-resources/maldoror/rendering-research/track-1-material-blending/texture-horizon-v154';
+  '/mnt/donto-data/donto-resources/maldoror/rendering-research/track-1-material-blending/texture-horizon-latest';
 const WORLD_SEED = BigInt(process.env.MALDOROR_WORLD_SEED ?? '8801799478018485');
 const TEXTURE_SCALE_TILES = integerEnvironment('MALDOROR_TEXTURE_HORIZON_SCALE', 7, 2, 48);
+const VARIANT_PERIOD_TILES = integerEnvironment('MALDOROR_TEXTURE_HORIZON_VARIANT_PERIOD', 3, 2, 32);
 const TEXTURE_RECONSTRUCTION = reconstructionEnvironment();
 const WIDTH_TILES = 40;
 const HEIGHT_TILES = 32;
@@ -79,6 +80,7 @@ const report = {
     manifest.materialMasters.map((entry) => [entry.family, entry.variants]),
   ),
   textureScaleTiles: TEXTURE_SCALE_TILES,
+  variantPeriodTiles: VARIANT_PERIOD_TILES,
   textureReconstruction: TEXTURE_RECONSTRUCTION,
   sourceDensity: {
     explanation: 'Full-source pixels represented per world tile; equal values make horizon comparisons scale-fair.',
@@ -102,6 +104,7 @@ const report = {
       luminanceStdMean: round(mean(rows.map((row) => row.luminanceStd))),
       seamToInteriorRatioMean: round(mean(rows.map((row) => row.seamToInteriorRatio))),
       repetitionPeakMean: round(mean(rows.map((row) => row.repetitionPeak))),
+      reflectionP95Mean: round(mean(rows.map((row) => row.reflectionP95))),
     };
   }),
   atlasPath,
@@ -109,6 +112,7 @@ const report = {
   interpretation: [
     'The lab holds world coordinates, authored source, source-pixel density, and output scales constant across intended A/B runs.',
     'Translation correlation is measured after subtracting a two-world-tile box mean so broad painterly value does not count as a repeated motif.',
+    'Reflection p95 scans local vertical and horizontal axes over two-world-tile windows; it detects mirror quilts that translation-only correlation misses.',
     'Metrics are diagnostics; direct exact-pixel comparison remains authoritative.',
   ],
 };
@@ -133,7 +137,7 @@ function renderFamily(biomeKit, familyIndex, resolution) {
     field: { sample: () => sample },
     materials: biomeKit.materials,
     maxCachedTiles: WIDTH_TILES * HEIGHT_TILES,
-    variantPeriodTiles: 5,
+    variantPeriodTiles: VARIANT_PERIOD_TILES,
     textureScaleTiles: TEXTURE_SCALE_TILES,
     textureReconstruction: TEXTURE_RECONSTRUCTION,
     maxOutputResolution: biomeKit.sourceTileSize,
@@ -191,6 +195,7 @@ function analyseFrame(frame) {
       correlation(detail, frame.width, frame.height, 0, pixels),
     ))];
   }));
+  const reflection = reflectionStatistics(detail, frame.width, frame.height, frame.resolution);
   return {
     luminanceStd: round(Math.sqrt(variance / luminance.length)),
     tileSeamMeanLuminanceDelta: round(seamDelta / Math.max(1, seamSamples)),
@@ -201,6 +206,7 @@ function analyseFrame(frame) {
     ),
     correlations,
     repetitionPeak: round(Math.max(...Object.values(correlations))),
+    ...reflection,
   };
 
   function accumulateDelta(delta, seam) {
@@ -212,6 +218,55 @@ function analyseFrame(frame) {
       interiorSamples++;
     }
   }
+}
+
+function reflectionStatistics(values, width, height, resolution) {
+  const radius = resolution * 2;
+  const stride = Math.max(1, Math.floor(resolution / 4));
+  const vertical = [];
+  const horizontal = [];
+  for (let axis = radius; axis < width - radius; axis += stride) {
+    vertical.push(reflectionCorrelation(values, width, height, axis, radius, stride, true));
+  }
+  for (let axis = radius; axis < height - radius; axis += stride) {
+    horizontal.push(reflectionCorrelation(values, width, height, axis, radius, stride, false));
+  }
+  const verticalP95 = percentile(vertical, 0.95);
+  const horizontalP95 = percentile(horizontal, 0.95);
+  return {
+    reflectionWindowTiles: 2,
+    verticalReflectionP95: round(verticalP95),
+    horizontalReflectionP95: round(horizontalP95),
+    reflectionP95: round(Math.max(verticalP95, horizontalP95)),
+  };
+}
+
+function reflectionCorrelation(values, width, height, axis, radius, stride, vertical) {
+  let numerator = 0;
+  let leftEnergy = 0;
+  let rightEnergy = 0;
+  if (vertical) {
+    for (let y = 0; y < height; y += stride) {
+      for (let distance = 0; distance < radius; distance += stride) {
+        const left = values[y * width + axis - 1 - distance];
+        const right = values[y * width + axis + distance];
+        numerator += left * right;
+        leftEnergy += left * left;
+        rightEnergy += right * right;
+      }
+    }
+  } else {
+    for (let x = 0; x < width; x += stride) {
+      for (let distance = 0; distance < radius; distance += stride) {
+        const left = values[(axis - 1 - distance) * width + x];
+        const right = values[(axis + distance) * width + x];
+        numerator += left * right;
+        leftEnergy += left * left;
+        rightEnergy += right * right;
+      }
+    }
+  }
+  return numerator / Math.max(1e-9, Math.sqrt(leftEnergy * rightEnergy));
 }
 
 function highPass(values, width, height, radius) {
@@ -302,6 +357,11 @@ function median(values) {
   return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
 }
 
+function percentile(values, fraction) {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))];
+}
+
 function round(value) {
   return Number(value.toFixed(5));
 }
@@ -315,8 +375,14 @@ function integerEnvironment(name, fallback, minimum, maximum) {
 }
 
 function reconstructionEnvironment() {
-  const value = process.env.MALDOROR_TEXTURE_HORIZON_RECONSTRUCTION ?? 'square-bilinear';
-  const allowed = ['square-bilinear', 'hex-contrast', 'hex-laplacian', 'cellular-semantic'];
+  const value = process.env.MALDOROR_TEXTURE_HORIZON_RECONSTRUCTION ?? 'triangle-bounded-window';
+  const allowed = [
+    'square-bilinear',
+    'triangle-bounded-window',
+    'hex-contrast',
+    'hex-laplacian',
+    'cellular-semantic',
+  ];
   if (!allowed.includes(value)) {
     throw new Error(`MALDOROR_TEXTURE_HORIZON_RECONSTRUCTION must be one of: ${allowed.join(', ')}`);
   }

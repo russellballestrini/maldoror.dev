@@ -1455,6 +1455,41 @@ Completed foundations:
   PID `1022033` and the same start timestamp; there was no deploy, service
   restart, push, production database write, complete-gate claim, or physical
   Ghostty claim;
+- V155 replaces detailed-material mirror quilting with an evidence-selected
+  bounded triangular reconstruction. Four 192 px family variants are sampled
+  through three deterministic, dihedrally oriented windows on a triangular
+  lattice and blended with linear barycentric weights; windows activate only
+  when their full source support fits, while scale-authored overview
+  interpolation retains the former path. An equal-density square control
+  proves that more pixels alone do not solve the visible lattice: translation
+  peaks are nearly equal, but the new two-world-tile reflection diagnostic
+  falls from 0.1851/0.2111 to 0.1422/0.1658 near/walking, a 23.2%/21.4%
+  reduction that tracks direct inspection. Four earlier bounded-window
+  candidates are retained and rejected for bands, herringbone, one-source
+  repetition, or triangular value facets. The final 589,824-tile scan covers
+  all 16 emitted classes, 92 adjacent class pairs, and 276 scale-authored
+  crops: mean seam ratio is 0.9330, only one intentional forest/coast district
+  transition exceeds 1.2, maximum remains 1.2679, and repeated edge signatures
+  remain zero. The selected material pack is 10,120,850 bytes (+25.7%), the
+  prewarm is 17,279,521 bytes (-2.1%), and retained full-kit RSS delta is 44.38
+  MiB. Final-source readiness reaches exact origin in 1,826.375 ms with 0 ms
+  generation, then renders 260 four-direction frames at
+  5.992/18.009/37.529/41.494 ms p50/p95/p99/max with zero misses, requests,
+  failures, imports, or main-thread fallbacks and 758.344 MiB peak RSS. An owned
+  migrated scratch worker becomes ready in 1,816 ms; real loopback SSH asserts
+  `(0,0)`, OCTANT, and 30% zoom across 276,672 bytes and 32 synchronized frames,
+  and its faithful 1440×828 replay was directly inspected. Full controls,
+  failed candidates, reflection and boundary atlases, hashes, runtime evidence,
+  and limits are retained in
+  `track-1-material-blending/texture-horizon-v155/FINDINGS.md`. Repository
+  verification passes 49 files / 272 tests, 18/18 typecheck tasks, 12/12 build
+  tasks, 7/7 configured lint tasks, both harness syntax checks, and
+  `git diff --check`. This closes a detailed-material reconstruction sub-gate,
+  not Gate A: the fresh 144-capture atlas, Gate C, sustained/deployed Gate D,
+  deployment, and explicit physical Ghostty acceptance remain open. Production
+  remains `vb07c0d4` with main PID `1022033`, worker PID `1022180`, and the same
+  start timestamp; there was no deploy, service restart, push, production
+  database write, complete-gate claim, or physical Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without

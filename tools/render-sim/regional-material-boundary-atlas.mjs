@@ -21,10 +21,12 @@ import {
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
 const OUTPUT = process.env.MALDOROR_MATERIAL_BOUNDARY_OUTPUT ??
-  '/mnt/donto-data/donto-resources/maldoror/rendering-research/track-1-material-blending/regional-boundaries-v154';
+  '/mnt/donto-data/donto-resources/maldoror/rendering-research/track-1-material-blending/regional-boundaries-latest';
 const WORLD_SEED = BigInt(process.env.MALDOROR_WORLD_SEED ?? '8801799478018485');
 const SCAN_RADIUS = integerEnvironment('MALDOROR_MATERIAL_BOUNDARY_RADIUS', 384, 128, 1024);
 const TEXTURE_SCALE_TILES = integerEnvironment('MALDOROR_MATERIAL_TEXTURE_SCALE', 7, 2, 48);
+const VARIANT_PERIOD_TILES = integerEnvironment('MALDOROR_MATERIAL_VARIANT_PERIOD', 3, 2, 32);
+const TEXTURE_RECONSTRUCTION = reconstructionEnvironment();
 const CROP_WIDTH_TILES = 8;
 const CROP_HEIGHT_TILES = 6;
 const SCALES = [
@@ -62,8 +64,9 @@ const compositor = new RegionalMaterialCompositor({
   routeSurfaceStyles: routeKit.routeSurfaceStyles,
   crossingSurfaceStyles: routeKit.crossingSurfaceStyles,
   maxCachedTiles: 4096,
-  variantPeriodTiles: 5,
+  variantPeriodTiles: VARIANT_PERIOD_TILES,
   textureScaleTiles: TEXTURE_SCALE_TILES,
+  textureReconstruction: TEXTURE_RECONSTRUCTION,
   maxOutputResolution: Math.min(biomeKit.sourceTileSize, routeKit.sourceTileSize),
 });
 
@@ -112,6 +115,8 @@ const report = {
   schemaVersion: 1,
   worldSeed: String(WORLD_SEED),
   textureScaleTiles: TEXTURE_SCALE_TILES,
+  variantPeriodTiles: VARIANT_PERIOD_TILES,
+  textureReconstruction: TEXTURE_RECONSTRUCTION,
   scanBounds: [-SCAN_RADIUS, -SCAN_RADIUS, SCAN_RADIUS, SCAN_RADIUS],
   scannedTiles: discovered.scannedTiles,
   emittedClasses: discovered.classCounts,
@@ -368,6 +373,21 @@ function integerEnvironment(name, fallback, minimum, maximum) {
   const value = Number.parseInt(process.env[name] ?? String(fallback), 10);
   if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
     throw new Error(`${name} must be an integer from ${minimum} through ${maximum}`);
+  }
+  return value;
+}
+
+function reconstructionEnvironment() {
+  const value = process.env.MALDOROR_MATERIAL_TEXTURE_RECONSTRUCTION ?? 'triangle-bounded-window';
+  const allowed = [
+    'square-bilinear',
+    'triangle-bounded-window',
+    'hex-contrast',
+    'hex-laplacian',
+    'cellular-semantic',
+  ];
+  if (!allowed.includes(value)) {
+    throw new Error(`MALDOROR_MATERIAL_TEXTURE_RECONSTRUCTION must be one of: ${allowed.join(', ')}`);
   }
   return value;
 }

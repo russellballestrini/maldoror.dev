@@ -23,7 +23,7 @@ describe('regional biome material manifest', () => {
       expect(kit.overviewMaterials[family]).toHaveLength(1);
       for (const tile of kit.materials[family]) {
         expect(tile.pixels).toEqual([]);
-        expect(tile.packedPixels).toMatchObject({ width: 96, height: 96 });
+        expect(tile.packedPixels).toMatchObject({ width: 192, height: 192 });
       }
       expect(kit.overviewMaterials[family].every((tile) => (
         tile.pixels.length === 0 && tile.packedPixels?.width === 128 && tile.packedPixels.height === 128
@@ -31,7 +31,7 @@ describe('regional biome material manifest', () => {
     }
     expect(kit.landmarkFabricMaterials['canal-town']).toHaveLength(1);
     expect(kit.landmarkFabricMaterials['canal-town']?.every((tile) => (
-      tile.walkable && tile.pixels.length === 0 && tile.packedPixels?.width === 96
+      tile.walkable && tile.pixels.length === 0 && tile.packedPixels?.width === 192
     ))).toBe(true);
     expect(Object.keys(kit.landmarkFabricMaterials)).toEqual(['canal-town']);
     expect(kit.materials.coast.every((tile) => tile.material === 'water' && !tile.walkable)).toBe(true);

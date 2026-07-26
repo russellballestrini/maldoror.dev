@@ -1,7 +1,7 @@
 {
   "version": 1,
   "sourceTileSize": 96,
-  "samplingTextureSize": 96,
+  "samplingTextureSize": 192,
   "overviewSamplingTextureSize": 128,
   "generation": {
     "date": "2026-07-23",

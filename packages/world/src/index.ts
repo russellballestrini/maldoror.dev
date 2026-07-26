@@ -79,11 +79,13 @@ export {
   type WaterClassifier,
 } from './tiles/canal-material-compositor.js';
 export {
+  REGIONAL_MATERIAL_TEXTURE_PROFILE,
   RegionalMaterialCompositor,
   type BiomeSampler,
   type RegionalRouteSampler,
   type RegionalRouteSurfaceStyle,
   type RegionalMaterialCompositorConfig,
+  type RegionalTextureReconstruction,
 } from './tiles/regional-material-compositor.js';
 export {
   buildRegionalParcelPath,

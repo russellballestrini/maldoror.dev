@@ -66,6 +66,7 @@ export interface RegionalRouteSurfaceStyle {
 
 export type RegionalTextureReconstruction =
   | 'square-bilinear'
+  | 'triangle-bounded-window'
   | 'hex-contrast'
   | 'hex-laplacian'
   | 'cellular-semantic';
@@ -127,6 +128,18 @@ export interface RegionalMaterialCompositorConfig {
   infrastructureVisualProfile?: Partial<RegionalInfrastructureVisualProfile>;
   waterVisualProfile?: Partial<RegionalWaterVisualProfile>;
 }
+
+/** Evidence-selected walking/near material reconstruction. Keeping this in
+ * the engine package gives production and faithful tooling one source of
+ * truth while research harnesses can still pass explicit control profiles. */
+export const REGIONAL_MATERIAL_TEXTURE_PROFILE = {
+  variantPeriodTiles: 3,
+  textureScaleTiles: 7,
+  textureReconstruction: 'triangle-bounded-window',
+} as const satisfies Pick<
+  RegionalMaterialCompositorConfig,
+  'variantPeriodTiles' | 'textureScaleTiles' | 'textureReconstruction'
+>;
 
 interface PreparedTextureLevel {
   width: number;
@@ -1765,6 +1778,26 @@ export class RegionalMaterialCompositor {
     variantPeriodTiles = this.variantPeriodTiles,
     interpolateSource = false,
   ): void {
+    if (this.textureReconstruction === 'triangle-bounded-window') {
+      const reference = selectTextureLevel(textures[0]!, outputSize, textureScaleTiles);
+      if (!interpolateSource && boundedWindowFits(
+        reference,
+        variantPeriodTiles,
+        textureScaleTiles,
+      )) {
+        this.sampleTriangleBoundedWindow(
+          textures,
+          worldX,
+          worldY,
+          salt,
+          textureScaleTiles,
+          outputSize,
+          out,
+          variantPeriodTiles,
+        );
+        return;
+      }
+    }
     if (this.textureReconstruction === 'hex-contrast') {
       this.sampleHexContrast(
         textures,
@@ -1814,6 +1847,65 @@ export class RegionalMaterialCompositor {
       out,
       variantPeriodTiles,
       interpolateSource,
+    );
+  }
+
+  private sampleTriangleBoundedWindow(
+    textures: readonly PreparedTexture[],
+    worldX: number,
+    worldY: number,
+    salt: number,
+    textureScaleTiles: number,
+    outputSize: number,
+    out: Float64Array,
+    variantPeriodTiles: number,
+  ): void {
+    triangleGrid(
+      worldX,
+      worldY,
+      variantPeriodTiles,
+      this.triangleWeights,
+      this.triangleVertices,
+    );
+    for (let vertex = 0; vertex < 3; vertex++) {
+      const vertexX = this.triangleVertices[vertex * 2]!;
+      const vertexY = this.triangleVertices[vertex * 2 + 1]!;
+      const hash = this.hash(vertexX, vertexY, salt ^ 0x41c64e6d);
+      const texture = textures[hash % textures.length]!;
+      const level = selectTextureLevel(texture, outputSize, textureScaleTiles);
+      const support = variantPeriodTiles * level.width / textureScaleTiles;
+      const vertexWorldX = (vertexX + vertexY * 0.5) * variantPeriodTiles;
+      const vertexWorldY = vertexY * Math.sqrt(3) * 0.5 * variantPeriodTiles;
+      let localX = (worldX - vertexWorldX) * level.width / textureScaleTiles;
+      let localY = (worldY - vertexWorldY) * level.height / textureScaleTiles;
+      switch ((hash >>> 27) & 7) {
+        case 1: [localX, localY] = [-localY, localX]; break;
+        case 2: [localX, localY] = [-localX, -localY]; break;
+        case 3: [localX, localY] = [localY, -localX]; break;
+        case 4: localX = -localX; break;
+        case 5: localY = -localY; break;
+        case 6: [localX, localY] = [localY, localX]; break;
+        case 7: [localX, localY] = [-localY, -localX]; break;
+      }
+      const centreRangeX = Math.max(0, level.width - 1 - support * 2);
+      const centreRangeY = Math.max(0, level.height - 1 - support * 2);
+      const sampleX = support + centreRangeX * ((hash >>> 8) & 0xff) / 255 + localX;
+      const sampleY = support + centreRangeY * ((hash >>> 16) & 0xff) / 255 + localY;
+      const sourceX = Math.max(0, Math.min(level.width - 1, Math.floor(sampleX)));
+      const sourceY = Math.max(0, Math.min(level.height - 1, Math.floor(sampleY)));
+      const source = (sourceY * level.width + sourceX) * 3;
+      const target = vertex * 3;
+      this.hexSamples[target] = level.linear[source]!;
+      this.hexSamples[target + 1] = level.linear[source + 1]!;
+      this.hexSamples[target + 2] = level.linear[source + 2]!;
+    }
+    blendHexSamples(
+      this.hexSamples,
+      0,
+      this.triangleWeights,
+      1,
+      0,
+      out,
     );
   }
 
@@ -2331,6 +2423,17 @@ function selectTextureLevelIndex(
     texture.levels.length - 1,
     Math.round(Math.log2(Math.max(1, texelsPerOutputPixel))),
   ));
+}
+
+function boundedWindowFits(
+  level: PreparedTextureLevel,
+  variantPeriodTiles: number,
+  textureScaleTiles: number,
+): boolean {
+  if (level.width !== level.height) return false;
+  const supportX = variantPeriodTiles * level.width / textureScaleTiles;
+  const supportY = variantPeriodTiles * level.height / textureScaleTiles;
+  return supportX <= (level.width - 1) / 2 && supportY <= (level.height - 1) / 2;
 }
 
 function triangleGrid(

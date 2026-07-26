@@ -6,6 +6,7 @@ import sharp from 'sharp';
 import {
   BIOME_FAMILIES,
   BiomeWorldField,
+  REGIONAL_MATERIAL_TEXTURE_PROFILE,
   RegionalMaterialCompositor,
   RegionalRouteField,
 } from '../../packages/world/dist/index.js';
@@ -145,8 +146,7 @@ function renderFrame(frame) {
     routeMaterials,
     crossingMaterials,
     maxCachedTiles: 256,
-    variantPeriodTiles: 5,
-    textureScaleTiles: 7,
+    ...REGIONAL_MATERIAL_TEXTURE_PROFILE,
     maxOutputResolution: SOURCE_TILE_SIZE,
   });
   const colours = new Uint8Array(WIDTH * HEIGHT * 3);

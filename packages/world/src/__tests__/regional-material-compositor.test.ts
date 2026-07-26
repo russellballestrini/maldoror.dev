@@ -740,6 +740,7 @@ describe('RegionalMaterialCompositor', () => {
     const signatures = new Set<string>();
     for (const textureReconstruction of [
       'square-bilinear',
+      'triangle-bounded-window',
       'hex-contrast',
       'hex-laplacian',
       'cellular-semantic',
@@ -752,6 +753,7 @@ describe('RegionalMaterialCompositor', () => {
           [patterned(family)],
         ])) as Record<BiomeFamily, Tile[]>,
         maxOutputResolution: 8,
+        textureScaleTiles: textureReconstruction === 'triangle-bounded-window' ? 16 : undefined,
         textureReconstruction,
       });
       const first = create();
@@ -765,6 +767,34 @@ describe('RegionalMaterialCompositor', () => {
         .toBe(true);
       signatures.add(JSON.stringify(tile.pixels));
     }
-    expect(signatures.size).toBe(4);
+    expect(signatures.size).toBe(5);
+  });
+
+  it('keeps scale-authored overview materials on their interpolated reconstruction path', () => {
+    const patterned = (family: BiomeFamily): Tile => {
+      const pixels = Array.from({ length: 32 }, (_, y) => Array.from({ length: 32 }, (_, x) => ({
+        r: (x * 7 + y * 3 + COLOURS[family].r) % 256,
+        g: (x * 2 + y * 11 + COLOURS[family].g) % 256,
+        b: (x * 13 + y * 5 + COLOURS[family].b) % 256,
+      })));
+      return { id: family, name: family, walkable: true, pixels, resolutions: { '32': pixels } };
+    };
+    const materials = Object.fromEntries(BIOME_FAMILIES.map((family) => [
+      family,
+      [patterned(family)],
+    ])) as Record<BiomeFamily, Tile[]>;
+    const create = (textureReconstruction: RegionalTextureReconstruction) =>
+      new RegionalMaterialCompositor({
+        worldSeed: 42n,
+        field: { sample: () => sample([0, 1, 0, 0, 0, 0]) },
+        materials,
+        overviewMaterials: materials,
+        maxOutputResolution: 8,
+        textureScaleTiles: 16,
+        textureReconstruction,
+      });
+
+    expect(create('triangle-bounded-window').getTileAtResolution(17, -9, 4))
+      .toEqual(create('square-bilinear').getTileAtResolution(17, -9, 4));
   });
 });
