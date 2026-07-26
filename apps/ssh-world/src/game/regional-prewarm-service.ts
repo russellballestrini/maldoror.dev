@@ -15,6 +15,9 @@ export const REGIONAL_PREWARM_MAX_REQUEST_AREA = 8192;
 export interface RegionalPrewarmServiceStartup {
   startupMs: number;
   rssMiB: number;
+  assetSource: 'runtime-pack' | 'png-manifests';
+  assetLoadMs: number;
+  assetManifestDigest: string;
 }
 
 export interface RegionalPrewarmServiceResult {
@@ -121,7 +124,13 @@ export class RegionalPrewarmService {
         if (message.type === 'ready') {
           clearTimeout(timeout);
           worker.off('message', onMessage);
-          resolve({ startupMs: message.startupMs, rssMiB: message.rssMiB });
+          resolve({
+            startupMs: message.startupMs,
+            rssMiB: message.rssMiB,
+            assetSource: message.assetSource,
+            assetLoadMs: message.assetLoadMs,
+            assetManifestDigest: message.assetManifestDigest,
+          });
         } else if (message.type === 'error' && message.requestId === undefined) {
           clearTimeout(timeout);
           worker.off('message', onMessage);

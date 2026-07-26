@@ -30,6 +30,9 @@ export interface RegionalPrewarmReadyResponse {
   type: 'ready';
   startupMs: number;
   rssMiB: number;
+  assetSource: 'runtime-pack' | 'png-manifests';
+  assetLoadMs: number;
+  assetManifestDigest: string;
 }
 
 export interface RegionalPrewarmPreparedResponse {

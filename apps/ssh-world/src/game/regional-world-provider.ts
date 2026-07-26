@@ -11,16 +11,9 @@ import {
   type RegionalAmbientDistributionProfile,
 } from '@maldoror/world';
 import {
-  loadRegionalAmbientKit,
-  loadRegionalBiomeMaterialKit,
-  loadRegionalCivicDetailKit,
-  loadRegionalEnvironmentContactKit,
-  loadRegionalLandmarkKit,
-  loadRegionalParcelComponentKit,
-  loadRegionalQuayDetailKit,
-  loadRegionalRouteContactKit,
-  loadRegionalRouteMaterialKit,
-} from './biome-assets.js';
+  loadRegionalRuntimeAssets,
+  type RegionalRuntimeAssetProvenance,
+} from './regional-runtime-asset-pack.js';
 
 export interface RegionalWorldAssetPaths {
   biomeMaterials: string;
@@ -32,6 +25,7 @@ export interface RegionalWorldAssetPaths {
   routeContacts: string;
   parcelComponents: string;
   environmentContacts: string;
+  runtimePack: string;
 }
 
 export interface RegionalWorldProviderOptions {
@@ -44,6 +38,7 @@ export interface LoadedRegionalWorldProvider {
   routes: RegionalRouteField;
   compositor: RegionalMaterialCompositor;
   world: RegionalWorldTileProvider;
+  assetLoad: RegionalRuntimeAssetProvenance;
 }
 
 export interface RegionalSessionWorldOptions {
@@ -63,6 +58,7 @@ export interface LoadedRegionalWorldKit {
   field: BiomeWorldField;
   routes: RegionalRouteField;
   compositor: RegionalMaterialCompositor;
+  assetLoad: RegionalRuntimeAssetProvenance;
   createSessionWorld(options?: RegionalSessionWorldOptions): RegionalWorldTileProvider;
   clearSharedCaches(): void;
 }
@@ -81,6 +77,7 @@ export function defaultRegionalWorldAssetPaths(rootOverride?: string): RegionalW
     routeContacts: path.join(root, 'assets/biomes/route-contacts-manifest.json'),
     parcelComponents: path.join(root, 'assets/biomes/parcel-components-manifest.json'),
     environmentContacts: path.join(root, 'assets/biomes/environment-contacts-manifest.json'),
+    runtimePack: fileURLToPath(new URL('../runtime/regional-world-kit-v1.v8.gz', import.meta.url)),
   };
 }
 
@@ -91,27 +88,18 @@ export function defaultRegionalWorldAssetPaths(rootOverride?: string): RegionalW
 export async function loadRegionalWorldKit(
   options: RegionalWorldProviderOptions,
 ): Promise<LoadedRegionalWorldKit> {
-  const [
-    biomeKit,
-    routeKit,
-    landmarkKit,
-    ambientKit,
-    civicDetailKit,
-    quayDetailKit,
-    routeContactKit,
-    parcelKit,
-    environmentKit,
-  ] = await Promise.all([
-    loadRegionalBiomeMaterialKit(options.assets.biomeMaterials),
-    loadRegionalRouteMaterialKit(options.assets.routeMaterials),
-    loadRegionalLandmarkKit(options.assets.landmarks),
-    loadRegionalAmbientKit(options.assets.ambient),
-    loadRegionalCivicDetailKit(options.assets.civicDetails),
-    loadRegionalQuayDetailKit(options.assets.quayDetails),
-    loadRegionalRouteContactKit(options.assets.routeContacts),
-    loadRegionalParcelComponentKit(options.assets.parcelComponents),
-    loadRegionalEnvironmentContactKit(options.assets.environmentContacts),
-  ]);
+  const loadedAssets = await loadRegionalRuntimeAssets(options.assets);
+  const {
+    biome: biomeKit,
+    routes: routeKit,
+    landmarks: landmarkKit,
+    ambient: ambientKit,
+    civicDetails: civicDetailKit,
+    quayDetails: quayDetailKit,
+    routeContacts: routeContactKit,
+    parcelComponents: parcelKit,
+    environmentContacts: environmentKit,
+  } = loadedAssets.kits;
   const field = new BiomeWorldField(options.worldSeed, {
     blockSize: 16,
     maxCachedBlocks: 48,
@@ -149,6 +137,7 @@ export async function loadRegionalWorldKit(
     field,
     routes,
     compositor,
+    assetLoad: loadedAssets.provenance,
     createSessionWorld: (runtimeOptions = {}) => new RegionalWorldTileProvider({
       worldSeed: options.worldSeed,
       field,
@@ -200,5 +189,11 @@ export async function loadRegionalWorldProvider(
 ): Promise<LoadedRegionalWorldProvider> {
   const kit = await loadRegionalWorldKit(options);
   const world = kit.createSessionWorld({ clearSharedCachesOnDestroy: true });
-  return { field: kit.field, routes: kit.routes, compositor: kit.compositor, world };
+  return {
+    field: kit.field,
+    routes: kit.routes,
+    compositor: kit.compositor,
+    world,
+    assetLoad: kit.assetLoad,
+  };
 }

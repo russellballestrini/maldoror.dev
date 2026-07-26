@@ -23,6 +23,9 @@ send({
   type: 'ready',
   startupMs: performance.now() - startupStartedAt,
   rssMiB: currentRssMiB(),
+  assetSource: loaded.assetLoad.source,
+  assetLoadMs: loaded.assetLoad.loadMs,
+  assetManifestDigest: loaded.assetLoad.manifestDigest,
 });
 
 port.on('message', (request: RegionalPrewarmWorkerRequest) => {

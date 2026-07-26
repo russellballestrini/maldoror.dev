@@ -148,7 +148,11 @@ try {
     },
     startup: {
       kitMs: round(kitMs),
+      mainAssetSource: kit.assetLoad.source,
+      mainAssetLoadMs: round(kit.assetLoad.loadMs),
       generatorMs: round(started.startup.startupMs),
+      generatorAssetSource: started.startup.assetSource,
+      generatorAssetLoadMs: round(started.startup.assetLoadMs),
       generatorRssMiB: started.startup.rssMiB,
     },
     preparation: {

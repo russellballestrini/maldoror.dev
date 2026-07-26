@@ -328,6 +328,7 @@ export interface WorkerRuntimeSnapshot {
   sessions: number;
   npc_count: number;
   npc_collision_authority: ReturnType<GameServer['getNPCCollisionAuthority']>;
+  regional_asset_source: 'runtime-pack' | 'png-manifests' | 'legacy';
   memory: {
     rss_mib: number;
     heap_used_mib: number;
@@ -381,6 +382,7 @@ let regionalNPCCollisionWorld: RegionalWorldTileProvider | null = null;
 let regionalPrewarmService: RegionalPrewarmService | null = null;
 let regionalOriginViewport: RegionalPreparedViewportPayload | null = null;
 let regionalDefaultAvatar: Sprite | null = null;
+let regionalAssetSource: WorkerRuntimeSnapshot['regional_asset_source'] = 'legacy';
 const workerSessions: Map<string, WorkerSession> = new Map();
 let shuttingDown = false;
 const workerEventLoopDelay = monitorEventLoopDelay({ resolution: 1 });
@@ -549,6 +551,7 @@ process.on('message', async (msg: MainToWorkerMessage) => {
             loadRegionalWorldKit({ worldSeed, assets }),
             loadCanalTownDefaultAvatar(),
           ]);
+          regionalAssetSource = regionalWorldKit.assetLoad.source;
           const started = await RegionalPrewarmService.start(
             { worldSeed: String(worldSeed), assets },
             Number(process.env.MALDOROR_REGIONAL_STARTUP_TIMEOUT_MS ?? 120_000),
@@ -561,6 +564,9 @@ process.on('message', async (msg: MainToWorkerMessage) => {
           regionalOriginViewport = origin.viewport;
           console.log(
             `[Worker] Regional world ready in ${Math.round(performance.now() - loadedAt)}ms; ` +
+            `assets ${regionalWorldKit.assetLoad.source} ` +
+            `${Math.round(regionalWorldKit.assetLoad.loadMs)}ms main/` +
+            `${Math.round(started.startup.assetLoadMs)}ms generator, ` +
             `generator startup ${Math.round(started.startup.startupMs)}ms, origin ` +
             `${Math.round(origin.generationMs)}ms at ${origin.viewport.resolution}px, ` +
             `RSS ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB`,
@@ -828,6 +834,7 @@ process.on('message', async (msg: MainToWorkerMessage) => {
             sessions: workerSessions.size,
             npc_count: gameServer?.getNPCCount() ?? 0,
             npc_collision_authority: gameServer?.getNPCCollisionAuthority() ?? 'legacy',
+            regional_asset_source: regionalAssetSource,
             memory: {
               rss_mib: Number((memory.rss / mib).toFixed(3)),
               heap_used_mib: Number((memory.heapUsed / mib).toFixed(3)),

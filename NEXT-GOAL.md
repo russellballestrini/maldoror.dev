@@ -1293,6 +1293,36 @@ Completed foundations:
   `vb07c0d4` with the same PID/start timestamp; there was no deploy, service
   restart, push, production database write, complete-gate claim, or physical
   Ghostty claim;
+- V150 removes scattered PNG/Sharp decoding from the selected regional cold
+  path without changing the world image. The build validates the same nine
+  authored kits, hashes nine manifests plus 116 unique referenced PNGs, and
+  atomically emits one deterministic 8,052,460-byte V8/gzip pack. Runtime
+  checks its schema and ordered-manifest digest before opening it; missing,
+  corrupt, disabled, or stale packs use the explicit original validator/source
+  fallback. Turbo now treats every root asset as an SSH build input, and both
+  main and generator provenance flow through startup logs, runtime telemetry,
+  and research reports. In a current-code faithful control, the pack reduces
+  main asset load from 8,027.505 to 446.139 ms, generator asset load from
+  3,138.024 to 225.465 ms, and total origin readiness from 24,642.628 to
+  15,215.664 ms. Source and packed origin/traversal hashes are exactly equal,
+  with zero coverage misses or main-thread material fallbacks. An owned
+  migrated scratch worker independently reports `runtime-pack`, loads two
+  residents and sprites, establishes regional collision authority, and becomes
+  ready in 12,920 ms versus V149's 46,501 ms cold observation; both residents
+  reach and persist at their work destinations. A real loopback SSH capture
+  asserts `Pos: (0, 0)`, OCTANT mode, and 30% zoom across 274,146 raw bytes and
+  24 synchronized frames, and its faithful replay was directly inspected. The
+  rejected ncc/native-worker bundles and the host's 21-32% I/O-wait confounder
+  are retained beside the selected evidence under
+  `track-5-motion-transport/runtime-asset-pack-v150/FINDINGS.md`. Repository
+  verification passes 48 files / 265 tests, 18/18 typecheck tasks, 12/12 build
+  tasks, 7/7 configured lint tasks, and `git diff --check`. This is undeployed
+  source and isolated-runtime proof: origin generation still dominates at
+  about 10.8 seconds, and fresh full-atlas Gate A, sustained/deployed Gate D,
+  Gate C, richer living systems, deployment, and physical Ghostty acceptance
+  remain open. Production remains `vb07c0d4` with the same PID/start timestamp;
+  there was no deploy, service restart, push, production database write,
+  complete-gate claim, or physical Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
