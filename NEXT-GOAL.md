@@ -1214,6 +1214,29 @@ Completed foundations:
   Gate D, deployment, and physical Ghostty acceptance. Production remains
   `vb07c0d4`; there was no deploy, service restart, push, complete-gate claim,
   or physical Ghostty claim;
+- V145-V147 extend the same generic grammar into semantic `ruin` sites. V145
+  retains the empty-centred baseline at the strongest current ruin
+  `(-7,130)`. Wayside-shrine and collapsed-tower entries now share stable
+  visual groups with four axis/side focal variants while the landmark remains
+  strictly declared for `ruin`; no relabelled waystation or ruins-specific
+  runtime branch is introduced. The post-change physical replay rejects that
+  baseline site because neither focal fits and rejects the highest-weight
+  composed north-south boundary frame after a modern frontage intrudes on the
+  walking view. V147 selects the cleaner north-south shrine at `(-144,-494)`
+  and east-west tower at `(-567,-284)`. Their respective 28- and 26-cell
+  access fabrics reach route distance 0, are entirely walkable/rendered, and
+  retain unique focal-site visual groups at walking, district, and regional
+  scale. Exact captures, hashes, raw metrics, baseline, and both rejection
+  classes are retained under
+  `track-6-acceptance-atlas/composition-hierarchy-v147-ruins-two-axis-place/FINDINGS.md`.
+  Repository verification passes 44 files / 251 tests, 18/18 typecheck tasks,
+  12/12 build tasks, 7/7 configured lint tasks, and `git diff --check`.
+  Regional ruins still repeat as evenly spaced arch/column icons; larger wall,
+  courtyard, buried/interior, artifact/history, and living-site programs are
+  likewise open. This is not ruins completion, Gate A, sustained Gate D,
+  deployment, or physical Ghostty acceptance. Production remains `vb07c0d4`;
+  there was no deploy, service restart, push, complete-gate claim, or physical
+  Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
@@ -1240,8 +1263,7 @@ Still open and therefore goal-blocking:
   still lacks bank-aware crossing silhouettes, moving inhabitants, temporal
   work/market states, larger squares/commons, dense
   route-connected frontage beyond this bounded origin tranche, and
-  complete forest, coast, rural, and mountain vocabularies, and an equivalent
-  focal vocabulary for ruins.
+  complete forest, coast, rural, mountain, and ruins vocabularies.
   Coast-specific waterfront diversity, far
   greater travel-scale entropy across route topology, hydrology, biome fields,
   ambient clusters, landmarks, and parcel programs, authoritative traversal,
@@ -1282,7 +1304,7 @@ Still open and therefore goal-blocking:
   and unloading,
   less empty paving, and equivalent complete grammar beyond the bounded
   canal-town origin and the two-axis forest/coast/rural/mountain waystation
-  tranches
+  and ruins-site tranches
   remain required before a fresh full-atlas recapture can attempt Gate A.
   Fresh post-correction deterministic traversal, the 30-minute terminal run,
   deployed-service/cgroup audit, and physical Ghostty acceptance also remain

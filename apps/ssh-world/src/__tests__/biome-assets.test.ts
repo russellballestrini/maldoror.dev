@@ -220,12 +220,12 @@ describe('regional biome material manifest', () => {
     expect(kit.minimumLayers).toBe(2);
     expect(kit.maximumLayers).toBe(3);
     expect(kit.layerSpacing).toBe(5);
-    expect(kit.assets).toHaveLength(61);
+    expect(kit.assets).toHaveLength(65);
     for (const family of BIOME_FAMILIES) {
       expect(kit.assets.filter((asset) => asset.families.includes(family))).toHaveLength(
         family === 'canal-town' ? 15 :
           family === 'forest' || family === 'coast' || family === 'rural' ||
-            family === 'mountain' ? 10 : 6,
+          family === 'mountain' || family === 'ruins' ? 10 : 6,
       );
     }
     for (const asset of kit.assets) {
@@ -237,7 +237,7 @@ describe('regional biome material manifest', () => {
       expect(asset.collision.length).toBeGreaterThan(0);
     }
     const focal = kit.assets.filter((asset) => asset.compositionRole === 'focal');
-    expect(focal).toHaveLength(19);
+    expect(focal).toHaveLength(23);
     expect(new Set(focal.map((asset) => asset.frontageAxis)))
       .toEqual(new Set(['east-west', 'north-south']));
     expect(focal.find((asset) => asset.id === 'canal-town-connected-frontage-parcel-component-v1')
@@ -281,6 +281,16 @@ describe('regional biome material manifest', () => {
     expect(new Set(mountainFocals.map((asset) => asset.visualGroup)))
       .toEqual(new Set(['mountain-alpine-hut-v1', 'mountain-mine-gantry-v1']));
     expect(mountainFocals.every((asset) => asset.sprite.width === 5 && asset.sprite.height === 4))
+      .toBe(true);
+    const ruinsFocals = focal.filter((asset) => asset.families.includes('ruins'));
+    expect(ruinsFocals).toHaveLength(4);
+    expect(new Set(ruinsFocals.map((asset) => asset.frontageAxis)))
+      .toEqual(new Set(['east-west', 'north-south']));
+    expect(new Set(ruinsFocals.map((asset) => asset.compositionSide)))
+      .toEqual(new Set([-1, 1]));
+    expect(new Set(ruinsFocals.map((asset) => asset.visualGroup)))
+      .toEqual(new Set(['ruins-collapsed-tower-v1', 'ruins-wayside-shrine-v1']));
+    expect(ruinsFocals.every((asset) => asset.sprite.width === 5 && asset.sprite.height === 4))
       .toBe(true);
     expect(new Set(focal
       .filter((asset) => asset.families.includes('canal-town') &&

@@ -838,3 +838,34 @@ remain too evenly distributed. Ridge/cliff composition, multiple cave/highland
 programs, production cave transitions, route/crossing diversity, living
 mountain activity, ruins composition, fresh complete-atlas proof, sustained
 load, deployment, and physical Ghostty acceptance remain open.
+
+### Ruins route-connected place grammar (2026-07-25)
+
+V145-V147 preserve the landmark's semantic `ruin` profile while reusing the
+existing wayside shrine and collapsed tower as manifest-declared focal groups.
+Their ordinary entries share `visualGroup` identity with four route-axis/side
+variants. The generic focal/frontage/access-fabric engine consumes those
+declarations without a ruins, filename, colour, or coordinate conditional.
+
+The pristine strongest-site baseline at `(-7,130)` leaves the route centre
+empty. Its post-change replay is an explicit physical rejection because no
+current focal footprint fits. Direct review also rejects the highest-weight
+composed north-south boundary view because an unrelated modern frontage enters
+the frame. V147 instead selects a north-south waterside shrine at
+`(-144,-494)` (ruins weight 0.7503) and an east-west tower/arch remnant at
+`(-567,-284)` (weight 0.7240). Their 28- and 26-cell access fabrics both reach
+route distance 0, remain entirely walkable/rendered, and retain unique visual
+groups at all three scales. The east-west regional frame correctly reports a
+second nearby physical ruin layout independently of the selected site's
+26-cell audit.
+
+Baseline, all six selected renders, exact renderer/OCTANT hashes, raw metrics,
+and both rejection classes are in
+`track-6-acceptance-atlas/composition-hierarchy-v147-ruins-two-axis-place/FINDINGS.md`.
+Repository verification passes 44 files / 251 tests, 18/18 typecheck tasks,
+12/12 build tasks, 7/7 configured lint tasks, and `git diff --check`.
+Production still reports `vb07c0d4`. Regional arches and columns remain too
+evenly distributed and icon-like. Larger wall/courtyard continuity, buried and
+interior spaces, recoverable artifacts, world-history persistence, living
+scavengers/pilgrims, route/crossing diversity, fresh complete-atlas proof,
+sustained load, deployment, and physical Ghostty acceptance remain open.
