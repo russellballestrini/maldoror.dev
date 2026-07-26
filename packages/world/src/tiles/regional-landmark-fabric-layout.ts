@@ -6,6 +6,7 @@ import type { BiomeFamily } from '../biomes/biome-world-field.js';
  * provider supplies the visible world-space bounds of each placed focal. */
 
 export type RegionalLandmarkFabricAxis = 'north-south' | 'east-west';
+export type RegionalLandmarkFabricConnectionMode = 'route-threshold' | 'internal-spine';
 
 export interface RegionalLandmarkFocalFootprint {
   id: string;
@@ -26,11 +27,12 @@ export interface RegionalLandmarkFabricLayoutConfig {
   siteY: number;
   seed: number;
   focals: readonly RegionalLandmarkFocalFootprint[];
+  connectionMode?: RegionalLandmarkFabricConnectionMode;
 }
 
 export interface RegionalLandmarkFabricApron {
   id: string;
-  role: 'threshold' | 'approach';
+  role: 'threshold' | 'approach' | 'spine';
   axis: RegionalLandmarkFabricAxis;
   centreX: number;
   centreY: number;
@@ -58,6 +60,7 @@ export interface RegionalLandmarkFabricLayout {
   siteX: number;
   siteY: number;
   seed: number;
+  connectionMode: RegionalLandmarkFabricConnectionMode;
   aprons: RegionalLandmarkFabricApron[];
   bounds: RegionalLandmarkFabricBounds;
   spatialIndex: ReadonlyMap<string, RegionalLandmarkFabricSpatialCell>;
@@ -83,7 +86,14 @@ export interface RegionalLandmarkFabricCell {
 export function buildRegionalLandmarkFabricLayout(
   config: RegionalLandmarkFabricLayoutConfig,
 ): RegionalLandmarkFabricLayout | null {
-  const aprons = config.focals.flatMap((focal, index) => buildAprons(config, focal, index));
+  const connectionMode = config.connectionMode ?? 'route-threshold';
+  const aprons = config.focals.flatMap((focal, index) => (
+    buildAprons(config, focal, index, connectionMode)
+  ));
+  if (connectionMode === 'internal-spine') {
+    const spine = buildInternalSpine(config);
+    if (spine) aprons.unshift(spine);
+  }
   if (aprons.length === 0) return null;
   const feather = 0.32;
   const bounds = aprons.reduce<RegionalLandmarkFabricBounds>((result, apron) => {
@@ -106,6 +116,7 @@ export function buildRegionalLandmarkFabricLayout(
     siteX: config.siteX,
     siteY: config.siteY,
     seed: config.seed,
+    connectionMode,
     aprons,
     bounds,
     spatialIndex: buildSpatialIndex(aprons),
@@ -179,6 +190,7 @@ function buildAprons(
   config: RegionalLandmarkFabricLayoutConfig,
   focal: RegionalLandmarkFocalFootprint,
   index: number,
+  connectionMode: RegionalLandmarkFabricConnectionMode,
 ): RegionalLandmarkFabricApron[] {
   const width = focal.maxX - focal.minX;
   const height = focal.maxY - focal.minY;
@@ -190,7 +202,9 @@ function buildAprons(
   const siteCoordinate = northSouth ? config.siteX : config.siteY;
   // Stop approaches just outside the protected arterial core. The underlying
   // route SDF owns the final join, so thresholds cannot repaint circulation.
-  const coreEdge = siteCoordinate + focal.compositionSide * 1.35;
+  const coreEdge = connectionMode === 'internal-spine'
+    ? siteCoordinate
+    : siteCoordinate + focal.compositionSide * 1.35;
   const alongMinimum = northSouth ? focal.minY : focal.minX;
   const alongMaximum = northSouth ? focal.maxY : focal.maxX;
   const centreAlong = (alongMinimum + alongMaximum) / 2;
@@ -246,6 +260,45 @@ function buildAprons(
     };
     return [threshold, approach];
   });
+}
+
+/** Off-route places own a narrow internal circulation spine. It is derived
+ * from the manifest-declared focal axis and visible footprints, so a grove,
+ * farmstead, outcrop, or ruin reads as one place without pretending that a
+ * regional road passes through it. */
+function buildInternalSpine(
+  config: RegionalLandmarkFabricLayoutConfig,
+): RegionalLandmarkFabricApron | null {
+  const axis = config.focals[0]?.frontageAxis;
+  if (!axis) return null;
+  const focals = config.focals.filter((focal) => focal.frontageAxis === axis);
+  if (focals.length === 0) return null;
+  const northSouth = axis === 'north-south';
+  const siteAlong = northSouth ? config.siteY : config.siteX;
+  const minimumAlong = Math.min(
+    siteAlong - 3.25,
+    ...focals.map((focal) => northSouth ? focal.minY : focal.minX),
+  );
+  const maximumAlong = Math.max(
+    siteAlong + 3.25,
+    ...focals.map((focal) => northSouth ? focal.maxY : focal.maxX),
+  );
+  const centreAlong = (minimumAlong + maximumAlong) * 0.5;
+  const centreAcross = northSouth ? config.siteX : config.siteY;
+  const halfAlong = Math.max(3.25, (maximumAlong - minimumAlong) * 0.5);
+  const halfAcross = 0.38 + hashUnit(config.seed ^ 0x5a71, focals.length, 0) * 0.12;
+  return {
+    id: `${config.id}:internal-spine`,
+    role: 'spine',
+    axis,
+    centreX: northSouth ? centreAcross : centreAlong,
+    centreY: northSouth ? centreAlong : centreAcross,
+    halfAlong,
+    halfAcross,
+    cornerRadius: Math.min(halfAcross * 0.82, 0.42),
+    phase: hashUnit(config.seed ^ 0x6e31, focals.length, 1) * Math.PI * 2,
+    frontageCoordinate: centreAcross,
+  };
 }
 
 function buildSpatialIndex(

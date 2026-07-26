@@ -10,6 +10,7 @@ import {
   RegionalWorldDerivedCache,
   RegionalWorldTileProvider,
   type RegionalAmbientDistributionProfile,
+  type RegionalAmbientPlaceFabricProfile,
 } from '@maldoror/world';
 import {
   loadRegionalRuntimeAssets,
@@ -52,6 +53,9 @@ export interface RegionalSessionWorldOptions {
  * but make every faithful runtime seam share the same selected composition. */
 export const REGIONAL_AMBIENT_DISTRIBUTION_PROFILE =
   'cluster-field-blue-noise' satisfies RegionalAmbientDistributionProfile;
+export const REGIONAL_AMBIENT_COMPOSITION_PROFILE = 'hierarchical-place-field' as const;
+export const REGIONAL_AMBIENT_PLACE_FABRIC_PROFILE =
+  'terrain-only' satisfies RegionalAmbientPlaceFabricProfile;
 
 /** One worker-owned regional kit. Raster assets, semantic fields, routes, and
  * material caches are shared; each SSH session receives its own provider for
@@ -157,6 +161,8 @@ export async function loadRegionalWorldKit(
       ambientCellSize: ambientKit.cellSize,
       ambientDensity: ambientKit.density,
       ambientDistributionProfile: REGIONAL_AMBIENT_DISTRIBUTION_PROFILE,
+      ambientCompositionProfile: REGIONAL_AMBIENT_COMPOSITION_PROFILE,
+      ambientPlaceFabricProfile: REGIONAL_AMBIENT_PLACE_FABRIC_PROFILE,
       ambientLandmarkClearance: ambientKit.landmarkClearance,
       civicDetailCellSize: civicDetailKit.cellSize,
       civicDetailDensity: civicDetailKit.density,

@@ -15,6 +15,7 @@ import {
   loadRegionalRouteContactKit,
 } from '../../apps/ssh-world/dist/game/biome-assets.js';
 import {
+  REGIONAL_AMBIENT_COMPOSITION_PROFILE,
   REGIONAL_AMBIENT_DISTRIBUTION_PROFILE,
 } from '../../apps/ssh-world/dist/game/regional-world-provider.js';
 import {
@@ -45,6 +46,19 @@ const FRAME_FILTER = process.env.MALDOROR_REGIONAL_LANDMARK_FRAME;
 const AMBIENT_DISTRIBUTION_PROFILE =
   process.env.MALDOROR_AMBIENT_DISTRIBUTION_PROFILE ??
   REGIONAL_AMBIENT_DISTRIBUTION_PROFILE;
+const AMBIENT_COMPOSITION_PROFILE =
+  process.env.MALDOROR_AMBIENT_COMPOSITION_PROFILE ??
+  REGIONAL_AMBIENT_COMPOSITION_PROFILE;
+const AMBIENT_PLACE_FABRIC_PROFILE =
+  process.env.MALDOROR_AMBIENT_PLACE_FABRIC_PROFILE ?? 'terrain-only';
+const RUN_AMBIENT_DISTRIBUTION_AUDIT =
+  process.env.MALDOROR_AMBIENT_DISTRIBUTION_AUDIT !== 'disabled';
+if (!['single', 'bounded-ensemble', 'hierarchical-place-field'].includes(AMBIENT_COMPOSITION_PROFILE)) {
+  throw new Error(`Unknown ambient composition profile: ${AMBIENT_COMPOSITION_PROFILE}`);
+}
+if (!['terrain-only', 'internal-spine'].includes(AMBIENT_PLACE_FABRIC_PROFILE)) {
+  throw new Error(`Unknown ambient place-fabric profile: ${AMBIENT_PLACE_FABRIC_PROFILE}`);
+}
 if (![
   'uniform-blue-noise',
   'density-field-blue-noise',
@@ -340,6 +354,8 @@ const world = new RegionalWorldTileProvider({
   ambientCellSize: ambientKit.cellSize,
   ambientDensity: ambientKit.density,
   ambientDistributionProfile: AMBIENT_DISTRIBUTION_PROFILE,
+  ambientCompositionProfile: AMBIENT_COMPOSITION_PROFILE,
+  ambientPlaceFabricProfile: AMBIENT_PLACE_FABRIC_PROFILE,
   ambientLandmarkClearance: ambientKit.landmarkClearance,
   civicDetailCellSize: civicDetailKit.cellSize,
   civicDetailDensity: CIVIC_DETAIL_PROFILE.enabled ? civicDetailKit.density : 0,
@@ -1140,7 +1156,11 @@ function walkableCellsConnected(cells) {
 const metrics = {
   worldSeed: String(WORLD_SEED),
   ambientDistributionProfile: AMBIENT_DISTRIBUTION_PROFILE,
-  ambientDistributionAudit: auditAmbientDistribution(FRAMES[0].centre),
+  ambientCompositionProfile: AMBIENT_COMPOSITION_PROFILE,
+  ambientPlaceFabricProfile: AMBIENT_PLACE_FABRIC_PROFILE,
+  ambientDistributionAudit: RUN_AMBIENT_DISTRIBUTION_AUDIT
+    ? auditAmbientDistribution(FRAMES[0].centre)
+    : null,
   infrastructureProfile: INFRASTRUCTURE_PROFILE_NAME,
   infrastructureVisualProfile: INFRASTRUCTURE_PROFILE,
   waterProfile: WATER_PROFILE_NAME,
@@ -1204,6 +1224,7 @@ for (const frame of FRAMES) {
     visibleLandmarkFabrics: visibleLandmarkFabrics.map((layout) => ({
       id: layout.id,
       materialFamily: layout.materialFamily,
+      connectionMode: layout.connectionMode,
       site: [layout.siteX, layout.siteY],
       aprons: layout.aprons.map((apron) => ({
         id: apron.id,
@@ -1254,18 +1275,51 @@ function auditAmbientDistribution(centre) {
   const standardDeviation = Math.sqrt(counts.reduce((sum, count) => (
     sum + (count - mean) ** 2
   ), 0) / counts.length);
+  const nearestBinSize = 16;
+  const nearestBins = new Map();
+  for (const [index, placement] of placements.entries()) {
+    const key = `${Math.floor(placement.anchorX / nearestBinSize)},` +
+      `${Math.floor(placement.anchorY / nearestBinSize)}`;
+    const entries = nearestBins.get(key) ?? [];
+    entries.push(index);
+    nearestBins.set(key, entries);
+  }
+  const maximumBinRadius = Math.ceil(Math.max(
+    bounds[2] - bounds[0],
+    bounds[3] - bounds[1],
+  ) / nearestBinSize) + 1;
   const nearestDistances = placements.map((placement, index) => {
+    const binX = Math.floor(placement.anchorX / nearestBinSize);
+    const binY = Math.floor(placement.anchorY / nearestBinSize);
     let nearest = Number.POSITIVE_INFINITY;
-    for (let candidateIndex = 0; candidateIndex < placements.length; candidateIndex++) {
-      if (candidateIndex === index) continue;
-      const candidate = placements[candidateIndex];
-      nearest = Math.min(nearest, Math.hypot(
-        placement.anchorX - candidate.anchorX,
-        placement.anchorY - candidate.anchorY,
-      ));
+    for (let radius = 0; radius <= maximumBinRadius; radius++) {
+      for (let offsetY = -radius; offsetY <= radius; offsetY++) {
+        for (let offsetX = -radius; offsetX <= radius; offsetX++) {
+          if (radius > 0 && Math.abs(offsetX) !== radius && Math.abs(offsetY) !== radius) continue;
+          for (const candidateIndex of nearestBins.get(`${binX + offsetX},${binY + offsetY}`) ?? []) {
+            if (candidateIndex === index) continue;
+            const candidate = placements[candidateIndex];
+            nearest = Math.min(nearest, Math.hypot(
+              placement.anchorX - candidate.anchorX,
+              placement.anchorY - candidate.anchorY,
+            ));
+          }
+        }
+      }
+      if (Number.isFinite(nearest) && nearest <= radius * nearestBinSize) break;
     }
     return nearest;
   }).filter(Number.isFinite).sort((a, b) => a - b);
+  const coordinateCounts = new Map();
+  for (const placement of placements) {
+    const key = `${placement.anchorX},${placement.anchorY}`;
+    const entries = coordinateCounts.get(key) ?? [];
+    entries.push(`${placement.siteX},${placement.siteY}:${placement.assetId}`);
+    coordinateCounts.set(key, entries);
+  }
+  const duplicateCoordinates = [...coordinateCounts.entries()]
+    .filter(([, entries]) => entries.length > 1)
+    .sort(([left], [right]) => left.localeCompare(right));
   const sortedCounts = [...counts].sort((a, b) => a - b);
   return {
     centre,
@@ -1280,6 +1334,14 @@ function auditAmbientDistribution(centre) {
     minimumMacroCellCount: sortedCounts[0] ?? 0,
     medianMacroCellCount: sortedCounts[Math.floor(sortedCounts.length / 2)] ?? 0,
     maximumMacroCellCount: sortedCounts.at(-1) ?? 0,
+    exactDuplicateAnchorCount: duplicateCoordinates.reduce(
+      (total, [, entries]) => total + entries.length - 1,
+      0,
+    ),
+    exactDuplicateAnchorExamples: duplicateCoordinates.slice(0, 8).map(([anchor, entries]) => ({
+      anchor,
+      entries,
+    })),
     minimumNearestDistance: Number((nearestDistances[0] ?? 0).toFixed(4)),
     medianNearestDistance: Number((
       nearestDistances[Math.floor(nearestDistances.length / 2)] ?? 0
@@ -1297,18 +1359,25 @@ function auditLandmarkFabrics(layouts) {
     )).length;
     const thresholdCount = layout.aprons.filter((apron) => apron.role === 'threshold').length;
     const approachCount = layout.aprons.filter((apron) => apron.role === 'approach').length;
+    const spineCount = layout.aprons.filter((apron) => apron.role === 'spine').length;
     const minimumRouteDistance = Math.min(...routeDistances);
+    const routeValid = layout.connectionMode === 'route-threshold' &&
+      minimumRouteDistance <= 1 && thresholdCount > 0 && thresholdCount === approachCount;
+    const internalValid = layout.connectionMode === 'internal-spine' &&
+      spineCount === 1 && thresholdCount > 0 && thresholdCount === approachCount;
     return {
       id: layout.id,
       materialFamily: layout.materialFamily,
+      connectionMode: layout.connectionMode,
       cellCount: cells.length,
       thresholdCount,
       approachCount,
+      spineCount,
       minimumRouteDistance,
       walkableRate: cells.length > 0 ? walkableCells / cells.length : 0,
       renderedSurfaceRate: cells.length > 0 ? surfaceCells / cells.length : 0,
-      valid: cells.length > 0 && thresholdCount > 0 && thresholdCount === approachCount &&
-        minimumRouteDistance <= 1 && walkableCells === cells.length && surfaceCells > 0,
+      valid: cells.length > 0 && (routeValid || internalValid) &&
+        walkableCells === cells.length && surfaceCells > 0,
     };
   });
   return {

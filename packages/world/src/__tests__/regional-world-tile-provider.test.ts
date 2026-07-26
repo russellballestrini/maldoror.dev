@@ -18,7 +18,9 @@ import { rasterizeRegionalLandmarkFabricLayout } from '../tiles/regional-landmar
 import {
   RegionalWorldDerivedCache,
   RegionalWorldTileProvider,
+  type RegionalAmbientCompositionProfile,
   type RegionalAmbientDistributionProfile,
+  type RegionalAmbientPlaceFabricProfile,
   type RegionalAmbientAsset,
   type RegionalCivicDetailAsset,
   type RegionalEnvironmentContactAsset,
@@ -177,6 +179,8 @@ function makeWorld(
   additionalParcelComponents: readonly RegionalParcelComponentAsset[] = [],
   additionalLandmarkSites: readonly RegionalLandmarkSite[] = [],
   ambientDistributionProfile: RegionalAmbientDistributionProfile = 'uniform-blue-noise',
+  ambientCompositionProfile: RegionalAmbientCompositionProfile = 'single',
+  ambientPlaceFabricProfile: RegionalAmbientPlaceFabricProfile = 'terrain-only',
 ): RegionalWorldTileProvider {
   const quayDescriptor = {
     id: 'test-canal',
@@ -374,6 +378,8 @@ function makeWorld(
     ambientCellSize: 4,
     ambientDensity: 1,
     ambientDistributionProfile,
+    ambientCompositionProfile,
+    ambientPlaceFabricProfile,
     ambientLandmarkClearance: 4,
     civicDetailCellSize: 1,
     civicDetailDensity: 1,
@@ -677,6 +683,129 @@ describe('RegionalWorldTileProvider', () => {
 
     expect(entourageAtOrigin(hierarchical)).toEqual(entourageAtOrigin(uniform));
     expect(entourageAtOrigin(hierarchical).length).toBeGreaterThan(1);
+  });
+
+  it('promotes sparse prominence parents into bounded deterministic place ensembles', () => {
+    const noRoute = (x: number, y: number): RegionalRouteSample => ({
+      ...routeSample(x, y),
+      distance: 24,
+      signedDistance: 24,
+      isRoute: false,
+      isWalkableRoute: false,
+      routeKind: null,
+      routeId: null,
+      landmarkKind: null,
+      landmarkDistance: Number.POSITIVE_INFINITY,
+    });
+    const mountain = () => biomeSample('mountain');
+    const single = makeWorld(
+      32, 64, noRoute, mountain, false, undefined, false, false, false,
+      'east-west', [], [], 'cluster-field-blue-noise', 'single',
+    );
+    const ensemble = makeWorld(
+      32, 64, noRoute, mountain, false, undefined, false, false, false,
+      'east-west', [], [], 'cluster-field-blue-noise', 'bounded-ensemble',
+    );
+    const replay = makeWorld(
+      47, 64, noRoute, mountain, false, undefined, false, false, false,
+      'east-west', [], [], 'cluster-field-blue-noise', 'bounded-ensemble',
+    );
+    const bounds = [-256, 128, 256, 640] as const;
+    const baseline = single.getAmbientPlacementsInBounds(...bounds);
+    const selected = ensemble.getAmbientPlacementsInBounds(...bounds);
+    const selectedReplay = replay.getAmbientPlacementsInBounds(...bounds);
+    const groups = selected.reduce((result, placement) => {
+      const key = `${placement.siteX},${placement.siteY}`;
+      const group = result.get(key) ?? [];
+      group.push(placement);
+      result.set(key, group);
+      return result;
+    }, new Map<string, typeof selected>());
+    const promoted = [...groups.values()].filter((placements) => placements.length > 1);
+
+    expect(selected).toEqual(selectedReplay);
+    expect(selected.length).toBeGreaterThan(baseline.length);
+    expect(promoted.length).toBeGreaterThan(8);
+    expect(Math.max(...promoted.map((placements) => placements.length))).toBeLessThanOrEqual(6);
+    expect(promoted.every((placements) => placements.every((placement) => (
+      placement.families.includes('mountain') &&
+      Math.hypot(
+        placement.anchorX - placement.siteX,
+        placement.anchorY - placement.siteY,
+      ) <= 10
+    )))).toBe(true);
+    expect(ensemble.getRegionalStats()).toMatchObject({
+      ambientCompositionProfile: 'bounded-ensemble',
+    });
+    expect(ensemble.getRegionalStats().cachedAmbientEnsembleCells).toBeGreaterThan(0);
+  });
+
+  it('builds coordinate-stable hierarchical place programs without exact anchor collisions', () => {
+    const noRoute = (x: number, y: number): RegionalRouteSample => ({
+      ...routeSample(x, y),
+      distance: 24,
+      signedDistance: 24,
+      isRoute: false,
+      isWalkableRoute: false,
+      routeKind: null,
+      routeId: null,
+      landmarkKind: null,
+      landmarkDistance: Number.POSITIVE_INFINITY,
+    });
+    const placeBiome = () => biomeSample('canal-town');
+    const first = makeWorld(
+      32, 64, noRoute, placeBiome, false, undefined, false, false, false,
+      'east-west', [], [], 'cluster-field-blue-noise', 'hierarchical-place-field', 'internal-spine',
+    );
+    const replay = makeWorld(
+      47, 64, noRoute, placeBiome, false, undefined, false, false, false,
+      'east-west', [], [], 'cluster-field-blue-noise', 'hierarchical-place-field', 'internal-spine',
+    );
+    const terrainOnly = makeWorld(
+      39, 64, noRoute, placeBiome, false, undefined, false, false, false,
+      'east-west', [], [], 'cluster-field-blue-noise', 'hierarchical-place-field', 'terrain-only',
+    );
+    const bounds = [-96, 96, 128, 320] as const;
+    const placements = first.getAmbientPlacementsInBounds(...bounds);
+    const replayPlacements = replay.getAmbientPlacementsInBounds(...bounds);
+    const anchorKeys = placements.map((placement) => `${placement.anchorX},${placement.anchorY}`);
+    const groups = placements.reduce((result, placement) => {
+      const key = `${placement.siteX},${placement.siteY}`;
+      const group = result.get(key) ?? [];
+      group.push(placement);
+      result.set(key, group);
+      return result;
+    }, new Map<string, typeof placements>());
+    const programs = [...groups.values()].filter((group) => group.length > 1);
+
+    expect(placements).toEqual(replayPlacements);
+    expect(terrainOnly.getAmbientPlacementsInBounds(...bounds)).toEqual(placements);
+    expect(new Set(anchorKeys).size).toBe(anchorKeys.length);
+    expect(programs.length).toBeGreaterThan(4);
+    expect(programs.every((group) => group.every((placement) => (
+      placement.families.includes('canal-town') &&
+      Math.hypot(
+        placement.anchorX - placement.siteX,
+        placement.anchorY - placement.siteY,
+      ) <= 22
+    )))).toBe(true);
+    expect(first.getRegionalStats()).toMatchObject({
+      ambientCompositionProfile: 'hierarchical-place-field',
+    });
+    const fabrics = first.getLandmarkFabricLayoutsInBounds(...bounds)
+      .filter((layout) => layout.id.startsWith('place-fabric:'));
+    expect(fabrics.length).toBeGreaterThan(0);
+    expect(fabrics.every((layout) => (
+      layout.connectionMode === 'internal-spine' &&
+      layout.aprons.filter((apron) => apron.role === 'spine').length === 1
+    ))).toBe(true);
+    expect(terrainOnly.getLandmarkFabricLayoutsInBounds(...bounds)
+      .filter((layout) => layout.id.startsWith('place-fabric:'))).toEqual([]);
+    expect(terrainOnly.getRegionalStats()).toMatchObject({
+      ambientCompositionProfile: 'hierarchical-place-field',
+      ambientPlaceFabricProfile: 'terrain-only',
+      cachedAmbientPlaceFabrics: 0,
+    });
   });
 
   it('places deterministic civic details only on route-safe landmark shoulders', () => {

@@ -1517,6 +1517,34 @@ Completed foundations:
   and explicit physical Ghostty acceptance remain open. Production remains
   `vb07c0d4`; there was no deploy, service restart, push, production database
   write, complete-gate claim, or physical Ghostty claim;
+- V157 selects a 24-tile hierarchical, terrain-only regional place field as a
+  bounded composition sub-gate. A meso parent now chooses one compatible
+  family landmark from the semantic manifest and one to eight supports through
+  continuous prominence/biome weights, route distance, terrain, collision,
+  visible-footprint reservation, and deterministic hashes; no family-name or
+  asset-ID table owns the result. All six final 432-by-432-tile audits have zero
+  exact duplicate anchors, minimum nearest distance 1, median 6.3246--6.7082,
+  coefficient of variation 0.4040--0.5619, and empty 48-tile-cell rate
+  0--1.39%. Coast, rural, mountain, and ruins fixed walking views now contain
+  readable multi-mass places. Forest and the forest/mountain transition remain
+  under-composed, and direct comparison with `TARGET.png` still rejects Gate A:
+  continuous route-connected frontages, circulation, activity, and dense
+  function-bearing place grammar have not generalized beyond the origin.
+  Rejected tiny ensembles, sparse golden-angle root search, a 32-tile cadence,
+  and an expensive off-route paving experiment remain in the mounted evidence.
+  The selected wilderness profile retains its biome ground rather than making
+  a false regional-route claim or paying for mostly invisible high-resolution
+  paving; route-owned civic compounds keep validated threshold/approach
+  fabric. The final baked source reaches exact origin in 2,649.185 ms with zero
+  generation, traverses 260 prepared frames with zero misses or main-thread
+  fallback at 6.347/12.671/17.602/36.031 ms p50/p95/p99/max, and peaks at
+  758.879 MiB RSS. Its first full frame is 109.293 ms, so Gate D remains open.
+  Full candidates, CPU profiles, six-family ledgers, contact sheet, runtime
+  report, hashes, and direct-review findings are retained in
+  `track-4-world-composition/regional-place-ensembles-v157/FINDINGS.md`. No
+  image generation or metered model call was used. Production remains
+  `vb07c0d4`; there was no deploy, service restart, push, production database
+  write, complete-gate claim, or physical Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
@@ -1543,7 +1571,10 @@ Still open and therefore goal-blocking:
   still lacks bank-aware crossing silhouettes, moving inhabitants, temporal
   work/market states, larger squares/commons, dense
   route-connected frontage beyond this bounded origin tranche, and
-  complete forest, coast, rural, mountain, and ruins vocabularies.
+  complete forest, coast, rural, mountain, and ruins vocabularies. V157's
+  terrain-only meso place field now supplies the first non-origin multi-mass
+  layer, but forest and ecotone frames prove that isolated macro compounds are
+  not a substitute for continuous circulation, frontage, or settlement fabric.
   Coast-specific waterfront diversity, far
   greater travel-scale entropy across route topology, hydrology, biome fields,
   ambient clusters, landmarks, and parcel programs, authoritative traversal,

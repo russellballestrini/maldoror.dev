@@ -50,6 +50,7 @@ import {
 import {
   buildRegionalLandmarkFabricLayout,
   rasterizeRegionalLandmarkFabricLayout,
+  type RegionalLandmarkFabricConnectionMode,
   type RegionalLandmarkFabricLayout,
   type RegionalLandmarkFocalFootprint,
 } from './regional-landmark-fabric-layout.js';
@@ -321,6 +322,19 @@ export type RegionalAmbientDistributionProfile =
   | 'legacy-cluster-field-blue-noise'
   | 'cluster-field-blue-noise';
 
+/** Whether a promoted macro-presence site emits one isolated silhouette or a
+ * bounded, manifest-driven place ensemble. Kept independently switchable from
+ * the density field so research can hold the parent distribution constant. */
+export type RegionalAmbientCompositionProfile =
+  | 'single'
+  | 'bounded-ensemble'
+  | 'hierarchical-place-field';
+
+/** Wilderness ensembles normally retain the biome beneath their structures.
+ * Internal paving is an explicit profile for denser civic sites because every
+ * continuous high-resolution surface has a real preparation cost. */
+export type RegionalAmbientPlaceFabricProfile = 'terrain-only' | 'internal-spine';
+
 export interface RegionalWorldTileProviderConfig extends TileProviderConfig {
   field: RegionalWorldBiomeSampler;
   routes: RegionalWorldRouteSampler;
@@ -340,6 +354,8 @@ export interface RegionalWorldTileProviderConfig extends TileProviderConfig {
    * priority thinning. Research can compare profiles without changing asset,
    * terrain, route, collision, or cache semantics. */
   ambientDistributionProfile?: RegionalAmbientDistributionProfile;
+  ambientCompositionProfile?: RegionalAmbientCompositionProfile;
+  ambientPlaceFabricProfile?: RegionalAmbientPlaceFabricProfile;
   ambientLandmarkClearance?: number;
   civicDetailCellSize?: number;
   civicDetailDensity?: number;
@@ -457,6 +473,16 @@ interface CachedBlock {
   accessedAt: number;
 }
 
+interface AmbientPlaceProgram {
+  root: Placement;
+  placements: readonly Placement[];
+}
+
+interface AmbientBlockComposition {
+  placements: Placement[];
+  placePrograms: AmbientPlaceProgram[];
+}
+
 interface CachedParcelGroup {
   contact: Placement;
   components: Placement[];
@@ -508,6 +534,8 @@ export class RegionalWorldDerivedCache {
   readonly environmentContactPlacementCache = new Map<string, Placement | null>();
   readonly environmentProgramCache = new Map<string, CachedEnvironmentProgram | null>();
   readonly civicDetailPlacementCache = new Map<string, readonly Placement[]>();
+  readonly ambientEnsemblePlacementCache = new Map<string, readonly Placement[]>();
+  readonly ambientPlaceFabricCache = new Map<string, LandmarkFabricSurface | null>();
   readonly quayDetailPlacementCache = new Map<string, readonly Placement[]>();
   readonly quayFrontagePlacementCache = new Map<string, readonly Placement[]>();
   readonly dynamicQuayOverlayCache = new Map<string, Map<string, BuildingTileData>>();
@@ -521,6 +549,8 @@ export class RegionalWorldDerivedCache {
     this.environmentContactPlacementCache.clear();
     this.environmentProgramCache.clear();
     this.civicDetailPlacementCache.clear();
+    this.ambientEnsemblePlacementCache.clear();
+    this.ambientPlaceFabricCache.clear();
     this.quayDetailPlacementCache.clear();
     this.quayFrontagePlacementCache.clear();
     this.dynamicQuayOverlayCache.clear();
@@ -540,6 +570,11 @@ const PACKED_PREPARED_VIEWPORT_CACHE = new WeakMap<
 const LANDMARK_ANCHOR_REACH = 7;
 const LANDMARK_ENTOURAGE_REACH = 18;
 const LANDMARK_QUAY_DETAIL_REACH = 28;
+const AMBIENT_ENSEMBLE_REACH = 8;
+const AMBIENT_PLACE_CELL_SIZE = 24;
+const AMBIENT_PLACE_PROGRAM_REACH = 22;
+const AMBIENT_PLACE_ROOT_MAX_OFFSET = 14;
+const AMBIENT_PLACE_SOURCE_REACH = AMBIENT_PLACE_PROGRAM_REACH + AMBIENT_PLACE_ROOT_MAX_OFFSET;
 const PARCEL_SIDE_OFFSET = 3;
 export const REGIONAL_MAX_PREPARED_VIEWPORT_AREA = 8192;
 const ENVIRONMENT_PROGRAM_REACH = 40;
@@ -573,6 +608,8 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly ambientCellSize: number;
   private readonly ambientDensity: number;
   private readonly ambientDistributionProfile: RegionalAmbientDistributionProfile;
+  private readonly ambientCompositionProfile: RegionalAmbientCompositionProfile;
+  private readonly ambientPlaceFabricProfile: RegionalAmbientPlaceFabricProfile;
   private readonly ambientLandmarkClearance: number;
   private readonly civicDetailCellSize: number;
   private readonly civicDetailDensity: number;
@@ -606,6 +643,8 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly environmentContactPlacementCache: Map<string, Placement | null>;
   private readonly environmentProgramCache: Map<string, CachedEnvironmentProgram | null>;
   private readonly civicDetailPlacementCache: Map<string, readonly Placement[]>;
+  private readonly ambientEnsemblePlacementCache: Map<string, readonly Placement[]>;
+  private readonly ambientPlaceFabricCache: Map<string, LandmarkFabricSurface | null>;
   private readonly quayDetailPlacementCache: Map<string, readonly Placement[]>;
   private readonly quayFrontagePlacementCache: Map<string, readonly Placement[]>;
   private readonly dynamicQuayOverlayCache: Map<string, Map<string, BuildingTileData>>;
@@ -640,6 +679,8 @@ export class RegionalWorldTileProvider extends TileProvider {
     this.ambientCellSize = Math.max(3, config.ambientCellSize ?? 4);
     this.ambientDensity = Math.max(0, Math.min(1, config.ambientDensity ?? 0.86));
     this.ambientDistributionProfile = config.ambientDistributionProfile ?? 'uniform-blue-noise';
+    this.ambientCompositionProfile = config.ambientCompositionProfile ?? 'single';
+    this.ambientPlaceFabricProfile = config.ambientPlaceFabricProfile ?? 'terrain-only';
     this.ambientLandmarkClearance = Math.max(4, config.ambientLandmarkClearance ?? 9);
     this.civicDetailCellSize = Math.max(1, Math.min(12, config.civicDetailCellSize ?? 1));
     this.civicDetailDensity = Math.max(0, Math.min(1, config.civicDetailDensity ?? 0.92));
@@ -678,6 +719,8 @@ export class RegionalWorldTileProvider extends TileProvider {
     this.environmentContactPlacementCache = this.derivedCache.environmentContactPlacementCache;
     this.environmentProgramCache = this.derivedCache.environmentProgramCache;
     this.civicDetailPlacementCache = this.derivedCache.civicDetailPlacementCache;
+    this.ambientEnsemblePlacementCache = this.derivedCache.ambientEnsemblePlacementCache;
+    this.ambientPlaceFabricCache = this.derivedCache.ambientPlaceFabricCache;
     this.quayDetailPlacementCache = this.derivedCache.quayDetailPlacementCache;
     this.quayFrontagePlacementCache = this.derivedCache.quayFrontagePlacementCache;
     this.dynamicQuayOverlayCache = this.derivedCache.dynamicQuayOverlayCache;
@@ -1563,6 +1606,8 @@ export class RegionalWorldTileProvider extends TileProvider {
     landmarkAssets: number;
     ambientAssets: number;
     ambientDistributionProfile: RegionalAmbientDistributionProfile;
+    ambientCompositionProfile: RegionalAmbientCompositionProfile;
+    ambientPlaceFabricProfile: RegionalAmbientPlaceFabricProfile;
     civicDetailAssets: number;
     quayDetailAssets: number;
     environmentContactAssets: number;
@@ -1572,6 +1617,8 @@ export class RegionalWorldTileProvider extends TileProvider {
     cachedPlacements: number;
     cachedLandmarkPlacements: number;
     cachedAmbientPlacements: number;
+    cachedAmbientEnsembleCells: number;
+    cachedAmbientPlaceFabrics: number;
     cachedCivicDetailPlacements: number;
     cachedQuayDetailPlacements: number;
     cachedQuayFrontageSites: number;
@@ -1604,6 +1651,8 @@ export class RegionalWorldTileProvider extends TileProvider {
       landmarkAssets: this.landmarks.length,
       ambientAssets: this.ambient.length,
       ambientDistributionProfile: this.ambientDistributionProfile,
+      ambientCompositionProfile: this.ambientCompositionProfile,
+      ambientPlaceFabricProfile: this.ambientPlaceFabricProfile,
       civicDetailAssets: this.civicDetails.length,
       quayDetailAssets: this.quayDetails.length,
       environmentContactAssets: this.environmentContacts.length,
@@ -1625,6 +1674,8 @@ export class RegionalWorldTileProvider extends TileProvider {
         (total, block) => total + block.placements.filter((placement) => placement.kind === 'ambient').length,
         0,
       ),
+      cachedAmbientEnsembleCells: this.ambientEnsemblePlacementCache.size,
+      cachedAmbientPlaceFabrics: this.ambientPlaceFabricCache.size,
       cachedCivicDetailPlacements: [...this.blockCache.values()].reduce(
         (total, block) => total + block.placements.filter(
           (placement) => placement.kind === 'civic-detail',
@@ -2286,7 +2337,24 @@ export class RegionalWorldTileProvider extends TileProvider {
       originY,
       civicReservedPlacements,
     ));
-    placements.push(...this.buildAmbientPlacements(originX, originY));
+    const ambientComposition = this.buildAmbientPlacements(
+      originX,
+      originY,
+      civicReservedPlacements,
+    );
+    placements.push(...ambientComposition.placements);
+    if (this.ambientPlaceFabricProfile === 'internal-spine') {
+      for (const program of ambientComposition.placePrograms) {
+        const fabric = this.getAmbientPlaceFabric(program);
+        if (!fabric) continue;
+        for (const cell of rasterizeRegionalLandmarkFabricLayout(fabric.layout)) {
+          if (cell.x < originX || cell.x >= originX + this.blockSize ||
+              cell.y < originY || cell.y >= originY + this.blockSize) continue;
+          const key = positionKey(cell.x, cell.y);
+          if (!landmarkFabricSurfaces.has(key)) landmarkFabricSurfaces.set(key, fabric);
+        }
+      }
+    }
     placements.push(...this.buildEnvironmentContactPlacements(originX, originY));
     placements.push(...this.buildRouteContactPlacements(originX, originY));
 
@@ -3539,6 +3607,7 @@ export class RegionalWorldTileProvider extends TileProvider {
   private createLandmarkFabricSurface(
     landmark: Placement,
     entourage: readonly Placement[],
+    connectionMode: RegionalLandmarkFabricConnectionMode = 'route-threshold',
   ): LandmarkFabricSurface | null {
     const focals: RegionalLandmarkFocalFootprint[] = [];
     for (const placement of entourage) {
@@ -3562,7 +3631,8 @@ export class RegionalWorldTileProvider extends TileProvider {
     if (focals.length === 0) return null;
     const route = this.routes.sample(landmark.siteX, landmark.siteY);
     const layout = buildRegionalLandmarkFabricLayout({
-      id: `landmark-fabric:${landmark.siteX}:${landmark.siteY}:${landmark.landmarkKind ?? 'site'}`,
+      id: `${connectionMode === 'internal-spine' ? 'place-fabric' : 'landmark-fabric'}:` +
+        `${landmark.siteX}:${landmark.siteY}:${landmark.landmarkKind ?? 'site'}`,
       materialFamily: landmark.asset.families[0] ?? this.field.sample(
         landmark.siteX,
         landmark.siteY,
@@ -3571,8 +3641,40 @@ export class RegionalWorldTileProvider extends TileProvider {
       siteY: landmark.siteY + 0.5,
       seed: this.seed32 ^ stringHash(`${landmark.siteX},${landmark.siteY}`),
       focals,
+      connectionMode,
     });
-    return layout ? { routeKind: route.routeKind ?? 'local-road', layout } : null;
+    if (!layout) return null;
+    if (connectionMode === 'internal-spine' && rasterizeRegionalLandmarkFabricLayout(layout)
+      .some((cell) => {
+        const terrain = this.field.sample(cell.x, cell.y);
+        return terrain.isWater || terrain.slope > 0.78;
+      })) return null;
+    return { routeKind: route.routeKind ?? 'local-road', layout };
+  }
+
+  /** Place fabrics are immutable products of the world seed, owner, manifests,
+   * and sampled terrain. Overlapping source blocks reuse one validated layout
+   * instead of rebuilding the same spatial index and land proof repeatedly. */
+  private getAmbientPlaceFabric(program: AmbientPlaceProgram): LandmarkFabricSurface | null {
+    const cacheKey = `${program.root.siteX},${program.root.siteY}:${program.root.asset.id}`;
+    if (this.ambientPlaceFabricCache.has(cacheKey)) {
+      const cached = this.ambientPlaceFabricCache.get(cacheKey) ?? null;
+      this.ambientPlaceFabricCache.delete(cacheKey);
+      this.ambientPlaceFabricCache.set(cacheKey, cached);
+      return cached;
+    }
+    const fabric = this.createLandmarkFabricSurface(
+      program.root,
+      program.placements,
+      'internal-spine',
+    );
+    this.ambientPlaceFabricCache.set(cacheKey, fabric);
+    while (this.ambientPlaceFabricCache.size > this.maxCachedBlocks * 8) {
+      const oldest = this.ambientPlaceFabricCache.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.ambientPlaceFabricCache.delete(oldest);
+    }
+    return fabric;
   }
 
   /** Select support masses from the complete authored non-programmed family
@@ -3629,37 +3731,384 @@ export class RegionalWorldTileProvider extends TileProvider {
     return selected;
   }
 
-  private buildAmbientPlacements(originX: number, originY: number): Placement[] {
-    if (this.ambient.length === 0 || this.ambientDensity <= 0) return [];
+  private buildAmbientPlacements(
+    originX: number,
+    originY: number,
+    establishedComposition: readonly Placement[] = [],
+  ): AmbientBlockComposition {
+    if (this.ambient.length === 0 || this.ambientDensity <= 0) {
+      return { placements: [], placePrograms: [] };
+    }
     const placements: Placement[] = [];
-    const firstCellX = floorDiv(originX, this.ambientCellSize) - 1;
-    const lastCellX = floorDiv(originX + this.blockSize - 1, this.ambientCellSize) + 1;
-    const firstCellY = floorDiv(originY, this.ambientCellSize) - 1;
-    const lastCellY = floorDiv(originY + this.blockSize - 1, this.ambientCellSize) + 1;
+    const placePrograms: AmbientPlaceProgram[] = [];
+    const compositionReach = this.ambientCompositionProfile === 'bounded-ensemble'
+      ? Math.ceil(AMBIENT_ENSEMBLE_REACH / this.ambientCellSize) + 1
+      : 1;
+    const firstCellX = floorDiv(originX, this.ambientCellSize) - compositionReach;
+    const lastCellX = floorDiv(originX + this.blockSize - 1, this.ambientCellSize) + compositionReach;
+    const firstCellY = floorDiv(originY, this.ambientCellSize) - compositionReach;
+    const lastCellY = floorDiv(originY + this.blockSize - 1, this.ambientCellSize) + compositionReach;
     for (let cellY = firstCellY; cellY <= lastCellY; cellY++) {
       for (let cellX = firstCellX; cellX <= lastCellX; cellX++) {
-        const candidate = this.ambientCandidate(cellX, cellY);
-        if (candidate.x < originX || candidate.x >= originX + this.blockSize ||
-            candidate.y < originY || candidate.y >= originY + this.blockSize ||
-            !this.isAmbientPriorityMaximum(cellX, cellY) ||
-            this.hashUnit(cellX, cellY, 0x4d17) > this.ambientDensity *
-              this.ambientDistributionWeight(candidate.x, candidate.y)) continue;
-        const route = this.routes.sample(candidate.x, candidate.y);
-        if (route.landmarkDistance < this.ambientLandmarkClearance) continue;
-        const biome = this.field.sample(candidate.x, candidate.y);
-        const asset = this.selectAmbientAsset(candidate.x, candidate.y, biome, route);
-        if (!asset || !this.assetFits(candidate.x, candidate.y, asset)) continue;
-        placements.push({
-          asset,
-          kind: 'ambient',
-          siteX: candidate.x,
-          siteY: candidate.y,
-          anchorX: candidate.x,
-          anchorY: candidate.y,
-        });
+        for (const placement of this.getAmbientEnsemblePlacement(cellX, cellY)) {
+          if (placement.anchorX < originX || placement.anchorX >= originX + this.blockSize ||
+              placement.anchorY < originY || placement.anchorY >= originY + this.blockSize) continue;
+          placements.push(placement);
+        }
       }
     }
+
+    if (this.ambientCompositionProfile === 'hierarchical-place-field') {
+      const firstPlaceCellX = floorDiv(originX - AMBIENT_PLACE_SOURCE_REACH, AMBIENT_PLACE_CELL_SIZE);
+      const lastPlaceCellX = floorDiv(
+        originX + this.blockSize - 1 + AMBIENT_PLACE_SOURCE_REACH,
+        AMBIENT_PLACE_CELL_SIZE,
+      );
+      const firstPlaceCellY = floorDiv(originY - AMBIENT_PLACE_SOURCE_REACH, AMBIENT_PLACE_CELL_SIZE);
+      const lastPlaceCellY = floorDiv(
+        originY + this.blockSize - 1 + AMBIENT_PLACE_SOURCE_REACH,
+        AMBIENT_PLACE_CELL_SIZE,
+      );
+      for (let cellY = firstPlaceCellY; cellY <= lastPlaceCellY; cellY++) {
+        for (let cellX = firstPlaceCellX; cellX <= lastPlaceCellX; cellX++) {
+          const program = this.getAmbientPlaceProgram(cellX, cellY);
+          if (!program) continue;
+          placePrograms.push(program);
+          for (const placement of program.placements) {
+            if (placement.anchorX < originX || placement.anchorX >= originX + this.blockSize ||
+                placement.anchorY < originY || placement.anchorY >= originY + this.blockSize) continue;
+            placements.push(placement);
+          }
+        }
+      }
+    }
+
+    const establishedReserved = new Set<string>();
+    for (const placement of establishedComposition) {
+      reserveVisibleFootprint(placement, establishedReserved, 0);
+      for (const [offsetX, offsetY] of placement.asset.collision) {
+        establishedReserved.add(positionKey(
+          placement.anchorX + offsetX,
+          placement.anchorY + offsetY,
+        ));
+      }
+    }
+    const uniquePrograms = new Map<string, AmbientPlaceProgram>();
+    const sourcePlaceSites = new Set(placePrograms.map((program) => (
+      positionKey(program.root.siteX, program.root.siteY)
+    )));
+    for (const program of placePrograms) {
+      if (visibleFootprintIntersects(
+        program.root.asset,
+        program.root.anchorX,
+        program.root.anchorY,
+        establishedReserved,
+      )) continue;
+      const accepted = program.placements.filter((placement) => !visibleFootprintIntersects(
+        placement.asset,
+        placement.anchorX,
+        placement.anchorY,
+        establishedReserved,
+      ));
+      if (!accepted.includes(program.root)) continue;
+      uniquePrograms.set(positionKey(program.root.siteX, program.root.siteY), {
+        root: program.root,
+        placements: accepted,
+      });
+    }
+    const programReserved = new Set<string>();
+    for (const program of uniquePrograms.values()) {
+      for (const placement of program.placements) reserveVisibleFootprint(placement, programReserved, 1);
+    }
+    const unique = new Map<string, Placement>();
+    for (const placement of placements) {
+      const siteKey = positionKey(placement.siteX, placement.siteY);
+      const belongsToPlace = uniquePrograms.has(siteKey);
+      if (sourcePlaceSites.has(siteKey) && !belongsToPlace) continue;
+      if ((!belongsToPlace && visibleFootprintIntersects(
+        placement.asset,
+        placement.anchorX,
+        placement.anchorY,
+        programReserved,
+      )) || visibleFootprintIntersects(
+        placement.asset,
+        placement.anchorX,
+        placement.anchorY,
+        establishedReserved,
+      )) continue;
+      const key = positionKey(placement.anchorX, placement.anchorY);
+      const existing = unique.get(key);
+      if (!existing || placement.siteY < existing.siteY ||
+          (placement.siteY === existing.siteY && placement.siteX < existing.siteX) ||
+          (placement.siteY === existing.siteY && placement.siteX === existing.siteX &&
+            placement.asset.id.localeCompare(existing.asset.id) < 0)) unique.set(key, placement);
+    }
+    return {
+      placements: [...unique.values()].sort((a, b) => (
+        a.anchorY - b.anchorY || a.anchorX - b.anchorX || a.asset.id.localeCompare(b.asset.id)
+      )),
+      placePrograms: [...uniquePrograms.values()].sort((a, b) => (
+        a.root.siteY - b.root.siteY || a.root.siteX - b.root.siteX ||
+        a.root.asset.id.localeCompare(b.root.asset.id)
+      )),
+    };
+  }
+
+  /** A meso-scale parent owns a complete place vocabulary: one authored
+   * family landmark, its manifest-driven entourage, and any declared focal
+   * thresholds. The low-frequency prominence field controls whether the cell
+   * becomes a place, while bounded jitter and the entourage grammar prevent a
+   * visible block lattice. Ordinary ambient placements remain the fine layer.
+   */
+  private getAmbientPlaceProgram(cellX: number, cellY: number): AmbientPlaceProgram | null {
+    const cacheKey = `place-field:${cellX},${cellY}`;
+    const cached = this.ambientEnsemblePlacementCache.get(cacheKey);
+    if (cached) {
+      if (cached.length === 0) return null;
+      return { root: cached[0]!, placements: cached };
+    }
+    const centreX = cellX * AMBIENT_PLACE_CELL_SIZE + AMBIENT_PLACE_CELL_SIZE * 0.5;
+    const centreY = cellY * AMBIENT_PLACE_CELL_SIZE + AMBIENT_PLACE_CELL_SIZE * 0.5;
+    const candidateX = Math.round(centreX + (
+      this.hashUnit(cellX, cellY, 0x2b73) - 0.5
+    ) * 5);
+    const candidateY = Math.round(centreY + (
+      this.hashUnit(cellX, cellY, 0x6db1) - 0.5
+    ) * 5);
+    const prominence = this.ambientDistributionWeight(candidateX, candidateY);
+    const presence = 0.78 + prominence * 0.2;
+    if (this.hashUnit(cellX, cellY, 0x53c9) > presence) {
+      this.cacheAmbientEnsemblePlacement(cacheKey, Object.freeze([] as Placement[]));
+      return null;
+    }
+    let selected: { x: number; y: number; asset: RegionalLandmarkAsset } | null = null;
+    for (let radius = 0; radius <= 11 && !selected; radius++) {
+      const minimum = -radius;
+      const maximum = radius;
+      for (let offsetY = minimum; offsetY <= maximum && !selected; offsetY++) {
+        for (let offsetX = minimum; offsetX <= maximum; offsetX++) {
+          if (radius > 0 && Math.abs(offsetX) !== radius && Math.abs(offsetY) !== radius) continue;
+          const x = candidateX + offsetX;
+          const y = candidateY + offsetY;
+          const route = this.routes.sample(x, y);
+          if (route.landmarkDistance < this.ambientLandmarkClearance) continue;
+          const biome = this.field.sample(x, y);
+          const asset = this.selectAmbientPlaceLandmark(x, y, biome);
+          if (!asset) continue;
+          selected = { x, y, asset };
+          break;
+        }
+      }
+    }
+    if (!selected) {
+      this.cacheAmbientEnsemblePlacement(cacheKey, Object.freeze([] as Placement[]));
+      return null;
+    }
+    const kindIndex = Math.floor(
+      this.hashUnit(selected.x, selected.y, 0x198d) * selected.asset.landmarkKinds.length,
+    );
+    const sourceRoot: Placement = {
+      asset: selected.asset,
+      kind: 'landmark',
+      landmarkKind: selected.asset.landmarkKinds[Math.min(
+        selected.asset.landmarkKinds.length - 1,
+        kindIndex,
+      )]!,
+      siteX: selected.x,
+      siteY: selected.y,
+      anchorX: selected.x,
+      anchorY: selected.y,
+    };
+    const root: Placement = { ...sourceRoot, kind: 'ambient' };
+    const supportsTarget = Math.max(1, Math.min(8, 1 + Math.floor(
+      prominence * 6 + this.hashUnit(cellX, cellY, 0x712f) * 2,
+    )));
+    const supports = this.buildLandmarkEntourage(sourceRoot).filter((placement) => (
+      Math.hypot(placement.anchorX - root.siteX, placement.anchorY - root.siteY) <=
+        AMBIENT_PLACE_PROGRAM_REACH
+    )).slice(0, supportsTarget).sort((a, b) => (
+      a.anchorY - b.anchorY || a.anchorX - b.anchorX || a.asset.id.localeCompare(b.asset.id)
+    ));
+    const stable = Object.freeze([root, ...supports]
+      .map((placement) => Object.freeze({ ...placement })));
+    this.cacheAmbientEnsemblePlacement(cacheKey, stable);
+    return { root: stable[0]!, placements: stable };
+  }
+
+  private selectAmbientPlaceLandmark(
+    worldX: number,
+    worldY: number,
+    biome: BiomeWorldSample,
+  ): RegionalLandmarkAsset | null {
+    const ranked = this.landmarks.flatMap((asset) => {
+      const compatibility = Math.max(...asset.families.map((family) => (
+        biome.weights[BIOME_FAMILIES.indexOf(family)] ?? 0
+      )));
+      if (compatibility < 0.18) return [];
+      const score = compatibility + this.hashUnit(
+        worldX,
+        worldY,
+        stringHash(asset.id) ^ 0x47d3,
+      ) * 0.13;
+      return [{ asset, score }];
+    }).sort((a, b) => b.score - a.score || a.asset.id.localeCompare(b.asset.id));
+    return ranked.find(({ asset }) => this.assetFits(worldX, worldY, asset))?.asset ?? null;
+  }
+
+  /** Resolve one ambient cell into either its historical singleton or a small
+   * promoted ensemble. Ensemble parents are wide-radius maxima of the same
+   * continuous prominence field, so richer places concentrate inside selected
+   * basins while the low field remains protected negative space. */
+  private getAmbientEnsemblePlacement(cellX: number, cellY: number): readonly Placement[] {
+    const cacheKey = `${this.ambientDistributionProfile}:${this.ambientCompositionProfile}:${cellX},${cellY}`;
+    const cached = this.ambientEnsemblePlacementCache.get(cacheKey);
+    if (cached) return cached;
+    const candidate = this.ambientCandidate(cellX, cellY);
+    const weight = this.ambientDistributionWeight(candidate.x, candidate.y);
+    const ordinary = this.isAmbientPriorityMaximum(cellX, cellY) &&
+      this.hashUnit(cellX, cellY, 0x4d17) <= this.ambientDensity * weight;
+    const promoted = this.ambientCompositionProfile === 'bounded-ensemble' &&
+      weight >= 0.28 && this.hashUnit(cellX, cellY, 0x51b7) <= this.ambientDensity &&
+      this.isAmbientEnsemblePriorityMaximum(cellX, cellY);
+    if (!ordinary && !promoted) {
+      const empty = Object.freeze([] as Placement[]);
+      return this.cacheAmbientEnsemblePlacement(cacheKey, empty);
+    }
+    const route = this.routes.sample(candidate.x, candidate.y);
+    if (route.landmarkDistance < this.ambientLandmarkClearance) {
+      const empty = Object.freeze([] as Placement[]);
+      return this.cacheAmbientEnsemblePlacement(cacheKey, empty);
+    }
+    const biome = this.field.sample(candidate.x, candidate.y);
+    const rootAsset = this.selectAmbientAsset(candidate.x, candidate.y, biome, route);
+    if (!rootAsset || !this.assetFits(candidate.x, candidate.y, rootAsset)) {
+      const empty = Object.freeze([] as Placement[]);
+      return this.cacheAmbientEnsemblePlacement(cacheKey, empty);
+    }
+    const root: Placement = {
+      asset: rootAsset,
+      kind: 'ambient',
+      siteX: candidate.x,
+      siteY: candidate.y,
+      anchorX: candidate.x,
+      anchorY: candidate.y,
+    };
+    const placements = promoted ? this.buildAmbientEnsemble(root, weight) : [root];
+    const stable = Object.freeze(placements
+      .sort((a, b) => a.anchorY - b.anchorY || a.anchorX - b.anchorX ||
+        a.asset.id.localeCompare(b.asset.id))
+      .map((placement) => Object.freeze({ ...placement })));
+    return this.cacheAmbientEnsemblePlacement(cacheKey, stable);
+  }
+
+  private cacheAmbientEnsemblePlacement(
+    key: string,
+    placements: readonly Placement[],
+  ): readonly Placement[] {
+    this.ambientEnsemblePlacementCache.set(key, placements);
+    while (this.ambientEnsemblePlacementCache.size > this.maxCachedBlocks * 128) {
+      const oldest = this.ambientEnsemblePlacementCache.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.ambientEnsemblePlacementCache.delete(oldest);
+    }
     return placements;
+  }
+
+  /** Promote one sparse parent into a bounded family-compatible ensemble.
+   * Numeric world-space candidates, semantic manifests, continuous family
+   * weights, route bands, collision, and visible-footprint reservations own the
+   * result. No family/asset name table or raster-colour inference is involved. */
+  private buildAmbientEnsemble(root: Placement, prominence: number): Placement[] {
+    const supportsTarget = 2 + Math.floor(Math.max(0, Math.min(1, prominence)) * 2);
+    const route = this.routes.sample(root.siteX, root.siteY);
+    const directionLength = Math.hypot(route.directionX, route.directionY);
+    const fallbackAngle = this.hashUnit(root.siteX, root.siteY, 0x269b) * Math.PI * 2;
+    const tangentX = directionLength >= 0.1 ? route.directionX / directionLength : Math.cos(fallbackAngle);
+    const tangentY = directionLength >= 0.1 ? route.directionY / directionLength : Math.sin(fallbackAngle);
+    const normalX = -tangentY;
+    const normalY = tangentX;
+    const reserved = new Set<string>();
+    const usage = new Map<string, number>([[assetVisualGroup(root.asset), 1]]);
+    reserveVisibleFootprint(root, reserved, 1);
+    const supports: Placement[] = [];
+    for (let attempt = 0; attempt < supportsTarget * 10 && supports.length < supportsTarget; attempt++) {
+      const phase = this.hashUnit(root.siteX + attempt, root.siteY - attempt, 0x3b6d);
+      const angle = fallbackAngle + attempt * 2.399963229728653 + (phase - 0.5) * 0.72;
+      const radius = 3.5 + (attempt % 3) * 1.35 + this.hashUnit(
+        root.siteX - attempt,
+        root.siteY + attempt,
+        0x74a3,
+      ) * 0.9;
+      const along = Math.cos(angle) * radius * 1.08;
+      const outward = Math.sin(angle) * radius * 0.92;
+      const anchorX = Math.round(root.siteX + tangentX * along + normalX * outward);
+      const anchorY = Math.round(root.siteY + tangentY * along + normalY * outward);
+      if (Math.hypot(anchorX - root.siteX, anchorY - root.siteY) > AMBIENT_ENSEMBLE_REACH) continue;
+      const localRoute = this.routes.sample(anchorX, anchorY);
+      if (localRoute.landmarkDistance < this.ambientLandmarkClearance) continue;
+      const localBiome = this.field.sample(anchorX, anchorY);
+      const asset = this.selectAmbientEnsembleAsset(
+        anchorX,
+        anchorY,
+        root,
+        localBiome,
+        localRoute,
+        usage,
+      );
+      if (!asset || !this.assetFits(anchorX, anchorY, asset) ||
+          visibleFootprintIntersects(asset, anchorX, anchorY, reserved)) continue;
+      const placement: Placement = {
+        asset,
+        kind: 'ambient',
+        siteX: root.siteX,
+        siteY: root.siteY,
+        anchorX,
+        anchorY,
+      };
+      supports.push(placement);
+      const visualGroup = assetVisualGroup(asset);
+      usage.set(visualGroup, (usage.get(visualGroup) ?? 0) + 1);
+      reserveVisibleFootprint(placement, reserved, 1);
+    }
+    return [root, ...supports];
+  }
+
+  private selectAmbientEnsembleAsset(
+    worldX: number,
+    worldY: number,
+    root: Placement,
+    biome: BiomeWorldSample,
+    route: RegionalRouteSample,
+    usage: ReadonlyMap<string, number>,
+  ): RegionalVisualAsset | null {
+    const candidates: RegionalVisualAsset[] = [
+      ...this.ambient.filter((asset) => (
+        route.distance >= asset.routeDistance[0] &&
+        (asset.routeDistance[1] >= 999 || route.distance <= asset.routeDistance[1])
+      )),
+      ...this.parcelComponents.filter((asset) => (
+        (!asset.programs || asset.programs.length === 0) && !isFocalCompositionAsset(asset)
+      )),
+    ];
+    let selected: RegionalVisualAsset | null = null;
+    let selectedScore = Number.NEGATIVE_INFINITY;
+    for (const asset of candidates) {
+      if (!asset.families.some((family) => root.asset.families.includes(family)) ||
+          !frontageMatchesRoute(asset, route)) continue;
+      const compatibility = Math.max(...asset.families.map((family) => (
+        biome.weights[BIOME_FAMILIES.indexOf(family)] ?? 0
+      )));
+      if (compatibility < 0.16) continue;
+      const visualGroup = assetVisualGroup(asset);
+      const repetitionPenalty = (usage.get(visualGroup) ?? 0) * 0.3;
+      const variation = this.hashUnit(worldX, worldY, stringHash(asset.id)) * 0.12;
+      const score = compatibility + variation - repetitionPenalty;
+      if (score > selectedScore) {
+        selected = asset;
+        selectedScore = score;
+      }
+    }
+    return selected;
   }
 
   /** Bind authored activity to continuous constructed-waterway contact. Each
@@ -4354,6 +4803,29 @@ export class RegionalWorldTileProvider extends TileProvider {
       y: Math.floor((cellY + inset + this.hashUnit(cellX, cellY, 0x29a7) * span) *
         this.civicDetailCellSize),
     };
+  }
+
+  /** Promoted ensemble centres use a wider exclusion radius than ordinary
+   * ambient blue noise. Comparing the continuous prominence field plus a small
+   * deterministic tie-breaker yields separated parents without a lattice. */
+  private isAmbientEnsemblePriorityMaximum(cellX: number, cellY: number): boolean {
+    const score = this.ambientEnsemblePriority(cellX, cellY);
+    const radius = Math.max(2, Math.ceil(AMBIENT_ENSEMBLE_REACH / this.ambientCellSize));
+    for (let offsetY = -radius; offsetY <= radius; offsetY++) {
+      for (let offsetX = -radius; offsetX <= radius; offsetX++) {
+        if (offsetX === 0 && offsetY === 0) continue;
+        const neighbour = this.ambientEnsemblePriority(cellX + offsetX, cellY + offsetY);
+        if (neighbour > score || (neighbour === score &&
+            (offsetY < 0 || (offsetY === 0 && offsetX < 0)))) return false;
+      }
+    }
+    return true;
+  }
+
+  private ambientEnsemblePriority(cellX: number, cellY: number): number {
+    const candidate = this.ambientCandidate(cellX, cellY);
+    return this.ambientDistributionWeight(candidate.x, candidate.y) * 0.72 +
+      this.hashUnit(cellX, cellY, 0x1df5) * 0.28;
   }
 
   private isAmbientPriorityMaximum(cellX: number, cellY: number): boolean {
