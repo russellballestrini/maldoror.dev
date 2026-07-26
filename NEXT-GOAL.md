@@ -1188,6 +1188,32 @@ Completed foundations:
   deployment, and physical Ghostty acceptance remain open. Production remains
   `vb07c0d4`; there was no deploy, service restart, push, complete-gate claim,
   or physical Ghostty claim;
+- V142-V144 extend the generic place grammar into mountain waystations. V142
+  retains a fresh production-seed baseline at the dry north-south site
+  `(61,-71)`, where a cave and spire had no shelter, threshold, or coherent
+  local hierarchy and the regional frame exposed conspicuous crag wallpaper.
+  Existing alpine-hut and mine-gantry rasters now share manifest-owned visual
+  groups with four axis/side focal variants; no mountain, filename, colour, or
+  coordinate conditional enters the runtime. The north-south alpine refuge
+  owns a 24-cell access fabric that reaches route distance 0 and is entirely
+  walkable/rendered. A bounded ±640 physical scan finds four actual east-west
+  mountain waystations. Direct review rejects the highest-weight site because
+  its cave, gantry, and hut split across three walking-frame edges; V144
+  instead selects `(376,-350)` (mountain weight 0.8994), whose mine/pass
+  compound has a 26-cell fully walkable/rendered threshold/approach and unique
+  visible focal-site groups at all three scales. All selected captures, exact
+  hashes, raw metrics, baseline, and rejected high-weight attempt are retained
+  under
+  `track-6-acceptance-atlas/composition-hierarchy-v144-mountain-two-axis-place/FINDINGS.md`.
+  Repository verification passes 44 files / 251 tests, 18/18 typecheck tasks,
+  12/12 build tasks, 7/7 configured lint tasks, and `git diff --check`.
+  This is not mountain completion: regional crag/hut/cave repetition remains
+  visibly unresolved, alongside ridge/cliff fields, multiple cave/highland
+  programs, production cave transitions, route/crossing diversity, living
+  actors/work cycles, ruins composition, fresh full-atlas proof, sustained
+  Gate D, deployment, and physical Ghostty acceptance. Production remains
+  `vb07c0d4`; there was no deploy, service restart, push, complete-gate claim,
+  or physical Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
@@ -1214,9 +1240,8 @@ Still open and therefore goal-blocking:
   still lacks bank-aware crossing silhouettes, moving inhabitants, temporal
   work/market states, larger squares/commons, dense
   route-connected frontage beyond this bounded origin tranche, and
-  a complete forest vocabulary, a broadly placeable coast vocabulary, and
-  a complete rural vocabulary, and equivalent focal vocabularies for the
-  other two non-canal families.
+  complete forest, coast, rural, and mountain vocabularies, and an equivalent
+  focal vocabulary for ruins.
   Coast-specific waterfront diversity, far
   greater travel-scale entropy across route topology, hydrology, biome fields,
   ambient clusters, landmarks, and parcel programs, authoritative traversal,
@@ -1256,7 +1281,8 @@ Still open and therefore goal-blocking:
   denser frontage beyond the origin, moving people, working stalls
   and unloading,
   less empty paving, and equivalent complete grammar beyond the bounded
-  canal-town origin and the two-axis forest/coast/rural waystation tranches
+  canal-town origin and the two-axis forest/coast/rural/mountain waystation
+  tranches
   remain required before a fresh full-atlas recapture can attempt Gate A.
   Fresh post-correction deterministic traversal, the 30-minute terminal run,
   deployed-service/cgroup audit, and physical Ghostty acceptance also remain

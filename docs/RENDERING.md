@@ -806,3 +806,35 @@ Production still reports `vb07c0d4`. Rural settlement hierarchy, continuous
 hedgerow/field composition, living farm schedules and actors, persistent field
 state, route/crossing diversity, fresh complete-atlas proof, sustained load,
 deployment, and physical Ghostty acceptance remain open.
+
+### Mountain route-connected place grammar (2026-07-25)
+
+V142-V144 reuse the existing alpine hut and mine gantry as manifest-declared
+mountain focal groups across both cardinal route axes. Their ordinary entries
+share `visualGroup` identity with the focal variants, so semantic aliases
+cannot repeat one raster as fake variety. The generic focal/frontage/side and
+continuous access-fabric runtime consumes the declarations without mountain,
+filename, colour, or coordinate conditionals.
+
+At the dry north-south waystation `(61,-71)`, the alpine hut now reads as a
+route-facing refuge opposite the cave outcrop. Its 24-cell threshold/approach
+reaches route distance 0 and is entirely walkable/rendered; all visible
+focal-site groups are unique. A bounded ±640 physical audit finds four actual
+east-west mountain waystations. The highest-weight candidate at `(-507,-467)`
+is retained as a visual rejection because its cave, mine, and hut fragment
+across the walking-frame edges. V144 selects `(376,-350)` (mountain weight
+0.8994), whose mine/pass compound has a 26-cell access fabric reaching route
+distance `0.0673`, with full walkable/rendered coverage and unique visual
+groups at walking, district, and regional scale.
+
+Baseline, all six selected renders, exact renderer/OCTANT hashes, raw metrics,
+and the rejected high-weight attempt are in
+`track-6-acceptance-atlas/composition-hierarchy-v144-mountain-two-axis-place/FINDINGS.md`.
+Repository verification passes 44 files / 251 tests, 18/18 typecheck tasks,
+12/12 build tasks, 7/7 configured lint tasks, and `git diff --check`.
+Production still reports `vb07c0d4`. Direct regional review still rejects the
+mountain field as production-complete: repeated crags, huts, and cave masses
+remain too evenly distributed. Ridge/cliff composition, multiple cave/highland
+programs, production cave transitions, route/crossing diversity, living
+mountain activity, ruins composition, fresh complete-atlas proof, sustained
+load, deployment, and physical Ghostty acceptance remain open.
