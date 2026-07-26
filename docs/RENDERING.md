@@ -749,3 +749,34 @@ Production still reports `vb07c0d4`. This is not forest or Gate-A completion:
 open-field composition, living forest activity, crossings and route topology,
 the other four non-canal place families, fresh complete-atlas proof, sustained
 load, deployment, and physical Ghostty acceptance remain open.
+
+### Coast route-connected place grammar (2026-07-26)
+
+V135-V138 reuse the existing dune hut and fishing rack as manifest-declared
+coast focal groups across both cardinal route axes. Their existing waterfront
+program entries share the same `visualGroup` identity, so semantic aliases
+cannot repeat one raster as fake variety. Focal variants carry no waterfront
+program; they establish a rare route-facing hierarchy and feed the generic
+continuous threshold/approach fabric. Runtime selection remains generic over
+manifest semantics and physical field/route constraints.
+
+At the current north-south coast waystation `(-302,-47)`, V138 selects a dune
+hut opposite the beacon and proves a 24-cell access fabric with minimum route
+distance 0 and walkable/rendered rates both 1. A bounded current-world audit
+then distinguishes route-site metadata from actual placeability: four nominal
+east-west coast sites are retained rejections because the beacon has no legal
+dry off-road anchor. The only physically placeable east-west coast waystation
+within the ±640 audit region is `(-623,-396)`. It independently selects the
+east-west hut, produces a 26-cell fully walkable/rendered access fabric at
+route distance 0, and retains unique visual groups across district and
+regional composition.
+
+All six selected walking/district/regional renders, exact renderer and OCTANT
+PNG hashes, raw metrics, baseline comparison, and rejected site probes are in
+`track-6-acceptance-atlas/composition-hierarchy-v138-coast-two-axis-place/FINDINGS.md`.
+Production still reports `vb07c0d4`. This is not coast or Gate-A completion:
+most nominal coast sites remain physically unplaceable with the current large
+beacon; shoreline programs, topology/crossing diversity, living coast
+activity, the other three non-canal place families, fresh complete-atlas
+proof, sustained load, deployment, and physical Ghostty acceptance remain
+open.

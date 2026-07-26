@@ -1144,6 +1144,28 @@ Completed foundations:
   and physical Ghostty acceptance remain open. Production remains `vb07c0d4`;
   there was no deploy, service restart, push, complete-gate claim, or physical
   Ghostty claim;
+- V135-V138 extend the same generic place grammar into the coast without new
+  art. V135 retains the fresh sparse baseline at the current north-south coast
+  waystation `(-302,-47)`. Existing dune-hut and fishing-rack rasters now own
+  stable visual groups and four semantic focal variants cover both route axes
+  and sides; no coast ID, filename, coordinate, or colour condition enters the
+  runtime. V136 produces a 24-cell north-south threshold/approach with minimum
+  route distance 0 and walkable/rendered rates both 1. V137 then rejects four
+  nominal east-west coast sites after proving that route labels alone do not
+  imply a physically placeable beacon. A bounded production-region anchor
+  audit finds the one actual east-west placement at `(-623,-396)`. V138 proves
+  it independently: the 26-cell access fabric reaches route distance 0,
+  remains entirely walkable/rendered, and district/regional focal-site visual
+  groups are all unique. All six selected walking/district/regional captures,
+  exact hashes, and the rejected physical-site search are retained under
+  `track-6-acceptance-atlas/composition-hierarchy-v138-coast-two-axis-place/FINDINGS.md`.
+  This is a selected coast-waystation tranche, not coast completion: most
+  nominal coast sites still cannot host the current large landmark, and
+  shoreline programs, topology/crossing diversity, living coast activity,
+  the other three non-canal families, fresh full-atlas proof, sustained Gate
+  D, deployment, and physical Ghostty acceptance remain open. Production
+  remains `vb07c0d4`; there was no deploy, service restart, push,
+  complete-gate claim, or physical Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
@@ -1170,9 +1192,9 @@ Still open and therefore goal-blocking:
   still lacks bank-aware crossing silhouettes, moving inhabitants, temporal
   work/market states, larger squares/commons, dense
   route-connected frontage beyond this bounded origin tranche, and
-  a complete forest vocabulary, and equivalent focal vocabularies for the
-  other four non-canal families. Coast-specific
-  waterfront diversity, far
+  a complete forest vocabulary, a broadly placeable coast vocabulary, and
+  equivalent focal vocabularies for the other three non-canal families.
+  Coast-specific waterfront diversity, far
   greater travel-scale entropy across route topology, hydrology, biome fields,
   ambient clusters, landmarks, and parcel programs, authoritative traversal,
   stronger landmark framing, multiple cave/highland programs and production
@@ -1211,8 +1233,8 @@ Still open and therefore goal-blocking:
   denser frontage beyond the origin, moving people, working stalls
   and unloading,
   less empty paving, and equivalent complete grammar beyond the bounded
-  canal-town origin and two forest-waystation orientations
-  remain required before a fresh full-atlas recapture can attempt Gate A.
+  canal-town origin and the two-axis forest/coast waystation tranches remain
+  required before a fresh full-atlas recapture can attempt Gate A.
   Fresh post-correction deterministic traversal, the 30-minute terminal run,
   deployed-service/cgroup audit, and physical Ghostty acceptance also remain
   open.
