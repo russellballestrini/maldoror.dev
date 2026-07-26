@@ -1150,6 +1150,10 @@ const metrics = {
   parcelComponentAssets: parcelKit.assets.length,
   environmentContactManifest: path.relative(ROOT, environmentKit.manifestPath),
   environmentContactAssets: environmentKit.assets.length,
+  nearbyLandmarkSites: routes.getLandmarkSites(-30, -30, 30, 30).map((site) => ({
+    ...site,
+    placement: world.resolveLandmarkPlacement(site.x, site.y),
+  })),
   frames: [],
 };
 for (const frame of FRAMES) {
@@ -1167,6 +1171,7 @@ for (const frame of FRAMES) {
     frame.centre[0] + halfWidth,
     frame.centre[1] + halfHeight,
   ];
+  const visibleAmbient = world.getAmbientPlacementsInBounds(...visibleBounds);
   metrics.frames.push({
     ...frame,
     elapsedMs: Number((performance.now() - startedAt).toFixed(2)),
@@ -1175,7 +1180,8 @@ for (const frame of FRAMES) {
     routeStats: routes.getStats(),
     compositorStats: compositor.getStats(),
     providerStats: world.getRegionalStats(),
-    visibleAmbient: world.getAmbientPlacementsInBounds(...visibleBounds),
+    visibleAmbient,
+    quayFrontageAudit: auditQuayFrontage(visibleAmbient),
     visibleCivicDetails: world.getCivicDetailPlacementsInBounds(...visibleBounds),
     visibleQuayDetails: world.getQuayDetailPlacementsInBounds(...visibleBounds),
     visibleRouteContacts: world.getRouteContactPlacementsInBounds(...visibleBounds),
@@ -1188,6 +1194,65 @@ for (const frame of FRAMES) {
 }
 fs.writeFileSync(path.join(OUTPUT, 'metrics.json'), `${JSON.stringify(metrics, null, 2)}\n`);
 console.log(JSON.stringify({ output: OUTPUT, ...metrics }, null, 2));
+
+function auditQuayFrontage(placements) {
+  const frontage = placements.filter((placement) => placement.waterfrontId !== undefined);
+  const unique = new Map();
+  for (const placement of frontage) {
+    const key = `${placement.anchorX},${placement.anchorY}:${placement.waterfrontId}`;
+    if (!unique.has(key)) unique.set(key, placement);
+  }
+  const accessAudit = [...unique.values()].filter((placement) => placement.quayAccessPath)
+    .map((placement) => {
+      const asset = parcelKit.assets.find((candidate) => candidate.id === placement.assetId);
+      const path = placement.quayAccessPath;
+      const expectedStart = asset?.quayAccessOffset
+        ? [
+          placement.anchorX + asset.quayAccessOffset[0],
+          placement.anchorY + asset.quayAccessOffset[1],
+        ]
+        : null;
+      const end = path.at(-1);
+      const endTile = end ? world.getTile(end[0], end[1]) : null;
+      const connected = path.every((cell, index) => index === 0 || (
+        Math.abs(cell[0] - path[index - 1][0]) + Math.abs(cell[1] - path[index - 1][1]) === 1
+      ));
+      const collisionFree = path.every(([x, y]) => !world.isBuildingAt(x, y));
+      const walkable = path.every(([x, y]) => world.getTile(x, y).walkable);
+      const startMatchesManifest = expectedStart !== null && path[0]?.[0] === expectedStart[0] &&
+        path[0]?.[1] === expectedStart[1];
+      const reachesDeclaredQuay = endTile?.id.includes(`regional-quay-ground:${placement.waterfrontId}`)
+        ?? false;
+      return {
+        assetId: placement.assetId,
+        owner: [placement.siteX, placement.siteY],
+        anchor: [placement.anchorX, placement.anchorY],
+        waterway: placement.waterfrontId,
+        path,
+        pathLength: path.length,
+        startMatchesManifest,
+        connected,
+        collisionFree,
+        walkable,
+        reachesDeclaredQuay,
+        endTileId: endTile?.id ?? null,
+        valid: startMatchesManifest && connected && collisionFree && walkable && reachesDeclaredQuay,
+      };
+    });
+  return {
+    frontageCount: frontage.length,
+    uniquePhysicalFrontageCount: unique.size,
+    physicalDuplicateCount: frontage.length - unique.size,
+    axes: [...new Set([...unique.values()].map((placement) => placement.accessAxis))].sort(),
+    waterways: [...new Set([...unique.values()].map((placement) => placement.waterfrontId))].sort(),
+    sideCanalCount: [...unique.values()].filter(
+      (placement) => placement.accessAxis === 'north-south',
+    ).length,
+    declaredAccessCount: accessAudit.length,
+    allAccessValid: accessAudit.every((audit) => audit.valid),
+    accessAudit,
+  };
+}
 
 function rangeContains(value, range) {
   return value >= range[0] && (range[1] >= 999 || value <= range[1]);

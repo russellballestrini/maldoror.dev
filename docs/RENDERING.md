@@ -661,3 +661,55 @@ This closes a production transport defect, not the living-world or visual
 acceptance goals. Temporal workers/stalls, broader animated vocabularies,
 complete-atlas proof, sustained load, deployment, and physical Ghostty
 acceptance remain open. Production still reports `vb07c0d4`.
+
+### Both-bank side-canal frontage and adversarial login reset (2026-07-26)
+
+V116-V130 add the first authored secondary-frontage program to the paired civic
+canals. Four tall/narrow modules describe a working warehouse, market house,
+boat-repair workshop, and inn/dwelling. The selected source was made by editing
+an earlier sheet with Codex built-in image generation on the ChatGPT
+subscription; no metered API was used. The provenance file retains both
+rejected sources and exact prompts. In particular, V127 is preserved because
+its broad baked limestone bases doubled the procedural quay and made small
+frontages read as boats. V128 removes those continuous platforms and keeps only
+doorstep-scale thresholds and facade-adjacent props.
+
+The runtime does not infer building behavior from image content, filenames, or
+coordinates. Manifest fields own tangent axis, bank side, function, collision,
+and doorway access offset. The provider discovers nearby continuous-waterway
+layouts, assigns each whole layout to one compatible landmark, scans viable
+assets with usage balancing, spaces them along the real tangent, and runs a
+bounded four-neighbour doorway search biased toward the bank normal. Every
+accepted access path is dry, walkable, collision-free, terminates on the exact
+declared quay, and is reserved from competing parcel composition. Waterfront
+programs take priority over ordinary entourage while protected focal footprints
+remain inviolate.
+
+V128 retains 8 unique physical frontages and 0 duplicates in the regional
+frame. Three are north-south side-canal buildings distributed across both
+`quay:arrival-civic-west` and `quay:arrival-civic-east`; all three declared
+access paths pass. Walking remains byte-identical to the prior frame because
+the new sites are outside that view, while district and regional inspection
+shows the modules grounded directly beside the procedural bank without V127's
+detached pale wedges.
+
+V129 proves that result through the real source-build
+SSH/session/worker/render/OCTANT/ANSI/replay path at walking, district, and
+regional zoom. V130 makes the login test adversarial: three returning fixtures
+are persisted at `(137,-211)` before startup. Every login renders and is
+machine-asserted at `Pos: (0, 0)`, and all three database rows finish at `0|0`.
+The run retains 807,301 raw bytes and 75 synchronized frames. Cold readiness was
+26.274 seconds (generator 2.860, origin 13.760), worker RSS 474 MiB, and
+coordinator RSS about 84-88 MiB. The source-build server was stopped gracefully
+before its owned scratch database and ports were removed.
+
+Full evidence is under
+`track-6-acceptance-atlas/composition-hierarchy-v128-side-canal-frontage-ground-blended/`
+and
+`track-6-acceptance-atlas/composition-hierarchy-v130-real-ssh-returning-login-reset/`.
+Repository verification passes 44 files / 250 tests, 18/18 typecheck tasks,
+12/12 build tasks, 7/7 configured lint tasks, strict four-asset derivation, and
+`git diff --check`. Production still reports `vb07c0d4`. This remains a bounded
+canal-town increment: the other five family grammars, larger commons, moving
+inhabitants and work cycles, complete-atlas proof, sustained Gate D, deployment,
+and physical Ghostty acceptance remain open.

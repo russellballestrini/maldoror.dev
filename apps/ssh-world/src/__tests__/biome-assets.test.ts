@@ -220,10 +220,10 @@ describe('regional biome material manifest', () => {
     expect(kit.minimumLayers).toBe(2);
     expect(kit.maximumLayers).toBe(3);
     expect(kit.layerSpacing).toBe(5);
-    expect(kit.assets).toHaveLength(41);
+    expect(kit.assets).toHaveLength(45);
     for (const family of BIOME_FAMILIES) {
       expect(kit.assets.filter((asset) => asset.families.includes(family))).toHaveLength(
-        family === 'canal-town' ? 11 : 6,
+        family === 'canal-town' ? 15 : 6,
       );
     }
     for (const asset of kit.assets) {
@@ -249,19 +249,31 @@ describe('regional biome material manifest', () => {
       asset.frontageStations.every((station) => station >= -0.85 && station <= 0.85)
     ))).toBe(true);
     const waterfront = kit.assets.filter((asset) => asset.programs?.includes('waterfront'));
-    expect(waterfront).toHaveLength(7);
+    expect(waterfront).toHaveLength(11);
     expect(new Set(waterfront.map((asset) => asset.waterfrontFunction))).toEqual(new Set([
+      'boat-repair',
       'boat-shed',
       'fish-processing',
+      'inn',
       'market',
       'shelter',
+      'warehouse',
       'workshop',
     ]));
     const quayFrontage = waterfront.filter((asset) => asset.quayBankSide !== undefined);
-    expect(quayFrontage).toHaveLength(5);
+    expect(quayFrontage).toHaveLength(9);
     expect(new Set(quayFrontage.map((asset) => asset.quayBankSide))).toEqual(new Set([-1, 1]));
-    expect(quayFrontage.every((asset) => asset.frontageAxis === 'east-west')).toBe(true);
+    expect(new Set(quayFrontage.map((asset) => asset.frontageAxis)))
+      .toEqual(new Set(['east-west', 'north-south']));
     expect(new Set(quayFrontage.map((asset) => asset.sprite.width))).toEqual(new Set([5, 10, 13]));
+    const sideCanalFrontage = quayFrontage.filter((asset) => asset.frontageAxis === 'north-south');
+    expect(sideCanalFrontage).toHaveLength(4);
+    expect(sideCanalFrontage.every((asset) => (
+      asset.sprite.height === 7 && asset.quayAccessOffset?.[0] === 0 &&
+      asset.quayAccessOffset[1] === 0 && !asset.collision.some(
+        ([x, y]) => x === asset.quayAccessOffset?.[0] && y === asset.quayAccessOffset?.[1],
+      )
+    ))).toBe(true);
     expect(kit.assets.find((asset) => asset.id === 'canal-town-facade-parcel-mass-v1')?.sprite)
       .toBe(ambient.assets.find((asset) => asset.id === 'canal-town-facade-planter-v2')?.sprite);
   });

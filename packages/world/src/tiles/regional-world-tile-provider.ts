@@ -138,10 +138,13 @@ export interface RegionalRouteContactAsset extends RegionalVisualAsset {
  * Threshold art and ground surfaces remain separate semantic layers. */
 export type RegionalParcelProgram = 'waterfront';
 export type RegionalWaterfrontFunction =
+  | 'boat-repair'
   | 'boat-shed'
   | 'fish-processing'
+  | 'inn'
   | 'market'
   | 'shelter'
+  | 'warehouse'
   | 'workshop';
 
 export interface RegionalParcelComponentAsset extends RegionalVisualAsset {
@@ -164,6 +167,10 @@ export interface RegionalParcelComponentAsset extends RegionalVisualAsset {
    * Omitted assets remain valid for ordinary waterfront parcels, but are not
    * eligible for continuous quay frontage. */
   quayBankSide?: -1 | 1;
+  /** Collision-free doorway/access tile relative to the placement anchor.
+   * When declared, frontage placement must prove a bounded dry path from this
+   * point to the same constructed quay. */
+  quayAccessOffset?: readonly [number, number];
 }
 
 export interface RegionalEnvironmentConstraints {
@@ -205,6 +212,7 @@ export interface RegionalAssetPlacement {
   pathTangentY?: number;
   waterfrontId?: string;
   waterfrontFunction?: RegionalWaterfrontFunction;
+  quayAccessPath?: readonly (readonly [number, number])[];
   environmentProgram?: RegionalEnvironmentProgramKind;
   environmentProgramId?: string;
 }
@@ -354,6 +362,7 @@ interface Placement {
   pathTangentY?: number;
   waterfrontId?: string;
   waterfrontFunction?: RegionalWaterfrontFunction;
+  quayAccessPath?: readonly (readonly [number, number])[];
   environmentProgram?: RegionalEnvironmentProgramKind;
   environmentProgramId?: string;
 }
@@ -461,6 +470,7 @@ export class RegionalWorldDerivedCache {
   readonly environmentProgramCache = new Map<string, CachedEnvironmentProgram | null>();
   readonly civicDetailPlacementCache = new Map<string, readonly Placement[]>();
   readonly quayDetailPlacementCache = new Map<string, readonly Placement[]>();
+  readonly quayFrontagePlacementCache = new Map<string, readonly Placement[]>();
   readonly dynamicQuayOverlayCache = new Map<string, Map<string, BuildingTileData>>();
   accessClock = 0;
 
@@ -473,6 +483,7 @@ export class RegionalWorldDerivedCache {
     this.environmentProgramCache.clear();
     this.civicDetailPlacementCache.clear();
     this.quayDetailPlacementCache.clear();
+    this.quayFrontagePlacementCache.clear();
     this.dynamicQuayOverlayCache.clear();
     this.accessClock = 0;
   }
@@ -555,6 +566,7 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly environmentProgramCache: Map<string, CachedEnvironmentProgram | null>;
   private readonly civicDetailPlacementCache: Map<string, readonly Placement[]>;
   private readonly quayDetailPlacementCache: Map<string, readonly Placement[]>;
+  private readonly quayFrontagePlacementCache: Map<string, readonly Placement[]>;
   private readonly dynamicQuayOverlayCache: Map<string, Map<string, BuildingTileData>>;
   private readonly preparedViewports = new Map<string, ImportedPreparedViewport>();
 
@@ -624,6 +636,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     this.environmentProgramCache = this.derivedCache.environmentProgramCache;
     this.civicDetailPlacementCache = this.derivedCache.civicDetailPlacementCache;
     this.quayDetailPlacementCache = this.derivedCache.quayDetailPlacementCache;
+    this.quayFrontagePlacementCache = this.derivedCache.quayFrontagePlacementCache;
     this.dynamicQuayOverlayCache = this.derivedCache.dynamicQuayOverlayCache;
     for (const asset of this.landmarks) {
       if (asset.families.length === 0 || asset.landmarkKinds.length === 0) {
@@ -1419,6 +1432,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     cachedAmbientPlacements: number;
     cachedCivicDetailPlacements: number;
     cachedQuayDetailPlacements: number;
+    cachedQuayFrontageSites: number;
     cachedDynamicQuayOverlayTiles: number;
     cachedEnvironmentContactPlacements: number;
     cachedRouteContactPlacements: number;
@@ -1478,6 +1492,7 @@ export class RegionalWorldTileProvider extends TileProvider {
         ).length,
         0,
       ),
+      cachedQuayFrontageSites: this.quayFrontagePlacementCache.size,
       cachedDynamicQuayOverlayTiles: [...this.dynamicQuayOverlayCache.values()].reduce(
         (total, overlays) => total + overlays.size,
         0,
@@ -1599,6 +1614,7 @@ export class RegionalWorldTileProvider extends TileProvider {
             pathTangentY: placement.pathTangentY,
             waterfrontId: placement.waterfrontId,
             waterfrontFunction: placement.waterfrontFunction,
+            quayAccessPath: placement.quayAccessPath,
           });
         }
       }
@@ -2055,8 +2071,28 @@ export class RegionalWorldTileProvider extends TileProvider {
             site.y >= originY && site.y < originY + this.blockSize) {
           placements.push(placement);
         }
-        const entourage = this.buildLandmarkEntourage(placement);
-        const quayFrontage = this.buildLandmarkQuayFrontage(placement, entourage);
+        const entourageCandidates = this.buildLandmarkEntourage(placement);
+        const quayFrontage = this.buildLandmarkQuayFrontage(placement, entourageCandidates.filter(
+          (support) => isFocalCompositionAsset(support.asset),
+        ));
+        const frontageReserved = new Set<string>();
+        for (const frontage of quayFrontage) {
+          reserveVisibleFootprint(frontage, frontageReserved, 0);
+          for (const [offsetX, offsetY] of frontage.asset.collision) {
+            frontageReserved.add(positionKey(frontage.anchorX + offsetX, frontage.anchorY + offsetY));
+          }
+          for (const [x, y] of frontage.quayAccessPath ?? []) {
+            frontageReserved.add(positionKey(x, y));
+          }
+        }
+        const entourage = entourageCandidates.filter((support) => (
+          isFocalCompositionAsset(support.asset) || (
+            !visibleFootprintIntersects(support.asset, support.anchorX, support.anchorY, frontageReserved) &&
+            !support.asset.collision.some(([offsetX, offsetY]) => frontageReserved.has(
+              positionKey(support.anchorX + offsetX, support.anchorY + offsetY),
+            ))
+          )
+        ));
         civicReservedPlacements.push(...entourage, ...quayFrontage);
         placements.push(...quayFrontage.filter((support) => (
           support.anchorX >= originX && support.anchorX < originX + this.blockSize &&
@@ -3072,20 +3108,38 @@ export class RegionalWorldTileProvider extends TileProvider {
   private buildLandmarkQuayFrontage(
     landmark: Placement,
     existingSupports: readonly Placement[],
-  ): Placement[] {
+  ): readonly Placement[] {
     const family = landmark.asset.families[0];
     if (!family || !this.field.sampleConstructedWaterway) return [];
+    const cacheKey = positionKey(landmark.siteX, landmark.siteY);
+    const cached = this.quayFrontagePlacementCache.get(cacheKey);
+    if (cached) {
+      this.quayFrontagePlacementCache.delete(cacheKey);
+      this.quayFrontagePlacementCache.set(cacheKey, cached);
+      return cached;
+    }
     const assets = this.parcelComponents.filter((asset) => (
       asset.families.includes(family) && asset.programs?.includes('waterfront') &&
       asset.waterfrontFunction && asset.quayBankSide !== undefined && asset.frontageAxis
     )).sort((a, b) => a.id.localeCompare(b.id));
     if (assets.length === 0) return [];
-    const layouts = this.quayLayouts.filter((layout) => this.field.sampleConstructedWaterway!(
-      landmark.siteX,
-      landmark.siteY,
-      layout.waterwayId,
-    ) !== null);
+    const layouts = this.quayLayouts.filter((layout) => !(
+      layout.bounds.maxX < landmark.siteX - LANDMARK_QUAY_DETAIL_REACH ||
+      layout.bounds.minX > landmark.siteX + LANDMARK_QUAY_DETAIL_REACH ||
+      layout.bounds.maxY < landmark.siteY - LANDMARK_QUAY_DETAIL_REACH ||
+      layout.bounds.minY > landmark.siteY + LANDMARK_QUAY_DETAIL_REACH
+    ));
     if (layouts.length === 0) return [];
+    const ownershipLandmarks = (this.routes.getLandmarkSites?.(
+      landmark.siteX - LANDMARK_QUAY_DETAIL_REACH * 2,
+      landmark.siteY - LANDMARK_QUAY_DETAIL_REACH * 2,
+      landmark.siteX + LANDMARK_QUAY_DETAIL_REACH * 2,
+      landmark.siteY + LANDMARK_QUAY_DETAIL_REACH * 2,
+    ) ?? [])
+      .map((site) => this.createPlacement(site.x, site.y))
+      .filter((placement): placement is Placement => (
+        placement !== null && placement.asset.families.includes(family)
+      ));
 
     const occupied = new Set<string>();
     const reservedVisible = new Set<string>();
@@ -3096,13 +3150,33 @@ export class RegionalWorldTileProvider extends TileProvider {
       reserveVisibleFootprint(placement, reservedVisible, 0);
     }
     const selected: Placement[] = [];
+    const assetUsage = new Map<string, number>();
     for (const layout of layouts) {
+      const layoutCentreX = (layout.bounds.minX + layout.bounds.maxX) * 0.5;
+      const layoutCentreY = (layout.bounds.minY + layout.bounds.maxY) * 0.5;
+      const layoutOwner = ownershipLandmarks.reduce<Placement | null>((best, option) => {
+        if (!best) return option;
+        const bestDistance = Math.hypot(layoutCentreX - best.siteX, layoutCentreY - best.siteY);
+        const optionDistance = Math.hypot(layoutCentreX - option.siteX, layoutCentreY - option.siteY);
+        if (optionDistance < bestDistance - 1e-7) return option;
+        if (Math.abs(optionDistance - bestDistance) > 1e-7) return best;
+        return option.siteY < best.siteY ||
+          (option.siteY === best.siteY && option.siteX < best.siteX) ||
+          (option.siteY === best.siteY && option.siteX === best.siteX &&
+            option.asset.id.localeCompare(best.asset.id) < 0)
+          ? option
+          : best;
+      }, null);
+      if (!layoutOwner || layoutOwner.siteX !== landmark.siteX ||
+          layoutOwner.siteY !== landmark.siteY || layoutOwner.asset.id !== landmark.asset.id) continue;
       const candidatesByBank = new Map<-1 | 1, Array<{
         x: number;
         y: number;
         progress: number;
         tangentX: number;
         tangentY: number;
+        normalX: number;
+        normalY: number;
         score: number;
       }>>([[-1, []], [1, []]]);
       const minimumX = Math.max(Math.floor(layout.bounds.minX), landmark.siteX - 25);
@@ -3127,6 +3201,8 @@ export class RegionalWorldTileProvider extends TileProvider {
             progress: waterway.progress,
             tangentX: waterway.tangentX,
             tangentY: waterway.tangentY,
+            normalX: waterway.bankNormalX,
+            normalY: waterway.bankNormalY,
             score: this.hashUnit(x, y, 0x4eb7) - landmarkDistance * 0.012,
           });
         }
@@ -3138,7 +3214,7 @@ export class RegionalWorldTileProvider extends TileProvider {
           x: number;
           y: number;
           progress: number;
-          spriteWidth: number;
+          tangentSpan: number;
         }> = [];
         for (const candidate of candidatesByBank.get(bankSide)!.sort((a, b) => (
           b.score - a.score || a.y - b.y || a.x - b.x
@@ -3150,24 +3226,55 @@ export class RegionalWorldTileProvider extends TileProvider {
               : 'north-south';
           const eligible = assets.filter((asset) => (
             asset.quayBankSide === bankSide && asset.frontageAxis === frontageAxis
+          )).sort((a, b) => (
+            (assetUsage.get(a.id) ?? 0) - (assetUsage.get(b.id) ?? 0) ||
+            spatialHash2DUnit(this.seed32 ^ stringHash(b.id), candidate.x, candidate.y, 0x7c31) -
+              spatialHash2DUnit(this.seed32 ^ stringHash(a.id), candidate.x, candidate.y, 0x7c31) ||
+            a.id.localeCompare(b.id)
           ));
           if (eligible.length === 0) continue;
-          const asset = eligible[Math.floor(
-            this.hashUnit(candidate.x, candidate.y, 0x7c31) * eligible.length,
-          ) % eligible.length]!;
-          if (accepted.some((other) => (
-            Math.hypot(candidate.x - other.x, candidate.y - other.y) <
-              (asset.sprite.width + other.spriteWidth) * 0.5 + 1.5 ||
-            Math.abs(candidate.progress - other.progress) < 0.065
-          ))) continue;
-          const collisionKeys = asset.collision.map(([offsetX, offsetY]) => (
-            positionKey(candidate.x + offsetX, candidate.y + offsetY)
-          ));
-          if (collisionKeys.some((key) => occupied.has(key)) ||
-              visibleFootprintIntersects(asset, candidate.x, candidate.y, reservedVisible) ||
-              !this.assetFits(candidate.x, candidate.y, asset)) continue;
+          let asset: RegionalParcelComponentAsset | undefined;
+          let tangentSpan = 0;
+          let collisionKeys: string[] = [];
+          let accessPath: readonly (readonly [number, number])[] | undefined;
+          for (const option of eligible) {
+            const optionSpan = frontageAxis === 'east-west'
+              ? option.sprite.width
+              : option.sprite.height;
+            if (accepted.some((other) => (
+              Math.hypot(candidate.x - other.x, candidate.y - other.y) <
+                (optionSpan + other.tangentSpan) * 0.5 + 1.5 ||
+              Math.abs(candidate.progress - other.progress) < 0.065
+            ))) continue;
+            const optionCollisionKeys = option.collision.map(([offsetX, offsetY]) => (
+              positionKey(candidate.x + offsetX, candidate.y + offsetY)
+            ));
+            if (optionCollisionKeys.some((key) => occupied.has(key)) ||
+                visibleFootprintIntersects(option, candidate.x, candidate.y, reservedVisible) ||
+                !this.assetFits(candidate.x, candidate.y, option)) continue;
+            const optionAccessPath = option.quayAccessOffset
+              ? this.findQuayFrontageAccessPath(
+                candidate.x,
+                candidate.y,
+                option,
+                layout,
+                occupied,
+                new Set(optionCollisionKeys),
+                -candidate.normalX,
+                -candidate.normalY,
+              ) ?? undefined
+              : undefined;
+            if (option.quayAccessOffset && !optionAccessPath) continue;
+            asset = option;
+            tangentSpan = optionSpan;
+            collisionKeys = optionCollisionKeys;
+            accessPath = optionAccessPath;
+            break;
+          }
+          if (!asset) continue;
           for (const key of collisionKeys) occupied.add(key);
-          accepted.push({ ...candidate, spriteWidth: asset.sprite.width });
+          for (const [x, y] of accessPath ?? []) occupied.add(positionKey(x, y));
+          accepted.push({ ...candidate, tangentSpan });
           const placement: Placement = {
             asset,
             kind: 'ambient',
@@ -3179,21 +3286,88 @@ export class RegionalWorldTileProvider extends TileProvider {
             accessAxis: frontageAxis,
             routeKind: this.routes.sample(landmark.siteX, landmark.siteY).routeKind ?? 'local-road',
             parcelLayers: 1,
-            connectorLength: 0,
+            connectorLength: accessPath ? accessPath.length - 1 : 0,
             parcelPathId: layout.id,
             parcelStation: candidate.progress,
             pathTangentX: candidate.tangentX,
             pathTangentY: candidate.tangentY,
             waterfrontId: layout.id,
             waterfrontFunction: asset.waterfrontFunction,
+            quayAccessPath: accessPath,
           };
           selected.push(placement);
+          assetUsage.set(asset.id, (assetUsage.get(asset.id) ?? 0) + 1);
           reserveVisibleFootprint(placement, reservedVisible, 0);
         }
       }
     }
-    return selected.sort((a, b) => a.anchorY - b.anchorY || a.anchorX - b.anchorX ||
-      a.asset.id.localeCompare(b.asset.id));
+    const stable = Object.freeze(selected
+      .sort((a, b) => a.anchorY - b.anchorY || a.anchorX - b.anchorX ||
+        a.asset.id.localeCompare(b.asset.id))
+      .map((placement) => Object.freeze({
+        ...placement,
+        quayAccessPath: placement.quayAccessPath
+          ? Object.freeze(placement.quayAccessPath.map((cell) => Object.freeze([...cell] as const)))
+          : undefined,
+      })));
+    this.quayFrontagePlacementCache.set(cacheKey, stable);
+    while (this.quayFrontagePlacementCache.size > this.maxCachedBlocks * 4) {
+      const oldest = this.quayFrontagePlacementCache.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.quayFrontagePlacementCache.delete(oldest);
+    }
+    return stable;
+  }
+
+  /** Prove that a manifest-declared frontage doorway reaches the same quay
+   * without crossing water or any established collision. The short BFS is
+   * biased toward the continuous waterway normal but remains geometry-driven
+   * and deterministic for curved channels. */
+  private findQuayFrontageAccessPath(
+    anchorX: number,
+    anchorY: number,
+    asset: RegionalParcelComponentAsset,
+    layout: RegionalQuayLayout,
+    occupied: ReadonlySet<string>,
+    assetCollision: ReadonlySet<string>,
+    preferredX: number,
+    preferredY: number,
+  ): readonly (readonly [number, number])[] | null {
+    if (!asset.quayAccessOffset) return null;
+    const startX = anchorX + asset.quayAccessOffset[0];
+    const startY = anchorY + asset.quayAccessOffset[1];
+    const startKey = positionKey(startX, startY);
+    if (occupied.has(startKey) || assetCollision.has(startKey)) return null;
+    const maximumLength = 9;
+    const directions = ([
+      [1, 0], [-1, 0], [0, 1], [0, -1],
+    ] as const).slice().sort((a, b) => (
+      b[0] * preferredX + b[1] * preferredY - (a[0] * preferredX + a[1] * preferredY) ||
+      a[1] - b[1] || a[0] - b[0]
+    ));
+    const queue: Array<{ x: number; y: number; path: readonly (readonly [number, number])[] }> = [{
+      x: startX,
+      y: startY,
+      path: [[startX, startY]],
+    }];
+    const visited = new Set([startKey]);
+    for (let index = 0; index < queue.length; index++) {
+      const current = queue[index]!;
+      if (this.quayCellIsWalkable(current.x, current.y, layout)) return current.path;
+      if (current.path.length > maximumLength) continue;
+      for (const [offsetX, offsetY] of directions) {
+        const x = current.x + offsetX;
+        const y = current.y + offsetY;
+        if (Math.abs(x - startX) + Math.abs(y - startY) > maximumLength) continue;
+        const key = positionKey(x, y);
+        if (visited.has(key) || occupied.has(key) || assetCollision.has(key)) continue;
+        const terrain = this.field.sample(x, y);
+        if (terrain.isWater || terrain.slope > 0.78) continue;
+        visited.add(key);
+        queue.push({ x, y, path: [...current.path, [x, y]] });
+      }
+    }
+    return null;
   }
 
   /** Derive walkable settlement ground from the placed focal contract. Large

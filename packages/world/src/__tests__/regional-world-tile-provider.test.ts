@@ -172,11 +172,16 @@ function makeWorld(
   includeQuay = false,
   includeCivicDetails = false,
   includeQuayDetails = false,
+  quayAxis: 'east-west' | 'north-south' = 'east-west',
+  additionalParcelComponents: readonly RegionalParcelComponentAsset[] = [],
+  additionalLandmarkSites: readonly RegionalLandmarkSite[] = [],
 ): RegionalWorldTileProvider {
   const quayDescriptor = {
     id: 'test-canal',
     materialFamily: 'canal-town' as const,
-    bounds: { minX: -20, minY: 0, maxX: 20, maxY: 15 },
+    bounds: quayAxis === 'east-west'
+      ? { minX: -20, minY: 0, maxX: 20, maxY: 15 }
+      : { minX: 5, minY: -20, maxX: 15, maxY: 20 },
   };
   const field = {
     sample: sampleBiome,
@@ -187,8 +192,26 @@ function makeWorld(
       y: number,
       id = quayDescriptor.id,
     ): ConstructedWaterwaySample | null => {
-      if (!includeQuay || id !== quayDescriptor.id || x < -20 || x > 20 || y < 0 || y > 15) {
+      if (!includeQuay || id !== quayDescriptor.id || x < quayDescriptor.bounds.minX ||
+          x > quayDescriptor.bounds.maxX || y < quayDescriptor.bounds.minY ||
+          y > quayDescriptor.bounds.maxY) {
         return null;
+      }
+      if (quayAxis === 'north-south') {
+        const bankSide: -1 | 1 = x < 10 ? 1 : -1;
+        return {
+          id,
+          progress: (y + 20) / 40,
+          centreX: 10,
+          centreY: y,
+          tangentX: 0,
+          tangentY: 1,
+          bankNormalX: -bankSide,
+          bankNormalY: 0,
+          bankSide,
+          halfWidth: 1.25,
+          signedDistance: Math.abs(x - 10) - 1.25,
+        };
       }
       const bankSide: -1 | 1 = y < 10 ? -1 : 1;
       return {
@@ -210,14 +233,16 @@ function makeWorld(
     sample: sampleRoute,
     prewarm: () => undefined,
     getLandmarkSites: (minX: number, minY: number, maxX: number, maxY: number): RegionalLandmarkSite[] =>
-      SITES.filter(([x]) => x >= minX && x <= maxX && 0 >= minY && 0 <= maxY)
+      [...SITES.filter(([x]) => x >= minX && x <= maxX && 0 >= minY && 0 <= maxY)
         .map(([x, _family, landmarkKind]) => ({
           id: `site:${x}`,
           x,
           y: 0,
           priority: 0.5,
           landmarkKind,
-        })),
+        })), ...additionalLandmarkSites.filter((site) => (
+        site.x >= minX && site.x <= maxX && site.y >= minY && site.y <= maxY
+      ))],
   };
   const compositor = new RegionalMaterialCompositor({
     worldSeed: 42n,
@@ -338,7 +363,7 @@ function makeWorld(
     civicDetails: includeCivicDetails ? civicDetails : [],
     quayDetails: includeQuayDetails ? QUAY_DETAILS : [],
     routeContacts,
-    parcelComponents,
+    parcelComponents: [...parcelComponents, ...additionalParcelComponents],
     environmentContacts,
     blockSize,
     maxCachedBlocks,
@@ -771,6 +796,122 @@ describe('RegionalWorldTileProvider', () => {
       .toContain('regional-quay-ground:quay:test-canal');
     expect(prepared.overlays.some((tile) => tile.x === 0 && tile.y === 12)).toBe(true);
     expect(prepared.solid.some(([x, y]) => x === 0 && y === 12)).toBe(false);
+  });
+
+  it('assigns each continuous quay frontage layout to one nearest landmark owner', () => {
+    const quayBiome = (_x: number, y: number): BiomeWorldSample => {
+      const wet = Math.abs(y - 10) <= 1.25;
+      return {
+        ...biomeSample('canal-town'),
+        waterDistance: wet ? 0 : Math.max(0, Math.abs(y - 10) - 1.25),
+        isWater: wet,
+        isRiver: wet,
+      };
+    };
+    const secondSite: RegionalLandmarkSite = {
+      id: 'site:18',
+      x: 18,
+      y: 0,
+      priority: 0.5,
+      landmarkKind: 'arrival',
+    };
+    const dualLandmarkRoute = (x: number, y: number): RegionalRouteSample => {
+      const sample = routeSample(x, y);
+      if (x !== secondSite.x || y !== secondSite.y) return sample;
+      return {
+        ...sample,
+        distance: 0,
+        signedDistance: 0,
+        isRoute: true,
+        isWalkableRoute: true,
+        routeKind: 'local-road',
+        routeId: 'second-route',
+        directionX: 1,
+        landmarkKind: secondSite.landmarkKind,
+        landmarkDistance: 0,
+      };
+    };
+    const world = makeWorld(
+      32,
+      32,
+      dualLandmarkRoute,
+      quayBiome,
+      false,
+      undefined,
+      true,
+      false,
+      false,
+      'east-west',
+      [],
+      [secondSite],
+    );
+    const frontage = world.getAmbientPlacementsInBounds(-20, 5, 30, 15)
+      .filter((placement) => placement.waterfrontId === 'quay:test-canal');
+    const physicalKeys = frontage.map((placement) => (
+      `${placement.assetId}:${placement.anchorX},${placement.anchorY}:${placement.waterfrontId}`
+    ));
+    expect(new Set(physicalKeys).size).toBe(frontage.length);
+    expect(frontage.length).toBeGreaterThan(0);
+    expect(frontage.every((placement) => placement.siteX === 0 && placement.siteY === 0)).toBe(true);
+  });
+
+  it('discovers nearby side canals and proves declared frontage access to both quays', () => {
+    const verticalBiome = (x: number, _y: number): BiomeWorldSample => {
+      const wet = Math.abs(x - 10) <= 1.25;
+      return {
+        ...biomeSample('canal-town'),
+        waterDistance: wet ? 0 : Math.max(0, Math.abs(x - 10) - 1.25),
+        isWater: wet,
+        isRiver: wet,
+      };
+    };
+    const sideFrontages: readonly RegionalParcelComponentAsset[] = ([-1, 1] as const).map(
+      (bankSide) => ({
+        id: `side-frontage:${bankSide}`,
+        families: ['canal-town'],
+        role: 'mass',
+        frontageAxis: 'north-south',
+        programs: ['waterfront'],
+        waterfrontFunction: bankSide === 1 ? 'warehouse' : 'inn',
+        quayBankSide: bankSide,
+        quayAccessOffset: [0, 0],
+        sprite: sprite(bankSide === 1 ? { r: 235, g: 170, b: 82 } : { r: 224, g: 132, b: 74 }),
+        collision: [[0, -1]],
+      }),
+    );
+    const world = makeWorld(
+      32,
+      32,
+      routeSample,
+      verticalBiome,
+      false,
+      undefined,
+      true,
+      false,
+      false,
+      'north-south',
+      sideFrontages,
+    );
+    const frontage = world.getAmbientPlacementsInBounds(2, -18, 18, 18)
+      .filter((placement) => placement.waterfrontId === 'quay:test-canal' &&
+        placement.accessAxis === 'north-south' && placement.quayAccessPath);
+
+    expect(frontage.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(frontage.map((placement) => placement.assetId)))
+      .toEqual(new Set(['side-frontage:-1', 'side-frontage:1']));
+    for (const placement of frontage) {
+      const path = placement.quayAccessPath!;
+      expect(path[0]).toEqual([placement.anchorX, placement.anchorY]);
+      expect(path.length).toBeGreaterThan(1);
+      expect(path.length).toBeLessThanOrEqual(10);
+      expect(placement.connectorLength).toBe(path.length - 1);
+      expect(path.every(([x, y]) => !world.isBuildingAt(x, y) && world.getTile(x, y).walkable))
+        .toBe(true);
+      const [quayX, quayY] = path.at(-1)!;
+      expect(world.getTile(quayX, quayY).id).toContain('regional-quay-ground:quay:test-canal');
+    }
+    expect(world.getTile(0, 0).walkable).toBe(true);
+    expect(world.getRegionalStats().cachedQuayFrontageSites).toBeGreaterThan(0);
   });
 
   it('binds deterministic semantic activity to the declared water and quay surfaces', () => {

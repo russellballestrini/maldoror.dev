@@ -1081,6 +1081,42 @@ Completed foundations:
   equivalent grammar for the other five families remain open. Production
   remains `vb07c0d4`; there was no deploy, service restart, push, complete
   Gate-A claim, Gate-D claim, or physical Ghostty claim;
+- V116-V130 add route-connected secondary frontage to both civic side canals
+  and prove the fresh-login origin against deliberately stale persisted
+  positions. Four distinct tall/narrow canal-town modules—warehouse,
+  market-house, boat-repair workshop, and inn/dwelling—come from Codex
+  built-in image generation on the ChatGPT subscription, with no metered API.
+  Exact prompts, original source hashes, deterministic crop/mirror/chroma
+  derivation, output hashes, alpha metrics, and two rejected source generations
+  are retained. The first selected tall sheet failed V127 visual inspection:
+  its broad baked-in limestone strips doubled the procedural quay and made the
+  buildings resemble boats. V128 removes those strips and retains only
+  doorstep-scale thresholds. Declarative axis/bank/function/access metadata
+  drives continuous-waterway discovery, one owner per whole quay layout,
+  viable usage-balanced selection, tangent spacing, dry collision-free doorway
+  pathfinding, full access reservation, and program-first composition without
+  filename or coordinate conditionals. V128 retains 8 unique waterfront
+  frontages with 0 physical duplicates, including 3 north-south frontages over
+  both civic waterways; all 3 doorway paths start at their manifest offsets,
+  remain walkable and collision-free, and reach their exact declared quay.
+  V129 proves the selected result through three source-build SSH captures.
+  V130 then persists three returning fixtures at `(137,-211)` before startup;
+  all three independently render and are machine-asserted at `(0,0)` at
+  walking/district/regional zoom, and all three database rows finish at `0|0`.
+  It retains 807,301 raw bytes and 75 synchronized frames. Cold readiness was
+  26.274 seconds (generator 2.860, origin 13.760), readiness worker RSS 474 MiB,
+  and coordinator RSS about 84-88 MiB. Evidence is in
+  `track-6-acceptance-atlas/composition-hierarchy-v128-side-canal-frontage-ground-blended/FINDINGS.md`
+  and
+  `track-6-acceptance-atlas/composition-hierarchy-v130-real-ssh-returning-login-reset/FINDINGS.md`.
+  Repository verification passes 44 files / 250 tests, 18/18 typecheck tasks,
+  12/12 build tasks, 7/7 configured lint tasks, strict four-asset derivation,
+  and `git diff --check`. This completes neither the canal city nor Gate A:
+  moving inhabitants, temporal stalls/unloading, larger commons, crossing and
+  support diversity, equivalent grammars for the other five families, the
+  fresh complete atlas, sustained Gate D, deployment, and physical Ghostty
+  acceptance remain open. Production remains `vb07c0d4`; there was no deploy,
+  service restart, push, complete-gate claim, or physical Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
@@ -1101,10 +1137,12 @@ Still open and therefore goal-blocking:
   has selected entrance-level constructed grounding plus water-owned semantic
   quay material, paired walkable arrival quays, the first two bank-authored low
   frontages, modest deterministic landside-edge variation, a semantic
-  water/quay activity vocabulary, and two persistent-time moving boats, but
+  water/quay activity vocabulary, two persistent-time moving boats, and three
+  access-proven secondary frontages distributed across both civic side canals,
+  but
   still lacks bank-aware crossing silhouettes, moving inhabitants, temporal
   work/market states, larger squares/commons, dense
-  route-connected secondary frontage, and
+  route-connected frontage beyond this bounded origin tranche, and
   equivalent focal vocabularies for the other five families. Coast-specific
   waterfront diversity, far
   greater travel-scale entropy across route topology, hydrology, biome fields,
@@ -1133,14 +1171,16 @@ Still open and therefore goal-blocking:
   remains visually short of acceptance until approach wear, longer-span and
   topology-specific support vocabularies, crossing-family diversity, and the
   surrounding coast-composition failures close, followed by the fresh full
-  atlas. V113 adds restart-exact moving boats to V106's fish work/market
-  silhouettes, mooring, and water vegetation on top of V97's modest physical
+  atlas. V130 adds adversarial returning-login reset proof and both-bank
+  secondary side-canal frontage to V113's restart-exact moving boats and
+  V106's fish work/market silhouettes, mooring, and water vegetation on top of
+  V97's modest physical
   quay-edge variation and
   V89's paired civic canals and lighter central causeway, building on V66's
   bridge shaping, quay articulation, canal depth/current, and two static
   civic-life modules, but is likewise only a selected sub-gate.
   Crossing and support diversity, richer bank contact, larger commons,
-  denser route-connected secondary frontage, moving people, working stalls
+  denser frontage beyond the origin, moving people, working stalls
   and unloading,
   less empty paving, and equivalent grammar beyond the canal-town origin
   remain required before a fresh full-atlas recapture can attempt Gate A.

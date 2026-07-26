@@ -46,6 +46,24 @@
         "derived": "parcel-components/canal-town-far-bank-warehouse-frontage-v1.png",
         "derivedSha256": "f6f061b190e3be1c8d32b59457f403fbcafd21c2cd73666e726274139ce2949f",
         "generation": "built-in Codex/ChatGPT image generation subscription; no metered API"
+      },
+      {
+        "source": "generated/canal-town-side-canal-frontage-v1-source.png",
+        "sourceSha256": "54ea24529ba262e9a07bd2b8a02c582b4bc1faa71fb3fc7d34dd4510c7f94ba2",
+        "derived": [
+          "parcel-components/canal-town-side-canal-warehouse-frontage-v1.png",
+          "parcel-components/canal-town-side-canal-market-house-frontage-v1.png",
+          "parcel-components/canal-town-side-canal-boat-repair-frontage-v1.png",
+          "parcel-components/canal-town-side-canal-inn-dwelling-frontage-v1.png"
+        ],
+        "derivedSha256": [
+          "bebfae276e9a7ec04402877222d0a9884b3f1c283e61f12712f5b3449b763505",
+          "443d3d214a0dec7ae31b843aa810a104ff0975e5da5aadd34e6edc30667257b4",
+          "37b3cbafce0c10d4670fda35ba2eef665b46e242d873c5b6e21240d515ff0022",
+          "bcd7aa643e6acb6dafe321f1dbbc535ebc5d12705835d56d2ed1da7b71f46afc"
+        ],
+        "generation": "built-in Codex/ChatGPT image generation subscription; no metered API",
+        "derivation": "two bank-1 crops are deterministically mirrored; all output hashes and alpha metrics are pinned"
       }
     ],
     "note": "Ambient silhouettes and dedicated parcel modules have explicit roles; no pixel or filename inference decides runtime placement or collision."
@@ -69,6 +87,10 @@
     { "id": "canal-town-boat-shed-parcel-component-v1", "file": "parcel-components/canal-town-boat-shed-parcel-component-v1.png", "family": "canal-town", "role": "mass", "frontageAxis": "east-west", "quayBankSide": 1, "programs": ["waterfront"], "waterfrontFunction": "boat-shed", "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]] },
     { "id": "canal-town-near-bank-market-frontage-v1", "file": "parcel-components/canal-town-near-bank-market-frontage-v1.png", "family": "canal-town", "role": "mass", "frontageAxis": "east-west", "quayBankSide": 1, "programs": ["waterfront"], "waterfrontFunction": "market", "scale": 0.98, "spriteTiles": [10, 4], "collision": [[-4, 0], [-3, 0], [-2, 0], [-1, 0], [1, 0], [2, 0], [3, 0], [4, 0]], "emitsLight": true },
     { "id": "canal-town-far-bank-warehouse-frontage-v1", "file": "parcel-components/canal-town-far-bank-warehouse-frontage-v1.png", "family": "canal-town", "role": "mass", "frontageAxis": "east-west", "quayBankSide": -1, "programs": ["waterfront"], "waterfrontFunction": "workshop", "scale": 0.98, "spriteTiles": [13, 4], "collision": [[-6, 0], [-5, 0], [-4, 0], [-3, 0], [-2, 0], [-1, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0], [6, 0]], "emitsLight": true },
+    { "id": "canal-town-side-canal-warehouse-frontage-v1", "file": "parcel-components/canal-town-side-canal-warehouse-frontage-v1.png", "family": "canal-town", "role": "mass", "frontageAxis": "north-south", "quayBankSide": 1, "quayAccessOffset": [0, 0], "programs": ["waterfront"], "waterfrontFunction": "warehouse", "scale": 0.96, "spriteTiles": [5, 7], "collision": [[0, -6], [0, -5], [0, -4], [-1, -4], [0, -3], [-1, -3], [0, -2], [-1, -2], [0, -1]], "emitsLight": true },
+    { "id": "canal-town-side-canal-market-house-frontage-v1", "file": "parcel-components/canal-town-side-canal-market-house-frontage-v1.png", "family": "canal-town", "role": "mass", "frontageAxis": "north-south", "quayBankSide": -1, "quayAccessOffset": [0, 0], "programs": ["waterfront"], "waterfrontFunction": "market", "scale": 0.96, "spriteTiles": [5, 7], "collision": [[0, -6], [0, -5], [0, -4], [1, -4], [0, -3], [1, -3], [0, -2], [1, -2], [0, -1]], "emitsLight": true },
+    { "id": "canal-town-side-canal-boat-repair-frontage-v1", "file": "parcel-components/canal-town-side-canal-boat-repair-frontage-v1.png", "family": "canal-town", "role": "mass", "frontageAxis": "north-south", "quayBankSide": 1, "quayAccessOffset": [0, 0], "programs": ["waterfront"], "waterfrontFunction": "boat-repair", "scale": 0.96, "spriteTiles": [5, 7], "collision": [[0, -6], [0, -5], [0, -4], [-1, -4], [0, -3], [-1, -3], [0, -2], [-1, -2], [0, -1]], "emitsLight": true },
+    { "id": "canal-town-side-canal-inn-dwelling-frontage-v1", "file": "parcel-components/canal-town-side-canal-inn-dwelling-frontage-v1.png", "family": "canal-town", "role": "mass", "frontageAxis": "north-south", "quayBankSide": -1, "quayAccessOffset": [0, 0], "programs": ["waterfront"], "waterfrontFunction": "inn", "scale": 0.96, "spriteTiles": [5, 7], "collision": [[0, -6], [0, -5], [0, -4], [1, -4], [0, -3], [1, -3], [0, -2], [1, -2], [0, -1]], "emitsLight": true },
     { "id": "canal-town-connected-frontage-parcel-component-v1", "file": "parcel-components/canal-town-connected-frontage-parcel-component-v1.png", "family": "canal-town", "role": "mass", "compositionRole": "focal", "frontageAxis": "east-west", "compositionSide": -1, "frontageStations": [-0.34, 0.38], "scale": 0.98, "spriteTiles": [16, 7], "collision": [[-8, 0], [-7, 0], [-6, 0], [-5, 0], [-4, 0], [-3, 0], [-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0], [6, 0], [7, 0]], "emitsLight": true },
     { "id": "canal-town-vertical-street-block-parcel-component-v1", "file": "parcel-components/canal-town-vertical-street-block-parcel-component-v1.png", "family": "canal-town", "role": "mass", "compositionRole": "focal", "frontageAxis": "north-south", "compositionSide": 1, "frontageStations": [-0.24], "scale": 0.96, "spriteTiles": [10, 14], "collision": [[-1, 0], [0, 0], [1, 0], [2, 0], [3, 0], [4, 0]], "emitsLight": true },
     { "id": "canal-town-market-courtyard-block-parcel-component-v1", "file": "parcel-components/canal-town-market-courtyard-block-parcel-component-v1.png", "family": "canal-town", "role": "mass", "compositionRole": "focal", "frontageAxis": "north-south", "compositionSide": -1, "frontageStations": [0.31], "scale": 0.96, "spriteTiles": [10, 14], "collision": [[-4, 0], [-3, 0], [-2, 0], [-1, 0], [0, 0], [1, 0]], "emitsLight": true },
