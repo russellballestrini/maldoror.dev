@@ -1581,6 +1581,44 @@ Completed foundations:
   runtime tests. No image generation or metered model call was used. Production
   remains `vb07c0d4`; there was no deploy, service restart, push, production
   database write, complete-gate claim, or physical Ghostty claim;
+- V159 completes the unchanged fresh 144-capture Gate A matrix on committed
+  V158 source and **rejects Gate A again**. One owned tmpfs scratch PostgreSQL
+  container and loopback-only real SSH lane retain all 24 predetermined sites,
+  six families and six transitions, three semantic zooms, two Ghostty-class
+  viewports, and four day/night/weather environments. All 144 raw streams, 144
+  faithful replays, 30 contact sheets, and 288 recomputed raw/image digests
+  validate with zero mismatches; the run contains 3,590 synchronized frames
+  and 62,254,467 raw bytes. Direct original-resolution inspection of
+  `TARGET.png` and all six complete sheets confirms V158's bounded improvement:
+  more non-origin route contact, clearer approach lines, small multi-mass
+  groups, and more visible route topology. It also proves how far the world
+  remains from the target. Most walking views are still terrain plus a route
+  and a handful of isolated silhouettes; routes do not own continuous
+  thresholds, crossings, frontage, public space, or activity; neighbouring
+  mountain/ruins parents collapse into repeated overview icon constellations;
+  district and regional zoom remain nearly interchangeable; non-origin banks
+  remain largely uninhabited; rain/storm dominate sparse compositions; and
+  night/storm compresses family identity while detached overview lights become
+  glowing discs. The larger viewport exposes more emptiness rather than hidden
+  density. Successful capture duration also regresses to
+  9.945/33.494/50.324/53.662 s p50/p95/p99/max. One authoritative day/rain
+  regional-large session emitted no game frame within the 60-second deadline;
+  its digest-resumable retry completed in 2.579 s, proving a one-time cold
+  materialization stall but not cold reliability. Fifteen captures settle
+  below the exact 25-frame contract and seven above it (range 23--27). Full
+  matrices, hashes, sheets, logs, the retained failure, direct-review findings,
+  and the required multi-parent district successor live in
+  `track-6-acceptance-atlas/acceptance-atlas-v5-route-frontage-v158/FINDINGS.md`.
+  The next pass must reserve whole multi-parent place footprints around shared
+  circulation/public-space structure, extend neighbouring parcels as one
+  destination, give overview zooms distinct aggregation silhouettes, bind
+  atmosphere/lights/life to occupied structure, and correct cold cache
+  admission before this exact atlas is attempted again. No image generation or
+  metered model call was used. This is audit completion, not visual acceptance:
+  Gate A, Gate C, sustained/deployed Gate D, deployment, and explicit physical
+  Ghostty acceptance remain open. Production remains `vb07c0d4`; there was no
+  deploy, service restart, push, production database write, complete-gate
+  claim, or physical Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
@@ -1609,7 +1647,7 @@ Still open and therefore goal-blocking:
   route-connected frontage beyond this bounded origin tranche, and
   complete forest, coast, rural, mountain, and ruins vocabularies. V158's
   route-frontage meso place field now supplies the first non-origin multi-mass
-  layer with proved circulation, but its sparse fixed frames prove that a few
+  layer with proved circulation, and V159's full fixed atlas proves that a few
   connected macro compounds are not a substitute for continuous frontage,
   crossings, public space, activity, or settlement fabric.
   Coast-specific waterfront diversity, far
@@ -1629,12 +1667,14 @@ Still open and therefore goal-blocking:
   checks, natural conversations and plans, richer event coordination,
   player-caused persisted world change, coherent fronts, long-horizon geometric
   growth/decay, and production multi-human integration remain open;
-- the 24-coordinate multi-zoom/time/weather atlas is now complete as an honest
-  **failed** visual audit. Gate A remains open until the recorded composition,
-  route/crossing, and dynamically enumerated material-boundary failures are
+- the fresh V159 24-coordinate multi-zoom/time/weather atlas is complete as an
+  honest **failed** visual audit on V158 source. Gate A remains open until the
+  recorded multi-parent composition, route/crossing/frontage, overview-LOD,
+  cold-reliability, and dynamically enumerated material-boundary failures are
   corrected and the exact fixed atlas passes on a fresh build. The selected
-  night/storm and water/route/quay corrections still require that fresh
-  complete-atlas proof; neither is a substitute for it. The selected
+  night/storm and water/route/quay corrections have now been tested by the
+  fresh complete atlas and proven insufficient; neither is a substitute for
+  the next post-correction full proof. The selected
   V39's bounded landing/span-aware bridge is only a selected sub-gate and
   remains visually short of acceptance until approach wear, longer-span and
   topology-specific support vocabularies, crossing-family diversity, and the
