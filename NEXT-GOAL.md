@@ -1545,6 +1545,42 @@ Completed foundations:
   image generation or metered model call was used. Production remains
   `vb07c0d4`; there was no deploy, service restart, push, production database
   write, complete-gate claim, or physical Ghostty claim;
+- V158 selects a route-frontage successor to V157's hierarchical place field
+  as another bounded composition sub-gate. Authoritative bulk route-cell
+  queries now bind a manifest-declared focal entrance to one terrain-, slope-,
+  collision-, civic-, and cross-program-proven curve and distribute three to
+  six compatible secondary masses along its arc-length frame. Continuous
+  prominence, runner-up biome weight, and physical shoreline pressure govern
+  admission; route geometry, manifest roles, parent affinity, and visual-group
+  repetition pressure govern composition. No family-name or asset-ID table
+  owns the result. Distinct axis-compatible gateway groups eliminate the
+  two-rotations-of-one-silhouette failure while retaining the established
+  focal, accepted access rasters/civic reservations are bounded shared-cache
+  data, and the connected source envelope is corrected from a false summed
+  88-tile reach to a geometry-proven 64-tile bound. Trail detail width/opacity
+  rises to 0.90/0.82 and non-urban waystation reach to 20 tiles so circulation
+  survives terminal projection. The selected six fixed frames retain the V157
+  coast and rural strengths, materially improve forest/transition circulation,
+  and report 2--3 visible place masses, 0--35 visible connector cells, and
+  unique visual groups in every frame; cold source frames remain an expensive
+  12.453--17.634 seconds. Direct comparison still rejects Gate A because most
+  non-origin space remains sparse terrain rather than continuous inhabited,
+  function-bearing district frontage. The exact 10,120,805-byte runtime kit
+  and 17,643,731-byte six-viewport prewarm reach origin in 3,213.315 ms with
+  zero generation; the first full frame improves from 109.293 to 92.461 ms and
+  260 prepared traversal frames have zero misses/fallbacks at
+  6.166/15.559/29.034/34.823 ms p50/p95/p99/max and 749.859 MiB peak RSS. This
+  clears one local first-frame sample, not sustained/deployed Gate D: the fresh
+  5/10/20-presence ladder, ten-minute stability proof, deployed cgroup proof,
+  Gate C, complete 144-capture Gate A rerun, deployment, and physical Ghostty
+  acceptance remain open. Complete A--V candidates, failed controls, direct
+  review, six-family ledger, pack/report hashes, and limits are retained in
+  `track-4-world-composition/regional-route-frontage-v158/FINDINGS.md`.
+  Repository verification passes 49 files / 276 tests, both owned package
+  typechecks, 7/7 lint graph tasks, the full SSH build, and 10/10 post-pack
+  runtime tests. No image generation or metered model call was used. Production
+  remains `vb07c0d4`; there was no deploy, service restart, push, production
+  database write, complete-gate claim, or physical Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
@@ -1571,10 +1607,11 @@ Still open and therefore goal-blocking:
   still lacks bank-aware crossing silhouettes, moving inhabitants, temporal
   work/market states, larger squares/commons, dense
   route-connected frontage beyond this bounded origin tranche, and
-  complete forest, coast, rural, mountain, and ruins vocabularies. V157's
-  terrain-only meso place field now supplies the first non-origin multi-mass
-  layer, but forest and ecotone frames prove that isolated macro compounds are
-  not a substitute for continuous circulation, frontage, or settlement fabric.
+  complete forest, coast, rural, mountain, and ruins vocabularies. V158's
+  route-frontage meso place field now supplies the first non-origin multi-mass
+  layer with proved circulation, but its sparse fixed frames prove that a few
+  connected macro compounds are not a substitute for continuous frontage,
+  crossings, public space, activity, or settlement fabric.
   Coast-specific waterfront diversity, far
   greater travel-scale entropy across route topology, hydrology, biome fields,
   ambient clusters, landmarks, and parcel programs, authoritative traversal,

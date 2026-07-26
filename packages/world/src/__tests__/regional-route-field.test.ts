@@ -91,6 +91,39 @@ describe('RegionalRouteField', () => {
     for (const [x, y] of coordinates) expect(coarse.sample(x!, y!)).toEqual(fine.sample(x!, y!));
   });
 
+  it('queries authoritative walkable route cells without cache-block drift', () => {
+    const fineBiomes = new BiomeWorldField(SEED, { blockSize: 16 });
+    const coarseBiomes = new BiomeWorldField(SEED, { blockSize: 32 });
+    const fine = new RegionalRouteField(SEED, fineBiomes, {
+      blockSize: 16,
+      pathStep: 4,
+      maxCachedBlocks: 64,
+      maxCachedPaths: 256,
+    });
+    const coarse = new RegionalRouteField(SEED, coarseBiomes, {
+      blockSize: 32,
+      pathStep: 4,
+      maxCachedBlocks: 64,
+      maxCachedPaths: 256,
+    });
+    const candidates = fine.getWalkableRouteCandidates(12, -9, 28, 64);
+
+    expect(candidates.length).toBeGreaterThan(8);
+    expect(candidates).toEqual(coarse.getWalkableRouteCandidates(12, -9, 28, 64));
+    expect(candidates.every((candidate, index) => (
+      index === 0 || candidate.distance >= candidates[index - 1]!.distance
+    ))).toBe(true);
+    for (const candidate of candidates) {
+      expect(fine.sample(candidate.x, candidate.y)).toMatchObject({
+        isWalkableRoute: true,
+        routeKind: candidate.routeKind,
+        routeId: candidate.routeId,
+        directionX: candidate.directionX,
+        directionY: candidate.directionY,
+      });
+    }
+  }, 30_000);
+
   it('keeps signed cross-sections endpoint-capped instead of extending route lines', () => {
     const biomes = new BiomeWorldField(SEED, { blockSize: 16 });
     const routes = new RegionalRouteField(SEED, biomes, { blockSize: 16, pathStep: 4 });

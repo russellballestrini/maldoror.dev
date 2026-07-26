@@ -33,6 +33,21 @@ export interface RegionalRouteSample {
   landmarkDistance: number;
 }
 
+/** One already-rasterized, walkable route cell exposed for bounded spatial
+ * queries. This lets higher-level composition find access points without
+ * repeatedly sampling every tile in a large square. */
+export interface RegionalWalkableRouteCandidate {
+  x: number;
+  y: number;
+  distance: number;
+  centrelineDistance: number;
+  routeKind: RegionalRouteKind;
+  routeId: string;
+  directionX: number;
+  directionY: number;
+  isWater: boolean;
+}
+
 export interface RegionalRouteBiomeSampler {
   sample(worldX: number, worldY: number): BiomeWorldSample;
   samplePhysical?(worldX: number, worldY: number): BiomePhysicalSample;
@@ -106,6 +121,7 @@ interface CachedRouteBlock {
   directionY: Float32Array;
   landmarkDistance: Float32Array;
   landmarkKind: Uint8Array;
+  walkableRouteCells: Array<Omit<RegionalWalkableRouteCandidate, 'distance'>>;
   accessedAt: number;
 }
 
@@ -234,6 +250,38 @@ export class RegionalRouteField {
     return [...unique.values()].sort((a, b) => a.id.localeCompare(b.id));
   }
 
+  /** Query the sparse walkable cells already owned by route blocks. Each
+   * intersecting block is touched once, so callers avoid millions of sample()
+   * calls and their LRU churn while retaining the authoritative solved route. */
+  getWalkableRouteCandidates(
+    worldX: number,
+    worldY: number,
+    radius: number,
+    limit = 96,
+  ): RegionalWalkableRouteCandidate[] {
+    const boundedRadius = Math.max(1, radius);
+    const firstBlockX = floorDiv(Math.floor(worldX - boundedRadius), this.blockSize);
+    const lastBlockX = floorDiv(Math.ceil(worldX + boundedRadius), this.blockSize);
+    const firstBlockY = floorDiv(Math.floor(worldY - boundedRadius), this.blockSize);
+    const lastBlockY = floorDiv(Math.ceil(worldY + boundedRadius), this.blockSize);
+    const candidates: RegionalWalkableRouteCandidate[] = [];
+    for (let blockY = firstBlockY; blockY <= lastBlockY; blockY++) {
+      for (let blockX = firstBlockX; blockX <= lastBlockX; blockX++) {
+        const block = this.getBlock(blockX, blockY);
+        for (const cell of block.walkableRouteCells) {
+          const distance = Math.hypot(cell.x - worldX, cell.y - worldY);
+          if (distance < 2 || distance > boundedRadius) continue;
+          candidates.push({ ...cell, distance });
+        }
+      }
+    }
+    candidates.sort((a, b) => (
+      a.distance - b.distance || a.centrelineDistance - b.centrelineDistance ||
+      a.y - b.y || a.x - b.x || a.routeId.localeCompare(b.routeId)
+    ));
+    return candidates.slice(0, Math.max(1, limit));
+  }
+
   getStats(): {
     cachedBlocks: number;
     cachedPaths: number;
@@ -358,6 +406,25 @@ export class RegionalRouteField {
         }
       }
     }
+    const walkableRouteCells: CachedRouteBlock['walkableRouteCells'] = [];
+    for (let localY = 0; localY < this.blockSize; localY++) {
+      for (let localX = 0; localX < this.blockSize; localX++) {
+        const index = gridIndex(localX, localY, this.blockSize);
+        const routeKind = KIND_BY_CODE[kind[index]!] ?? null;
+        const routeId = routeIds[index];
+        if (!routeKind || !routeId || CROSSING_BY_CODE[crossing[index]!] === 'ferry') continue;
+        walkableRouteCells.push({
+          x: originX + localX,
+          y: originY + localY,
+          centrelineDistance: distance[index]!,
+          routeKind,
+          routeId,
+          directionX: directionX[index]!,
+          directionY: directionY[index]!,
+          isWater: crossing[index]! > 0,
+        });
+      }
+    }
     return {
       distance,
       signedDistance,
@@ -372,6 +439,7 @@ export class RegionalRouteField {
       directionY,
       landmarkDistance,
       landmarkKind,
+      walkableRouteCells,
       accessedAt: ++this.accessClock,
     };
   }

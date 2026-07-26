@@ -10,6 +10,7 @@ import {
   RegionalWorldDerivedCache,
   RegionalWorldTileProvider,
   type RegionalAmbientDistributionProfile,
+  type RegionalAmbientPlaceAccessProfile,
   type RegionalAmbientPlaceFabricProfile,
 } from '@maldoror/world';
 import {
@@ -56,6 +57,8 @@ export const REGIONAL_AMBIENT_DISTRIBUTION_PROFILE =
 export const REGIONAL_AMBIENT_COMPOSITION_PROFILE = 'hierarchical-place-field' as const;
 export const REGIONAL_AMBIENT_PLACE_FABRIC_PROFILE =
   'terrain-only' satisfies RegionalAmbientPlaceFabricProfile;
+export const REGIONAL_AMBIENT_PLACE_ACCESS_PROFILE =
+  'route-frontage' satisfies RegionalAmbientPlaceAccessProfile;
 
 /** One worker-owned regional kit. Raster assets, semantic fields, routes, and
  * material caches are shared; each SSH session receives its own provider for
@@ -163,6 +166,7 @@ export async function loadRegionalWorldKit(
       ambientDistributionProfile: REGIONAL_AMBIENT_DISTRIBUTION_PROFILE,
       ambientCompositionProfile: REGIONAL_AMBIENT_COMPOSITION_PROFILE,
       ambientPlaceFabricProfile: REGIONAL_AMBIENT_PLACE_FABRIC_PROFILE,
+      ambientPlaceAccessProfile: REGIONAL_AMBIENT_PLACE_ACCESS_PROFILE,
       ambientLandmarkClearance: ambientKit.landmarkClearance,
       civicDetailCellSize: civicDetailKit.cellSize,
       civicDetailDensity: civicDetailKit.density,

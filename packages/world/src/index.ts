@@ -26,6 +26,7 @@ export {
   type RegionalRouteFieldConfig,
   type RegionalRouteKind,
   type RegionalRouteSample,
+  type RegionalWalkableRouteCandidate,
 } from './routes/regional-route-field.js';
 
 // Chunk system
@@ -171,6 +172,7 @@ export {
   RegionalWorldTileProvider,
   type RegionalAmbientCompositionProfile,
   type RegionalAmbientDistributionProfile,
+  type RegionalAmbientPlaceAccessProfile,
   type RegionalAmbientPlaceFabricProfile,
   type RegionalAmbientAsset,
   type RegionalAssetPlacement,

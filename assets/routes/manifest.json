@@ -41,9 +41,9 @@
       "file": "materials/trail-floor-master-v1.png",
       "variants": 4,
       "textureScaleTiles": 4.0,
-      "detailWidthScale": 0.74,
+      "detailWidthScale": 0.9,
       "overviewWidthScale": 0.46,
-      "detailOpacity": 0.64,
+      "detailOpacity": 0.82,
       "overviewOpacity": 0.54,
       "walkable": true,
       "material": "foliage"

@@ -20,6 +20,7 @@ import {
   RegionalWorldTileProvider,
   type RegionalAmbientCompositionProfile,
   type RegionalAmbientDistributionProfile,
+  type RegionalAmbientPlaceAccessProfile,
   type RegionalAmbientPlaceFabricProfile,
   type RegionalAmbientAsset,
   type RegionalCivicDetailAsset,
@@ -181,6 +182,7 @@ function makeWorld(
   ambientDistributionProfile: RegionalAmbientDistributionProfile = 'uniform-blue-noise',
   ambientCompositionProfile: RegionalAmbientCompositionProfile = 'single',
   ambientPlaceFabricProfile: RegionalAmbientPlaceFabricProfile = 'terrain-only',
+  ambientPlaceAccessProfile: RegionalAmbientPlaceAccessProfile = 'isolated',
 ): RegionalWorldTileProvider {
   const quayDescriptor = {
     id: 'test-canal',
@@ -238,6 +240,30 @@ function makeWorld(
   const routes = {
     sample: sampleRoute,
     prewarm: () => undefined,
+    getWalkableRouteCandidates: (
+      worldX: number,
+      worldY: number,
+      radius: number,
+      limit = 128,
+    ) => {
+      if (Math.abs(worldY) > radius) return [];
+      const minimumX = Math.ceil(worldX - Math.sqrt(radius * radius - worldY * worldY));
+      const maximumX = Math.floor(worldX + Math.sqrt(radius * radius - worldY * worldY));
+      return Array.from({ length: Math.max(0, maximumX - minimumX + 1) }, (_, index) => {
+        const x = minimumX + index;
+        return {
+          x,
+          y: 0,
+          distance: Math.hypot(x - worldX, worldY),
+          centrelineDistance: 0,
+          routeKind: 'local-road' as const,
+          routeId: 'test-route',
+          directionX: 1,
+          directionY: 0,
+          isWater: false,
+        };
+      }).sort((a, b) => a.distance - b.distance || a.x - b.x).slice(0, limit);
+    },
     getLandmarkSites: (minX: number, minY: number, maxX: number, maxY: number): RegionalLandmarkSite[] =>
       [...SITES.filter(([x]) => x >= minX && x <= maxX && 0 >= minY && 0 <= maxY)
         .map(([x, _family, landmarkKind]) => ({
@@ -314,6 +340,10 @@ function makeWorld(
       id: `parcel:${family}:${variant}`,
       families: [family],
       role: 'mass' as const,
+      visualGroup: ambientPlaceAccessProfile === 'route-frontage' &&
+          family === 'canal-town' && variant >= 4 && variant <= 6
+        ? `focal:${family}:${variant === 4 ? 'horizontal' : 'vertical'}`
+        : undefined,
       compositionRole: family === 'canal-town' && variant >= 4 && variant <= 6
         ? 'focal' as const
         : undefined,
@@ -380,6 +410,7 @@ function makeWorld(
     ambientDistributionProfile,
     ambientCompositionProfile,
     ambientPlaceFabricProfile,
+    ambientPlaceAccessProfile,
     ambientLandmarkClearance: 4,
     civicDetailCellSize: 1,
     civicDetailDensity: 1,
@@ -806,6 +837,57 @@ describe('RegionalWorldTileProvider', () => {
       ambientPlaceFabricProfile: 'terrain-only',
       cachedAmbientPlaceFabrics: 0,
     });
+  });
+
+  it('connects hierarchical focal entrances to routes with reserved frontage', () => {
+    const continuousRoute = (x: number, y: number): RegionalRouteSample => ({
+      ...routeSample(x, y),
+      directionX: 1,
+      directionY: 0,
+    });
+    const placeBiome = () => biomeSample('canal-town');
+    const first = makeWorld(
+      32, 64, continuousRoute, placeBiome, false, undefined, false, false, false,
+      'east-west', [], [], 'cluster-field-blue-noise', 'hierarchical-place-field',
+      'terrain-only', 'route-frontage',
+    );
+    const replay = makeWorld(
+      47, 64, continuousRoute, placeBiome, false, undefined, false, false, false,
+      'east-west', [], [], 'cluster-field-blue-noise', 'hierarchical-place-field',
+      'terrain-only', 'route-frontage',
+    );
+    const bounds = [-96, -96, 128, 128] as const;
+    const connectors = first.getParcelConnectorCellsInBounds(...bounds)
+      .filter((cell) => cell.parcelId.startsWith('place:'));
+    const replayConnectors = replay.getParcelConnectorCellsInBounds(...bounds)
+      .filter((cell) => cell.parcelId.startsWith('place:'));
+    const frontage = first.getAmbientPlacementsInBounds(...bounds)
+      .filter((placement) => placement.parcelPathId?.startsWith('place-access:'));
+
+    expect(connectors.length).toBeGreaterThan(16);
+    expect(connectors).toEqual(replayConnectors);
+    expect(frontage.length).toBeGreaterThan(2);
+    expect(new Set(frontage.map((placement) => (
+      `${placement.anchorX},${placement.anchorY}`
+    ))).size).toBe(frontage.length);
+    expect(connectors.some((cell) => cell.y === 0)).toBe(true);
+    const inspectProgram = first as unknown as {
+      getAmbientPlaceProgram(cellX: number, cellY: number): {
+        placements: readonly { asset: RegionalParcelComponentAsset }[];
+      } | null;
+    };
+    for (let cellY = -2; cellY <= 2; cellY++) {
+      for (let cellX = -2; cellX <= 2; cellX++) {
+        const focalGroups = (inspectProgram.getAmbientPlaceProgram(cellX, cellY)?.placements ?? [])
+          .filter((placement) => placement.asset.compositionRole === 'focal')
+          .map((placement) => placement.asset.visualGroup ?? placement.asset.id);
+        expect(new Set(focalGroups).size).toBe(focalGroups.length);
+      }
+    }
+    expect(first.getRegionalStats()).toMatchObject({
+      ambientPlaceAccessProfile: 'route-frontage',
+    });
+    expect(first.getRegionalStats().cachedAmbientPlaceConnectorCells).toBeGreaterThan(0);
   });
 
   it('places deterministic civic details only on route-safe landmark shoulders', () => {

@@ -67,9 +67,9 @@ describe('regional biome material manifest', () => {
       },
       trail: {
         textureScaleTiles: 4,
-        detailWidthScale: 0.74,
+        detailWidthScale: 0.9,
         overviewWidthScale: 0.46,
-        detailOpacity: 0.64,
+        detailOpacity: 0.82,
         overviewOpacity: 0.54,
       },
     });

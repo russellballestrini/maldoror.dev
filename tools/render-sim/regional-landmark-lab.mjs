@@ -17,6 +17,7 @@ import {
 import {
   REGIONAL_AMBIENT_COMPOSITION_PROFILE,
   REGIONAL_AMBIENT_DISTRIBUTION_PROFILE,
+  REGIONAL_AMBIENT_PLACE_ACCESS_PROFILE,
 } from '../../apps/ssh-world/dist/game/regional-world-provider.js';
 import {
   BIOME_FAMILIES,
@@ -51,6 +52,9 @@ const AMBIENT_COMPOSITION_PROFILE =
   REGIONAL_AMBIENT_COMPOSITION_PROFILE;
 const AMBIENT_PLACE_FABRIC_PROFILE =
   process.env.MALDOROR_AMBIENT_PLACE_FABRIC_PROFILE ?? 'terrain-only';
+const AMBIENT_PLACE_ACCESS_PROFILE =
+  process.env.MALDOROR_AMBIENT_PLACE_ACCESS_PROFILE ??
+  REGIONAL_AMBIENT_PLACE_ACCESS_PROFILE;
 const RUN_AMBIENT_DISTRIBUTION_AUDIT =
   process.env.MALDOROR_AMBIENT_DISTRIBUTION_AUDIT !== 'disabled';
 if (!['single', 'bounded-ensemble', 'hierarchical-place-field'].includes(AMBIENT_COMPOSITION_PROFILE)) {
@@ -58,6 +62,9 @@ if (!['single', 'bounded-ensemble', 'hierarchical-place-field'].includes(AMBIENT
 }
 if (!['terrain-only', 'internal-spine'].includes(AMBIENT_PLACE_FABRIC_PROFILE)) {
   throw new Error(`Unknown ambient place-fabric profile: ${AMBIENT_PLACE_FABRIC_PROFILE}`);
+}
+if (!['isolated', 'route-frontage'].includes(AMBIENT_PLACE_ACCESS_PROFILE)) {
+  throw new Error(`Unknown ambient place-access profile: ${AMBIENT_PLACE_ACCESS_PROFILE}`);
 }
 if (![
   'uniform-blue-noise',
@@ -356,6 +363,7 @@ const world = new RegionalWorldTileProvider({
   ambientDistributionProfile: AMBIENT_DISTRIBUTION_PROFILE,
   ambientCompositionProfile: AMBIENT_COMPOSITION_PROFILE,
   ambientPlaceFabricProfile: AMBIENT_PLACE_FABRIC_PROFILE,
+  ambientPlaceAccessProfile: AMBIENT_PLACE_ACCESS_PROFILE,
   ambientLandmarkClearance: ambientKit.landmarkClearance,
   civicDetailCellSize: civicDetailKit.cellSize,
   civicDetailDensity: CIVIC_DETAIL_PROFILE.enabled ? civicDetailKit.density : 0,
@@ -1158,6 +1166,7 @@ const metrics = {
   ambientDistributionProfile: AMBIENT_DISTRIBUTION_PROFILE,
   ambientCompositionProfile: AMBIENT_COMPOSITION_PROFILE,
   ambientPlaceFabricProfile: AMBIENT_PLACE_FABRIC_PROFILE,
+  ambientPlaceAccessProfile: AMBIENT_PLACE_ACCESS_PROFILE,
   ambientDistributionAudit: RUN_AMBIENT_DISTRIBUTION_AUDIT
     ? auditAmbientDistribution(FRAMES[0].centre)
     : null,
@@ -1211,6 +1220,8 @@ for (const frame of FRAMES) {
   ];
   const visibleAmbient = world.getAmbientPlacementsInBounds(...visibleBounds);
   const visibleLandmarkFabrics = world.getLandmarkFabricLayoutsInBounds(...visibleBounds);
+  const visiblePlaceConnectors = world.getParcelConnectorCellsInBounds(...visibleBounds)
+    .filter((cell) => cell.parcelId.startsWith('place:'));
   metrics.frames.push({
     ...frame,
     elapsedMs: Number((performance.now() - startedAt).toFixed(2)),
@@ -1220,6 +1231,8 @@ for (const frame of FRAMES) {
     compositorStats: compositor.getStats(),
     providerStats: world.getRegionalStats(),
     visibleAmbient,
+    visiblePlaceConnectorCells: visiblePlaceConnectors.length,
+    visiblePlaceConnectorPrograms: [...new Set(visiblePlaceConnectors.map((cell) => cell.parcelId))],
     landmarkCompositionAudit: auditLandmarkCompositions(visibleAmbient),
     visibleLandmarkFabrics: visibleLandmarkFabrics.map((layout) => ({
       id: layout.id,
