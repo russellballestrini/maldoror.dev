@@ -24,6 +24,11 @@
       "minimumSpacing": 6,
       "maximumPerLandmark": 1,
       "placementPriority": 1,
+      "activity": {
+        "tangentDriftTiles": 1,
+        "cycleMinutes": 120,
+        "phaseOffset": 0
+      },
       "scale": 0.95,
       "spriteTiles": [5, 2],
       "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]]
@@ -41,6 +46,11 @@
       "minimumSpacing": 6,
       "maximumPerLandmark": 1,
       "placementPriority": 0.98,
+      "activity": {
+        "tangentDriftTiles": 1,
+        "cycleMinutes": 120,
+        "phaseOffset": 0.5
+      },
       "scale": 0.95,
       "spriteTiles": [2, 4],
       "collision": [[0, -2], [0, -1], [0, 0]]

@@ -1,4 +1,4 @@
-import type { BuildingSprite, RGB, Tile } from '@maldoror/protocol';
+import type { BuildingSprite, RGB, Tile, WorldLifeState } from '@maldoror/protocol';
 import { describe, expect, it } from 'vitest';
 import {
   BIOME_FAMILIES,
@@ -79,6 +79,11 @@ const QUAY_DETAILS: readonly RegionalQuayDetailAsset[] = [
     minimumSpacing: 5,
     maximumPerLandmark: 1,
     placementPriority: 1,
+    activity: {
+      tangentDriftTiles: 1,
+      cycleMinutes: 120,
+      phaseOffset: 0,
+    },
     sprite: sprite({ r: 52, g: 90, b: 138 }),
     collision: [[-1, 0], [0, 0], [1, 0]],
   },
@@ -111,6 +116,23 @@ function biomeSample(family: BiomeFamily): BiomeWorldSample {
     waterDistance: 10,
     isWater: false,
     isRiver: false,
+  };
+}
+
+function worldLifeAt(worldMinute: number): WorldLifeState {
+  return {
+    worldId: 'quay-activity-proof',
+    worldSeed: '42',
+    worldMinute,
+    weather: 'clear',
+    weatherIntensity: 0.1,
+    weatherUntilWorldMinute: worldMinute + 120,
+    season: 'spring',
+    rngState: 7,
+    surfaceWetness: 0.1,
+    waterTurbulence: 0.1,
+    vegetationVitality: 0.8,
+    decayPressure: 0.1,
   };
 }
 
@@ -786,6 +808,10 @@ describe('RegionalWorldTileProvider', () => {
       placement.parcelPathId === 'quay:test-canal' &&
       placement.waterfrontId === 'quay:test-canal' && placement.accessAxis === 'east-west'
     ))).toBe(true);
+    expect(placements.every((placement) => (
+      placement.visualAnchorX === placement.anchorX &&
+      placement.visualAnchorY === placement.anchorY
+    ))).toBe(true);
 
     const assets = new Map(QUAY_DETAILS.map((asset) => [asset.id, asset]));
     for (const placement of placements) {
@@ -794,7 +820,10 @@ describe('RegionalWorldTileProvider', () => {
         const x = placement.anchorX + offsetX;
         const y = placement.anchorY + offsetY;
         const terrain = first.getTile(x, y);
-        expect(first.getBuildingTileAt(x, y)).not.toBeNull();
+        const overlay = asset.activity
+          ? first.getDynamicOverlayTileAt(x, y)
+          : first.getBuildingTileAt(x, y);
+        expect(overlay).not.toBeNull();
         if (asset.surface === 'water') {
           expect(terrain.walkable, `water detail escaped at ${x},${y}`).toBe(false);
         } else {
@@ -806,10 +835,21 @@ describe('RegionalWorldTileProvider', () => {
     }
     expect(first.isBuildingAt(0, 0)).toBe(false);
     expect(first.getTile(0, 0).walkable).toBe(true);
+    first.setWorldLifeState(worldLifeAt(750));
+    const shifted = first.getQuayDetailPlacementsInBounds(-24, -4, 56, 20);
+    const boatAtRest = placements.find((placement) => assets.get(placement.assetId)?.activity)!;
+    const movingBoat = shifted.find((placement) => placement.assetId === boatAtRest.assetId)!;
+    expect(movingBoat.anchorX).toBe(boatAtRest.anchorX);
+    expect(movingBoat.anchorY).toBe(boatAtRest.anchorY);
+    expect(movingBoat.visualAnchorX).toBe(boatAtRest.anchorX + 1);
+    expect(movingBoat.visualAnchorY).toBe(boatAtRest.anchorY);
+    expect(first.getDynamicOverlayTileAt(movingBoat.visualAnchorX!, movingBoat.visualAnchorY!))
+      .not.toBeNull();
     expect(first.getRegionalStats()).toMatchObject({
       quayDetailAssets: QUAY_DETAILS.length,
       cachedQuayDetailPlacements: placements.length,
     });
+    expect(first.getRegionalStats().cachedDynamicQuayOverlayTiles).toBeGreaterThan(0);
   });
 
   it('places sparse environment contacts only where declarative envelopes match', () => {

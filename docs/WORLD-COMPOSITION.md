@@ -408,10 +408,34 @@ and eight at regional scale. V105 disables only this layer and exactly restores
 the V96 source hashes. Tests pin unique ownership, cache-size/traversal
 identity, physical water/quay fit, and an unobstructed `(0,0)`.
 
+### Persistent quay activity
+
+Authored water-edge movement is a sparse layer outside the immutable regional
+scene. The two boat manifests declare tangent drift, cycle length, and phase;
+the provider combines those values with persisted world time and the placement's
+continuous waterway tangent. It revalidates every active anchor against the
+same waterway/quay geometry before rasterizing. There are no coordinate,
+asset-ID, filename, or colour-specific movement branches.
+
+Dynamic overlays are cached by source block and projected world minute, then
+composed after the shared terrain/road/building frame and before actors and
+atmosphere. Their base collision remains on physically wet, already
+non-walkable cells. The 30-minute terminal world-life projection yields
+coherent, restart-exact positions without forcing per-second global scene
+recomposition: minutes 720/780/840 replay the base anchors, 750 advances one
+tile along each channel, and 810 moves one tile in the opposite direction.
+
+The first V113 SSH attempt exposed a production-only cache-plane bug: pixels
+were present in the provider buffer but absent from OCTANT transport because
+they were not marked dirty relative to the shared static frame. The failed pair
+is retained. Dynamic overlay pixels now enter the same sparse dirty-cell plane
+as actors, with a regression test. Corrected V113 proves the exact 720-to-750
+movement across two fresh SSH processes and database-backed restarts.
+
 This is one bounded canal-town composition, not a generalized city generator.
-The regular waterside curbs, static rather than moving/temporal activity,
-sparse secondary frontage, and absence of equivalent hydrology-led grammar in
-the other five families are still acceptance failures.
+Regular waterside curbs, moving inhabitants and temporal work/market states,
+sparse secondary frontage, and the absence of equivalent hydrology-led grammar
+in the other five families are still acceptance failures.
 
 ## Current limits
 
@@ -433,4 +457,14 @@ and asserted zoom, OCTANT mode, dimensions, and hashes. Cold readiness was
 about 456 MiB, and post-capture worker RSS about 545 MiB. Full evidence and
 retained failures are under
 `track-6-acceptance-atlas/composition-hierarchy-v106-real-ssh-semantic-quay-life/`.
+Production still reports `vb07c0d4`; no deployment or service restart occurred.
+
+V113 adds a two-phase fresh-scratch SSH proof at exact `(0,0)`. Separate server
+processes load database minutes 720 and 750 and visibly displace both boats by
+one channel tile while retaining the same architecture, weather, camera, and
+origin. The run retains 548,067 raw bytes and 50 synchronized frames. Accepted
+cold starts were 16.428 and 15.866 seconds with readiness worker RSS of 463 and
+453 MiB. Full evidence, the failed OCTANT transport pair, timing rehearsals,
+and teardown proof are under
+`track-6-acceptance-atlas/composition-hierarchy-v113-real-ssh-persistent-quay-activity/`.
 Production still reports `vb07c0d4`; no deployment or service restart occurred.

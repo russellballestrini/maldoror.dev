@@ -160,4 +160,59 @@ describe('ViewportRenderer building alpha', () => {
       pixel?.r === actor.r && pixel.g === actor.g && pixel.b === actor.b,
     )).toBe(true);
   });
+
+  it('keeps persistent-time overlays outside a shared static scene', () => {
+    const ground = { r: 20, g: 40, b: 60 };
+    const moving = { r: 230, g: 150, b: 40 };
+    const terrainPixels: PixelGrid = Array.from({ length: 2 }, () =>
+      Array.from({ length: 2 }, () => ground));
+    const terrain: Tile = {
+      id: 'dynamic-ground',
+      name: 'dynamic ground',
+      pixels: terrainPixels,
+      resolutions: { '2': terrainPixels },
+      walkable: true,
+    };
+    const movingPixels: PixelGrid = Array.from({ length: 2 }, () =>
+      Array.from({ length: 2 }, () => moving));
+    const overlay: BuildingTileData = {
+      pixels: movingPixels,
+      resolutions: { '2': movingPixels },
+    };
+    const identity = {};
+    let secondTileReads = 0;
+    const base = (dynamic: boolean): WorldDataProvider => ({
+      getStaticRenderIdentity: () => identity,
+      getStaticRenderEpoch: () => 0,
+      getTile: () => {
+        if (dynamic) secondTileReads++;
+        return terrain;
+      },
+      getDynamicOverlayTileAt: dynamic ? () => overlay : undefined,
+      getPlayers: () => [],
+      getPlayerSprite: () => null,
+      getLocalPlayerId: () => 'local',
+    });
+    const config = {
+      widthTiles: 1,
+      heightTiles: 1,
+      pixelWidth: 2,
+      pixelHeight: 2,
+      tileRenderSize: 2,
+      dataResolution: 2,
+    };
+    const first = new ViewportRenderer(config);
+    first.setCamera(0, 0);
+    first.renderToBuffer(base(false), 0);
+    const second = new ViewportRenderer(config);
+    second.setCamera(0, 0);
+    const result = second.renderToBuffer(base(true), 0);
+    const buffer = result.buffer;
+
+    expect(secondTileReads).toBe(0);
+    expect(buffer.flat().some((pixel) => (
+      pixel?.r === moving.r && pixel.g === moving.g && pixel.b === moving.b
+    ))).toBe(true);
+    expect(result.sharedStaticDirtyCellOffsets).toEqual([0]);
+  });
 });

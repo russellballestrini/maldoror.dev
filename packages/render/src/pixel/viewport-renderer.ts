@@ -6,6 +6,7 @@ import type {
   WorldDataProvider,
   Direction,
   BuildingDirection,
+  BuildingTileData,
   WorldLifeState,
   WorldLightSource,
 } from '@maldoror/protocol';
@@ -508,6 +509,10 @@ export class ViewportRenderer {
     // canonical regional identity and camera, so compose that immutable base
     // once and copy references into each session's reusable scratch buffer.
     const staticScene = this.renderStaticScene(buffer, materialGrid, world, tick, origin);
+
+    // Persistent world-time activity is visual-only and deliberately excluded
+    // from the shared static-scene/prepared-viewport cache.
+    this.renderDynamicBuildings(buffer, materialGrid, world, origin);
 
     // 4. Render players and NPCs together (sorted by Y for proper overlap)
     this.renderEntities(buffer, materialGrid, world, tick, origin);
@@ -1133,8 +1138,41 @@ export class ViewportRenderer {
    * Render building tiles on top of terrain (with transparency support and camera rotation)
    */
   private renderBuildings(buffer: PixelGrid, materialGrid: Uint8Array[], world: WorldDataProvider, _origin: { x: number; y: number }): void {
-    // Skip if world doesn't support buildings
     if (!world.getBuildingTileAt) return;
+    this.renderBuildingLayer(
+      buffer,
+      materialGrid,
+      'building',
+      (x, y, direction) => world.getBuildingTileAt!(x, y, direction),
+    );
+  }
+
+  /** Compose sparse world-time activity after the immutable base. This keeps
+   * prepared terrain shareable while boats and similar authored details move
+   * coherently for every colocated session. */
+  private renderDynamicBuildings(
+    buffer: PixelGrid,
+    materialGrid: Uint8Array[],
+    world: WorldDataProvider,
+    _origin: { x: number; y: number },
+  ): void {
+    if (!world.getDynamicOverlayTileAt) return;
+    this.renderBuildingLayer(
+      buffer,
+      materialGrid,
+      'dynamic-building',
+      (x, y, direction) => world.getDynamicOverlayTileAt!(x, y, direction),
+      true,
+    );
+  }
+
+  private renderBuildingLayer(
+    buffer: PixelGrid,
+    materialGrid: Uint8Array[],
+    layer: string,
+    lookup: (x: number, y: number, direction: BuildingDirection) => BuildingTileData | null,
+    markDynamic = false,
+  ): void {
 
     const resKey = String(this.dataResolution);
     const buildingDirection = this.getBuildingDirection();
@@ -1149,7 +1187,7 @@ export class ViewportRenderer {
 
     for (let worldTileY = startTileY; worldTileY <= endTileY; worldTileY++) {
       for (let worldTileX = startTileX; worldTileX <= endTileX; worldTileX++) {
-        const buildingTile = world.getBuildingTileAt(worldTileX, worldTileY, buildingDirection);
+        const buildingTile = lookup(worldTileX, worldTileY, buildingDirection);
         if (!buildingTile) continue;
 
         // Get the appropriate resolution
@@ -1158,7 +1196,7 @@ export class ViewportRenderer {
           : buildingTile.resolutions?.[resKey] ?? buildingTile.pixels;
 
         // Scale to exact tile render size if needed (with caching by position)
-        const frameId = `building:${worldTileX},${worldTileY}:${buildingDirection}`;
+        const frameId = `${layer}:${worldTileX},${worldTileY}:${buildingDirection}`;
         const scaledPixels = this.scaleFrame(tilePixels, this.tileRenderSize, this.tileRenderSize, frameId);
 
         // Calculate screen position with rotation
@@ -1192,6 +1230,11 @@ export class ViewportRenderer {
                 pixel,
               );
               materialGrid[bufferY]![bufferX] = 0;
+              // The packed octant encoder starts from the shared immutable
+              // scene and recomputes only dirty terminal cells. Activity is
+              // deliberately outside that scene, so every touched cell must
+              // be carried through the sparse dynamic plane just like actors.
+              if (markDynamic) this.markDynamicOctantPixel(bufferX, bufferY);
             }
           }
         }

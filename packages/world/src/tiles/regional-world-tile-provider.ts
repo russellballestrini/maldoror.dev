@@ -99,6 +99,15 @@ export interface RegionalCivicDetailAsset extends RegionalVisualAsset {
 export type RegionalQuayDetailSurface = 'water' | 'quay';
 export type RegionalQuayDetailAxis = 'north-south' | 'east-west' | 'any';
 
+/** Persistent-world-time visual motion along the owning waterway tangent.
+ * Collision remains at the authored wet anchor because water is already
+ * non-walkable; every visual destination is revalidated against hydrology. */
+export interface RegionalQuayDetailActivity {
+  tangentDriftTiles: number;
+  cycleMinutes: number;
+  phaseOffset: number;
+}
+
 /** Authored water-edge activity whose placement is governed by continuous
  * constructed-waterway geometry. The manifest declares its physical surface,
  * tangent axis, signed bank-distance envelope, spacing, and bounded count; no
@@ -113,6 +122,7 @@ export interface RegionalQuayDetailAsset extends RegionalVisualAsset {
   minimumSpacing: number;
   maximumPerLandmark: number;
   placementPriority: number;
+  activity?: RegionalQuayDetailActivity;
 }
 
 export type RegionalRouteContactAxis = 'north-south' | 'east-west';
@@ -182,6 +192,8 @@ export interface RegionalAssetPlacement {
   siteY: number;
   anchorX: number;
   anchorY: number;
+  visualAnchorX?: number;
+  visualAnchorY?: number;
   parcelId?: string;
   accessAxis?: RegionalRouteContactAxis;
   routeKind?: RegionalRouteKind;
@@ -297,6 +309,9 @@ export interface RegionalWorldTileProviderConfig extends TileProviderConfig {
   civicDetailCellSize?: number;
   civicDetailDensity?: number;
   quayDetailDensity?: number;
+  /** Stable fallback used before a runtime world-life snapshot is installed
+   * and by render research that intentionally omits atmosphere grading. */
+  quayDetailDefaultWorldMinute?: number;
   quayWidth?: number;
   quayEdgeVariation?: number;
   quayFrontageDepth?: number;
@@ -446,6 +461,7 @@ export class RegionalWorldDerivedCache {
   readonly environmentProgramCache = new Map<string, CachedEnvironmentProgram | null>();
   readonly civicDetailPlacementCache = new Map<string, readonly Placement[]>();
   readonly quayDetailPlacementCache = new Map<string, readonly Placement[]>();
+  readonly dynamicQuayOverlayCache = new Map<string, Map<string, BuildingTileData>>();
   accessClock = 0;
 
   clear(): void {
@@ -457,6 +473,7 @@ export class RegionalWorldDerivedCache {
     this.environmentProgramCache.clear();
     this.civicDetailPlacementCache.clear();
     this.quayDetailPlacementCache.clear();
+    this.dynamicQuayOverlayCache.clear();
     this.accessClock = 0;
   }
 }
@@ -508,6 +525,7 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly civicDetailCellSize: number;
   private readonly civicDetailDensity: number;
   private readonly quayDetailDensity: number;
+  private readonly quayDetailDefaultWorldMinute: number;
   private readonly routeContactCellSize: number;
   private readonly routeContactDensity: number;
   private readonly routeContactLandmarkClearance: number;
@@ -537,6 +555,7 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly environmentProgramCache: Map<string, CachedEnvironmentProgram | null>;
   private readonly civicDetailPlacementCache: Map<string, readonly Placement[]>;
   private readonly quayDetailPlacementCache: Map<string, readonly Placement[]>;
+  private readonly dynamicQuayOverlayCache: Map<string, Map<string, BuildingTileData>>;
   private readonly preparedViewports = new Map<string, ImportedPreparedViewport>();
 
   constructor(config: RegionalWorldTileProviderConfig) {
@@ -570,6 +589,9 @@ export class RegionalWorldTileProvider extends TileProvider {
     this.civicDetailCellSize = Math.max(1, Math.min(12, config.civicDetailCellSize ?? 1));
     this.civicDetailDensity = Math.max(0, Math.min(1, config.civicDetailDensity ?? 0.92));
     this.quayDetailDensity = Math.max(0, Math.min(1, config.quayDetailDensity ?? 0.9));
+    this.quayDetailDefaultWorldMinute = Number.isFinite(config.quayDetailDefaultWorldMinute)
+      ? Math.max(0, Math.floor(config.quayDetailDefaultWorldMinute!))
+      : 720;
     this.routeContactCellSize = Math.max(6, config.routeContactCellSize ?? 10);
     this.routeContactDensity = Math.max(0, Math.min(1, config.routeContactDensity ?? 0.55));
     this.routeContactLandmarkClearance = Math.max(4, config.routeContactLandmarkClearance ?? 10);
@@ -602,6 +624,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     this.environmentProgramCache = this.derivedCache.environmentProgramCache;
     this.civicDetailPlacementCache = this.derivedCache.civicDetailPlacementCache;
     this.quayDetailPlacementCache = this.derivedCache.quayDetailPlacementCache;
+    this.dynamicQuayOverlayCache = this.derivedCache.dynamicQuayOverlayCache;
     for (const asset of this.landmarks) {
       if (asset.families.length === 0 || asset.landmarkKinds.length === 0) {
         throw new Error(`Regional landmark has no semantic compatibility: ${asset.id}`);
@@ -635,7 +658,16 @@ export class RegionalWorldTileProvider extends TileProvider {
           asset.progressRange[1] < asset.progressRange[0] ||
           asset.minimumFamilyWeight < 0 || asset.minimumFamilyWeight > 1 ||
           asset.minimumSpacing < 0 || asset.maximumPerLandmark < 1 ||
-          asset.placementPriority < 0 || asset.placementPriority > 1) {
+          asset.placementPriority < 0 || asset.placementPriority > 1 ||
+          (asset.activity !== undefined && (
+            !Number.isFinite(asset.activity.tangentDriftTiles) ||
+            asset.activity.tangentDriftTiles <= 0 || asset.activity.tangentDriftTiles > 3 ||
+            !Number.isInteger(asset.activity.cycleMinutes) ||
+            asset.activity.cycleMinutes < 30 || asset.activity.cycleMinutes > 1440 ||
+            !Number.isFinite(asset.activity.phaseOffset) ||
+            asset.activity.phaseOffset < 0 || asset.activity.phaseOffset >= 1 ||
+            asset.surface !== 'water'
+          ))) {
         throw new Error(`Regional quay-detail asset has invalid semantics: ${asset.id}`);
       }
     }
@@ -671,20 +703,32 @@ export class RegionalWorldTileProvider extends TileProvider {
     ];
     const extentX = placementAssets.flatMap((asset) => {
       const reach = this.landmarks.includes(asset as RegionalLandmarkAsset) ? LANDMARK_ANCHOR_REACH : 0;
+      const activityReach = isAnimatedQuayDetailAsset(asset)
+        ? Math.ceil(asset.activity.tangentDriftTiles)
+        : 0;
       const [spriteAnchorX] = getSpriteAnchor(asset);
       return [
-        -spriteAnchorX - reach,
-        asset.sprite.width - 1 - spriteAnchorX + reach,
-        ...asset.collision.flatMap(([offsetX]) => [offsetX - reach, offsetX + reach]),
+        -spriteAnchorX - reach - activityReach,
+        asset.sprite.width - 1 - spriteAnchorX + reach + activityReach,
+        ...asset.collision.flatMap(([offsetX]) => [
+          offsetX - reach - activityReach,
+          offsetX + reach + activityReach,
+        ]),
       ];
     });
     const extentY = placementAssets.flatMap((asset) => {
       const reach = this.landmarks.includes(asset as RegionalLandmarkAsset) ? LANDMARK_ANCHOR_REACH : 0;
+      const activityReach = isAnimatedQuayDetailAsset(asset)
+        ? Math.ceil(asset.activity.tangentDriftTiles)
+        : 0;
       const [, spriteAnchorY] = getSpriteAnchor(asset);
       return [
-        -spriteAnchorY - reach,
-        asset.sprite.height - 1 - spriteAnchorY + reach,
-        ...asset.collision.flatMap(([, offsetY]) => [offsetY - reach, offsetY + reach]),
+        -spriteAnchorY - reach - activityReach,
+        asset.sprite.height - 1 - spriteAnchorY + reach + activityReach,
+        ...asset.collision.flatMap(([, offsetY]) => [
+          offsetY - reach - activityReach,
+          offsetY + reach + activityReach,
+        ]),
       ];
     });
     const parcelAssetReach = Math.max(0, ...this.parcelComponents.flatMap((asset) => {
@@ -1264,6 +1308,88 @@ export class RegionalWorldTileProvider extends TileProvider {
     return component ? (derived ? compositeTiles(derived, component) : component) : derived;
   }
 
+  /** Resolve sparse persistent-time activity outside the immutable static
+   * scene. Maps are cached by source block and projected world minute, so the
+   * renderer pays only bounded map lookups on ordinary frames. */
+  getDynamicOverlayTileAt(
+    worldX: number,
+    worldY: number,
+    _direction: BuildingDirection = 'north',
+  ): BuildingTileData | null {
+    if (!this.quayDetails.some(isAnimatedQuayDetailAsset)) return null;
+    const worldMinute = this.getWorldLifeState()?.worldMinute ?? this.quayDetailDefaultWorldMinute;
+    const key = positionKey(worldX, worldY);
+    const firstBlockX = floorDiv(worldX - this.placementMaxOffsetX, this.blockSize);
+    const lastBlockX = floorDiv(worldX - this.placementMinOffsetX, this.blockSize);
+    const firstBlockY = floorDiv(worldY - this.placementMaxOffsetY, this.blockSize);
+    const lastBlockY = floorDiv(worldY - this.placementMinOffsetY, this.blockSize);
+    let overlay: BuildingTileData | null = null;
+    for (let blockY = firstBlockY; blockY <= lastBlockY; blockY++) {
+      for (let blockX = firstBlockX; blockX <= lastBlockX; blockX++) {
+        const tile = this.getDynamicQuayOverlayBlock(blockX, blockY, worldMinute).get(key);
+        if (tile) overlay = overlay ? compositeTiles(overlay, tile) : tile;
+      }
+    }
+    return overlay;
+  }
+
+  private getDynamicQuayOverlayBlock(
+    blockX: number,
+    blockY: number,
+    worldMinute: number,
+  ): Map<string, BuildingTileData> {
+    const cacheKey = `${blockX},${blockY}@${worldMinute}`;
+    const cached = this.dynamicQuayOverlayCache.get(cacheKey);
+    if (cached) return cached;
+    const overlays = new Map<string, BuildingTileData>();
+    const placements = this.getBlock(blockX, blockY).placements
+      .filter(isAnimatedQuayDetailPlacement)
+      .map((placement) => ({
+        placement,
+        anchor: this.activeQuayDetailAnchor(placement, worldMinute),
+      }))
+      .sort((a, b) => a.anchor.y - b.anchor.y || a.anchor.x - b.anchor.x ||
+        a.placement.asset.id.localeCompare(b.placement.asset.id));
+    for (const { placement, anchor } of placements) {
+      const [offsetX, offsetY] = getSpriteAnchor(placement.asset);
+      for (let tileY = 0; tileY < placement.asset.sprite.height; tileY++) {
+        for (let tileX = 0; tileX < placement.asset.sprite.width; tileX++) {
+          const tile = placement.asset.sprite.tiles[tileY]?.[tileX];
+          if (!tile || !hasVisiblePixels(tile)) continue;
+          const key = positionKey(anchor.x + tileX - offsetX, anchor.y + tileY - offsetY);
+          const beneath = overlays.get(key);
+          overlays.set(key, beneath ? compositeTiles(beneath, tile) : tile);
+        }
+      }
+    }
+    this.dynamicQuayOverlayCache.set(cacheKey, overlays);
+    while (this.dynamicQuayOverlayCache.size > this.maxCachedBlocks * 4) {
+      const oldest = this.dynamicQuayOverlayCache.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.dynamicQuayOverlayCache.delete(oldest);
+    }
+    return overlays;
+  }
+
+  private activeQuayDetailAnchor(
+    placement: Placement & { asset: RegionalQuayDetailAsset & { activity: RegionalQuayDetailActivity } },
+    worldMinute: number,
+  ): { x: number; y: number } {
+    const { activity } = placement.asset;
+    const phase = positiveMod(worldMinute, activity.cycleMinutes) / activity.cycleMinutes +
+      activity.phaseOffset;
+    const drift = Math.round(Math.sin(phase * Math.PI * 2) * activity.tangentDriftTiles);
+    const x = placement.anchorX + Math.round((placement.pathTangentX ?? 0) * drift);
+    const y = placement.anchorY + Math.round((placement.pathTangentY ?? 0) * drift);
+    if (x === placement.anchorX && y === placement.anchorY) {
+      return { x, y };
+    }
+    const layout = this.quayLayouts.find((candidate) => candidate.id === placement.parcelPathId);
+    return layout && this.quayDetailFits(x, y, layout, placement.asset)
+      ? { x, y }
+      : { x: placement.anchorX, y: placement.anchorY };
+  }
+
   override isBuildingAt(worldX: number, worldY: number): boolean {
     const prepared = this.findPreparedViewport(worldX, worldY);
     if (prepared) return prepared.solid.has(positionKey(worldX, worldY));
@@ -1293,6 +1419,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     cachedAmbientPlacements: number;
     cachedCivicDetailPlacements: number;
     cachedQuayDetailPlacements: number;
+    cachedDynamicQuayOverlayTiles: number;
     cachedEnvironmentContactPlacements: number;
     cachedRouteContactPlacements: number;
     cachedParcelGroups: number;
@@ -1349,6 +1476,10 @@ export class RegionalWorldTileProvider extends TileProvider {
         (total, block) => total + block.placements.filter(
           (placement) => placement.kind === 'quay-detail',
         ).length,
+        0,
+      ),
+      cachedDynamicQuayOverlayTiles: [...this.dynamicQuayOverlayCache.values()].reduce(
+        (total, overlays) => total + overlays.size,
         0,
       ),
       cachedEnvironmentContactPlacements: [...this.blockCache.values()].reduce(
@@ -1524,10 +1655,14 @@ export class RegionalWorldTileProvider extends TileProvider {
     for (let blockY = firstBlockY; blockY <= lastBlockY; blockY++) {
       for (let blockX = firstBlockX; blockX <= lastBlockX; blockX++) {
         for (const placement of this.getBlock(blockX, blockY).placements) {
-          if (placement.kind !== 'quay-detail' || placement.anchorX < minX ||
-              placement.anchorX > maxX || placement.anchorY < minY || placement.anchorY > maxY) {
-            continue;
-          }
+          if (placement.kind !== 'quay-detail') continue;
+          const active = isAnimatedQuayDetailPlacement(placement)
+            ? this.activeQuayDetailAnchor(
+              placement,
+              this.getWorldLifeState()?.worldMinute ?? this.quayDetailDefaultWorldMinute,
+            )
+            : { x: placement.anchorX, y: placement.anchorY };
+          if (active.x < minX || active.x > maxX || active.y < minY || active.y > maxY) continue;
           const value: RegionalAssetPlacement = {
             assetId: placement.asset.id,
             kind: 'quay-detail',
@@ -1536,6 +1671,8 @@ export class RegionalWorldTileProvider extends TileProvider {
             siteY: placement.siteY,
             anchorX: placement.anchorX,
             anchorY: placement.anchorY,
+            visualAnchorX: active.x,
+            visualAnchorY: active.y,
             accessAxis: placement.accessAxis,
             parcelPathId: placement.parcelPathId,
             parcelStation: placement.parcelStation,
@@ -1979,16 +2116,18 @@ export class RegionalWorldTileProvider extends TileProvider {
     const overlays = new Map<string, BuildingTileData>();
     const solid = new Set<string>();
     for (const placement of placements) {
-      const [offsetX, offsetY] = getSpriteAnchor(placement.asset);
-      for (let tileY = 0; tileY < placement.asset.sprite.height; tileY++) {
-        for (let tileX = 0; tileX < placement.asset.sprite.width; tileX++) {
-          const tile = placement.asset.sprite.tiles[tileY]?.[tileX];
-          if (!tile || !hasVisiblePixels(tile)) continue;
-          const x = placement.anchorX + tileX - offsetX;
-          const y = placement.anchorY + tileY - offsetY;
-          const key = positionKey(x, y);
-          const beneath = overlays.get(key);
-          overlays.set(key, beneath ? compositeTiles(beneath, tile) : tile);
+      if (!isAnimatedQuayDetailPlacement(placement)) {
+        const [offsetX, offsetY] = getSpriteAnchor(placement.asset);
+        for (let tileY = 0; tileY < placement.asset.sprite.height; tileY++) {
+          for (let tileX = 0; tileX < placement.asset.sprite.width; tileX++) {
+            const tile = placement.asset.sprite.tiles[tileY]?.[tileX];
+            if (!tile || !hasVisiblePixels(tile)) continue;
+            const x = placement.anchorX + tileX - offsetX;
+            const y = placement.anchorY + tileY - offsetY;
+            const key = positionKey(x, y);
+            const beneath = overlays.get(key);
+            overlays.set(key, beneath ? compositeTiles(beneath, tile) : tile);
+          }
         }
       }
       for (const [offsetX, offsetY] of placement.asset.collision) {
@@ -4272,6 +4411,21 @@ function stringHash(value: string): number {
     hash = Math.imul(hash, 16777619);
   }
   return hash >>> 0;
+}
+
+function isAnimatedQuayDetailAsset(
+  asset: RegionalVisualAsset,
+): asset is RegionalQuayDetailAsset & { activity: RegionalQuayDetailActivity } {
+  const candidate = asset as Partial<RegionalQuayDetailAsset>;
+  return candidate.role === 'quay-detail' && candidate.activity !== undefined;
+}
+
+function isAnimatedQuayDetailPlacement(
+  placement: Placement,
+): placement is Placement & {
+  asset: RegionalQuayDetailAsset & { activity: RegionalQuayDetailActivity };
+} {
+  return placement.kind === 'quay-detail' && isAnimatedQuayDetailAsset(placement.asset);
 }
 
 function getSpriteAnchor(asset: RegionalVisualAsset): readonly [number, number] {

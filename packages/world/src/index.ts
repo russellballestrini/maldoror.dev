@@ -183,6 +183,7 @@ export {
   type RegionalParcelComponentAsset,
   type RegionalParcelProgram,
   type RegionalQuayDetailAsset,
+  type RegionalQuayDetailActivity,
   type RegionalQuayDetailAxis,
   type RegionalQuayDetailSurface,
   type RegionalPreparedViewportPayload,

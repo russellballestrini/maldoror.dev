@@ -194,6 +194,14 @@ export interface WorldDataProvider {
    * high-resolution tile that the renderer immediately throws away. */
   getTileAtResolution?(tileX: number, tileY: number, resolution: number): Tile | null;
   getBuildingTileAt?(tileX: number, tileY: number, direction?: BuildingDirection): BuildingTileData | null;
+  /** Visual-only authored activity composed after the shared static scene.
+   * It is deliberately separate from collision and prepared-viewport data so
+   * persistent world time can move sparse details without rebuilding terrain. */
+  getDynamicOverlayTileAt?(
+    tileX: number,
+    tileY: number,
+    direction?: BuildingDirection,
+  ): BuildingTileData | null;
   getPlayers(): PlayerVisualState[];
   getPlayerSprite(userId: string): Sprite | null;
   getLocalPlayerId(): string;

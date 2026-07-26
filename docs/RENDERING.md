@@ -629,3 +629,35 @@ endurance, deployment, and physical Ghostty acceptance remain open. Repository
 verification passes 44 files / 247 tests, 18/18 typecheck tasks, 12/12 build
 tasks, 7/7 configured lint tasks, strict six-asset derivation, and
 `git diff --check`. Production still reports `vb07c0d4`.
+
+### Persistent activity and the OCTANT dynamic plane (2026-07-26)
+
+V107-V115 move the two boat silhouettes without invalidating the expensive
+shared regional frame. Manifest activity metadata supplies tangent drift,
+cycle minutes, and phase offset. `WorldLifeState.worldMinute` selects the
+active anchor; the provider caches sparse overlays by block and projected
+minute, then the viewport renderer composites them after static buildings and
+before actors and global atmosphere.
+
+The direct pixel renderer passed immediately, but the first fresh-SSH pair was
+correctly rejected. Production OCTANT rendering starts from a shared static
+cell grid and recomputes only declared dirty cells. The new overlay changed the
+pixel buffer without entering that dirty plane, so faithful SSH omitted the
+boats. Dynamic building pixels now call the same OCTANT dirty-cell marker used
+by actors. A regression test requires the overlay to remain outside the static
+scene while also returning its dirty-cell offsets; this is the contract that
+the production packed encoder consumes.
+
+Corrected V113 proves the transport through two fresh server processes at exact
+database minutes 720 and 750. The faithful paired crop visibly advances the
+east-west boat by one 12-pixel world tile; the absolute-difference image also
+isolates the north-south displacement. The pair retains 548,067 raw bytes and
+50 synchronized frames. V114/V115 independently reproduce the same movement in
+the 12-pixel source renderer. Repository verification passes 44 files / 248
+tests, 18/18 typecheck tasks, 12/12 build tasks, 7/7 configured lint tasks,
+strict quay-detail derivation, and `git diff --check`.
+
+This closes a production transport defect, not the living-world or visual
+acceptance goals. Temporal workers/stalls, broader animated vocabularies,
+complete-atlas proof, sustained load, deployment, and physical Ghostty
+acceptance remain open. Production still reports `vb07c0d4`.

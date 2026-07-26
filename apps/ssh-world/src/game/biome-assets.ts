@@ -13,6 +13,7 @@ import {
   type RegionalParcelComponentAsset,
   type RegionalParcelProgram,
   type RegionalQuayDetailAsset,
+  type RegionalQuayDetailActivity,
   type RegionalQuayDetailAxis,
   type RegionalQuayDetailSurface,
   type RegionalWaterfrontFunction,
@@ -177,6 +178,7 @@ interface QuayDetailEntry {
   spriteTiles: [number, number];
   collision: Array<[number, number]>;
   emitsLight?: boolean;
+  activity?: RegionalQuayDetailActivity;
 }
 
 interface RouteContactEntry extends AmbientEntry {
@@ -571,6 +573,7 @@ export async function loadRegionalQuayDetailKit(
       minimumSpacing: entry.minimumSpacing,
       maximumPerLandmark: entry.maximumPerLandmark,
       placementPriority: entry.placementPriority,
+      activity: entry.activity,
       collision: entry.collision,
       emitsLight: entry.emitsLight,
       sprite: await loadRegionalSprite(
@@ -922,6 +925,7 @@ function parseQuayDetailEntry(value: unknown, index: number): QuayDetailEntry {
       typeof value.scale !== 'number' || value.scale < 0.2 || value.scale > 1 ||
       !isTileDimensions(value.spriteTiles) || !Array.isArray(value.collision) ||
       value.collision.length === 0 || !value.collision.every(isCollisionOffset) ||
+      (value.activity !== undefined && !isQuayDetailActivity(value.activity)) ||
       (value.emitsLight !== undefined && typeof value.emitsLight !== 'boolean')) {
     throw new Error(`Invalid regional quay-detail entry at index ${index}`);
   }
@@ -938,6 +942,7 @@ function parseQuayDetailEntry(value: unknown, index: number): QuayDetailEntry {
     minimumSpacing: value.minimumSpacing,
     maximumPerLandmark: value.maximumPerLandmark,
     placementPriority: value.placementPriority,
+    activity: value.activity as RegionalQuayDetailActivity | undefined,
     scale: value.scale,
     spriteTiles: value.spriteTiles as [number, number],
     collision: value.collision as Array<[number, number]>,
@@ -1274,6 +1279,15 @@ function isUnitRange(value: unknown): value is [number, number] {
   return Array.isArray(value) && value.length === 2 &&
     value.every((part) => typeof part === 'number' && Number.isFinite(part) &&
       part >= 0 && part <= 1) && value[1]! >= value[0]!;
+}
+
+function isQuayDetailActivity(value: unknown): value is RegionalQuayDetailActivity {
+  return isRecord(value) && typeof value.tangentDriftTiles === 'number' &&
+    Number.isFinite(value.tangentDriftTiles) && value.tangentDriftTiles > 0 &&
+    value.tangentDriftTiles <= 3 && Number.isInteger(value.cycleMinutes) &&
+    Number(value.cycleMinutes) >= 30 && Number(value.cycleMinutes) <= 1440 &&
+    typeof value.phaseOffset === 'number' && Number.isFinite(value.phaseOffset) &&
+    value.phaseOffset >= 0 && value.phaseOffset < 1;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

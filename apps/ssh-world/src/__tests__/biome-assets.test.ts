@@ -159,6 +159,12 @@ describe('regional biome material manifest', () => {
       .toEqual(new Set(['east-west', 'north-south', 'any']));
     expect(kit.assets.filter((asset) => asset.surface === 'water')).toHaveLength(3);
     expect(kit.assets.filter((asset) => asset.surface === 'quay')).toHaveLength(3);
+    expect(kit.assets.filter((asset) => asset.activity)).toHaveLength(2);
+    expect(kit.assets.filter((asset) => asset.activity).every((asset) => (
+      asset.surface === 'water' && asset.activity !== undefined &&
+      asset.activity.tangentDriftTiles === 1 &&
+      asset.activity.cycleMinutes === 120
+    ))).toBe(true);
     expect(kit.assets.every((asset) => (
       asset.role === 'quay-detail' && asset.families[0] === 'canal-town' &&
       asset.minimumFamilyWeight >= 0.15 && asset.minimumSpacing >= 4.5 &&

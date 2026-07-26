@@ -1054,6 +1054,33 @@ Completed foundations:
   families remain open. Production remains `vb07c0d4`; there was no deploy,
   service restart, push, complete Gate-A claim, Gate-D claim, or physical
   Ghostty claim;
+- V107-V115 turn the two boats into the first persistent-time authored world
+  activity. Manifest-owned tangent drift, cycle, and phase feed a generic
+  regional dynamic-overlay plane from persisted `WorldLifeState.worldMinute`;
+  target anchors are revalidated against the same constructed-waterway
+  geometry and collision remains on already non-walkable water. V107/V109/V111
+  prove exact base-position replay at minutes 720/780/840, while V108 and V110
+  prove one-tile movement in both directions. V112 retains 3/7/8 semantic
+  details across walking/district/regional scale; V114/V115 repeat the selected
+  720/750 pair at the live 12-pixel scale. The first fresh-SSH V113 pair is a
+  retained rejection: activity existed in the provider buffer but disappeared
+  from production OCTANT output because the shared-static encoder did not know
+  its cells were dynamic. The selected renderer fix marks those cells, and a
+  regression test pins that transport contract. Corrected V113 then starts two
+  separate source-build SSH processes against database minutes 720 and 750;
+  faithful images visibly move both boats one channel tile while architecture,
+  weather, camera, and exact `(0,0)` login remain fixed. It retains 548,067 raw
+  bytes and 50 synchronized frames. Accepted cold starts were 16.428 and
+  15.866 seconds, readiness worker RSS 463/453 MiB, and coordinator RSS
+  85-90 MiB. Evidence and rejected rehearsals are in
+  `track-6-acceptance-atlas/composition-hierarchy-v113-real-ssh-persistent-quay-activity/FINDINGS.md`.
+  Repository verification passes 44 files / 248 tests, 18/18 typecheck tasks,
+  12/12 build tasks, 7/7 configured lint tasks, strict six-asset derivation,
+  and `git diff --check`. This is not living-city completion: moving people,
+  temporal stalls/unloading, stronger side-canal frontage, larger commons, and
+  equivalent grammar for the other five families remain open. Production
+  remains `vb07c0d4`; there was no deploy, service restart, push, complete
+  Gate-A claim, Gate-D claim, or physical Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
@@ -1073,9 +1100,10 @@ Still open and therefore goal-blocking:
   sparse research prototypes rather than a complete world layer. The core now
   has selected entrance-level constructed grounding plus water-owned semantic
   quay material, paired walkable arrival quays, the first two bank-authored low
-  frontages, modest deterministic landside-edge variation, and a first static
-  semantic water/quay activity vocabulary, but still lacks bank-aware crossing
-  silhouettes, temporal/moving waterfront life, larger squares/commons, dense
+  frontages, modest deterministic landside-edge variation, a semantic
+  water/quay activity vocabulary, and two persistent-time moving boats, but
+  still lacks bank-aware crossing silhouettes, moving inhabitants, temporal
+  work/market states, larger squares/commons, dense
   route-connected secondary frontage, and
   equivalent focal vocabularies for the other five families. Coast-specific
   waterfront diversity, far
@@ -1105,14 +1133,15 @@ Still open and therefore goal-blocking:
   remains visually short of acceptance until approach wear, longer-span and
   topology-specific support vocabularies, crossing-family diversity, and the
   surrounding coast-composition failures close, followed by the fresh full
-  atlas. V106 adds static boats, fish work/market silhouettes, mooring, and
-  water vegetation on top of V97's modest physical quay-edge variation and
+  atlas. V113 adds restart-exact moving boats to V106's fish work/market
+  silhouettes, mooring, and water vegetation on top of V97's modest physical
+  quay-edge variation and
   V89's paired civic canals and lighter central causeway, building on V66's
   bridge shaping, quay articulation, canal depth/current, and two static
   civic-life modules, but is likewise only a selected sub-gate.
   Crossing and support diversity, richer bank contact, larger commons,
-  denser route-connected secondary frontage, moving people, working/moving
-  boats and stalls,
+  denser route-connected secondary frontage, moving people, working stalls
+  and unloading,
   less empty paving, and equivalent grammar beyond the canal-town origin
   remain required before a fresh full-atlas recapture can attempt Gate A.
   Fresh post-correction deterministic traversal, the 30-minute terminal run,

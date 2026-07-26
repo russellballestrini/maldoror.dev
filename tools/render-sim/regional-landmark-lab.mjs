@@ -41,6 +41,12 @@ const INFRASTRUCTURE_PROFILE_NAME = process.env.MALDOROR_INFRASTRUCTURE_PROFILE 
 const WATER_PROFILE_NAME = process.env.MALDOROR_WATER_PROFILE ?? 'production';
 const CIVIC_DETAIL_PROFILE_NAME = process.env.MALDOROR_CIVIC_DETAIL_PROFILE ?? 'production';
 const QUAY_DETAIL_PROFILE_NAME = process.env.MALDOROR_QUAY_DETAIL_PROFILE ?? 'production';
+const QUAY_ACTIVITY_WORLD_MINUTE = Number(
+  process.env.MALDOROR_QUAY_ACTIVITY_WORLD_MINUTE ?? 720,
+);
+if (!Number.isSafeInteger(QUAY_ACTIVITY_WORLD_MINUTE) || QUAY_ACTIVITY_WORLD_MINUTE < 0) {
+  throw new Error(`Invalid quay activity world minute: ${QUAY_ACTIVITY_WORLD_MINUTE}`);
+}
 const ARRIVAL_WATERWAY_PROFILE_NAME =
   process.env.MALDOROR_ARRIVAL_WATERWAY_PROFILE ?? 'production';
 const QUAY_PROFILE_NAME = process.env.MALDOROR_QUAY_PROFILE ?? 'production';
@@ -230,12 +236,13 @@ if (CENTRE_OVERRIDE) {
   const displayTileSize = Number(
     process.env.MALDOROR_REGIONAL_LANDMARK_DISPLAY_TILE_SIZE ?? '16',
   );
-  if (![4, 8, 16].includes(displayTileSize)) {
+  if (![4, 8, 12, 16].includes(displayTileSize)) {
     throw new Error(`Invalid landmark display tile size: ${displayTileSize}`);
   }
   FRAMES = [{
     name: displayTileSize === 16 ? 'custom-walking' :
-      displayTileSize === 8 ? 'custom-district' : 'custom-regional',
+      displayTileSize === 12 ? 'custom-walking-12px' :
+        displayTileSize === 8 ? 'custom-district' : 'custom-regional',
     centre,
     displayTileSize,
   }];
@@ -321,6 +328,7 @@ const world = new RegionalWorldTileProvider({
   civicDetailCellSize: civicDetailKit.cellSize,
   civicDetailDensity: CIVIC_DETAIL_PROFILE.enabled ? civicDetailKit.density : 0,
   quayDetailDensity: QUAY_DETAIL_PROFILE.enabled ? quayDetailKit.density : 0,
+  quayDetailDefaultWorldMinute: QUAY_ACTIVITY_WORLD_MINUTE,
   ...QUAY_PROFILE,
   routeContactCellSize: routeContactKit.cellSize,
   routeContactDensity: routeContactKit.density,
@@ -1121,6 +1129,7 @@ const metrics = {
   waterVisualProfile: WATER_PROFILE,
   civicDetailProfile: CIVIC_DETAIL_PROFILE_NAME,
   quayDetailProfile: QUAY_DETAIL_PROFILE_NAME,
+  quayActivityWorldMinute: QUAY_ACTIVITY_WORLD_MINUTE,
   arrivalWaterwayProfile: ARRIVAL_WATERWAY_PROFILE_NAME,
   arrivalWaterwayConfig: ARRIVAL_WATERWAY_PROFILE,
   quayProfile: QUAY_PROFILE_NAME,
