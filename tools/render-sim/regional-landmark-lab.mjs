@@ -47,6 +47,7 @@ const AMBIENT_DISTRIBUTION_PROFILE =
 if (![
   'uniform-blue-noise',
   'density-field-blue-noise',
+  'legacy-cluster-field-blue-noise',
   'cluster-field-blue-noise',
 ].includes(AMBIENT_DISTRIBUTION_PROFILE)) {
   throw new Error(`Unknown ambient distribution profile: ${AMBIENT_DISTRIBUTION_PROFILE}`);

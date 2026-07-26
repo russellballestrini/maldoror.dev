@@ -318,6 +318,7 @@ export type RegionalPreparedViewportPayload =
 export type RegionalAmbientDistributionProfile =
   | 'uniform-blue-noise'
   | 'density-field-blue-noise'
+  | 'legacy-cluster-field-blue-noise'
   | 'cluster-field-blue-noise';
 
 export interface RegionalWorldTileProviderConfig extends TileProviderConfig {
@@ -4369,9 +4370,13 @@ export class RegionalWorldTileProvider extends TileProvider {
   }
 
   /** Macro density is a separate deterministic layer above local repulsion.
-   * Uniform preserves the historical control. Density-field follows an
-   * adaptive intensity map; cluster-field first defines active regions, then
-   * lets the same priority thinning place physically eligible samples inside them. */
+   * Uniform and legacy-cluster preserve research controls. Density-field
+   * follows one adaptive intensity map. Production cluster-field builds a
+   * nested hierarchy: a broad continuous basin decides where background
+   * silhouettes belong, then sparse local centres concentrate them into focal
+   * pockets. The near-empty floor is intentional negative space;
+   * landmark-owned entourage is composed through a separate path and remains
+   * intact. */
   private ambientDistributionWeight(worldX: number, worldY: number): number {
     switch (this.ambientDistributionProfile) {
       case 'uniform-blue-noise':
@@ -4380,7 +4385,7 @@ export class RegionalWorldTileProvider extends TileProvider {
         const value = this.ambientDensityField(worldX, worldY, 48, 0x35b9);
         return 0.18 + smoothUnit(value) * 0.82;
       }
-      case 'cluster-field-blue-noise': {
+      case 'legacy-cluster-field-blue-noise': {
         const cellSize = 48;
         const cellX = floorDiv(Math.floor(worldX), cellSize);
         const cellY = floorDiv(Math.floor(worldY), cellSize);
@@ -4403,6 +4408,35 @@ export class RegionalWorldTileProvider extends TileProvider {
           }
         }
         return 0.2 + Math.sqrt(influence) * 0.8;
+      }
+      case 'cluster-field-blue-noise': {
+        const broad = this.ambientDensityField(worldX, worldY, 160, 0x35b9);
+        const broadGate = smoothUnit((broad - 0.34) / 0.42);
+        const cellSize = 52;
+        const cellX = floorDiv(Math.floor(worldX), cellSize);
+        const cellY = floorDiv(Math.floor(worldY), cellSize);
+        let influence = 0;
+        for (let offsetY = -1; offsetY <= 1; offsetY++) {
+          for (let offsetX = -1; offsetX <= 1; offsetX++) {
+            const clusterX = cellX + offsetX;
+            const clusterY = cellY + offsetY;
+            if (this.hashUnit(clusterX, clusterY, 0x1127) > 0.58) continue;
+            const centreX = (clusterX + 0.12 + this.hashUnit(clusterX, clusterY, 0x6f13) * 0.76) *
+              cellSize;
+            const centreY = (clusterY + 0.12 + this.hashUnit(clusterX, clusterY, 0x29d7) * 0.76) *
+              cellSize;
+            const radius = cellSize * (
+              0.48 + this.hashUnit(clusterX, clusterY, 0x4ca1) * 0.28
+            );
+            const proximity = Math.max(0, 1 - Math.hypot(worldX - centreX, worldY - centreY) /
+              radius);
+            const strength = 0.72 + this.hashUnit(clusterX, clusterY, 0x7b45) * 0.28;
+            influence = Math.max(influence, smoothUnit(proximity) * strength);
+          }
+        }
+        const local = Math.pow(influence, 0.6);
+        const prominence = broadGate * (0.38 + local * 0.62);
+        return 0.02 + Math.pow(prominence, 0.72) * 0.98;
       }
     }
   }

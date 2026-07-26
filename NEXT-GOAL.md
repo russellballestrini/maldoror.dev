@@ -1394,6 +1394,36 @@ Completed foundations:
   remain open. Production remains `vb07c0d4` with PID `1022033` and the same
   start timestamp; there was no deploy, service restart, push, production
   database write, complete-gate claim, or physical Ghostty claim;
+- V153 replaces the evenly scattered unparented ambient cadence with a
+  family-neutral nested prominence field while preserving every authored local
+  landmark group. A controlled 2,048x2,048-tile lab holds candidate cells,
+  jitter, priority thinning, and density constant: the exact former production
+  field produces 16.82% quiet 32x32 windows and 0.7235 count CV; the selected
+  broad-basin plus sparse-local field produces 41.02% quiet windows, 1.1009 CV,
+  and 0.4648 adjacent correlation without exposing the rejected circular-island
+  or saturated two-octave failure modes. A current-source six-family control
+  removes 8 of 25 unparented icons (32%) while all 41 landmark-owned placement
+  records remain byte-identical. Final-source readiness reaches exact origin in
+  1,399.038 ms with 0 ms generation, renders 260 frames through 64 tiles in all
+  four cardinal directions with zero coverage misses, generator requests,
+  imports, failures, or main-thread source fallbacks, and records
+  p50/p95/p99/max 5.688/13.625/24.178/31.596 ms. The baked collision proof
+  retains the Unicorn and Dog's exact 15- and 21-step routes. An owned migrated
+  scratch worker becomes ready in 1,398 ms; a real loopback SSH session asserts
+  `(0,0)`, OCTANT, and 30% zoom across 274,191 bytes and 25 synchronized frames,
+  and its faithful 1440x828 replay was directly inspected. Controlled profiles,
+  exact before/after records, hashes, runtime proof, SSH capture, evidence
+  recovery, and limitations are retained under
+  `track-4-world-composition/regional-place-prominence-v153/FINDINGS.md`.
+  Repository verification passes 49 files / 271 tests, 18/18 typecheck tasks,
+  12/12 build tasks, 7/7 configured lint tasks, and `git diff --check`. This is
+  a selected hierarchy sub-gate, not Gate A: route-contact parcels,
+  environment programs, the route-site field, the fresh 144-capture atlas,
+  uninterrupted Gate C, sustained/deployed Gate D, deployment, and explicit
+  physical Ghostty operator acceptance remain open. Production remains
+  `vb07c0d4` with PID `1022033` and the same start timestamp; there was no
+  deploy, service restart, push, production database write, complete-gate
+  claim, or physical Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without

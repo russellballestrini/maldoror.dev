@@ -598,6 +598,7 @@ describe('RegionalWorldTileProvider', () => {
     const profiles: readonly RegionalAmbientDistributionProfile[] = [
       'uniform-blue-noise',
       'density-field-blue-noise',
+      'legacy-cluster-field-blue-noise',
       'cluster-field-blue-noise',
     ];
     const noRoute = (x: number, y: number): RegionalRouteSample => ({
@@ -631,7 +632,51 @@ describe('RegionalWorldTileProvider', () => {
       expect(new Set(placements.map((placement) => (
         `${placement.anchorX},${placement.anchorY}`
       ))).size).toBe(placements.length);
+      if (profile === 'cluster-field-blue-noise') {
+        const windowSize = 32;
+        const windowsWide = Math.ceil((bounds[2] - bounds[0]) / windowSize);
+        const windowsHigh = Math.ceil((bounds[3] - bounds[1]) / windowSize);
+        const counts = new Array(windowsWide * windowsHigh).fill(0) as number[];
+        for (const placement of placements) {
+          const windowX = Math.min(
+            windowsWide - 1,
+            Math.floor((placement.anchorX - bounds[0]) / windowSize),
+          );
+          const windowY = Math.min(
+            windowsHigh - 1,
+            Math.floor((placement.anchorY - bounds[1]) / windowSize),
+          );
+          const windowIndex = windowY * windowsWide + windowX;
+          counts[windowIndex] = (counts[windowIndex] ?? 0) + 1;
+        }
+        const average = counts.reduce((sum, count) => sum + count, 0) / counts.length;
+        const deviation = Math.sqrt(counts.reduce(
+          (sum, count) => sum + (count - average) ** 2,
+          0,
+        ) / counts.length);
+        expect(counts.filter((count) => count === 0).length / counts.length)
+          .toBeGreaterThan(0.25);
+        expect(deviation / average).toBeGreaterThan(0.85);
+      }
     }
+  });
+
+  it('keeps landmark-owned local compositions intact across the macro prominence profile', () => {
+    const uniform = makeWorld(
+      32, 32, routeSample, undefined, false, undefined, false, false, false,
+      'east-west', [], [], 'uniform-blue-noise',
+    );
+    const hierarchical = makeWorld(
+      32, 32, routeSample, undefined, false, undefined, false, false, false,
+      'east-west', [], [], 'cluster-field-blue-noise',
+    );
+    const entourageAtOrigin = (world: RegionalWorldTileProvider) => world
+      .getAmbientPlacementsInBounds(-24, -24, 24, 24)
+      .filter((placement) => placement.siteX === 0 && placement.siteY === 0 &&
+        (placement.anchorX !== 0 || placement.anchorY !== 0));
+
+    expect(entourageAtOrigin(hierarchical)).toEqual(entourageAtOrigin(uniform));
+    expect(entourageAtOrigin(hierarchical).length).toBeGreaterThan(1);
   });
 
   it('places deterministic civic details only on route-safe landmark shoulders', () => {
