@@ -780,3 +780,29 @@ beacon; shoreline programs, topology/crossing diversity, living coast
 activity, the other three non-canal place families, fresh complete-atlas
 proof, sustained load, deployment, and physical Ghostty acceptance remain
 open.
+
+### Rural route-connected place grammar (2026-07-26)
+
+V139-V141 reuse the existing stone barn and produce awning as
+manifest-declared rural focal groups across both route axes. Their ordinary
+entries share the same `visualGroup` identity, so a selected focal cannot
+repeat elsewhere in the same composition under another semantic ID. The
+generic focal/access runtime consumes those declarations without rural,
+filename, colour, or coordinate conditionals.
+
+At the dry north-south waystation `(-73,-69)`, the barn becomes a clear
+route-facing work focal. Its 24-cell threshold/approach reaches route distance
+0 and is entirely walkable/rendered; orchard gate, field wall, hedge gate,
+produce awning, and shed remain distinct supports. A bounded physical scan
+finds four real east-west rural waystations, and V141 proves the strongest at
+`(337,35)` (rural weight 0.8717). Its 26-cell access fabric also reaches route
+distance 0 with full walkable/rendered coverage and unique visual groups.
+
+The same ±640 audit contains no physically placeable rural `settlement`, so
+the selected tranche does not claim that profile. Baseline, all six selected
+walking/district/regional renders, exact hashes, and raw metrics are in
+`track-6-acceptance-atlas/composition-hierarchy-v141-rural-two-axis-place/FINDINGS.md`.
+Production still reports `vb07c0d4`. Rural settlement hierarchy, continuous
+hedgerow/field composition, living farm schedules and actors, persistent field
+state, route/crossing diversity, fresh complete-atlas proof, sustained load,
+deployment, and physical Ghostty acceptance remain open.

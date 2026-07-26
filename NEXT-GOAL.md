@@ -1166,6 +1166,28 @@ Completed foundations:
   D, deployment, and physical Ghostty acceptance remain open. Production
   remains `vb07c0d4`; there was no deploy, service restart, push,
   complete-gate claim, or physical Ghostty claim;
+- V139-V141 extend route-connected hierarchy into rural using the existing
+  farmstead kit. V139 retains the fresh sparse baseline at the current dry
+  north-south waystation `(-73,-69)`. Stone-barn and produce-awning entries now
+  share manifest-owned visual groups with four axis/side focal variants; no
+  rural runtime conditional is introduced. V140's north-south barn anchors a
+  24-cell threshold/approach at route distance 0 with walkable/rendered rates
+  both 1, while its district/regional support silhouettes remain unique. A
+  bounded physical placement scan finds four actual east-west rural
+  waystations; V141 selects the strongest at `(337,35)` (rural weight 0.8717),
+  where the corresponding barn variant owns a 26-cell fully
+  walkable/rendered route-connected fabric and all visible composition groups
+  are unique. The same ±640 audit contains no physically placeable rural
+  settlement, so settlement-profile proof remains explicitly open rather than
+  being inferred from the two waystations. All six selected captures, hashes,
+  and the baseline are retained under
+  `track-6-acceptance-atlas/composition-hierarchy-v141-rural-two-axis-place/FINDINGS.md`.
+  This is not rural completion: settlement hierarchy, continuous hedgerow/
+  field composition, farm/market schedules, moving workers/animals/carts,
+  persistent field state, crossings, fresh full-atlas proof, sustained Gate D,
+  deployment, and physical Ghostty acceptance remain open. Production remains
+  `vb07c0d4`; there was no deploy, service restart, push, complete-gate claim,
+  or physical Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
@@ -1193,7 +1215,8 @@ Still open and therefore goal-blocking:
   work/market states, larger squares/commons, dense
   route-connected frontage beyond this bounded origin tranche, and
   a complete forest vocabulary, a broadly placeable coast vocabulary, and
-  equivalent focal vocabularies for the other three non-canal families.
+  a complete rural vocabulary, and equivalent focal vocabularies for the
+  other two non-canal families.
   Coast-specific waterfront diversity, far
   greater travel-scale entropy across route topology, hydrology, biome fields,
   ambient clusters, landmarks, and parcel programs, authoritative traversal,
@@ -1233,8 +1256,8 @@ Still open and therefore goal-blocking:
   denser frontage beyond the origin, moving people, working stalls
   and unloading,
   less empty paving, and equivalent complete grammar beyond the bounded
-  canal-town origin and the two-axis forest/coast waystation tranches remain
-  required before a fresh full-atlas recapture can attempt Gate A.
+  canal-town origin and the two-axis forest/coast/rural waystation tranches
+  remain required before a fresh full-atlas recapture can attempt Gate A.
   Fresh post-correction deterministic traversal, the 30-minute terminal run,
   deployed-service/cgroup audit, and physical Ghostty acceptance also remain
   open.

@@ -220,11 +220,11 @@ describe('regional biome material manifest', () => {
     expect(kit.minimumLayers).toBe(2);
     expect(kit.maximumLayers).toBe(3);
     expect(kit.layerSpacing).toBe(5);
-    expect(kit.assets).toHaveLength(53);
+    expect(kit.assets).toHaveLength(57);
     for (const family of BIOME_FAMILIES) {
       expect(kit.assets.filter((asset) => asset.families.includes(family))).toHaveLength(
         family === 'canal-town' ? 15 :
-          family === 'forest' || family === 'coast' ? 10 : 6,
+          family === 'forest' || family === 'coast' || family === 'rural' ? 10 : 6,
       );
     }
     for (const asset of kit.assets) {
@@ -236,7 +236,7 @@ describe('regional biome material manifest', () => {
       expect(asset.collision.length).toBeGreaterThan(0);
     }
     const focal = kit.assets.filter((asset) => asset.compositionRole === 'focal');
-    expect(focal).toHaveLength(11);
+    expect(focal).toHaveLength(15);
     expect(new Set(focal.map((asset) => asset.frontageAxis)))
       .toEqual(new Set(['east-west', 'north-south']));
     expect(focal.find((asset) => asset.id === 'canal-town-connected-frontage-parcel-component-v1')
@@ -260,6 +260,16 @@ describe('regional biome material manifest', () => {
     expect(new Set(coastFocals.map((asset) => asset.visualGroup)))
       .toEqual(new Set(['coast-dune-hut-v1', 'coast-fishing-rack-v1']));
     expect(coastFocals.every((asset) => asset.sprite.width === 5 && asset.sprite.height === 4))
+      .toBe(true);
+    const ruralFocals = focal.filter((asset) => asset.families.includes('rural'));
+    expect(ruralFocals).toHaveLength(4);
+    expect(new Set(ruralFocals.map((asset) => asset.frontageAxis)))
+      .toEqual(new Set(['east-west', 'north-south']));
+    expect(new Set(ruralFocals.map((asset) => asset.compositionSide)))
+      .toEqual(new Set([-1, 1]));
+    expect(new Set(ruralFocals.map((asset) => asset.visualGroup)))
+      .toEqual(new Set(['rural-stone-barn-v1', 'rural-produce-awning-v1']));
+    expect(ruralFocals.every((asset) => asset.sprite.width === 5 && asset.sprite.height === 4))
       .toBe(true);
     expect(new Set(focal
       .filter((asset) => asset.families.includes('canal-town') &&
