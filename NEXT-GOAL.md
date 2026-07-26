@@ -1424,6 +1424,37 @@ Completed foundations:
   `vb07c0d4` with PID `1022033` and the same start timestamp; there was no
   deploy, service restart, push, production database write, complete-gate
   claim, or physical Ghostty claim;
+- V154 replaces the material-pair checklist gap with a dynamic production
+  boundary atlas and refuses six route/texture shortcuts that did not survive
+  direct review. A fixed 768x768-tile ownership scan discovers 16 emitted
+  classes and all 92 adjacent class pairs, then retains 276 exact near,
+  walking, and district crops. Mean seam-to-interior RGB delta is 0.8792,
+  only 2 crops exceed 1.2, and no crop repeats a tile-edge delta signature;
+  direct inspection of the complete 8,050-pixel atlas and its numerical
+  outliers finds intentional semantic contrast rather than a rectangular
+  source, alpha, mip, or world-tile seam. Five geometry candidates and one
+  six-family route-edge candidate are rejected: they either inflate crossing
+  tiles by 17.8--32.3%, introduce slower orthogonal doglegs, or remain
+  visually indistinguishable after faithful octant reconstruction. Two
+  equal-density detailed-material candidates are also rejected. Extending
+  four 96 px/seven-tile quadrant fields into one 192 px/fourteen-tile master
+  doubles peak correlation from 0.031/0.030 to 0.068/0.069 and visibly enlarges
+  the quilt; toroidal bilinear wrapping introduces rectangular coast seams,
+  loses about 11% luminance contrast, and raises correlation to 0.044/0.044.
+  Production route, asset, and compositor source is restored byte-for-byte.
+  Reusable dynamic boundary and 40x32-tile texture-horizon harnesses, exact
+  patches, atlas hashes, failed candidates, logs, decisions, and limitations
+  are retained under `track-1-material-blending/` and
+  `track-6-route-topology/route-geometry-v154/`. Repository verification passes
+  49 files / 271 tests, 18/18 typecheck tasks, 12/12 build tasks, 7/7 configured
+  lint tasks, both harness syntax checks, and `git diff --check`. This closes a
+  bounded material-boundary enumeration sub-gate, not Gate A: detailed
+  material patch synthesis, the route-site hierarchy, the fresh 144-capture
+  atlas, Gate C, sustained/deployed Gate D, deployment, and explicit physical
+  Ghostty operator acceptance remain open. Production remains `vb07c0d4` with
+  PID `1022033` and the same start timestamp; there was no deploy, service
+  restart, push, production database write, complete-gate claim, or physical
+  Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without

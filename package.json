@@ -51,6 +51,8 @@
     "research:living-atmosphere-atlas": "pnpm --filter @maldoror/ssh-world build && pnpm --filter @maldoror/render build && node tools/render-sim/living-world-gallery-atlas.mjs",
     "research:environment-atlas": "pnpm --filter @maldoror/ssh-world build && pnpm --filter @maldoror/render build && node tools/render-sim/environmental-consequences-atlas.mjs",
     "research:texture-reconstruction": "node tools/render-sim/texture-reconstruction-lab.mjs",
+    "research:texture-horizon": "node tools/render-sim/regional-texture-horizon-lab.mjs",
+    "research:regional-material-boundaries": "node tools/render-sim/regional-material-boundary-atlas.mjs",
     "clean": "turbo run clean && rm -rf node_modules",
     "db:generate": "pnpm --filter @maldoror/db generate",
     "db:migrate": "pnpm --filter @maldoror/db migrate",
