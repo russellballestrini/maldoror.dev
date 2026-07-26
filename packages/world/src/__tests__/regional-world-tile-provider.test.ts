@@ -1285,10 +1285,23 @@ describe('RegionalWorldTileProvider', () => {
     first.importPreparedViewport(packed);
     second.importPreparedViewport(packed);
 
+    expect(first.getRegionalStats()).toMatchObject({
+      preparedTerrainTiles: 1,
+      preparedMaterializedTerrainTiles: 0,
+      preparedMaterializedOverlayTiles: 0,
+    });
     expect(first.getTileAtResolution(0, 0, 1)).toBe(second.getTileAtResolution(0, 0, 1));
     expect(first.getBuildingTileAt(0, 0)).toBe(second.getBuildingTileAt(0, 0));
-    expect(first.getRegionalStats().preparedTerrainTiles).toBe(1);
-    expect(second.getRegionalStats().preparedTerrainTiles).toBe(1);
+    expect(first.getRegionalStats()).toMatchObject({
+      preparedTerrainTiles: 1,
+      preparedMaterializedTerrainTiles: 1,
+      preparedMaterializedOverlayTiles: 1,
+    });
+    expect(second.getRegionalStats()).toMatchObject({
+      preparedTerrainTiles: 1,
+      preparedMaterializedTerrainTiles: 1,
+      preparedMaterializedOverlayTiles: 1,
+    });
   });
 
   it('uses the nearest prepared semantic LOD during animated zoom', () => {

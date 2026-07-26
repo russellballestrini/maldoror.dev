@@ -1323,6 +1323,41 @@ Completed foundations:
   remain open. Production remains `vb07c0d4` with the same PID/start timestamp;
   there was no deploy, service restart, push, production database write,
   complete-gate claim, or physical Ghostty claim;
+- V151 removes the remaining ~10.8-second origin-generation cliff without
+  moving it into the first walk. A build-time, provenance-bound typed-plane
+  artifact now carries one centre visual halo, four long cardinal visual
+  corridors, and one resolution-1 collision halo; all six packages remain
+  independently below the existing 8,192-cell transfer ceiling. Runtime
+  accepts them only when world seed, runtime digest, ordered asset-manifest
+  digest, and full asset-source digest match; every other seed or stale/corrupt
+  artifact uses the explicit generator fallback. Sessions import five shared
+  visual planes through bounded lazy facades, while the persistent generator
+  imports all six to reuse overlap beyond the horizon. The final readiness
+  topology reaches exact origin in 1,535.329 ms versus V150's 15,215.664 ms,
+  reports 0 ms origin generation, preserves the byte-exact origin hash, and
+  renders 260 frames through 64 tiles in each cardinal direction with zero
+  coverage misses, generator requests, failures, or main-thread material
+  fallbacks. Only 3,952 of 40,501 logical terrain wrappers materialize during
+  that four-direction proof. The final owned scratch worker becomes ready in
+  1,402 ms versus V150's 12,920 ms, loads both persistent residents and
+  sprites, installs regional collision authority in 2 ms, and advances both
+  bodies to their persisted work destinations. A real loopback SSH capture
+  asserts `(0,0)`, OCTANT, and 30% zoom across 297,890 bytes and 39 synchronized
+  frames; its faithful 1440x828 replay was directly inspected. A separate
+  adversarial returning login proves persisted `(77,-33)` becomes `(0,0)` in
+  both terminal and database. Rejected single-origin and centre-halo attempts,
+  CPU profiles, final artifacts, hashes, and limitations are retained under
+  `track-5-motion-transport/origin-generation-v151/FINDINGS.md`. Repository
+  verification passes 49 files / 270 tests, 18/18 typecheck tasks, 12/12 build
+  tasks, 7/7 configured lint tasks, and `git diff --check`. This is not the
+  performance finish: the synthetic four-direction lab still records a
+  478.891 ms render p99, 907.248 ms maximum, 765.996 MiB peak, and a 2,148.304
+  ms first full frame; the isolated worker retains a 2,308.964 ms event-loop
+  maximum. Fresh full-atlas Gate A, sustained/deployed Gate D, Gate C, richer
+  living systems, deployment, and physical Ghostty acceptance remain open.
+  Production remains `vb07c0d4` with PID `1022033` and the same start
+  timestamp; there was no deploy, service restart, push, production database
+  write, complete-gate claim, or physical Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without

@@ -6,6 +6,10 @@ import type {
   RegionalPrewarmWorkerOptions,
   RegionalPrewarmWorkerResponse,
 } from './regional-prewarm-protocol.js';
+import {
+  readRegionalRuntimePrewarmBundle,
+  selectRegionalRuntimePrewarmViewports,
+} from './regional-runtime-prewarm.js';
 export type { RegionalPrewarmBounds } from './regional-prewarm-protocol.js';
 
 /** Must match the packed provider's validated wire-area ceiling. Kept local so
@@ -18,6 +22,13 @@ export interface RegionalPrewarmServiceStartup {
   assetSource: 'runtime-pack' | 'png-manifests';
   assetLoadMs: number;
   assetManifestDigest: string;
+  assetSourceDigest: string | null;
+  assetRuntimeDigest: string | null;
+  generatorBakedViewports: number;
+  runtimePrewarmSource: 'runtime-prewarm' | 'none' | 'stale';
+  runtimePrewarmLoadMs: number | null;
+  runtimePrewarmPackedBytes: number | null;
+  bakedViewports: number;
 }
 
 export interface RegionalPrewarmServiceResult {
@@ -25,11 +36,13 @@ export interface RegionalPrewarmServiceResult {
   generationMs: number;
   roundTripMs: number;
   rssMiB: number;
+  source: 'runtime-prewarm' | 'generator';
 }
 
 export interface RegionalPrewarmServiceStats {
   requestsStarted: number;
   cacheHits: number;
+  bakedHits: number;
   inFlightHits: number;
   cachedResults: number;
   cachedBytes: number;
@@ -92,9 +105,11 @@ export class RegionalPrewarmService {
   private nextRequestId = 1;
   private stopped = false;
   private readonly resultCache = new Map<string, RegionalPrewarmServiceResult>();
+  private readonly bakedKeys = new Set<string>();
   private readonly sharedRequests = new Map<string, Promise<RegionalPrewarmServiceResult>>();
   private requestsStarted = 0;
   private cacheHits = 0;
+  private bakedHits = 0;
   private inFlightHits = 0;
   private static readonly MAX_CACHED_RESULTS = 8;
   private static readonly MAX_CACHED_BYTES = 192 * 1024 * 1024;
@@ -116,7 +131,17 @@ export class RegionalPrewarmService {
       workerData: options,
     });
     const service = new RegionalPrewarmService(worker);
-    const startup = await new Promise<RegionalPrewarmServiceStartup>((resolve, reject) => {
+    const runtimePrewarm = readRegionalRuntimePrewarmBundle(options.assets.runtimePrewarm)
+      .catch((error: unknown) => {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          console.warn('[RegionalPrewarm] Runtime prewarm unavailable; using generator:', error);
+        }
+        return null;
+      });
+    const workerStartup = new Promise<Omit<
+      RegionalPrewarmServiceStartup,
+      'runtimePrewarmSource' | 'runtimePrewarmLoadMs' | 'runtimePrewarmPackedBytes' | 'bakedViewports'
+    >>((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error(`Regional prewarm worker startup timed out after ${timeoutMs}ms`));
       }, timeoutMs);
@@ -130,6 +155,9 @@ export class RegionalPrewarmService {
             assetSource: message.assetSource,
             assetLoadMs: message.assetLoadMs,
             assetManifestDigest: message.assetManifestDigest,
+            assetSourceDigest: message.assetSourceDigest,
+            assetRuntimeDigest: message.assetRuntimeDigest,
+            generatorBakedViewports: message.generatorBakedViewports,
           });
         } else if (message.type === 'error' && message.requestId === undefined) {
           clearTimeout(timeout);
@@ -142,10 +170,43 @@ export class RegionalPrewarmService {
         clearTimeout(timeout);
         reject(error);
       });
-    }).catch(async (error: unknown) => {
+    });
+    const startupBase = await workerStartup.catch(async (error: unknown) => {
       await service.stop();
       throw error;
     });
+    const baked = await runtimePrewarm;
+    let runtimePrewarmSource: RegionalPrewarmServiceStartup['runtimePrewarmSource'] = 'none';
+    let bakedViewports = 0;
+    if (baked) {
+      const selected = selectRegionalRuntimePrewarmViewports(baked.bundle, {
+        runtimeDigest: startupBase.assetRuntimeDigest,
+        assetManifestDigest: startupBase.assetManifestDigest,
+        assetSourceDigest: startupBase.assetSourceDigest,
+        worldSeed: options.worldSeed,
+      });
+      if (selected.reason === 'matched') {
+        runtimePrewarmSource = 'runtime-prewarm';
+        bakedViewports = service.seedBakedViewports(
+          selected.viewports,
+          baked.loadMs,
+          startupBase.rssMiB,
+        );
+      } else {
+        runtimePrewarmSource = 'stale';
+        console.warn(
+          `[RegionalPrewarm] Ignoring runtime prewarm ${options.assets.runtimePrewarm}: ` +
+          `${selected.reason} mismatch`,
+        );
+      }
+    }
+    const startup: RegionalPrewarmServiceStartup = {
+      ...startupBase,
+      runtimePrewarmSource,
+      runtimePrewarmLoadMs: baked?.loadMs ?? null,
+      runtimePrewarmPackedBytes: baked?.packedBytes ?? null,
+      bakedViewports,
+    };
     return { service, startup };
   }
 
@@ -153,12 +214,14 @@ export class RegionalPrewarmService {
     if (this.stopped) return Promise.reject(new Error('Regional prewarm service is stopped'));
     const normalized = normalizeBounds(bounds);
     const normalizedResolution = positiveInteger(Math.round(resolution), 'resolution');
-    const key = `${normalized.minX},${normalized.minY},${normalized.maxX},${normalized.maxY}@${normalizedResolution}`;
-    const cached = this.resultCache.get(key);
-    if (cached) {
-      this.resultCache.delete(key);
-      this.resultCache.set(key, cached);
+    const key = prewarmResultKey(normalized, normalizedResolution);
+    const cachedEntry = this.findCachedResult(normalized, normalizedResolution);
+    if (cachedEntry) {
+      const [cachedKey, cached] = cachedEntry;
+      this.resultCache.delete(cachedKey);
+      this.resultCache.set(cachedKey, cached);
       this.cacheHits++;
+      if (this.bakedKeys.has(cachedKey)) this.bakedHits++;
       return Promise.resolve(cached);
     }
     const shared = this.sharedRequests.get(key);
@@ -174,6 +237,7 @@ export class RegionalPrewarmService {
           const oldest = this.resultCache.keys().next().value as string | undefined;
           if (oldest === undefined) break;
           this.resultCache.delete(oldest);
+          this.bakedKeys.delete(oldest);
         }
         return result;
       })
@@ -186,10 +250,25 @@ export class RegionalPrewarmService {
     return {
       requestsStarted: this.requestsStarted,
       cacheHits: this.cacheHits,
+      bakedHits: this.bakedHits,
       inFlightHits: this.inFlightHits,
       cachedResults: this.resultCache.size,
       cachedBytes: this.cachedResultBytes(),
     };
+  }
+
+  /** Return the immutable provenance-matched startup packages for direct
+   * import into a new session. Generated cache entries are deliberately not
+   * exposed: only build-produced packages may be shared this way. */
+  getBakedViewports(resolution?: number): RegionalPreparedViewportPayload[] {
+    const result: RegionalPreparedViewportPayload[] = [];
+    for (const key of this.bakedKeys) {
+      const viewport = this.resultCache.get(key)?.viewport;
+      if (viewport && (resolution === undefined || viewport.resolution === resolution)) {
+        result.push(viewport);
+      }
+    }
+    return result;
   }
 
   private cachedResultBytes(): number {
@@ -202,6 +281,48 @@ export class RegionalPrewarmService {
         viewport.overlayRgba.byteLength + viewport.solid.byteLength;
     }
     return bytes;
+  }
+
+  private findCachedResult(
+    bounds: RegionalPrewarmBounds,
+    resolution: number,
+  ): [string, RegionalPrewarmServiceResult] | null {
+    const exactKey = prewarmResultKey(bounds, resolution);
+    const exact = this.resultCache.get(exactKey);
+    if (exact) return [exactKey, exact];
+    let selected: [string, RegionalPrewarmServiceResult] | null = null;
+    let selectedArea = Number.POSITIVE_INFINITY;
+    for (const entry of this.resultCache.entries()) {
+      const viewport = entry[1].viewport;
+      if (viewport.resolution !== resolution ||
+          viewport.bounds.minX > bounds.minX || viewport.bounds.minY > bounds.minY ||
+          viewport.bounds.maxX < bounds.maxX || viewport.bounds.maxY < bounds.maxY) continue;
+      const area = boundsArea(viewport.bounds);
+      if (area < selectedArea) {
+        selected = entry;
+        selectedArea = area;
+      }
+    }
+    return selected;
+  }
+
+  private seedBakedViewports(
+    viewports: RegionalPreparedViewportPayload[],
+    loadMs: number,
+    rssMiB: number,
+  ): number {
+    for (const viewport of viewports) {
+      const key = prewarmResultKey(viewport.bounds, viewport.resolution);
+      this.resultCache.set(key, {
+        viewport,
+        generationMs: 0,
+        roundTripMs: loadMs,
+        rssMiB,
+        source: 'runtime-prewarm',
+      });
+      this.bakedKeys.add(key);
+    }
+    return viewports.length;
   }
 
   private prepareUncached(
@@ -225,6 +346,7 @@ export class RegionalPrewarmService {
     await Promise.race([exited, forced]);
     if (this.worker.threadId !== -1) await this.worker.terminate();
     this.resultCache.clear();
+    this.bakedKeys.clear();
     this.sharedRequests.clear();
     this.failAll(new Error('Regional prewarm service stopped'));
   }
@@ -250,6 +372,7 @@ export class RegionalPrewarmService {
       generationMs: message.generationMs,
       roundTripMs: performance.now() - pending.startedAt,
       rssMiB: message.rssMiB,
+      source: 'generator',
     });
   }
 
@@ -480,6 +603,10 @@ function normalizeBounds(bounds: RegionalPrewarmBounds): RegionalPrewarmBounds {
     maxX: Math.floor(Math.max(bounds.minX, bounds.maxX)),
     maxY: Math.floor(Math.max(bounds.minY, bounds.maxY)),
   };
+}
+
+function prewarmResultKey(bounds: RegionalPrewarmBounds, resolution: number): string {
+  return `${bounds.minX},${bounds.minY},${bounds.maxX},${bounds.maxY}@${resolution}`;
 }
 
 function boundsArea(bounds: RegionalPrewarmBounds): number {

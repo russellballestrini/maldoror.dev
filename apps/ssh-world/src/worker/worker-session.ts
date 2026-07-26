@@ -121,7 +121,7 @@ export interface WorkerSessionConfig {
   canalTownKit: LoadedCanalTownKit | null;
   regionalWorldKit: LoadedRegionalWorldKit | null;
   regionalPrewarmService: RegionalPrewarmService | null;
-  regionalOriginViewport: RegionalPreparedViewportPayload | null;
+  regionalInitialViewports: readonly RegionalPreparedViewportPayload[];
   regionalDefaultAvatar: Sprite | null;
   sendOutput: (sessionId: string, output: string, keyframe?: boolean, immediate?: boolean) => void;
   sendUserId: (sessionId: string, userId: string) => void;
@@ -146,7 +146,7 @@ export class WorkerSession {
   private canalTownKit: LoadedCanalTownKit | null;
   private regionalWorldKit: LoadedRegionalWorldKit | null;
   private regionalPrewarmService: RegionalPrewarmService | null;
-  private regionalOriginViewport: RegionalPreparedViewportPayload | null;
+  private regionalInitialViewports: readonly RegionalPreparedViewportPayload[];
   private regionalDefaultAvatar: Sprite | null;
   private sendUserId: (sessionId: string, userId: string) => void;
   private sendEnded: (sessionId: string) => void;
@@ -235,7 +235,7 @@ export class WorkerSession {
     this.canalTownKit = config.canalTownKit;
     this.regionalWorldKit = config.regionalWorldKit;
     this.regionalPrewarmService = config.regionalPrewarmService;
-    this.regionalOriginViewport = config.regionalOriginViewport;
+    this.regionalInitialViewports = [...config.regionalInitialViewports];
     this.regionalDefaultAvatar = config.regionalDefaultAvatar;
     this.sendUserId = config.sendUserId;
     this.sendEnded = config.sendEnded;
@@ -417,8 +417,12 @@ export class WorkerSession {
     boot?.updateStep('Generating world chunks...', 'loading');
     const createDefaultProvider = (): TileProvider => {
       if (this.regionalWorldKit) {
-        const regional = this.regionalWorldKit.createSessionWorld();
-        if (this.regionalOriginViewport) regional.importPreparedViewport(this.regionalOriginViewport);
+        const regional = this.regionalWorldKit.createSessionWorld({
+          maxPreparedViewports: Math.max(6, this.regionalInitialViewports.length + 1),
+        });
+        for (const viewport of this.regionalInitialViewports) {
+          regional.importPreparedViewport(viewport);
+        }
         this.regionalTileProvider = regional;
         return regional;
       }

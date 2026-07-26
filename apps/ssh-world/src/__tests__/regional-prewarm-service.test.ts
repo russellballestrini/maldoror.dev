@@ -18,6 +18,7 @@ class ImmediateGenerator implements RegionalPrewarmGenerator {
       generationMs: 12,
       roundTripMs: 14,
       rssMiB: 100,
+      source: 'generator',
     };
   }
 }
@@ -33,6 +34,7 @@ class DeferredGenerator implements RegionalPrewarmGenerator {
       generationMs: 20,
       roundTripMs: 23,
       rssMiB: 100,
+      source: 'generator',
     })));
   }
 

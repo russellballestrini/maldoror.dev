@@ -27,18 +27,24 @@ const WORLD_SEED = BigInt(process.env.MALDOROR_WORLD_SEED ?? '8801799478018485')
 const RESOLUTION = 12;
 const VIEW_RADIUS_X = 16;
 const VIEW_RADIUS_Y = 10;
+const TRAVERSAL_DISTANCE = Number.parseInt(
+  process.env.MALDOROR_RUNTIME_TRAVERSAL_DISTANCE ?? '64',
+  10,
+);
 const ORIGIN_BOUNDS = { minX: -20, minY: -20, maxX: 20, maxY: 20 };
 const assets = defaultRegionalWorldAssetPaths(ROOT);
 
 fs.mkdirSync(OUTPUT, { recursive: true });
 const startedAt = performance.now();
 const kitStartedAt = performance.now();
-const kit = await loadRegionalWorldKit({ worldSeed: WORLD_SEED, assets });
-const kitStartupMs = performance.now() - kitStartedAt;
-const started = await RegionalPrewarmService.start({
+const kitPromise = loadRegionalWorldKit({ worldSeed: WORLD_SEED, assets });
+const servicePromise = RegionalPrewarmService.start({
   worldSeed: String(WORLD_SEED),
   assets,
 }, 120_000);
+const kit = await kitPromise;
+const kitStartupMs = performance.now() - kitStartedAt;
+const started = await servicePromise;
 const service = started.service;
 let firstWorld;
 let secondWorld;
@@ -53,10 +59,16 @@ try {
   const cachedOrigin = await service.prepare(ORIGIN_BOUNDS, RESOLUTION);
   const cachedOriginRoundTripMs = performance.now() - cachedOriginStartedAt;
 
-  firstWorld = kit.createSessionWorld();
-  secondWorld = kit.createSessionWorld();
-  firstWorld.importPreparedViewport(origin.viewport);
-  secondWorld.importPreparedViewport(cachedOrigin.viewport);
+  const bakedVisualViewports = service.getBakedViewports(RESOLUTION);
+  const initialViewports = bakedVisualViewports.length > 0
+    ? bakedVisualViewports
+    : [origin.viewport];
+  firstWorld = kit.createSessionWorld({ maxPreparedViewports: initialViewports.length + 1 });
+  secondWorld = kit.createSessionWorld({ maxPreparedViewports: initialViewports.length + 1 });
+  for (const viewport of initialViewports) {
+    firstWorld.importPreparedViewport(viewport);
+    secondWorld.importPreparedViewport(viewport);
+  }
   firstWorld.setLocalPlayerId('session-a');
   secondWorld.setLocalPlayerId('session-b');
   firstWorld.updatePlayer(player('session-a', 0, 0));
@@ -103,28 +115,38 @@ try {
     fringeTiles: 4,
     onError: (error) => { throw error; },
   });
-  scheduler.observe(0, 0, 1, 0);
-  await scheduler.whenIdle();
-
   const traversal = [];
-  for (let x = 0; x <= 12; x++) {
-    scheduler.observe(x, 0, 1, 0);
-    const covered = secondWorld.hasPreparedViewportCoverage(
-      x - VIEW_RADIUS_X,
-      -VIEW_RADIUS_Y,
-      x + VIEW_RADIUS_X,
-      VIEW_RADIUS_Y,
-      RESOLUTION,
-    );
-    secondRenderer.setCamera(x, 0);
-    const frameStartedAt = performance.now();
-    const frame = secondRenderer.renderToBuffer(secondWorld, x + 1).buffer;
-    traversal.push({
-      x,
-      covered,
-      renderMs: performance.now() - frameStartedAt,
-      hash: x === 12 ? hashGrid(frame) : undefined,
-    });
+  const directions = [
+    { id: 'east', dx: 1, dy: 0 },
+    { id: 'west', dx: -1, dy: 0 },
+    { id: 'north', dx: 0, dy: -1 },
+    { id: 'south', dx: 0, dy: 1 },
+  ];
+  for (const direction of directions) {
+    for (let distance = 0; distance <= TRAVERSAL_DISTANCE; distance++) {
+      const x = direction.dx * distance;
+      const y = direction.dy * distance;
+      scheduler.observe(x, y, direction.dx, direction.dy);
+      const covered = secondWorld.hasPreparedViewportCoverage(
+        x - VIEW_RADIUS_X,
+        y - VIEW_RADIUS_Y,
+        x + VIEW_RADIUS_X,
+        y + VIEW_RADIUS_Y,
+        RESOLUTION,
+      );
+      secondRenderer.setCamera(x, y);
+      const frameStartedAt = performance.now();
+      const frame = secondRenderer.renderToBuffer(secondWorld, traversal.length + 1).buffer;
+      traversal.push({
+        direction: direction.id,
+        distance,
+        x,
+        y,
+        covered,
+        renderMs: performance.now() - frameStartedAt,
+        hash: distance === TRAVERSAL_DISTANCE ? hashGrid(frame) : undefined,
+      });
+    }
   }
   await scheduler.whenIdle();
   if (traversal.some((entry) => !entry.covered)) {
@@ -152,7 +174,15 @@ try {
       generatorMs: round(started.startup.startupMs),
       generatorAssetSource: started.startup.assetSource,
       generatorAssetLoadMs: round(started.startup.assetLoadMs),
+      generatorRuntimeDigest: started.startup.assetRuntimeDigest,
+      generatorBakedViewports: started.startup.generatorBakedViewports,
+      runtimePrewarmSource: started.startup.runtimePrewarmSource,
+      runtimePrewarmLoadMs: nullableRound(started.startup.runtimePrewarmLoadMs),
+      runtimePrewarmPackedBytes: started.startup.runtimePrewarmPackedBytes,
+      bakedViewports: started.startup.bakedViewports,
+      importedVisualViewports: initialViewports.length,
       totalToOriginReadyMs: round(totalToOriginReadyMs),
+      firstOriginSource: origin.source,
       firstOriginGenerationMs: round(origin.generationMs),
       firstOriginRoundTripMs: round(firstOriginRoundTripMs),
       cachedOriginRoundTripMs: round(cachedOriginRoundTripMs),
@@ -170,9 +200,18 @@ try {
     },
     traversal: {
       frames: traversal.length,
+      distancePerDirection: TRAVERSAL_DISTANCE,
+      directions: Object.fromEntries(directions.map((direction) => [
+        direction.id,
+        {
+          coverageMisses: traversal.filter((entry) => (
+            entry.direction === direction.id && !entry.covered
+          )).length,
+          finalHash: traversal.findLast((entry) => entry.direction === direction.id)?.hash,
+        },
+      ])),
       coverageMisses: traversal.filter((entry) => !entry.covered).length,
       render: distribution(traversal.map((entry) => entry.renderMs)),
-      finalHash: traversal.at(-1)?.hash,
       scheduler: scheduler.getStats(),
     },
     generator: service.getStats(),
@@ -241,4 +280,8 @@ function distribution(values) {
 
 function round(value) {
   return Number(value.toFixed(3));
+}
+
+function nullableRound(value) {
+  return value === null ? null : round(value);
 }

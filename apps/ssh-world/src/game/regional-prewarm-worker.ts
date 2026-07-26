@@ -6,6 +6,10 @@ import type {
 } from './regional-prewarm-protocol.js';
 import { loadRegionalWorldProvider } from './regional-world-provider.js';
 import {
+  readRegionalRuntimePrewarmBundle,
+  selectRegionalRuntimePrewarmViewports,
+} from './regional-runtime-prewarm.js';
+import {
   packRegionalPreparedViewport,
   regionalPackedViewportTransferList,
 } from './regional-prewarm-packer.js';
@@ -18,6 +22,24 @@ const loaded = await loadRegionalWorldProvider({
   worldSeed: BigInt(options.worldSeed),
   assets: options.assets,
 });
+let generatorBakedViewports = 0;
+try {
+  const baked = await readRegionalRuntimePrewarmBundle(options.assets.runtimePrewarm);
+  const selected = selectRegionalRuntimePrewarmViewports(baked.bundle, {
+    runtimeDigest: loaded.assetLoad.runtimeDigest,
+    assetManifestDigest: loaded.assetLoad.manifestDigest,
+    assetSourceDigest: loaded.assetLoad.sourceDigest,
+    worldSeed: options.worldSeed,
+  });
+  if (selected.reason === 'matched') {
+    for (const viewport of selected.viewports) loaded.world.importPreparedViewport(viewport);
+    generatorBakedViewports = selected.viewports.length;
+  }
+} catch (error) {
+  if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+    console.warn('[RegionalPrewarm] Generator could not import runtime prewarm:', error);
+  }
+}
 
 send({
   type: 'ready',
@@ -26,6 +48,9 @@ send({
   assetSource: loaded.assetLoad.source,
   assetLoadMs: loaded.assetLoad.loadMs,
   assetManifestDigest: loaded.assetLoad.manifestDigest,
+  assetSourceDigest: loaded.assetLoad.sourceDigest,
+  assetRuntimeDigest: loaded.assetLoad.runtimeDigest,
+  generatorBakedViewports,
 });
 
 port.on('message', (request: RegionalPrewarmWorkerRequest) => {

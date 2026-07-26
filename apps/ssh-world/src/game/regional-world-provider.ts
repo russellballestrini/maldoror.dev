@@ -26,6 +26,7 @@ export interface RegionalWorldAssetPaths {
   parcelComponents: string;
   environmentContacts: string;
   runtimePack: string;
+  runtimePrewarm: string;
 }
 
 export interface RegionalWorldProviderOptions {
@@ -78,6 +79,7 @@ export function defaultRegionalWorldAssetPaths(rootOverride?: string): RegionalW
     parcelComponents: path.join(root, 'assets/biomes/parcel-components-manifest.json'),
     environmentContacts: path.join(root, 'assets/biomes/environment-contacts-manifest.json'),
     runtimePack: fileURLToPath(new URL('../runtime/regional-world-kit-v1.v8.gz', import.meta.url)),
+    runtimePrewarm: fileURLToPath(new URL('../runtime/regional-origin-v1.v8.gz', import.meta.url)),
   };
 }
 

@@ -36,7 +36,7 @@ describe('regional runtime asset pack', () => {
     expect(() => decodeRegionalRuntimeAssetPack(Buffer.from('not-a-pack'))).toThrow();
     expect(() => encodeRegionalRuntimeAssetPack({
       ...fixturePack(),
-      schemaVersion: 2,
+      schemaVersion: 3,
     } as unknown as RegionalRuntimeAssetPack)).toThrow(/schema/);
   });
 
@@ -72,6 +72,7 @@ describe('regional runtime asset pack', () => {
       source: 'runtime-pack',
       manifestDigest: pack.manifestDigest,
       sourceDigest: pack.sourceDigest,
+      runtimeDigest: pack.runtimeDigest,
       packedBytes: encoded.length,
     });
   });
@@ -90,9 +91,10 @@ function fixturePack(): RegionalRuntimeAssetPack {
     'environmentContacts',
   ] as const;
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     manifestDigest: digest,
     sourceDigest: 'b'.repeat(64),
+    runtimeDigest: 'c'.repeat(64),
     kits: Object.fromEntries(names.map((name) => [name, { marker: name }])) as unknown as
       RegionalWorldAssetKits,
   };
@@ -110,7 +112,10 @@ async function manifestPaths(directory: string): Promise<RegionalWorldAssetPaths
     'routeContacts',
     'routeMaterials',
   ] as const;
-  const result = { runtimePack: path.join(directory, 'runtime-pack') } as RegionalWorldAssetPaths;
+  const result = {
+    runtimePack: path.join(directory, 'runtime-pack'),
+    runtimePrewarm: path.join(directory, 'runtime-prewarm'),
+  } as RegionalWorldAssetPaths;
   for (const name of names) {
     const file = path.join(directory, `${name}.json`);
     await fs.promises.writeFile(file, `${JSON.stringify({ name })}\n`);

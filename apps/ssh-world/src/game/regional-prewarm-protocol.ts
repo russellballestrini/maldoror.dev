@@ -33,6 +33,9 @@ export interface RegionalPrewarmReadyResponse {
   assetSource: 'runtime-pack' | 'png-manifests';
   assetLoadMs: number;
   assetManifestDigest: string;
+  assetSourceDigest: string | null;
+  assetRuntimeDigest: string | null;
+  generatorBakedViewports: number;
 }
 
 export interface RegionalPrewarmPreparedResponse {

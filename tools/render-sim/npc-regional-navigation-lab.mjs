@@ -71,6 +71,7 @@ try {
     preparations.push({
       bounds,
       area: area(bounds),
+      source: prepared.source,
       generationMs: round(prepared.generationMs),
       roundTripMs: round(prepared.roundTripMs),
       importMs: round(importMs),
@@ -153,6 +154,8 @@ try {
       generatorMs: round(started.startup.startupMs),
       generatorAssetSource: started.startup.assetSource,
       generatorAssetLoadMs: round(started.startup.assetLoadMs),
+      runtimePrewarmSource: started.startup.runtimePrewarmSource,
+      bakedViewports: started.startup.bakedViewports,
       generatorRssMiB: started.startup.rssMiB,
     },
     preparation: {

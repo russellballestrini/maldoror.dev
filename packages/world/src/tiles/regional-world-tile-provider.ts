@@ -452,9 +452,12 @@ interface ImportedPreparedViewport {
   key: string;
   bounds: RegionalPreparedViewport['bounds'];
   resolution: number;
-  terrain: Map<string, Tile>;
-  overlays: Map<string, BuildingTileData>;
-  solid: Set<string>;
+  terrainTiles: number;
+  materializedTerrainTiles(): number;
+  materializedOverlayTiles(): number;
+  terrainAt(x: number, y: number): Tile;
+  overlayAt(x: number, y: number): BuildingTileData | null;
+  solidAt(x: number, y: number): boolean;
 }
 
 interface CollectedDerivedLayers {
@@ -504,9 +507,9 @@ export class RegionalWorldDerivedCache {
 
 const VISIBLE_TILE_CACHE = new WeakMap<BuildingTileData, boolean>();
 /** One prewarm payload is intentionally fanned out to every colocated SSH
- * session. Decode its immutable tile/index facade once so session providers
- * retain only LRU references instead of duplicating thousands of wrapper
- * objects—and so the renderer's packed-pixel memo is shared by identity. */
+ * session. Decode its immutable typed-plane facade once; terrain/overlay
+ * wrappers are materialized lazily into small shared FIFO windows, preventing
+ * the arrival horizon from becoming tens of thousands of JS objects. */
 const PACKED_PREPARED_VIEWPORT_CACHE = new WeakMap<
   RegionalPackedPreparedViewport,
   ImportedPreparedViewport
@@ -841,7 +844,7 @@ export class RegionalWorldTileProvider extends TileProvider {
 
   getTileAtResolution(tileX: number, tileY: number, resolution: number): Tile {
     const prepared = this.findPreparedViewport(tileX, tileY, Math.round(resolution));
-    if (prepared) return prepared.terrain.get(positionKey(tileX, tileY))!;
+    if (prepared) return prepared.terrainAt(tileX, tileY);
     const key = positionKey(tileX, tileY);
     const parcel = this.getParcelLayerBlock(tileX, tileY);
     const connector = parcel.connectors.get(key);
@@ -936,7 +939,10 @@ export class RegionalWorldTileProvider extends TileProvider {
     let terrainTilesPrimed = 0;
     for (let tileY = tileMinY; tileY <= tileMaxY; tileY++) {
       for (let tileX = tileMinX; tileX <= tileMaxX; tileX++) {
-        this.compositor.getTileAtResolution(tileX, tileY, resolution);
+        const prepared = this.findPreparedViewport(tileX, tileY, Math.round(resolution));
+        if (!prepared || prepared.resolution !== Math.round(resolution)) {
+          this.compositor.getTileAtResolution(tileX, tileY, resolution);
+        }
         terrainTilesPrimed++;
       }
     }
@@ -976,6 +982,14 @@ export class RegionalWorldTileProvider extends TileProvider {
     for (let y = bounds.minY; y <= bounds.maxY; y++) {
       for (let x = bounds.minX; x <= bounds.maxX; x++) {
         const key = positionKey(x, y);
+        const imported = this.findPreparedViewport(x, y, normalizedResolution);
+        if (imported?.resolution === normalizedResolution) {
+          terrain.push({ x, y, tile: imported.terrainAt(x, y) });
+          const overlay = imported.overlayAt(x, y);
+          if (overlay) overlays.push({ x, y, tile: overlay });
+          if (imported.solidAt(x, y)) solid.push([x, y]);
+          continue;
+        }
         const connector = derived.connectors.get(key);
         const surface = derived.surfaces.get(key);
         const waterfront = derived.waterfrontSurfaces.get(key);
@@ -1183,9 +1197,12 @@ export class RegionalWorldTileProvider extends TileProvider {
       key,
       bounds,
       resolution: payload.resolution,
-      terrain,
-      overlays,
-      solid,
+      terrainTiles: terrain.size,
+      materializedTerrainTiles: () => terrain.size,
+      materializedOverlayTiles: () => overlays.size,
+      terrainAt: (x, y) => terrain.get(positionKey(x, y))!,
+      overlayAt: (x, y) => overlays.get(positionKey(x, y)) ?? null,
+      solidAt: (x, y) => solid.has(positionKey(x, y)),
     });
   }
 
@@ -1235,58 +1252,76 @@ export class RegionalWorldTileProvider extends TileProvider {
         payload.overlayRgba.length !== payload.overlayCoordinates.length / 2 * bytesPerTile) {
       throw new Error('Packed regional viewport overlay plane dimensions do not match coordinates');
     }
-    const terrain = new Map<string, Tile>();
-    for (let index = 0; index < area; index++) {
-      const x = bounds.minX + index % (bounds.maxX - bounds.minX + 1);
-      const y = bounds.minY + Math.floor(index / (bounds.maxX - bounds.minX + 1));
-      terrain.set(positionKey(x, y), {
-        id: `regional-prepared:${x},${y}@${payload.resolution}`,
-        name: 'Transferred regional material',
-        pixels: [],
-        packedPixels: {
-          width: payload.resolution,
-          height: payload.resolution,
-          data: payload.terrainRgba.subarray(index * bytesPerTile, (index + 1) * bytesPerTile),
-        },
-        packedMaterialMask: payload.terrainMaterial.subarray(
-          index * pixelsPerTile,
-          (index + 1) * pixelsPerTile,
-        ),
-        walkable: payload.terrainWalkable[index] === 1,
-      });
-    }
-    const overlays = new Map<string, BuildingTileData>();
+    const width = bounds.maxX - bounds.minX + 1;
+    const terrainCache = new Map<number, Tile>();
+    const overlayIndexes = new Int32Array(area);
+    overlayIndexes.fill(-1);
+    const overlayCache = new Map<number, BuildingTileData>();
     for (let index = 0; index < payload.overlayCoordinates.length / 2; index++) {
       const x = payload.overlayCoordinates[index * 2]!;
       const y = payload.overlayCoordinates[index * 2 + 1]!;
       validatePreparedCoordinate(x, y, bounds, 'overlay');
-      const key = positionKey(x, y);
-      if (overlays.has(key)) throw new Error(`Duplicate regional viewport overlay coordinate: ${key}`);
-      overlays.set(key, {
-        pixels: [],
-        resolutions: {},
-        packedPixels: {
-          width: payload.resolution,
-          height: payload.resolution,
-          data: payload.overlayRgba.subarray(index * bytesPerTile, (index + 1) * bytesPerTile),
-        },
-      });
+      const terrainIndex = (y - bounds.minY) * width + x - bounds.minX;
+      if (overlayIndexes[terrainIndex] !== -1) {
+        throw new Error(`Duplicate regional viewport overlay coordinate: ${x},${y}`);
+      }
+      overlayIndexes[terrainIndex] = index;
     }
-    const solid = new Set<string>();
-    for (let index = 0; index < payload.solid.length; index++) {
-      if (payload.solid[index] !== 1) continue;
-      const x = bounds.minX + index % (bounds.maxX - bounds.minX + 1);
-      const y = bounds.minY + Math.floor(index / (bounds.maxX - bounds.minX + 1));
-      solid.add(positionKey(x, y));
-    }
+    const terrainIndexAt = (x: number, y: number): number => (
+      (Math.floor(y) - bounds.minY) * width + Math.floor(x) - bounds.minX
+    );
     const key = `${bounds.minX},${bounds.minY},${bounds.maxX},${bounds.maxY}@${payload.resolution}`;
-    const imported = {
+    const imported: ImportedPreparedViewport = {
       key,
       bounds,
       resolution: payload.resolution,
-      terrain,
-      overlays,
-      solid,
+      terrainTiles: area,
+      materializedTerrainTiles: () => terrainCache.size,
+      materializedOverlayTiles: () => overlayCache.size,
+      terrainAt: (x, y) => {
+        const index = terrainIndexAt(x, y);
+        const cached = terrainCache.get(index);
+        if (cached) return cached;
+        const tile: Tile = {
+          id: `regional-prepared:${Math.floor(x)},${Math.floor(y)}@${payload.resolution}`,
+          name: 'Transferred regional material',
+          pixels: [],
+          packedPixels: {
+            width: payload.resolution,
+            height: payload.resolution,
+            data: payload.terrainRgba.subarray(index * bytesPerTile, (index + 1) * bytesPerTile),
+          },
+          packedMaterialMask: payload.terrainMaterial.subarray(
+            index * pixelsPerTile,
+            (index + 1) * pixelsPerTile,
+          ),
+          walkable: payload.terrainWalkable[index] === 1,
+        };
+        installBoundedEntry(terrainCache, index, tile, 1024);
+        return tile;
+      },
+      overlayAt: (x, y) => {
+        const coordinateIndex = terrainIndexAt(x, y);
+        const overlayIndex = overlayIndexes[coordinateIndex] ?? -1;
+        if (overlayIndex < 0) return null;
+        const cached = overlayCache.get(overlayIndex);
+        if (cached) return cached;
+        const tile: BuildingTileData = {
+          pixels: [],
+          resolutions: {},
+          packedPixels: {
+            width: payload.resolution,
+            height: payload.resolution,
+            data: payload.overlayRgba.subarray(
+              overlayIndex * bytesPerTile,
+              (overlayIndex + 1) * bytesPerTile,
+            ),
+          },
+        };
+        installBoundedEntry(overlayCache, overlayIndex, tile, 256);
+        return tile;
+      },
+      solidAt: (x, y) => payload.solid[terrainIndexAt(x, y)] === 1,
     };
     PACKED_PREPARED_VIEWPORT_CACHE.set(payload, imported);
     this.installPreparedViewport(imported);
@@ -1317,7 +1352,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     direction: BuildingDirection = 'north',
   ): BuildingTileData | null {
     const prepared = this.findPreparedViewport(worldX, worldY);
-    if (prepared) return prepared.overlays.get(positionKey(worldX, worldY)) ?? null;
+    if (prepared) return prepared.overlayAt(worldX, worldY);
     const authored = super.getBuildingTileAt(worldX, worldY, direction);
     if (authored) return authored;
     const key = positionKey(worldX, worldY);
@@ -1420,7 +1455,7 @@ export class RegionalWorldTileProvider extends TileProvider {
 
   override isBuildingAt(worldX: number, worldY: number): boolean {
     const prepared = this.findPreparedViewport(worldX, worldY);
-    if (prepared) return prepared.solid.has(positionKey(worldX, worldY));
+    if (prepared) return prepared.solidAt(worldX, worldY);
     const quayLayout = this.quayLayoutAt(worldX, worldY);
     if (quayLayout) return false;
     const key = positionKey(worldX, worldY);
@@ -1471,6 +1506,8 @@ export class RegionalWorldTileProvider extends TileProvider {
     maxCachedEnvironmentContactCells: number;
     preparedViewports: number;
     preparedTerrainTiles: number;
+    preparedMaterializedTerrainTiles: number;
+    preparedMaterializedOverlayTiles: number;
   } {
     return {
       landmarkAssets: this.landmarks.length,
@@ -1574,7 +1611,15 @@ export class RegionalWorldTileProvider extends TileProvider {
       maxCachedEnvironmentContactCells: this.maxCachedEnvironmentContactCells,
       preparedViewports: this.preparedViewports.size,
       preparedTerrainTiles: [...this.preparedViewports.values()].reduce(
-        (total, viewport) => total + viewport.terrain.size,
+        (total, viewport) => total + viewport.terrainTiles,
+        0,
+      ),
+      preparedMaterializedTerrainTiles: [...this.preparedViewports.values()].reduce(
+        (total, viewport) => total + viewport.materializedTerrainTiles(),
+        0,
+      ),
+      preparedMaterializedOverlayTiles: [...this.preparedViewports.values()].reduce(
+        (total, viewport) => total + viewport.materializedOverlayTiles(),
         0,
       ),
     };
@@ -2010,25 +2055,27 @@ export class RegionalWorldTileProvider extends TileProvider {
   ): ImportedPreparedViewport | null {
     const tileX = Math.floor(worldX);
     const tileY = Math.floor(worldY);
-    const candidates = [...this.preparedViewports.values()];
+    let exact: ImportedPreparedViewport | null = null;
     let nearest: ImportedPreparedViewport | null = null;
     let nearestDistance = Number.POSITIVE_INFINITY;
-    for (let index = candidates.length - 1; index >= 0; index--) {
-      const viewport = candidates[index]!;
+    for (const viewport of this.preparedViewports.values()) {
       if (tileX < viewport.bounds.minX || tileX > viewport.bounds.maxX ||
           tileY < viewport.bounds.minY || tileY > viewport.bounds.maxY) continue;
-      if (resolution === undefined || viewport.resolution === resolution) return viewport;
+      if (resolution === undefined || viewport.resolution === resolution) {
+        exact = viewport;
+        continue;
+      }
       // During a short animated zoom, keep consuming an already prepared
       // semantic LOD and let the renderer resample it while the exact target
       // package is generated off-thread. This prevents an intermediate zoom
       // size from falling through to synchronous world generation.
       const distance = Math.abs(Math.log(viewport.resolution / resolution));
-      if (distance < nearestDistance) {
+      if (distance <= nearestDistance) {
         nearest = viewport;
         nearestDistance = distance;
       }
     }
-    return nearest;
+    return exact ?? nearest;
   }
 
   private blocksNear(worldX: number, worldY: number): CachedBlock[] {
@@ -4678,6 +4725,19 @@ function hasVisiblePixels(tile: BuildingTileData): boolean {
     : tile.pixels.some((row) => row.some((pixel) => pixel !== null));
   VISIBLE_TILE_CACHE.set(tile, visible);
   return visible;
+}
+
+function installBoundedEntry<K, V>(
+  cache: Map<K, V>,
+  key: K,
+  value: V,
+  maximumEntries: number,
+): void {
+  if (cache.size >= maximumEntries) {
+    const oldest = cache.keys().next().value as K | undefined;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+  cache.set(key, value);
 }
 
 function stringHash(value: string): number {

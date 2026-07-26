@@ -28,6 +28,7 @@ import {
   type LoadedRegionalWorldKit,
 } from '../game/regional-world-provider.js';
 import { RegionalPrewarmService } from '../game/regional-prewarm-service.js';
+import { REGIONAL_ORIGIN_PREWARM } from '../game/regional-runtime-config.js';
 import { coalesceNPCNavigationBounds } from '../game/npc-navigation-bounds.js';
 import { getHeapStatistics } from 'node:v8';
 import { monitorEventLoopDelay, performance } from 'node:perf_hooks';
@@ -329,6 +330,7 @@ export interface WorkerRuntimeSnapshot {
   npc_count: number;
   npc_collision_authority: ReturnType<GameServer['getNPCCollisionAuthority']>;
   regional_asset_source: 'runtime-pack' | 'png-manifests' | 'legacy';
+  regional_origin_source: 'runtime-prewarm' | 'generator' | 'legacy';
   memory: {
     rss_mib: number;
     heap_used_mib: number;
@@ -380,9 +382,10 @@ let canalTownKit: LoadedCanalTownKit | null = null;
 let regionalWorldKit: LoadedRegionalWorldKit | null = null;
 let regionalNPCCollisionWorld: RegionalWorldTileProvider | null = null;
 let regionalPrewarmService: RegionalPrewarmService | null = null;
-let regionalOriginViewport: RegionalPreparedViewportPayload | null = null;
+let regionalInitialViewports: RegionalPreparedViewportPayload[] = [];
 let regionalDefaultAvatar: Sprite | null = null;
 let regionalAssetSource: WorkerRuntimeSnapshot['regional_asset_source'] = 'legacy';
+let regionalOriginSource: WorkerRuntimeSnapshot['regional_origin_source'] = 'legacy';
 const workerSessions: Map<string, WorkerSession> = new Map();
 let shuttingDown = false;
 const workerEventLoopDelay = monitorEventLoopDelay({ resolution: 1 });
@@ -397,10 +400,6 @@ function delayMilliseconds(value: number): number {
   return Number.isFinite(value) ? runtimeMetric(value / 1_000_000) : 0;
 }
 
-const REGIONAL_ORIGIN_PREWARM = {
-  bounds: { minX: -20, minY: -20, maxX: 20, maxY: 20 },
-  resolution: 12,
-} as const;
 const REGIONAL_NPC_MAX_NAVIGATION_REGIONS = 15;
 
 /** Build a complete replacement collision view, then swap authority in one
@@ -411,9 +410,8 @@ async function installRegionalNPCCollisionWorld(
 ): Promise<void> {
   const kit = regionalWorldKit;
   const service = regionalPrewarmService;
-  const origin = regionalOriginViewport;
   const server = gameServer;
-  if (!kit || !service || !origin || !server) return;
+  if (!kit || !service || !server) return;
 
   const navigationBounds = coalesceNPCNavigationBounds(
     [...server.getNPCNavigationBounds(), ...additionalBounds],
@@ -426,7 +424,6 @@ async function installRegionalNPCCollisionWorld(
   });
   const navigationStartedAt = performance.now();
   try {
-    nextWorld.importPreparedViewport(origin);
     for (const bounds of navigationBounds) {
       const prepared = await service.prepare(bounds, 1);
       nextWorld.importPreparedViewport(prepared.viewport);
@@ -514,7 +511,7 @@ async function shutdownWorker(reason: 'ipc' | 'SIGTERM'): Promise<void> {
   regionalNPCCollisionWorld = null;
   regionalWorldKit?.clearSharedCaches();
   regionalWorldKit = null;
-  regionalOriginViewport = null;
+  regionalInitialViewports = [];
   regionalDefaultAvatar = null;
 
   process.exit(0);
@@ -547,28 +544,37 @@ process.on('message', async (msg: MainToWorkerMessage) => {
         if (process.env.MALDOROR_REGIONAL_WORLD !== '0') {
           const assets = defaultRegionalWorldAssetPaths(process.env.MALDOROR_ASSET_ROOT);
           const loadedAt = performance.now();
-          [regionalWorldKit, regionalDefaultAvatar] = await Promise.all([
+          const [loadedRegionalKit, loadedDefaultAvatar, started] = await Promise.all([
             loadRegionalWorldKit({ worldSeed, assets }),
             loadCanalTownDefaultAvatar(),
+            RegionalPrewarmService.start(
+              { worldSeed: String(worldSeed), assets },
+              Number(process.env.MALDOROR_REGIONAL_STARTUP_TIMEOUT_MS ?? 120_000),
+            ),
           ]);
+          regionalWorldKit = loadedRegionalKit;
+          regionalDefaultAvatar = loadedDefaultAvatar;
           regionalAssetSource = regionalWorldKit.assetLoad.source;
-          const started = await RegionalPrewarmService.start(
-            { worldSeed: String(worldSeed), assets },
-            Number(process.env.MALDOROR_REGIONAL_STARTUP_TIMEOUT_MS ?? 120_000),
-          );
           regionalPrewarmService = started.service;
           const origin = await regionalPrewarmService.prepare(
             REGIONAL_ORIGIN_PREWARM.bounds,
             REGIONAL_ORIGIN_PREWARM.resolution,
           );
-          regionalOriginViewport = origin.viewport;
+          regionalInitialViewports = regionalPrewarmService.getBakedViewports(
+            REGIONAL_ORIGIN_PREWARM.resolution,
+          );
+          if (!regionalInitialViewports.includes(origin.viewport)) {
+            regionalInitialViewports.push(origin.viewport);
+          }
+          regionalOriginSource = origin.source;
           console.log(
             `[Worker] Regional world ready in ${Math.round(performance.now() - loadedAt)}ms; ` +
             `assets ${regionalWorldKit.assetLoad.source} ` +
             `${Math.round(regionalWorldKit.assetLoad.loadMs)}ms main/` +
             `${Math.round(started.startup.assetLoadMs)}ms generator, ` +
             `generator startup ${Math.round(started.startup.startupMs)}ms, origin ` +
-            `${Math.round(origin.generationMs)}ms at ${origin.viewport.resolution}px, ` +
+            `${origin.source} ${Math.round(origin.generationMs)}ms at ` +
+            `${origin.viewport.resolution}px, ` +
             `RSS ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB`,
           );
         } else {
@@ -593,7 +599,7 @@ process.on('message', async (msg: MainToWorkerMessage) => {
         // Load NPCs from database
         await gameServer.loadNPCs();
 
-        if (regionalWorldKit && regionalPrewarmService && regionalOriginViewport) {
+        if (regionalWorldKit && regionalPrewarmService) {
           await installRegionalNPCCollisionWorld();
           gameServer.setNPCNavigationPreparer((bounds) => (
             installRegionalNPCCollisionWorld([bounds])
@@ -754,7 +760,7 @@ process.on('message', async (msg: MainToWorkerMessage) => {
           canalTownKit,
           regionalWorldKit,
           regionalPrewarmService,
-          regionalOriginViewport,
+          regionalInitialViewports,
           regionalDefaultAvatar,
           sendOutput: sendSessionOutput,
           sendUserId: sendSessionUserId,
@@ -835,6 +841,7 @@ process.on('message', async (msg: MainToWorkerMessage) => {
             npc_count: gameServer?.getNPCCount() ?? 0,
             npc_collision_authority: gameServer?.getNPCCollisionAuthority() ?? 'legacy',
             regional_asset_source: regionalAssetSource,
+            regional_origin_source: regionalOriginSource,
             memory: {
               rss_mib: Number((memory.rss / mib).toFixed(3)),
               heap_used_mib: Number((memory.heapUsed / mib).toFixed(3)),

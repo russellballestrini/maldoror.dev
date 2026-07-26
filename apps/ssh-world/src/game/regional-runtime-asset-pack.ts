@@ -17,7 +17,7 @@ import type {
 } from './biome-assets.js';
 import type { RegionalWorldAssetPaths } from './regional-world-provider.js';
 
-const PACK_SCHEMA_VERSION = 1;
+const PACK_SCHEMA_VERSION = 2;
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 
 export interface RegionalWorldAssetKits {
@@ -37,6 +37,7 @@ export interface RegionalRuntimeAssetProvenance {
   loadMs: number;
   manifestDigest: string;
   sourceDigest: string | null;
+  runtimeDigest: string | null;
   packedBytes: number | null;
 }
 
@@ -49,6 +50,7 @@ export interface RegionalRuntimeAssetPack {
   schemaVersion: typeof PACK_SCHEMA_VERSION;
   manifestDigest: string;
   sourceDigest: string;
+  runtimeDigest: string;
   kits: RegionalWorldAssetKits;
 }
 
@@ -56,6 +58,7 @@ export interface RegionalRuntimeAssetPackBuild {
   destination: string;
   manifestDigest: string;
   sourceDigest: string;
+  runtimeDigest: string;
   packedBytes: number;
   sourceFiles: number;
   loadMs: number;
@@ -84,6 +87,7 @@ export async function loadRegionalRuntimeAssets(
             loadMs: performance.now() - startedAt,
             manifestDigest,
             sourceDigest: pack.sourceDigest,
+            runtimeDigest: pack.runtimeDigest,
             packedBytes: encoded.length,
           },
         };
@@ -107,6 +111,7 @@ export async function loadRegionalRuntimeAssets(
       loadMs: performance.now() - startedAt,
       manifestDigest,
       sourceDigest: null,
+      runtimeDigest: null,
       packedBytes: null,
     },
   };
@@ -153,7 +158,11 @@ export async function loadRegionalWorldAssetKitsFromSources(
 export async function buildRegionalRuntimeAssetPack(
   assets: RegionalWorldAssetPaths,
   destination: string,
+  runtimeDigest: string,
 ): Promise<RegionalRuntimeAssetPackBuild> {
+  if (!DIGEST_PATTERN.test(runtimeDigest)) {
+    throw new Error('Regional runtime code digest must be SHA-256');
+  }
   const sourceStartedAt = performance.now();
   const [kits, manifestDigest, source] = await Promise.all([
     loadRegionalWorldAssetKitsFromSources(assets),
@@ -166,6 +175,7 @@ export async function buildRegionalRuntimeAssetPack(
     schemaVersion: PACK_SCHEMA_VERSION,
     manifestDigest,
     sourceDigest: source.digest,
+    runtimeDigest,
     kits,
   });
   const encodeMs = performance.now() - encodeStartedAt;
@@ -178,6 +188,7 @@ export async function buildRegionalRuntimeAssetPack(
     destination: absoluteDestination,
     manifestDigest,
     sourceDigest: source.digest,
+    runtimeDigest,
     packedBytes: encoded.length,
     sourceFiles: source.files,
     loadMs,
@@ -296,6 +307,9 @@ function validateRegionalRuntimeAssetPack(value: unknown): asserts value is Regi
   }
   if (typeof root.sourceDigest !== 'string' || !DIGEST_PATTERN.test(root.sourceDigest)) {
     throw new Error('Regional runtime asset pack has an invalid source digest');
+  }
+  if (typeof root.runtimeDigest !== 'string' || !DIGEST_PATTERN.test(root.runtimeDigest)) {
+    throw new Error('Regional runtime asset pack has an invalid runtime digest');
   }
   if (!root.kits || typeof root.kits !== 'object' || Array.isArray(root.kits)) {
     throw new Error('Regional runtime asset pack has no kits object');
