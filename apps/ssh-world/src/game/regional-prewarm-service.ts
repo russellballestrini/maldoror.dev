@@ -275,7 +275,7 @@ export class RegionalPrewarmService {
     let bytes = 0;
     for (const result of this.resultCache.values()) {
       const viewport = result.viewport;
-      if (viewport.version !== 2) continue;
+      if (viewport.version !== 3) continue;
       bytes += viewport.terrainRgba.byteLength + viewport.terrainMaterial.byteLength +
         viewport.terrainWalkable.byteLength + viewport.overlayCoordinates.byteLength +
         viewport.overlayRgba.byteLength + viewport.solid.byteLength;

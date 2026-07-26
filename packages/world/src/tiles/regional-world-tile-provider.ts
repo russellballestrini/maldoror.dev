@@ -260,6 +260,17 @@ export interface RegionalPreparedOverlayTile {
   tile: BuildingTileData;
 }
 
+/** Minimal coordinate-stable program for a time-dependent authored detail.
+ * The raster asset and activity semantics remain manifest-owned at runtime. */
+export interface RegionalPreparedDynamicPlacement {
+  assetId: string;
+  anchorX: number;
+  anchorY: number;
+  pathTangentX?: number;
+  pathTangentY?: number;
+  parcelPathId?: string;
+}
+
 /**
  * Structured-clone-safe output from an off-thread regional generator.
  *
@@ -280,13 +291,14 @@ export interface RegionalPreparedViewport {
   terrain: RegionalPreparedTerrainTile[];
   overlays: RegionalPreparedOverlayTile[];
   solid: Array<readonly [number, number]>;
+  dynamicPlacements: RegionalPreparedDynamicPlacement[];
 }
 
 /** Transferable counterpart of RegionalPreparedViewport. Terrain and overlay
  * rasters are tile-major RGBA; material and collision ownership are compact
  * byte planes. Only six ArrayBuffers cross the worker boundary. */
 export interface RegionalPackedPreparedViewport {
-  version: 2;
+  version: 3;
   worldSeed: string;
   bounds: RegionalPreparedViewport['bounds'];
   resolution: number;
@@ -296,6 +308,7 @@ export interface RegionalPackedPreparedViewport {
   overlayCoordinates: Int32Array;
   overlayRgba: Uint8Array;
   solid: Uint8Array;
+  dynamicPlacements: RegionalPreparedDynamicPlacement[];
 }
 
 export type RegionalPreparedViewportPayload =
@@ -380,6 +393,13 @@ interface Placement {
   environmentProgramId?: string;
 }
 
+type AnimatedQuayPlacement = Pick<
+  Placement,
+  'anchorX' | 'anchorY' | 'parcelPathId' | 'pathTangentX' | 'pathTangentY'
+> & {
+  asset: RegionalQuayDetailAsset & { activity: RegionalQuayDetailActivity };
+};
+
 interface ParcelConnector {
   routeKind: RegionalRouteKind;
   parcelId: string;
@@ -455,6 +475,7 @@ interface ImportedPreparedViewport {
   terrainTiles: number;
   materializedTerrainTiles(): number;
   materializedOverlayTiles(): number;
+  dynamicPlacements: readonly RegionalPreparedDynamicPlacement[];
   terrainAt(x: number, y: number): Tile;
   overlayAt(x: number, y: number): BuildingTileData | null;
   solidAt(x: number, y: number): boolean;
@@ -470,6 +491,7 @@ interface CollectedDerivedLayers {
   environmentSurfaces: Map<string, EnvironmentProgramSurface>;
   environmentWalkable: Set<string>;
   environmentSolid: Set<string>;
+  dynamicPlacements: RegionalPreparedDynamicPlacement[];
 }
 
 /** Worker-owned deterministic world-composition cache. Session providers keep
@@ -540,6 +562,7 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly ambient: readonly RegionalAmbientAsset[];
   private readonly civicDetails: readonly RegionalCivicDetailAsset[];
   private readonly quayDetails: readonly RegionalQuayDetailAsset[];
+  private readonly quayDetailsById: ReadonlyMap<string, RegionalQuayDetailAsset>;
   private readonly routeContacts: readonly RegionalRouteContactAsset[];
   private readonly parcelComponents: readonly RegionalParcelComponentAsset[];
   private readonly environmentContacts: readonly RegionalEnvironmentContactAsset[];
@@ -598,6 +621,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     this.ambient = config.ambient ?? [];
     this.civicDetails = config.civicDetails ?? [];
     this.quayDetails = config.quayDetails ?? [];
+    this.quayDetailsById = new Map(this.quayDetails.map((asset) => [asset.id, asset]));
     this.routeContacts = config.routeContacts ?? [];
     this.parcelComponents = config.parcelComponents ?? [];
     this.environmentContacts = config.environmentContacts ?? [];
@@ -1071,6 +1095,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       terrain,
       overlays,
       solid,
+      dynamicPlacements: derived.dynamicPlacements,
     };
   }
 
@@ -1088,6 +1113,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     const environmentSurfaces = new Map<string, EnvironmentProgramSurface>();
     const environmentWalkable = new Set<string>();
     const environmentSolid = new Set<string>();
+    const dynamicPlacements: RegionalPreparedDynamicPlacement[] = [];
     const firstBlockX = floorDiv(bounds.minX - this.placementMaxOffsetX, this.blockSize);
     const lastBlockX = floorDiv(bounds.maxX - this.placementMinOffsetX, this.blockSize);
     const firstBlockY = floorDiv(bounds.minY - this.placementMaxOffsetY, this.blockSize);
@@ -1101,6 +1127,23 @@ export class RegionalWorldTileProvider extends TileProvider {
     for (let blockY = firstBlockY; blockY <= lastBlockY; blockY++) {
       for (let blockX = firstBlockX; blockX <= lastBlockX; blockX++) {
         const block = this.getBlock(blockX, blockY);
+        for (const placement of block.placements) {
+          if (!isAnimatedQuayDetailPlacement(placement)) continue;
+          dynamicPlacements.push({
+            assetId: placement.asset.id,
+            anchorX: placement.anchorX,
+            anchorY: placement.anchorY,
+            ...(placement.pathTangentX === undefined ? {} : {
+              pathTangentX: placement.pathTangentX,
+            }),
+            ...(placement.pathTangentY === undefined ? {} : {
+              pathTangentY: placement.pathTangentY,
+            }),
+            ...(placement.parcelPathId === undefined ? {} : {
+              parcelPathId: placement.parcelPathId,
+            }),
+          });
+        }
         for (const [key, tile] of block.overlays) {
           if (inside(key) && !overlays.has(key)) overlays.set(key, tile);
         }
@@ -1131,6 +1174,10 @@ export class RegionalWorldTileProvider extends TileProvider {
     for (const [key, surface] of parcel.surfaces) surfaces.set(key, surface);
     for (const [key, surface] of parcel.waterfrontSurfaces) waterfrontSurfaces.set(key, surface);
     for (const [key, surface] of parcel.environmentSurfaces) environmentSurfaces.set(key, surface);
+    dynamicPlacements.sort((left, right) => (
+      left.anchorY - right.anchorY || left.anchorX - right.anchorX ||
+      left.assetId.localeCompare(right.assetId)
+    ));
     return {
       overlays,
       solid,
@@ -1141,6 +1188,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       environmentSurfaces,
       environmentWalkable,
       environmentSolid,
+      dynamicPlacements,
     };
   }
 
@@ -1148,7 +1196,7 @@ export class RegionalWorldTileProvider extends TileProvider {
    * validation cost is proportional only to the viewport and is reported by
    * the traversal lab separately from rendering. */
   importPreparedViewport(payload: RegionalPreparedViewportPayload): void {
-    if (payload.version === 2) {
+    if (payload.version === 3) {
       this.importPackedPreparedViewport(payload);
       return;
     }
@@ -1200,6 +1248,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       terrainTiles: terrain.size,
       materializedTerrainTiles: () => terrain.size,
       materializedOverlayTiles: () => overlays.size,
+      dynamicPlacements: validatePreparedDynamicPlacements(payload.dynamicPlacements),
       terrainAt: (x, y) => terrain.get(positionKey(x, y))!,
       overlayAt: (x, y) => overlays.get(positionKey(x, y)) ?? null,
       solidAt: (x, y) => solid.has(positionKey(x, y)),
@@ -1278,6 +1327,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       terrainTiles: area,
       materializedTerrainTiles: () => terrainCache.size,
       materializedOverlayTiles: () => overlayCache.size,
+      dynamicPlacements: validatePreparedDynamicPlacements(payload.dynamicPlacements),
       terrainAt: (x, y) => {
         const index = terrainIndexAt(x, y);
         const cached = terrainCache.get(index);
@@ -1382,6 +1432,10 @@ export class RegionalWorldTileProvider extends TileProvider {
     if (!this.quayDetails.some(isAnimatedQuayDetailAsset)) return null;
     const worldMinute = this.getWorldLifeState()?.worldMinute ?? this.quayDetailDefaultWorldMinute;
     const key = positionKey(worldX, worldY);
+    const prepared = this.findPreparedViewport(worldX, worldY);
+    if (prepared) {
+      return this.getPreparedDynamicQuayOverlays(prepared, worldMinute).get(key) ?? null;
+    }
     const firstBlockX = floorDiv(worldX - this.placementMaxOffsetX, this.blockSize);
     const lastBlockX = floorDiv(worldX - this.placementMinOffsetX, this.blockSize);
     const firstBlockY = floorDiv(worldY - this.placementMaxOffsetY, this.blockSize);
@@ -1404,15 +1458,45 @@ export class RegionalWorldTileProvider extends TileProvider {
     const cacheKey = `${blockX},${blockY}@${worldMinute}`;
     const cached = this.dynamicQuayOverlayCache.get(cacheKey);
     if (cached) return cached;
-    const overlays = new Map<string, BuildingTileData>();
     const placements = this.getBlock(blockX, blockY).placements
-      .filter(isAnimatedQuayDetailPlacement)
-      .map((placement) => ({
-        placement,
-        anchor: this.activeQuayDetailAnchor(placement, worldMinute),
-      }))
-      .sort((a, b) => a.anchor.y - b.anchor.y || a.anchor.x - b.anchor.x ||
-        a.placement.asset.id.localeCompare(b.placement.asset.id));
+      .filter(isAnimatedQuayDetailPlacement);
+    const overlays = this.composeDynamicQuayOverlays(placements, worldMinute);
+    this.installDynamicQuayOverlayCacheEntry(cacheKey, overlays);
+    return overlays;
+  }
+
+  /** A prepared viewport carries the sparse authored placement program rather
+   * than one frozen raster. Runtime time still selects every active anchor;
+   * only the expensive source-block discovery has moved off the frame path. */
+  private getPreparedDynamicQuayOverlays(
+    viewport: ImportedPreparedViewport,
+    worldMinute: number,
+  ): Map<string, BuildingTileData> {
+    const cacheKey = `viewport:${viewport.key}@${worldMinute}`;
+    const cached = this.dynamicQuayOverlayCache.get(cacheKey);
+    if (cached) return cached;
+    const placements = viewport.dynamicPlacements.map((placement): AnimatedQuayPlacement => {
+      const asset = this.quayDetailsById.get(placement.assetId);
+      if (!asset || !isAnimatedQuayDetailAsset(asset)) {
+        throw new Error(`Prepared regional viewport has unknown animated asset: ${placement.assetId}`);
+      }
+      return { ...placement, asset };
+    });
+    const overlays = this.composeDynamicQuayOverlays(placements, worldMinute);
+    this.installDynamicQuayOverlayCacheEntry(cacheKey, overlays);
+    return overlays;
+  }
+
+  private composeDynamicQuayOverlays(
+    source: readonly AnimatedQuayPlacement[],
+    worldMinute: number,
+  ): Map<string, BuildingTileData> {
+    const overlays = new Map<string, BuildingTileData>();
+    const placements = source.map((placement) => ({
+      placement,
+      anchor: this.activeQuayDetailAnchor(placement, worldMinute),
+    })).sort((a, b) => a.anchor.y - b.anchor.y || a.anchor.x - b.anchor.x ||
+      a.placement.asset.id.localeCompare(b.placement.asset.id));
     for (const { placement, anchor } of placements) {
       const [offsetX, offsetY] = getSpriteAnchor(placement.asset);
       for (let tileY = 0; tileY < placement.asset.sprite.height; tileY++) {
@@ -1425,17 +1509,23 @@ export class RegionalWorldTileProvider extends TileProvider {
         }
       }
     }
+    return overlays;
+  }
+
+  private installDynamicQuayOverlayCacheEntry(
+    cacheKey: string,
+    overlays: Map<string, BuildingTileData>,
+  ): void {
     this.dynamicQuayOverlayCache.set(cacheKey, overlays);
     while (this.dynamicQuayOverlayCache.size > this.maxCachedBlocks * 4) {
       const oldest = this.dynamicQuayOverlayCache.keys().next().value as string | undefined;
       if (oldest === undefined) break;
       this.dynamicQuayOverlayCache.delete(oldest);
     }
-    return overlays;
   }
 
   private activeQuayDetailAnchor(
-    placement: Placement & { asset: RegionalQuayDetailAsset & { activity: RegionalQuayDetailActivity } },
+    placement: AnimatedQuayPlacement,
     worldMinute: number,
   ): { x: number; y: number } {
     const { activity } = placement.asset;
@@ -2473,6 +2563,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       environmentSurfaces,
       environmentWalkable,
       environmentSolid,
+      dynamicPlacements: [],
     };
   }
 
@@ -4678,6 +4769,51 @@ function validatePreparedCoordinate(
       x < bounds.minX || x > bounds.maxX || y < bounds.minY || y > bounds.maxY) {
     throw new Error(`Regional viewport ${kind} coordinate outside bounds: ${x},${y}`);
   }
+}
+
+function validatePreparedDynamicPlacements(
+  value: unknown,
+): RegionalPreparedDynamicPlacement[] {
+  if (!Array.isArray(value) || value.length > REGIONAL_MAX_PREPARED_VIEWPORT_AREA) {
+    throw new Error('Regional viewport dynamic placements must be a bounded array');
+  }
+  return value.map((entry, index) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      throw new Error(`Regional viewport dynamic placement ${index} must be an object`);
+    }
+    const placement = entry as Record<string, unknown>;
+    if (typeof placement.assetId !== 'string' || placement.assetId.length < 1 ||
+        placement.assetId.length > 256 || typeof placement.anchorX !== 'number' ||
+        !Number.isSafeInteger(placement.anchorX) || typeof placement.anchorY !== 'number' ||
+        !Number.isSafeInteger(placement.anchorY)) {
+      throw new Error(`Regional viewport dynamic placement ${index} has invalid identity or anchor`);
+    }
+    for (const key of ['pathTangentX', 'pathTangentY'] as const) {
+      const component = placement[key];
+      if (component !== undefined && (typeof component !== 'number' ||
+          !Number.isFinite(component) || Math.abs(component) > 1.000001)) {
+        throw new Error(`Regional viewport dynamic placement ${index} has invalid ${key}`);
+      }
+    }
+    if (placement.parcelPathId !== undefined &&
+        (typeof placement.parcelPathId !== 'string' || placement.parcelPathId.length > 512)) {
+      throw new Error(`Regional viewport dynamic placement ${index} has invalid parcelPathId`);
+    }
+    return {
+      assetId: placement.assetId,
+      anchorX: placement.anchorX,
+      anchorY: placement.anchorY,
+      ...(placement.pathTangentX === undefined ? {} : {
+        pathTangentX: placement.pathTangentX as number,
+      }),
+      ...(placement.pathTangentY === undefined ? {} : {
+        pathTangentY: placement.pathTangentY as number,
+      }),
+      ...(placement.parcelPathId === undefined ? {} : {
+        parcelPathId: placement.parcelPathId,
+      }),
+    };
+  });
 }
 
 function floorDiv(value: number, divisor: number): number {

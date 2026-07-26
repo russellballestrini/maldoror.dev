@@ -177,6 +177,7 @@ export {
   type RegionalLandmarkPlacement,
   type RegionalPrewarmResult,
   type RegionalPreparedOverlayTile,
+  type RegionalPreparedDynamicPlacement,
   type RegionalPreparedTerrainTile,
   type RegionalPreparedViewport,
   type RegionalPackedPreparedViewport,

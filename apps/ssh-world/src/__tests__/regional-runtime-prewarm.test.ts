@@ -36,6 +36,13 @@ describe('regional runtime prewarm', () => {
         terrainRgba: new Uint8Array(1),
       }],
     })).toThrow(/terrainRgba/);
+    expect(() => encodeRegionalRuntimePrewarmBundle({
+      ...bundle,
+      viewports: [{
+        ...bundle.viewports[0]!,
+        dynamicPlacements: [{ assetId: '', anchorX: 0, anchorY: 0 }],
+      }],
+    })).toThrow(/dynamicPlacements/);
   });
 
   it('requires exact runtime and asset provenance while allowing other seeds to generate', () => {
@@ -92,7 +99,7 @@ describe('regional runtime prewarm', () => {
 
 function fixtureBundle(): RegionalRuntimePrewarmBundle {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     runtimeDigest,
     assetManifestDigest: manifestDigest,
     assetSourceDigest: sourceDigest,
@@ -102,7 +109,7 @@ function fixtureBundle(): RegionalRuntimePrewarmBundle {
 
 function fixtureViewport(): RegionalPackedPreparedViewport {
   return {
-    version: 2,
+    version: 3,
     worldSeed: '42',
     bounds: { minX: -1, minY: -1, maxX: 0, maxY: 0 },
     resolution: 2,
@@ -112,5 +119,13 @@ function fixtureViewport(): RegionalPackedPreparedViewport {
     overlayCoordinates: new Int32Array([0, 0]),
     overlayRgba: new Uint8Array(16),
     solid: new Uint8Array(4),
+    dynamicPlacements: [{
+      assetId: 'quay:skiff',
+      anchorX: 0,
+      anchorY: 0,
+      pathTangentX: 1,
+      pathTangentY: 0,
+      parcelPathId: 'quay:test',
+    }],
   };
 }

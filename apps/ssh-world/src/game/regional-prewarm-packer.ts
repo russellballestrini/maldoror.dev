@@ -5,7 +5,8 @@ import type {
   RegionalPreparedViewport,
 } from '@maldoror/world';
 
-/** Collapse a generator-side object graph into five transferable planes. The
+/** Collapse a generator-side object graph into six transferable planes and a
+ * compact, time-live placement program. The
  * overlay plane is resampled with the production painterly filter before
  * packing, so the main renderer receives the exact semantic display LOD. */
 export function packRegionalPreparedViewport(
@@ -61,7 +62,7 @@ export function packRegionalPreparedViewport(
     solid[index] = 1;
   }
   return {
-    version: 2,
+    version: 3,
     worldSeed: source.worldSeed,
     bounds: source.bounds,
     resolution: source.resolution,
@@ -71,6 +72,7 @@ export function packRegionalPreparedViewport(
     overlayCoordinates,
     overlayRgba,
     solid,
+    dynamicPlacements: source.dynamicPlacements.map((placement) => ({ ...placement })),
   };
 }
 

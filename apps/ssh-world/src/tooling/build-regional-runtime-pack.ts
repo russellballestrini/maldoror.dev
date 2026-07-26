@@ -66,7 +66,7 @@ for (const worldSeed of runtimeConfig.prewarmWorldSeeds) {
   }
 }
 const runtimePrewarm = await writeRegionalRuntimePrewarmBundle(assets.runtimePrewarm, {
-  schemaVersion: 1,
+  schemaVersion: 2,
   runtimeDigest: assetPack.runtimeDigest,
   assetManifestDigest: assetPack.manifestDigest,
   assetSourceDigest: assetPack.sourceDigest,

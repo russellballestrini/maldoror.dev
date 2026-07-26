@@ -1094,6 +1094,20 @@ describe('RegionalWorldTileProvider', () => {
     expect(movingBoat.visualAnchorY).toBe(boatAtRest.anchorY);
     expect(first.getDynamicOverlayTileAt(movingBoat.visualAnchorX!, movingBoat.visualAnchorY!))
       .not.toBeNull();
+    const prepared = first.prepareViewport(-24, -4, 56, 20, 4);
+    expect(prepared.dynamicPlacements.length).toBeGreaterThan(0);
+    const imported = makeWorld(
+      32, 32, routeSample, quayBiome, false, undefined, true, false, true,
+    );
+    imported.importPreparedViewport(structuredClone(prepared));
+    imported.setWorldLifeState(worldLifeAt(750));
+    for (let y = -4; y <= 20; y++) {
+      for (let x = -24; x <= 56; x++) {
+        expect(imported.getDynamicOverlayTileAt(x, y))
+          .toEqual(first.getDynamicOverlayTileAt(x, y));
+      }
+    }
+    expect(imported.getRegionalStats().cachedBlocks).toBe(0);
     expect(first.getRegionalStats()).toMatchObject({
       quayDetailAssets: QUAY_DETAILS.length,
       cachedQuayDetailPlacements: placements.length,
@@ -1269,7 +1283,7 @@ describe('RegionalWorldTileProvider', () => {
 
   it('shares one immutable packed viewport facade across session providers', () => {
     const packed: RegionalPackedPreparedViewport = {
-      version: 2,
+      version: 3,
       worldSeed: '42',
       bounds: { minX: 0, minY: 0, maxX: 0, maxY: 0 },
       resolution: 1,
@@ -1279,6 +1293,7 @@ describe('RegionalWorldTileProvider', () => {
       overlayCoordinates: new Int32Array([0, 0]),
       overlayRgba: new Uint8Array([40, 50, 60, 128]),
       solid: new Uint8Array([0]),
+      dynamicPlacements: [],
     };
     const first = makeWorld(32, 32);
     const second = makeWorld(32, 32);

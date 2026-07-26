@@ -5,7 +5,7 @@ import { deserialize, serialize } from 'node:v8';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import type { RegionalPackedPreparedViewport } from '@maldoror/world';
 
-const PREWARM_SCHEMA_VERSION = 1;
+const PREWARM_SCHEMA_VERSION = 2;
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 
 export interface RegionalRuntimePrewarmBundle {
@@ -135,7 +135,7 @@ function validatePackedViewport(value: unknown): asserts value is RegionalPacked
     throw new Error('Regional runtime prewarm viewport must be an object');
   }
   const viewport = value as Record<string, unknown>;
-  if (viewport.version !== 2 || typeof viewport.worldSeed !== 'string' ||
+  if (viewport.version !== 3 || typeof viewport.worldSeed !== 'string' ||
       !/^[0-9]+$/.test(viewport.worldSeed)) {
     throw new Error('Regional runtime prewarm viewport identity is invalid');
   }
@@ -171,6 +171,35 @@ function validatePackedViewport(value: unknown): asserts value is RegionalPacked
   }
   const overlays = viewport.overlayCoordinates.length / 2;
   typedLength(viewport.overlayRgba, Uint8Array, overlays * pixelsPerTile * 4, 'overlayRgba');
+  validateDynamicPlacements(viewport.dynamicPlacements);
+}
+
+function validateDynamicPlacements(value: unknown): void {
+  if (!Array.isArray(value) || value.length > 8192) {
+    throw new Error('Regional runtime prewarm dynamicPlacements must be a bounded array');
+  }
+  for (const [index, entry] of value.entries()) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      throw new Error(`Regional runtime prewarm dynamicPlacements[${index}] must be an object`);
+    }
+    const placement = entry as Record<string, unknown>;
+    if (typeof placement.assetId !== 'string' || placement.assetId.length < 1 ||
+        placement.assetId.length > 256 || !Number.isSafeInteger(placement.anchorX) ||
+        !Number.isSafeInteger(placement.anchorY)) {
+      throw new Error(`Regional runtime prewarm dynamicPlacements[${index}] identity is invalid`);
+    }
+    for (const key of ['pathTangentX', 'pathTangentY'] as const) {
+      const component = placement[key];
+      if (component !== undefined && (typeof component !== 'number' ||
+          !Number.isFinite(component) || Math.abs(component) > 1.000001)) {
+        throw new Error(`Regional runtime prewarm dynamicPlacements[${index}].${key} is invalid`);
+      }
+    }
+    if (placement.parcelPathId !== undefined &&
+        (typeof placement.parcelPathId !== 'string' || placement.parcelPathId.length > 512)) {
+      throw new Error(`Regional runtime prewarm dynamicPlacements[${index}].parcelPathId is invalid`);
+    }
+  }
 }
 
 function typedLength(

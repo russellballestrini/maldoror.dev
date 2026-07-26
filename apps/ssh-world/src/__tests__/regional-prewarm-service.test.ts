@@ -162,5 +162,6 @@ function viewport(bounds: RegionalPrewarmBounds, resolution: number): RegionalPr
     terrain: [],
     overlays: [],
     solid: [],
+    dynamicPlacements: [],
   };
 }

@@ -1358,6 +1358,42 @@ Completed foundations:
   Production remains `vb07c0d4` with PID `1022033` and the same start
   timestamp; there was no deploy, service restart, push, production database
   write, complete-gate claim, or physical Ghostty claim;
+- V152 profiles and removes V151's cold full-frame reconstruction defect
+  without freezing its two persistent-time moving boats. Public-provider
+  attribution found 2,149.679 of the origin's 2,260.412 ms inside dynamic quay
+  overlay discovery: each tile query was rebuilding regional source blocks
+  whose authored placements the prepared viewport already knew. Packed
+  viewport V3 now transfers a bounded coordinate-stable activity program with
+  its six raster planes; runtime resolves the provenance-matched manifest,
+  applies the existing world-minute motion and hydrology fit, and caches one
+  sparse overlay per viewport/minute. A fresh provider advanced to a different
+  minute matches every source dynamic tile and creates zero source blocks.
+  All five measured frame hashes remain byte-exact while origin/east/west/
+  north/south cold frames fall from 2,260.412/819.833/628.602/817.108/996.492
+  ms to 100.716/29.583/34.924/14.671/14.711 ms. The selected 260-frame
+  four-direction repeat has zero misses, generator requests, failures, or
+  main-thread fallbacks at render p50/p95/p99/max
+  5.569/13.502/28.867/48.311 ms, replacing V151's 478.891 ms p99 and 907.248
+  ms maximum. Its exact warm-host origin readiness is 1,406.986 ms; the honest
+  first cold-storage run was 4,630.731 ms. The resolution-1 NPC proof uses the
+  baked package with 0 ms generation and 2.238 ms import, retaining both exact
+  resident routes. An owned migrated scratch worker becomes ready in 2,258 ms,
+  loads both residents and sprites, installs regional collision authority in
+  3 ms, and persists their work destinations. Real loopback SSH asserts
+  `(0,0)`, OCTANT, and 30% zoom across 280,805 bytes and 62 synchronized
+  frames; its faithful 1440x828 replay was directly inspected and the scratch
+  login remains `(0,0)` in the database. Full profiles, before/after data,
+  artifact hashes, raw SSH, faithful replay, and limitations are retained in
+  `track-5-motion-transport/first-frame-v152/FINDINGS.md`. Repository
+  verification passes 49 files / 270 tests, 18/18 typecheck tasks, 12/12 build
+  tasks, 7/7 configured lint tasks, and `git diff --check`. This closes one
+  runtime stall, not Gate D: first full frame is still 100.716--135.466 ms,
+  the 30-minute physical run, current-source load ladder, deployed cgroup
+  observation, and larger physical Ghostty proof remain open. Gate A, Gate C,
+  deployment, richer world content, and physical operator acceptance also
+  remain open. Production remains `vb07c0d4` with PID `1022033` and the same
+  start timestamp; there was no deploy, service restart, push, production
+  database write, complete-gate claim, or physical Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without

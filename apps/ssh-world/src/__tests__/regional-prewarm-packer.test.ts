@@ -32,6 +32,14 @@ describe('regional prepared viewport packing', () => {
       terrain: [{ x: 5, y: 7, tile: terrain }],
       overlays: [{ x: 5, y: 7, tile: overlay }],
       solid: [[5, 7]],
+      dynamicPlacements: [{
+        assetId: 'quay:skiff',
+        anchorX: 5,
+        anchorY: 7,
+        pathTangentX: 1,
+        pathTangentY: 0,
+        parcelPathId: 'quay:test',
+      }],
     };
     const packed = packRegionalPreparedViewport(source);
 
@@ -47,6 +55,8 @@ describe('regional prepared viewport packing', () => {
       50, 60, 70, 255, 0, 0, 0, 0,
     ]);
     expect([...packed.solid]).toEqual([1]);
+    expect(packed.dynamicPlacements).toEqual(source.dynamicPlacements);
+    expect(packed.dynamicPlacements).not.toBe(source.dynamicPlacements);
 
     const transferred = structuredClone(packed, {
       transfer: regionalPackedViewportTransferList(packed),
