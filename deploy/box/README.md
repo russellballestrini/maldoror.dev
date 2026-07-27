@@ -26,7 +26,9 @@ system Caddy for TLS). So here:
   `STATS_PORT=3105`, `AI_PROVIDER=openai`, `AI_MODEL=gpt-4o`, `OPENAI_API_KEY`, capped
   `NODE_OPTIONS`, `WORKER_STARTUP_TIMEOUT_MS=300000` (the box's sdb is often I/O-saturated
   by other tenants; the forked game-worker loads its module graph off disk slowly, so the
-  worker-startup timeout is raised well above the 180s default). SSH host key at
+  worker-startup timeout is raised well above the 180s default). Delayed
+  `zlib@openssh.com` SSH compression is required by default;
+  `MALDOROR_SSH_COMPRESSION=optional` is the compatibility rollback. SSH host key at
   `apps/ssh-world/keys/host.key` (gitignored).
 
 > **Build invariant:** `@maldoror/db` owns its tsup ESM bundle in the package's canonical

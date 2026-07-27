@@ -12,6 +12,7 @@ import inspector from 'node:inspector';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { Duplex } from 'node:stream';
+import { deflateRawSync } from 'node:zlib';
 import { PixelGameRenderer } from '../../packages/render/dist/pixel/pixel-game-renderer.js';
 import { ViewportRenderer } from '../../packages/render/dist/pixel/viewport-renderer.js';
 import { createPlaceholderSprite } from '../../packages/world/dist/index.js';
@@ -78,14 +79,27 @@ for (let frame = 0; frame < 30; frame++) {
 }
 const profiler = CPU_PROFILE_PATH ? await startCpuProfile() : null;
 const gameSamples = { control: [], sparse: [] };
+const codecSamples = {
+  control: { bytes: [], changedCells: [], keyframes: 0 },
+  sparse: { bytes: [], changedCells: [], keyframes: 0 },
+};
+let finalGameOutput = { control: '', sparse: '' };
 for (let frame = 0; frame < FRAMES; frame++) {
   const order = frame % 2 === 0
     ? [[gameControl, gameSamples.control], [gameSparse, gameSamples.sparse]]
     : [[gameSparse, gameSamples.sparse], [gameControl, gameSamples.control]];
   for (const [lane, laneSamples] of order) {
     const startedAt = performance.now();
-    runGameFrame(lane, frame + 30);
+    const output = runGameFrame(lane, frame + 30);
     laneSamples.push(performance.now() - startedAt);
+    finalGameOutput[lane === gameControl ? 'control' : 'sparse'] = output;
+    const metrics = lane.renderer.getCodecMetrics();
+    const metricSamples = lane === gameControl ? codecSamples.control : codecSamples.sparse;
+    if (metrics) {
+      metricSamples.bytes.push(metrics.bytes);
+      metricSamples.changedCells.push(metrics.changedCells);
+      if (metrics.keyframe) metricSamples.keyframes++;
+    }
   }
 }
 if (profiler && CPU_PROFILE_PATH) {
@@ -108,6 +122,14 @@ const report = {
   sparseOverlayTilesInRepresentativeBounds: sparseEntries.length,
   viewportComposition: comparison(samples),
   productionRenderToString: comparison(gameSamples),
+  terminalDelivery: {
+    control: summarizeCodecSamples(codecSamples.control),
+    sparse: summarizeCodecSamples(codecSamples.sparse),
+    finalPayloadShape: {
+      control: analyzeAnsiPayload(finalGameOutput.control),
+      sparse: analyzeAnsiPayload(finalGameOutput.sparse),
+    },
+  },
   sharedSessionBatch,
   exactFinalPixelHash: hashGrid(controlFrame.buffer) === hashGrid(sparseFrame.buffer),
   finalPixelHash: hashGrid(sparseFrame.buffer),
@@ -282,6 +304,32 @@ function comparison(samples) {
     sparse: distribution(samples.sparse),
     p95ChangePercent: round(
       (percentile(samples.sparse, 0.95) / percentile(samples.control, 0.95) - 1) * 100,
+    ),
+  };
+}
+
+function summarizeCodecSamples(samples) {
+  return {
+    bytes: distribution(samples.bytes),
+    changedCells: distribution(samples.changedCells),
+    keyframes: samples.keyframes,
+  };
+}
+
+function analyzeAnsiPayload(output) {
+  const repetitions = [...output.matchAll(/\x1b\[(\d+)b/g)];
+  const bytes = Buffer.byteLength(output, 'utf8');
+  const deflatedBytes = deflateRawSync(Buffer.from(output)).byteLength;
+  return {
+    bytes,
+    deflatedBytes,
+    deflateRatio: round(deflatedBytes / bytes),
+    sgrCommands: (output.match(/\x1b\[[0-9;]*m/g) ?? []).length,
+    cursorCommands: (output.match(/\x1b\[[0-9;]*H/g) ?? []).length,
+    repetitionCommands: repetitions.length,
+    repetitionExtraCells: repetitions.reduce(
+      (sum, match) => sum + Number.parseInt(match[1] ?? '0', 10),
+      0,
     ),
   };
 }

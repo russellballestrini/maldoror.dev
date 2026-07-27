@@ -60,8 +60,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--movement-interval", type=float, default=1.0)
     parser.add_argument("--ready-timeout", type=float, default=120.0)
     parser.add_argument("--churn-clients", type=int, default=2)
-    parser.add_argument("--max-presences", type=int, choices=(5, 10, 20), default=20)
+    parser.add_argument("--max-presences", type=int, choices=(1, 3, 5, 10, 20), default=20)
     parser.add_argument("--max-tree-rss-mib", type=float, default=1600.0)
+    parser.add_argument(
+        "--ssh-debug-dir",
+        help="optional directory for per-connection OpenSSH negotiation/wire logs",
+    )
     return parser.parse_args()
 
 
@@ -73,6 +77,7 @@ class Client:
     host: str
     port: int
     known_hosts: str
+    ssh_debug_dir: str | None = None
     cols: int = 160
     rows: int = 46
     pid: int | None = None
@@ -94,22 +99,32 @@ class Client:
     in_frame: bool = False
     next_input_at: float = 0.0
     input_direction: int = 1
+    starts: int = 0
+    ssh_debug_logs: list[str] = field(default_factory=list)
 
     def start(self) -> None:
         if self.alive:
             raise RuntimeError(f"{self.fixture_id} is already running")
+        command = ["ssh"]
+        if self.ssh_debug_dir:
+            self.starts += 1
+            debug_dir = Path(self.ssh_debug_dir)
+            debug_dir.mkdir(parents=True, exist_ok=True)
+            debug_path = debug_dir / f"{self.fixture_id}-start-{self.starts}.log"
+            self.ssh_debug_logs.append(str(debug_path))
+            command.extend(["-vv", "-E", str(debug_path)])
+        command.extend([
+            "-tt", "-p", str(self.port),
+            "-o", "BatchMode=yes",
+            "-o", "StrictHostKeyChecking=no",
+            "-o", f"UserKnownHostsFile={self.known_hosts}",
+            "-o", "IdentitiesOnly=yes",
+            "-i", self.identity,
+            f"{self.username}@{self.host}",
+        ])
         pid, fd = pty.fork()
         if pid == 0:
             os.environ["TERM"] = "xterm-ghostty"
-            command = [
-                "ssh", "-tt", "-p", str(self.port),
-                "-o", "BatchMode=yes",
-                "-o", "StrictHostKeyChecking=no",
-                "-o", f"UserKnownHostsFile={self.known_hosts}",
-                "-o", "IdentitiesOnly=yes",
-                "-i", self.identity,
-                f"{self.username}@{self.host}",
-            ]
             os.execvp("ssh", command)
         fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", self.rows, self.cols, 0, 0))
         flags = fcntl.fcntl(fd, fcntl.F_GETFL)
@@ -641,6 +656,29 @@ def strip_terminal_control(value: bytes) -> bytes:
     return ESC_SEQUENCE.sub(b"", value)
 
 
+def read_ssh_transport_debug(paths: list[str]) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    for path_value in paths:
+        path = Path(path_value)
+        text = path.read_text(errors="replace") if path.exists() else ""
+        transferred = re.search(
+            r"Transferred: sent (\d+), received (\d+) bytes", text
+        )
+        incoming = re.search(
+            r"compress incoming: raw data (\d+), compressed (\d+), factor ([0-9.]+)",
+            text,
+        )
+        results.append({
+            "path": str(path),
+            "wireSentBytes": int(transferred.group(1)) if transferred else None,
+            "wireReceivedBytes": int(transferred.group(2)) if transferred else None,
+            "incomingRawBytes": int(incoming.group(1)) if incoming else None,
+            "incomingCompressedBytes": int(incoming.group(2)) if incoming else None,
+            "incomingCompressionFactor": float(incoming.group(3)) if incoming else None,
+        })
+    return results
+
+
 def main() -> int:
     args = parse_args()
     run_dir = Path(args.run_dir).resolve()
@@ -653,8 +691,10 @@ def main() -> int:
             continue
         seen.add(capture["fixtureId"])
         fixtures.append(capture)
-    if len(fixtures) < 20:
-        raise RuntimeError(f"load ladder needs 20 unique fixtures; found {len(fixtures)}")
+    if len(fixtures) < args.max_presences:
+        raise RuntimeError(
+            f"load ladder needs {args.max_presences} unique fixtures; found {len(fixtures)}"
+        )
     clients = [
         Client(
             fixture_id=fixture["fixtureId"],
@@ -663,6 +703,8 @@ def main() -> int:
             host="127.0.0.1",
             port=int(config["sshPort"]),
             known_hosts=str(run_dir / "known-hosts"),
+            ssh_debug_dir=str(Path(args.ssh_debug_dir).resolve())
+            if args.ssh_debug_dir else None,
             cols=int(fixture["cols"]),
             rows=int(fixture["rows"]),
         )
@@ -675,7 +717,7 @@ def main() -> int:
     generated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     output = Path(args.output).resolve()
     try:
-        targets = [target for target in (5, 10, 20) if target <= args.max_presences]
+        targets = [target for target in (1, 3, 5, 10, 20) if target <= args.max_presences]
         for target in targets:
             additions = clients[len(active):target]
             for client in additions:
@@ -780,6 +822,11 @@ def main() -> int:
         "warmups": warmups,
         "rungs": rungs,
         "churn": churn,
+        "sshTransportDebug": [
+            record
+            for client in clients
+            for record in read_ssh_transport_debug(client.ssh_debug_logs)
+        ],
         "cleanup": {"activeSessions": zero["active_sessions"]},
         "interpretation": {
             "realSshTransport": True,

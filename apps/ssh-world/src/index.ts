@@ -89,6 +89,9 @@ async function main() {
   const sshServer = new SSHServer({
     port: parseInt(process.env.SSH_PORT || '2222', 10),
     hostKeyPath: process.env.SSH_HOST_KEY_PATH || './keys/host.key',
+    compression: process.env.MALDOROR_SSH_COMPRESSION === 'optional'
+      ? 'optional'
+      : 'required',
     banner: `\x1b[38;2;180;80;255m
     ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
     █\x1b[38;2;200;100;255m ███╗   ███╗ █████╗ ██╗     ██████╗  ██████╗ ██████╗  ██████╗ ██████╗  \x1b[38;2;180;80;255m█

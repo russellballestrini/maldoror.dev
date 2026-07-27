@@ -22,6 +22,9 @@ export interface SSHServerConfig {
   hostKeyPath: string;
   banner?: string;
   workerManager: WorkerManager;
+  /** `required` removes the uncompressed SSH transport from negotiation. The
+   * delayed OpenSSH zlib variant starts only after authentication. */
+  compression?: 'optional' | 'required';
   /**
    * Explicit acceptance-fixture lane. It is intentionally constructor-only,
    * has no production environment switch, and is rejected unless the server
@@ -63,6 +66,9 @@ export class SSHServer {
       {
         hostKeys: [readFileSync(config.hostKeyPath)],
         banner: config.banner,
+        algorithms: config.compression === 'required'
+          ? { compress: ['zlib@openssh.com'] }
+          : undefined,
       },
       this.handleConnection.bind(this)
     );

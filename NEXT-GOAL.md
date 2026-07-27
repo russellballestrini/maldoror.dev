@@ -1807,6 +1807,37 @@ Completed foundations:
   and operator use remain open. Production remains `vb07c0d4`; there was no
   deploy, service restart, push, production database write, complete-gate
   claim, or physical Ghostty claim;
+- V165 decomposes the packed terminal delivery path and selects delayed SSH
+  compression while **continuing to reject Gate D**. The representative 160x46
+  storm delta is 106,110 bytes of byte-exact ANSI but raw-DEFLATEs to 28,995
+  bytes (0.273 ratio), so production source now requires only the post-auth
+  `zlib@openssh.com` transport by default, with an explicit optional-mode
+  operational rollback. A reset matched one-presence, 60-second real-SSH A/B
+  reduces OpenSSH wire receive from 1,296,184 to 226,864 bytes (-82.5%) while
+  process-tree CPU is effectively unchanged at 10.014%→10.143%, with zero
+  drops, drains, or recovery requests. The compressed connection itself
+  records 1,190,500 raw bytes becoming 211,414 compressed bytes (factor 0.18).
+  Frame p95/p99 varies 135.842/167.654→140.644/174.856 ms and the response
+  distribution is mixed, so this is a bandwidth selection rather than a
+  rendering-latency claim. An ordinary OpenSSH client launched with
+  `Compression=no` still negotiates the server's sole delayed-zlib algorithm,
+  authenticates, and opens the world. Rejected and reverted experiments include
+  string-rope return allocation, 262K `Map` and direct-mapped SGR caches,
+  six-bit lossy terminal colour, and removal of delta REP scanning; none earned
+  a durable CPU/byte gain. The load ladder now retains optional OpenSSH
+  negotiation/wire counters and supports isolated 1/3-presence diagnostics.
+  Complete payload probes, failed candidates, controlled A/B metrics, client
+  logs, limits, and next proof are retained in
+  `track-7-performance/packed-terminal-emission-v165/FINDINGS.md`. Repository
+  verification passes 51 files / 286 tests, 18/18 typecheck tasks, 7/7 lint
+  tasks, 12/12 build tasks, and diff hygiene. The build produces a
+  10,120,819-byte runtime pack and 17,643,725-byte six-viewport prewarm. The
+  severely pressured host is not normal-host evidence, and the reset sustained
+  5/10/20 ladder, environment-mode audit, mixed 30-minute run, deployed cgroup
+  observation, larger physical Ghostty viewport, and operator use remain open.
+  The selected source is not deployed. Production remains `vb07c0d4`; there
+  was no deploy, service restart, push, production database write,
+  complete-gate claim, or physical Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without

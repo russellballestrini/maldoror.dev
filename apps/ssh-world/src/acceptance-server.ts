@@ -58,6 +58,9 @@ async function main(): Promise<void> {
     hostKeyPath,
     banner: `Maldoror acceptance atlas ${manifest.atlasVersion}\n`,
     workerManager,
+    compression: process.env.MALDOROR_ACCEPTANCE_SSH_COMPRESSION === 'required'
+      ? 'required'
+      : 'optional',
     acceptance: {
       resolveSession: (fingerprint) => fixtures.get(fingerprint) ?? null,
     },
