@@ -24,6 +24,8 @@ import {
   BiomeWorldField,
   CANAL_TOWN_ARRIVAL_CIVIC_BRANCHES,
   CANAL_TOWN_QUAY_EDGE_VARIATION,
+  REGIONAL_AMBIENT_CONNECTED_PLACE_CELL_SIZE,
+  REGIONAL_AMBIENT_CONNECTED_PLACE_SOURCE_REACH,
   REGIONAL_MATERIAL_TEXTURE_PROFILE,
   RegionalMaterialCompositor,
   RegionalRouteField,
@@ -440,12 +442,14 @@ function locateLandmarkFamilies() {
 const ATLAS_MODES = [
   process.env.MALDOROR_REGIONAL_LANDMARK_ATLAS,
   process.env.MALDOROR_REGIONAL_AMBIENT_ATLAS,
+  process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS,
   process.env.MALDOROR_REGIONAL_CONTACT_ATLAS,
   process.env.MALDOROR_REGIONAL_ENVIRONMENT_ATLAS,
 ].filter((value) => value === '1').length;
 if (ATLAS_MODES > 1) {
   throw new Error('Choose one regional atlas mode');
 }
+let streetOverlayCoverage = null;
 
 if (process.env.MALDOROR_REGIONAL_LANDMARK_ATLAS === '1') {
   const found = locateLandmarkFamilies();
@@ -490,6 +494,153 @@ if (process.env.MALDOROR_REGIONAL_AMBIENT_ATLAS === '1') {
       assetId: placement.assetId,
       anchor: [placement.anchorX, placement.anchorY],
       nearestLandmark: [landmark.site.x, landmark.site.y],
+    };
+  });
+}
+
+if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
+  if (AMBIENT_PLACE_FABRIC_PROFILE !== 'shared-common-street-overlay') {
+    throw new Error('Street-overlay atlas requires shared-common-street-overlay');
+  }
+  const parcelAssetById = new Map(parcelKit.assets.map((asset) => [asset.id, asset]));
+  const vocabularySides = new Map();
+  for (const asset of parcelKit.assets) {
+    if (asset.compositionRole !== 'focal' || !asset.frontageAxis ||
+        asset.compositionSide === undefined) continue;
+    for (const family of asset.families) {
+      const key = `${family}:${asset.frontageAxis}`;
+      const sides = vocabularySides.get(key) ?? new Set();
+      sides.add(asset.compositionSide);
+      vocabularySides.set(key, sides);
+    }
+  }
+  const expected = [...vocabularySides.entries()].filter(([, sides]) => (
+    sides.has(-1) && sides.has(1)
+  )).map(([key]) => key).sort();
+  const searchRadius = Number(process.env.MALDOROR_REGIONAL_STREET_OVERLAY_RADIUS ?? '256');
+  if (!Number.isInteger(searchRadius) || searchRadius < 64 || searchRadius > 1024) {
+    throw new Error(`Invalid street-overlay atlas radius: ${searchRadius}`);
+  }
+  const discoveryStartedAt = performance.now();
+  const providerBlockSize = world.getRegionalStats().blockSize;
+  const expandedRadius = searchRadius + REGIONAL_AMBIENT_CONNECTED_PLACE_SOURCE_REACH;
+  const firstCell = Math.floor(-expandedRadius / REGIONAL_AMBIENT_CONNECTED_PLACE_CELL_SIZE);
+  const lastCell = Math.floor(expandedRadius / REGIONAL_AMBIENT_CONNECTED_PLACE_CELL_SIZE);
+  const routeWindows = new Map();
+  let evaluatedPlaceCells = 0;
+  let resolvedPlacePrograms = 0;
+  let resolvedFabricPrograms = 0;
+  for (let cellY = firstCell; cellY <= lastCell; cellY++) {
+    for (let cellX = firstCell; cellX <= lastCell; cellX++) {
+      evaluatedPlaceCells++;
+      // TypeScript-private, not ECMAScript-private: proof tooling deliberately
+      // reuses the provider's canonical meso program rather than inventing a
+      // second discovery algorithm.
+      const program = world.getAmbientPlaceProgram(cellX, cellY);
+      if (program) resolvedPlacePrograms++;
+      if (program?.fabric) resolvedFabricPrograms++;
+      const routeStart = program?.fabric && program.accessPath?.points[0];
+      if (!routeStart || Math.abs(routeStart.x) > searchRadius + 16 ||
+          Math.abs(routeStart.y) > searchRadius + 16) continue;
+      const blockX = Math.floor(routeStart.x / providerBlockSize);
+      const blockY = Math.floor(routeStart.y / providerBlockSize);
+      routeWindows.set(`${blockX},${blockY}`, { blockX, blockY });
+    }
+  }
+  console.error(JSON.stringify({ streetOverlayDiscovery: {
+    searchRadius,
+    evaluatedPlaceCells,
+    resolvedPlacePrograms,
+    resolvedFabricPrograms,
+    routeWindowCount: routeWindows.size,
+  } }));
+  const placementsBySite = new Map();
+  const pairsByVocabulary = new Map();
+  for (const { blockX, blockY } of [...routeWindows.values()].sort((a, b) => (
+    a.blockY - b.blockY || a.blockX - b.blockX
+  ))) {
+    const margin = 16;
+    const minX = blockX * providerBlockSize - margin;
+    const minY = blockY * providerBlockSize - margin;
+    const maxX = (blockX + 1) * providerBlockSize - 1 + margin;
+    const maxY = (blockY + 1) * providerBlockSize - 1 + margin;
+    for (const placement of world.getAmbientPlacementsInBounds(minX, minY, maxX, maxY)) {
+      if (!placement.parcelPathId?.endsWith(':street-overlay') ||
+          Math.abs(placement.anchorX) > searchRadius ||
+          Math.abs(placement.anchorY) > searchRadius) continue;
+      const siteKey = `${placement.siteX},${placement.siteY}`;
+      const site = placementsBySite.get(siteKey) ?? new Map();
+      site.set(`${placement.assetId}@${placement.anchorX},${placement.anchorY}`, placement);
+      placementsBySite.set(siteKey, site);
+    }
+  }
+  for (const [siteKey, site] of placementsBySite) {
+    const pair = [...site.values()];
+    if (pair.length !== 2) continue;
+    const assets = pair.map((placement) => parcelAssetById.get(placement.assetId));
+    if (assets.some((asset) => !asset)) continue;
+    const family = pair[0].families.find((candidate) => pair[1].families.includes(candidate));
+    if (!family) continue;
+    const axis = Math.abs(pair[0].pathTangentX ?? 0) >
+      Math.abs(pair[0].pathTangentY ?? 0) ? 'east-west' : 'north-south';
+    if (pair.some((placement) => (
+      (Math.abs(placement.pathTangentX ?? 0) > Math.abs(placement.pathTangentY ?? 0)
+        ? 'east-west'
+        : 'north-south') !== axis
+    ))) continue;
+    const sides = new Set(assets.map((asset) => asset.compositionSide));
+    if (!sides.has(-1) || !sides.has(1)) continue;
+    const key = `${family}:${axis}`;
+    if (!expected.includes(key)) continue;
+    const candidate = {
+      siteKey,
+      site: [pair[0].siteX, pair[0].siteY],
+      family,
+      axis,
+      pair: pair.sort((a, b) => a.assetId.localeCompare(b.assetId)),
+    };
+    const candidates = pairsByVocabulary.get(key) ?? [];
+    candidates.push(candidate);
+    pairsByVocabulary.set(key, candidates);
+  }
+  const found = [...pairsByVocabulary.keys()].sort();
+  const missing = expected.filter((key) => !pairsByVocabulary.has(key));
+  streetOverlayCoverage = {
+    searchRadius,
+    expandedRadius,
+    evaluatedPlaceCells,
+    resolvedPlacePrograms,
+    resolvedFabricPrograms,
+    routeWindowCount: routeWindows.size,
+    admittedSiteCount: placementsBySite.size,
+    expected,
+    found,
+    missing,
+    complete: missing.length === 0,
+    discoveryMs: Number((performance.now() - discoveryStartedAt).toFixed(2)),
+  };
+  console.error(JSON.stringify({ streetOverlayCoverage }));
+  if (found.length === 0) throw new Error(`No street overlays found inside radius ${searchRadius}`);
+  FRAMES = found.map((key) => {
+    const candidates = pairsByVocabulary.get(key).sort((a, b) => (
+      Math.hypot(a.site[0], a.site[1]) - Math.hypot(b.site[0], b.site[1]) ||
+      a.site[1] - b.site[1] || a.site[0] - b.site[0]
+    ));
+    const selected = candidates[0];
+    const centre = [
+      Math.round(selected.pair.reduce((sum, placement) => sum + placement.anchorX, 0) / 2),
+      Math.round(selected.pair.reduce((sum, placement) => sum + placement.anchorY, 0) / 2),
+    ];
+    return {
+      name: `${selected.family}-street-overlay-${selected.axis}-walking`,
+      centre,
+      displayTileSize: 16,
+      streetSite: selected.site,
+      streetFamily: selected.family,
+      streetAxis: selected.axis,
+      streetAssets: selected.pair.map((placement) => placement.assetId),
+      streetDiscoveryRadius: searchRadius,
+      streetCandidateCount: candidates.length,
     };
   });
 }
@@ -1175,6 +1326,7 @@ const metrics = {
   ambientCompositionProfile: AMBIENT_COMPOSITION_PROFILE,
   ambientPlaceFabricProfile: AMBIENT_PLACE_FABRIC_PROFILE,
   ambientPlaceAccessProfile: AMBIENT_PLACE_ACCESS_PROFILE,
+  streetOverlayCoverage,
   ambientDistributionAudit: RUN_AMBIENT_DISTRIBUTION_AUDIT
     ? auditAmbientDistribution(FRAMES[0].centre)
     : null,
@@ -1242,6 +1394,7 @@ for (const frame of FRAMES) {
     visiblePlaceConnectorCells: visiblePlaceConnectors.length,
     visiblePlaceConnectorPrograms: [...new Set(visiblePlaceConnectors.map((cell) => cell.parcelId))],
     landmarkCompositionAudit: auditLandmarkCompositions(visibleAmbient),
+    streetOverlayAudit: auditStreetOverlay(frame, visibleAmbient),
     visibleLandmarkFabrics: visibleLandmarkFabrics.map((layout) => ({
       id: layout.id,
       materialFamily: layout.materialFamily,
@@ -1482,6 +1635,56 @@ function auditLandmarkCompositions(placements) {
     compositionCount: compositions.length,
     allVisualGroupsUnique: compositions.every((composition) => composition.valid),
     compositions,
+  };
+}
+
+function auditStreetOverlay(frame, placements) {
+  if (!frame.streetSite) return null;
+  const street = placements.filter((placement) => (
+    placement.siteX === frame.streetSite[0] && placement.siteY === frame.streetSite[1] &&
+    placement.parcelPathId?.endsWith(':street-overlay')
+  ));
+  const assetById = new Map(parcelKit.assets.map((asset) => [asset.id, asset]));
+  const assets = street.map((placement) => assetById.get(placement.assetId));
+  const streetGroups = new Set(assets.filter(Boolean).map((asset) => (
+    asset.visualGroup ?? asset.id
+  )));
+  const visibleStreetGroupCounts = Object.fromEntries([...streetGroups].sort().map((group) => [
+    group,
+    placements.filter((placement) => {
+      const asset = assetById.get(placement.assetId);
+      return asset && (asset.visualGroup ?? asset.id) === group;
+    }).length,
+  ]));
+  const axisOf = (placement) => Math.abs(placement.pathTangentX ?? 0) >
+    Math.abs(placement.pathTangentY ?? 0) ? 'east-west' : 'north-south';
+  const checks = {
+    pairVisible: street.length === 2,
+    expectedAssets: street.length === 2 &&
+      [...street.map((placement) => placement.assetId)].sort().join('|') ===
+      [...frame.streetAssets].sort().join('|'),
+    familyExact: street.length === 2 && street.every((placement) => (
+      placement.families.includes(frame.streetFamily)
+    )),
+    axisExact: street.length === 2 && street.every((placement) => (
+      axisOf(placement) === frame.streetAxis
+    )),
+    oppositeSides: assets.length === 2 && assets.every(Boolean) &&
+      new Set(assets.map((asset) => asset.compositionSide)).has(-1) &&
+      new Set(assets.map((asset) => asset.compositionSide)).has(1),
+    visualGroupsUnique: assets.length === 2 && assets.every(Boolean) &&
+      new Set(assets.map((asset) => asset.visualGroup ?? asset.id)).size === 2,
+    streetGroupsUniqueInFrame: Object.values(visibleStreetGroupCounts).every((count) => count === 1),
+  };
+  return {
+    site: frame.streetSite,
+    family: frame.streetFamily,
+    axis: frame.streetAxis,
+    assetIds: street.map((placement) => placement.assetId).sort(),
+    anchors: street.map((placement) => [placement.anchorX, placement.anchorY]),
+    visibleStreetGroupCounts,
+    checks,
+    mismatchCount: Object.values(checks).filter((value) => !value).length,
   };
 }
 

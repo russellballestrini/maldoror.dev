@@ -1969,6 +1969,35 @@ Completed foundations:
   The profile is not production-enabled. A dynamically enumerated multi-place/
   multi-route atlas, fresh complete Gate A atlas, production proof, Gate C, and
   physical Ghostty acceptance remain open;
+- V171 selects a sparse, manifest-driven dynamic street-atlas harness while
+  explicitly **failing** V170's completeness gate. Targets are derived from
+  focal family/axis/side metadata, not a hand-maintained list; discovery reuses
+  canonical meso programs and actual provider route blocks; exported place-cell
+  size/source reach plus runtime block size eliminate duplicated geometry. The
+  first dense radius-1024 design was terminated after about ten CPU-active,
+  memory-stable minutes with no frames and is retained as a rejected harness.
+  Sparse Candidate B exposed a contradiction, and instrumentation found the
+  exact bug: parcel kits do not own block geometry, so an undefined block size
+  collapsed every route key to `NaN,NaN`. Correct Candidates D/E independently
+  reproduce 400 evaluated cells, 181 place programs, 112 shared fabrics, 40
+  route windows, and nine admitted sites inside radius 160. Coverage is only
+  4/11 manifest-supported combinations—forest, mountain, ruins, and rural,
+  all north-south; canal-town, both coast axes, and every east-west case are
+  absent. Mountain, ruins, and rural pass all seven visible street checks.
+  Forest correctly fails the strengthened viewport-scale repetition check
+  because `forest-log-shelter-v1` appears twice, once clipped at the frame edge,
+  despite local pair uniqueness. Candidate D/E OCTANT frames are byte-identical
+  and direct-reviewed. Evidence lives in
+  `track-4-world-composition/regional-dynamic-street-atlas-v171/FINDINGS.md`.
+  Repository verification passes 51 files / 287 tests, 18/18 typecheck, 7/7
+  lint, a fresh `@maldoror/world` build, lab syntax check, and diff check. The
+  2m49.89s typecheck ran under severe shared-host memory/I/O pressure and is
+  correctness evidence only, not Gate D.
+  The harness is selected; the world gate is not. Next work must count route-
+  axis opportunity versus overlay-fit rejection for each missing family/axis,
+  then solve cross-site repetition without coupling detail back into meso
+  admission. Production, fresh Gate A, Gate C, Gate D, and physical Ghostty
+  acceptance remain open;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without

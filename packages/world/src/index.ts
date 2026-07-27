@@ -167,6 +167,8 @@ export {
   type RegionalQuayLayoutSample,
 } from './tiles/regional-quay-layout.js';
 export {
+  REGIONAL_AMBIENT_CONNECTED_PLACE_CELL_SIZE,
+  REGIONAL_AMBIENT_CONNECTED_PLACE_SOURCE_REACH,
   REGIONAL_MAX_PREPARED_VIEWPORT_AREA,
   RegionalWorldDerivedCache,
   RegionalWorldTileProvider,

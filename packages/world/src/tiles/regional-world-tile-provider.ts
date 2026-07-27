@@ -608,7 +608,7 @@ const LANDMARK_ENTOURAGE_REACH = 18;
 const LANDMARK_QUAY_DETAIL_REACH = 28;
 const AMBIENT_ENSEMBLE_REACH = 8;
 const AMBIENT_PLACE_CELL_SIZE = 24;
-const AMBIENT_CONNECTED_PLACE_CELL_SIZE = 24;
+export const REGIONAL_AMBIENT_CONNECTED_PLACE_CELL_SIZE = 24;
 const AMBIENT_PLACE_PROGRAM_REACH = 22;
 const AMBIENT_PLACE_ROOT_MAX_OFFSET = 14;
 const AMBIENT_CONNECTED_PLACE_FOCAL_REACH = 9;
@@ -622,7 +622,7 @@ const AMBIENT_ISOLATED_PLACE_SOURCE_REACH = AMBIENT_PLACE_ROOT_MAX_OFFSET +
 // (root jitter + program reach = 36) or its route target (48), never their
 // sum. Sixty-four tiles covers both envelopes, sprite/curve feather, and block
 // rounding without evaluating unrelated place cells two districts away.
-const AMBIENT_CONNECTED_PLACE_SOURCE_REACH = 64;
+export const REGIONAL_AMBIENT_CONNECTED_PLACE_SOURCE_REACH = 64;
 const PARCEL_SIDE_OFFSET = 3;
 export const REGIONAL_MAX_PREPARED_VIEWPORT_AREA = 8192;
 const ENVIRONMENT_PROGRAM_REACH = 40;
@@ -3881,10 +3881,10 @@ export class RegionalWorldTileProvider extends TileProvider {
 
     if (this.ambientCompositionProfile === 'hierarchical-place-field') {
       const placeCellSize = this.ambientPlaceAccessProfile === 'route-frontage'
-        ? AMBIENT_CONNECTED_PLACE_CELL_SIZE
+        ? REGIONAL_AMBIENT_CONNECTED_PLACE_CELL_SIZE
         : AMBIENT_PLACE_CELL_SIZE;
       const sourceReach = this.ambientPlaceAccessProfile === 'route-frontage'
-        ? AMBIENT_CONNECTED_PLACE_SOURCE_REACH
+        ? REGIONAL_AMBIENT_CONNECTED_PLACE_SOURCE_REACH
         : AMBIENT_ISOLATED_PLACE_SOURCE_REACH;
       const firstPlaceCellX = floorDiv(originX - sourceReach, placeCellSize);
       const lastPlaceCellX = floorDiv(
@@ -4201,7 +4201,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       return cached;
     }
     const placeCellSize = this.ambientPlaceAccessProfile === 'route-frontage'
-      ? AMBIENT_CONNECTED_PLACE_CELL_SIZE
+      ? REGIONAL_AMBIENT_CONNECTED_PLACE_CELL_SIZE
       : AMBIENT_PLACE_CELL_SIZE;
     const centreX = cellX * placeCellSize + placeCellSize * 0.5;
     const centreY = cellY * placeCellSize + placeCellSize * 0.5;
