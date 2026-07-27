@@ -64,6 +64,46 @@
         ],
         "generation": "built-in Codex/ChatGPT image generation subscription; no metered API",
         "derivation": "two bank-1 crops are deterministically mirrored; all output hashes and alpha metrics are pinned"
+      },
+      {
+        "source": [
+          "generated/regional-paired-focal-alternatives-a-v1-source.png",
+          "generated/regional-paired-focal-alternatives-b-v1-source.png"
+        ],
+        "sourceSha256": [
+          "b77fed17fc678bd0c1d1cd2b1a07f2f13417129238b535cbd6f733a843ce871f",
+          "aff5fbb98ad0b1ac51081e6451cdaeedad99ca42139af980c7d2c5f80a910abb"
+        ],
+        "derived": [
+          "parcel-components/canal-town-coopers-loading-house-v1.png",
+          "parcel-components/canal-town-dyers-shophouse-v1.png",
+          "parcel-components/forest-charcoal-kiln-v1.png",
+          "parcel-components/forest-resin-distillery-v1.png",
+          "parcel-components/coast-boatwright-skiff-shed-v1.png",
+          "parcel-components/coast-salt-smokehouse-v1.png",
+          "parcel-components/rural-blacksmith-forge-v1.png",
+          "parcel-components/rural-dovecote-mill-cottage-v1.png",
+          "parcel-components/mountain-assay-house-v1.png",
+          "parcel-components/mountain-mule-stable-v1.png",
+          "parcel-components/ruins-cloister-arcade-v1.png",
+          "parcel-components/ruins-sunken-bathhouse-v1.png"
+        ],
+        "derivedSha256": [
+          "a41196372f4218060e5b2dc7c2ce911d2cd472d7e877e3f0d136991631bb1698",
+          "7431a7cfaec84208b0066849b5fd835b7b92cfc58edb1a7e9895b805aa0d1f6c",
+          "4a6711b0dba06a9cf346a6a88a86f56c5fd8e785bd994ceb6cc389b60d383fce",
+          "9f9024ef43100150bf8be398a87e2d87b3195f5dd4e05d007103729d9dd403db",
+          "cf2966b6a1953d2a074f2b0a20bf2c512470b4a5d3ce797053d44a1357b75e35",
+          "5c0a4040bac98832ec0765fa312fa02c53538a588f0374cf013a01b6234ab77f",
+          "a19dc6da582225b6abc6caec5fb90be30be8206767b7fab0859b81817caea456",
+          "a15120d8f34a32da93450d98e72ded4c387168b1890a8a83535deee88b974a73",
+          "1f4ce8f21f01dc8a4fb6d8136752d39ffb59bbb41283ddf7f1d9a4933620f235",
+          "cd00b90314820862b18d1d8a5d621683a7468e6e89c0a546fa03290f5c89e7dd",
+          "b30304429734080a3db8341fe462c21fc51eefe1d47ee995b375159c65078911",
+          "887fd44c7a799b7d9b3fca6617b144c9add84d2a69984c9dc9f51fa10bf43f23"
+        ],
+        "generation": "built-in Codex/ChatGPT image generation subscription; no metered API",
+        "derivation": "pnpm assets:derive-paired-focal-alternatives; fixed 3x2 crops, adaptive border matte, transparent trim, gamma 1.32"
       }
     ],
     "note": "Ambient silhouettes and dedicated parcel modules have explicit roles; no pixel or filename inference decides runtime placement or collision."
@@ -133,6 +173,28 @@
     { "id": "ruins-wayside-shrine-north-south-place-v1", "file": "parcel-components/ruins-wayside-shrine-parcel-component-v1.png", "family": "ruins", "role": "mass", "visualGroup": "ruins-wayside-shrine-v1", "compositionRole": "focal", "frontageAxis": "north-south", "compositionSide": -1, "frontageStations": [0], "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-1, 0], [0, 0], [1, 0]] },
     { "id": "ruins-collapsed-tower-north-south-place-v1", "file": "parcel-components/ruins-collapsed-tower-parcel-component-v1.png", "family": "ruins", "role": "mass", "visualGroup": "ruins-collapsed-tower-v1", "compositionRole": "focal", "frontageAxis": "north-south", "compositionSide": 1, "frontageStations": [0], "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]] },
     { "id": "ruins-wayside-shrine-east-west-place-v1", "file": "parcel-components/ruins-wayside-shrine-parcel-component-v1.png", "family": "ruins", "role": "mass", "visualGroup": "ruins-wayside-shrine-v1", "compositionRole": "focal", "frontageAxis": "east-west", "compositionSide": -1, "frontageStations": [0], "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-1, 0], [0, 0], [1, 0]] },
-    { "id": "ruins-collapsed-tower-east-west-place-v1", "file": "parcel-components/ruins-collapsed-tower-parcel-component-v1.png", "family": "ruins", "role": "mass", "visualGroup": "ruins-collapsed-tower-v1", "compositionRole": "focal", "frontageAxis": "east-west", "compositionSide": 1, "frontageStations": [0], "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]] }
+    { "id": "ruins-collapsed-tower-east-west-place-v1", "file": "parcel-components/ruins-collapsed-tower-parcel-component-v1.png", "family": "ruins", "role": "mass", "visualGroup": "ruins-collapsed-tower-v1", "compositionRole": "focal", "frontageAxis": "east-west", "compositionSide": 1, "frontageStations": [0], "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]] },
+    { "id": "canal-town-coopers-loading-house-north-south-place-v1", "file": "parcel-components/canal-town-coopers-loading-house-v1.png", "family": "canal-town", "role": "mass", "visualGroup": "canal-town-coopers-loading-house-v1", "compositionRole": "focal", "streetPairRole": "canonical-alternative", "frontageAxis": "north-south", "compositionSide": -1, "frontageStations": [0], "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]], "emitsLight": true },
+    { "id": "canal-town-dyers-shophouse-north-south-place-v1", "file": "parcel-components/canal-town-dyers-shophouse-v1.png", "family": "canal-town", "role": "mass", "visualGroup": "canal-town-dyers-shophouse-v1", "compositionRole": "focal", "streetPairRole": "canonical-alternative", "frontageAxis": "north-south", "compositionSide": 1, "frontageStations": [0], "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]], "emitsLight": true },
+    { "id": "forest-charcoal-kiln-north-south-place-v1", "file": "parcel-components/forest-charcoal-kiln-v1.png", "family": "forest", "role": "mass", "visualGroup": "forest-charcoal-kiln-v1", "compositionRole": "focal", "streetPairRole": "canonical-alternative", "frontageAxis": "north-south", "compositionSide": -1, "frontageStations": [0], "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]] },
+    { "id": "forest-resin-distillery-north-south-place-v1", "file": "parcel-components/forest-resin-distillery-v1.png", "family": "forest", "role": "mass", "visualGroup": "forest-resin-distillery-v1", "compositionRole": "focal", "streetPairRole": "canonical-alternative", "frontageAxis": "north-south", "compositionSide": 1, "frontageStations": [0], "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]], "emitsLight": true },
+    { "id": "forest-charcoal-kiln-east-west-place-v1", "file": "parcel-components/forest-charcoal-kiln-v1.png", "family": "forest", "role": "mass", "visualGroup": "forest-charcoal-kiln-v1", "compositionRole": "focal", "streetPairRole": "canonical-alternative", "frontageAxis": "east-west", "compositionSide": -1, "frontageStations": [0], "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]] },
+    { "id": "forest-resin-distillery-east-west-place-v1", "file": "parcel-components/forest-resin-distillery-v1.png", "family": "forest", "role": "mass", "visualGroup": "forest-resin-distillery-v1", "compositionRole": "focal", "streetPairRole": "canonical-alternative", "frontageAxis": "east-west", "compositionSide": 1, "frontageStations": [0], "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]], "emitsLight": true },
+    { "id": "coast-boatwright-skiff-shed-north-south-place-v1", "file": "parcel-components/coast-boatwright-skiff-shed-v1.png", "family": "coast", "role": "mass", "visualGroup": "coast-boatwright-skiff-shed-v1", "compositionRole": "focal", "streetPairRole": "canonical-alternative", "frontageAxis": "north-south", "compositionSide": -1, "frontageStations": [0], "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]] },
+    { "id": "coast-salt-smokehouse-north-south-place-v1", "file": "parcel-components/coast-salt-smokehouse-v1.png", "family": "coast", "role": "mass", "visualGroup": "coast-salt-smokehouse-v1", "compositionRole": "focal", "streetPairRole": "canonical-alternative", "frontageAxis": "north-south", "compositionSide": 1, "frontageStations": [0], "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]], "emitsLight": true },
+    { "id": "coast-boatwright-skiff-shed-east-west-place-v1", "file": "parcel-components/coast-boatwright-skiff-shed-v1.png", "family": "coast", "role": "mass", "visualGroup": "coast-boatwright-skiff-shed-v1", "compositionRole": "focal", "streetPairRole": "canonical-alternative", "frontageAxis": "east-west", "compositionSide": -1, "frontageStations": [0], "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]] },
+    { "id": "coast-salt-smokehouse-east-west-place-v1", "file": "parcel-components/coast-salt-smokehouse-v1.png", "family": "coast", "role": "mass", "visualGroup": "coast-salt-smokehouse-v1", "compositionRole": "focal", "streetPairRole": "canonical-alternative", "frontageAxis": "east-west", "compositionSide": 1, "frontageStations": [0], "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]], "emitsLight": true },
+    { "id": "rural-blacksmith-forge-north-south-place-v1", "file": "parcel-components/rural-blacksmith-forge-v1.png", "family": "rural", "role": "mass", "visualGroup": "rural-blacksmith-forge-v1", "compositionRole": "focal", "streetPairRole": "canonical-alternative", "frontageAxis": "north-south", "compositionSide": -1, "frontageStations": [0], "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]], "emitsLight": true },
+    { "id": "rural-dovecote-mill-cottage-north-south-place-v1", "file": "parcel-components/rural-dovecote-mill-cottage-v1.png", "family": "rural", "role": "mass", "visualGroup": "rural-dovecote-mill-cottage-v1", "compositionRole": "focal", "streetPairRole": "canonical-alternative", "frontageAxis": "north-south", "compositionSide": 1, "frontageStations": [0], "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]], "emitsLight": true },
+    { "id": "rural-blacksmith-forge-east-west-place-v1", "file": "parcel-components/rural-blacksmith-forge-v1.png", "family": "rural", "role": "mass", "visualGroup": "rural-blacksmith-forge-v1", "compositionRole": "focal", "streetPairRole": "canonical-alternative", "frontageAxis": "east-west", "compositionSide": -1, "frontageStations": [0], "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]], "emitsLight": true },
+    { "id": "rural-dovecote-mill-cottage-east-west-place-v1", "file": "parcel-components/rural-dovecote-mill-cottage-v1.png", "family": "rural", "role": "mass", "visualGroup": "rural-dovecote-mill-cottage-v1", "compositionRole": "focal", "streetPairRole": "canonical-alternative", "frontageAxis": "east-west", "compositionSide": 1, "frontageStations": [0], "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]], "emitsLight": true },
+    { "id": "mountain-assay-house-north-south-place-v1", "file": "parcel-components/mountain-assay-house-v1.png", "family": "mountain", "role": "mass", "visualGroup": "mountain-assay-house-v1", "compositionRole": "focal", "streetPairRole": "canonical-alternative", "frontageAxis": "north-south", "compositionSide": -1, "frontageStations": [0], "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]], "emitsLight": true },
+    { "id": "mountain-mule-stable-north-south-place-v1", "file": "parcel-components/mountain-mule-stable-v1.png", "family": "mountain", "role": "mass", "visualGroup": "mountain-mule-stable-v1", "compositionRole": "focal", "streetPairRole": "canonical-alternative", "frontageAxis": "north-south", "compositionSide": 1, "frontageStations": [0], "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]], "emitsLight": true },
+    { "id": "mountain-assay-house-east-west-place-v1", "file": "parcel-components/mountain-assay-house-v1.png", "family": "mountain", "role": "mass", "visualGroup": "mountain-assay-house-v1", "compositionRole": "focal", "streetPairRole": "canonical-alternative", "frontageAxis": "east-west", "compositionSide": -1, "frontageStations": [0], "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]], "emitsLight": true },
+    { "id": "mountain-mule-stable-east-west-place-v1", "file": "parcel-components/mountain-mule-stable-v1.png", "family": "mountain", "role": "mass", "visualGroup": "mountain-mule-stable-v1", "compositionRole": "focal", "streetPairRole": "canonical-alternative", "frontageAxis": "east-west", "compositionSide": 1, "frontageStations": [0], "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]], "emitsLight": true },
+    { "id": "ruins-cloister-arcade-north-south-place-v1", "file": "parcel-components/ruins-cloister-arcade-v1.png", "family": "ruins", "role": "mass", "visualGroup": "ruins-cloister-arcade-v1", "compositionRole": "focal", "streetPairRole": "canonical-alternative", "frontageAxis": "north-south", "compositionSide": -1, "frontageStations": [0], "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]] },
+    { "id": "ruins-sunken-bathhouse-north-south-place-v1", "file": "parcel-components/ruins-sunken-bathhouse-v1.png", "family": "ruins", "role": "mass", "visualGroup": "ruins-sunken-bathhouse-v1", "compositionRole": "focal", "streetPairRole": "canonical-alternative", "frontageAxis": "north-south", "compositionSide": 1, "frontageStations": [0], "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]] },
+    { "id": "ruins-cloister-arcade-east-west-place-v1", "file": "parcel-components/ruins-cloister-arcade-v1.png", "family": "ruins", "role": "mass", "visualGroup": "ruins-cloister-arcade-v1", "compositionRole": "focal", "streetPairRole": "canonical-alternative", "frontageAxis": "east-west", "compositionSide": -1, "frontageStations": [0], "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]] },
+    { "id": "ruins-sunken-bathhouse-east-west-place-v1", "file": "parcel-components/ruins-sunken-bathhouse-v1.png", "family": "ruins", "role": "mass", "visualGroup": "ruins-sunken-bathhouse-v1", "compositionRole": "focal", "streetPairRole": "canonical-alternative", "frontageAxis": "east-west", "compositionSide": 1, "frontageStations": [0], "scale": 0.9, "spriteTiles": [5, 4], "collision": [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]] }
   ]
 }

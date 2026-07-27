@@ -220,12 +220,12 @@ describe('regional biome material manifest', () => {
     expect(kit.minimumLayers).toBe(2);
     expect(kit.maximumLayers).toBe(3);
     expect(kit.layerSpacing).toBe(5);
-    expect(kit.assets).toHaveLength(65);
+    expect(kit.assets).toHaveLength(87);
     for (const family of BIOME_FAMILIES) {
       expect(kit.assets.filter((asset) => asset.families.includes(family))).toHaveLength(
-        family === 'canal-town' ? 15 :
+        family === 'canal-town' ? 17 :
           family === 'forest' || family === 'coast' || family === 'rural' ||
-          family === 'mountain' || family === 'ruins' ? 10 : 6,
+          family === 'mountain' || family === 'ruins' ? 14 : 6,
       );
     }
     for (const asset of kit.assets) {
@@ -237,12 +237,34 @@ describe('regional biome material manifest', () => {
       expect(asset.collision.length).toBeGreaterThan(0);
     }
     const focal = kit.assets.filter((asset) => asset.compositionRole === 'focal');
-    expect(focal).toHaveLength(23);
+    expect(focal).toHaveLength(45);
     expect(new Set(focal.map((asset) => asset.frontageAxis)))
       .toEqual(new Set(['east-west', 'north-south']));
+    const activeFocal = focal.filter((asset) => asset.streetPairRole === undefined);
+    const canonicalAlternatives = focal.filter((asset) => (
+      asset.streetPairRole === 'canonical-alternative'
+    ));
+    expect(activeFocal).toHaveLength(23);
+    expect(canonicalAlternatives).toHaveLength(22);
+    expect(new Set(canonicalAlternatives.map((asset) => asset.visualGroup)).size).toBe(12);
+    expect(canonicalAlternatives.every((asset) => (
+      asset.sprite.width === 5 && asset.sprite.height === 4 &&
+      asset.frontageStations?.length === 1
+    ))).toBe(true);
+    const alternativeVocabularies = new Map<string, Set<number>>();
+    for (const asset of canonicalAlternatives) {
+      const key = `${asset.families[0]}:${asset.frontageAxis}`;
+      const sides = alternativeVocabularies.get(key) ?? new Set<number>();
+      sides.add(asset.compositionSide!);
+      alternativeVocabularies.set(key, sides);
+    }
+    expect(alternativeVocabularies.size).toBe(11);
+    expect([...alternativeVocabularies.values()].every((sides) => (
+      sides.size === 2 && sides.has(-1) && sides.has(1)
+    ))).toBe(true);
     expect(focal.find((asset) => asset.id === 'canal-town-connected-frontage-parcel-component-v1')
       ?.sprite.width).toBe(16);
-    const forestFocals = focal.filter((asset) => asset.families.includes('forest'));
+    const forestFocals = activeFocal.filter((asset) => asset.families.includes('forest'));
     expect(forestFocals).toHaveLength(4);
     expect(new Set(forestFocals.map((asset) => asset.frontageAxis)))
       .toEqual(new Set(['east-west', 'north-south']));
@@ -252,7 +274,7 @@ describe('regional biome material manifest', () => {
       .toEqual(new Set(['forest-log-shelter-v1', 'forest-hunter-lean-to-v1']));
     expect(forestFocals.every((asset) => asset.sprite.width === 5 && asset.sprite.height === 4))
       .toBe(true);
-    const coastFocals = focal.filter((asset) => asset.families.includes('coast'));
+    const coastFocals = activeFocal.filter((asset) => asset.families.includes('coast'));
     expect(coastFocals).toHaveLength(4);
     expect(new Set(coastFocals.map((asset) => asset.frontageAxis)))
       .toEqual(new Set(['east-west', 'north-south']));
@@ -262,7 +284,7 @@ describe('regional biome material manifest', () => {
       .toEqual(new Set(['coast-dune-hut-v1', 'coast-fishing-rack-v1']));
     expect(coastFocals.every((asset) => asset.sprite.width === 5 && asset.sprite.height === 4))
       .toBe(true);
-    const ruralFocals = focal.filter((asset) => asset.families.includes('rural'));
+    const ruralFocals = activeFocal.filter((asset) => asset.families.includes('rural'));
     expect(ruralFocals).toHaveLength(4);
     expect(new Set(ruralFocals.map((asset) => asset.frontageAxis)))
       .toEqual(new Set(['east-west', 'north-south']));
@@ -272,7 +294,7 @@ describe('regional biome material manifest', () => {
       .toEqual(new Set(['rural-stone-barn-v1', 'rural-produce-awning-v1']));
     expect(ruralFocals.every((asset) => asset.sprite.width === 5 && asset.sprite.height === 4))
       .toBe(true);
-    const mountainFocals = focal.filter((asset) => asset.families.includes('mountain'));
+    const mountainFocals = activeFocal.filter((asset) => asset.families.includes('mountain'));
     expect(mountainFocals).toHaveLength(4);
     expect(new Set(mountainFocals.map((asset) => asset.frontageAxis)))
       .toEqual(new Set(['east-west', 'north-south']));
@@ -282,7 +304,7 @@ describe('regional biome material manifest', () => {
       .toEqual(new Set(['mountain-alpine-hut-v1', 'mountain-mine-gantry-v1']));
     expect(mountainFocals.every((asset) => asset.sprite.width === 5 && asset.sprite.height === 4))
       .toBe(true);
-    const ruinsFocals = focal.filter((asset) => asset.families.includes('ruins'));
+    const ruinsFocals = activeFocal.filter((asset) => asset.families.includes('ruins'));
     expect(ruinsFocals).toHaveLength(4);
     expect(new Set(ruinsFocals.map((asset) => asset.frontageAxis)))
       .toEqual(new Set(['east-west', 'north-south']));
@@ -292,7 +314,7 @@ describe('regional biome material manifest', () => {
       .toEqual(new Set(['ruins-collapsed-tower-v1', 'ruins-wayside-shrine-v1']));
     expect(ruinsFocals.every((asset) => asset.sprite.width === 5 && asset.sprite.height === 4))
       .toBe(true);
-    expect(new Set(focal
+    expect(new Set(activeFocal
       .filter((asset) => asset.families.includes('canal-town') &&
         asset.frontageAxis === 'north-south')
       .map((asset) => asset.compositionSide))).toEqual(new Set([-1, 1]));

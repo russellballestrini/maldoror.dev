@@ -193,6 +193,7 @@ interface ParcelComponentEntry {
   role: 'mass';
   visualGroup?: string;
   compositionRole?: 'focal';
+  streetPairRole?: 'canonical-alternative';
   frontageAxis?: RegionalRouteContactAxis;
   compositionSide?: -1 | 1;
   frontageStations?: number[];
@@ -693,6 +694,7 @@ export async function loadRegionalParcelComponentKit(
       role: entry.role,
       visualGroup: entry.visualGroup,
       compositionRole: entry.compositionRole,
+      streetPairRole: entry.streetPairRole,
       frontageAxis: entry.frontageAxis,
       compositionSide: entry.compositionSide,
       frontageStations: entry.frontageStations,
@@ -984,6 +986,8 @@ function parseParcelComponentEntry(value: unknown, index: number): ParcelCompone
         value.visualGroup.length > 96
       )) ||
       (value.compositionRole !== undefined && value.compositionRole !== 'focal') ||
+      (value.streetPairRole !== undefined && value.streetPairRole !== 'canonical-alternative') ||
+      (value.streetPairRole !== undefined && value.compositionRole !== 'focal') ||
       (value.frontageAxis !== undefined &&
         !ROUTE_CONTACT_AXES.includes(value.frontageAxis as RegionalRouteContactAxis)) ||
       (value.compositionSide !== undefined && value.compositionSide !== -1 &&
@@ -1037,6 +1041,7 @@ function parseParcelComponentEntry(value: unknown, index: number): ParcelCompone
     role: 'mass',
     visualGroup: value.visualGroup as string | undefined,
     compositionRole: value.compositionRole as 'focal' | undefined,
+    streetPairRole: value.streetPairRole as 'canonical-alternative' | undefined,
     frontageAxis: value.frontageAxis as RegionalRouteContactAxis | undefined,
     compositionSide: value.compositionSide as -1 | 1 | undefined,
     frontageStations: value.frontageStations as number[] | undefined,

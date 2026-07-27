@@ -2185,6 +2185,32 @@ Completed foundations:
   author a genuinely distinct paired focal vocabulary for every required
   family/axis through the selected hybrid imagegen-to-ANSI pipeline, prove
   non-empty exact protected-fit signatures, and only then exercise the selector;
+- V181 selects a subscription-generated paired focal alternative vocabulary
+  without enabling it in V170. Two retained 3x2 source boards supply twelve
+  distinct workplaces/civic silhouettes: cooper/dyer, charcoal/resin,
+  boatwright/smokehouse, forge/dovecote, assay/stable, and cloister/bathhouse.
+  A tracked deterministic pipeline crops, adaptive-chroma-mattes, trims, alpha-
+  validates, and applies the selected gamma-1.32 terminal-shadow grade; all
+  source/output hashes are pinned. Twenty-two axis aliases cover both sides of
+  all eleven required family/axis vocabularies with twelve new visual groups.
+  Explicit `canonical-alternative` metadata excludes them from ordinary
+  entourage, gateway, shared-common parent, and active V170 overlay selection,
+  while the protected refit and manifest-wide bound can see them. The faithful
+  36-cell census changes V180's zero to one legal candidate: a forest north-
+  south charcoal-kiln/resin-distillery pair; `currentManifestBlocked=false`.
+  The global proof now covers 44 eligible focal aliases but retains the same
+  16/20.616 maximum reach and one-cell ring. V170 remains exactly nine complete
+  sites, 4/11 coverage, `0/6/12/24/9`, and all eight active PNGs byte-identical
+  to V180. Derivation, 43 world/kernel tests, 9 loader tests, world/SSH
+  typechecks, fresh builds, runtime-pack construction, faithful census, and
+  seven lint tasks plus source diff check pass; failed worker-startup,
+  ten-second I/O timeout, and
+  stale-declaration attempts are retained. No in-world visual improvement is
+  claimed. Evidence lives in
+  `track-4-world-composition/regional-paired-focal-vocabulary-v181/FINDINGS.md`.
+  Next, prove the non-empty production signature across 32/47/reversed/cached
+  providers, exercise the V175 one-cell selector, and diagnose the other ten
+  geometry/admission absences before materialization changes;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without

@@ -177,6 +177,10 @@ export interface RegionalParcelComponentAsset extends RegionalVisualAsset {
    * composition before smaller support masses are placed. Omitted assets are
    * ordinary supports; this semantic is manifest-owned, never pixel-inferred. */
   compositionRole?: 'focal';
+  /** A focal reserved for canonical fixed-cell refitting. It remains visible
+   * to footprint proofs and the canonical candidate factory, but cannot enter
+   * the active sequential parent/overlay path before selector admission. */
+  streetPairRole?: 'canonical-alternative';
   /** Screen-space route axis this unrotated frontage was authored to face. */
   frontageAxis?: RegionalRouteContactAxis;
   /** Side of the route occupied by this focal's building mass. */
@@ -3912,7 +3916,10 @@ export class RegionalWorldTileProvider extends TileProvider {
         return route.distance >= minimumRouteDistance &&
           (maximumRouteDistance >= 999 || route.distance <= maximumRouteDistance);
       }),
-      ...this.parcelComponents.filter((asset) => !asset.programs || asset.programs.length === 0),
+      ...this.parcelComponents.filter((asset) => (
+        (!asset.programs || asset.programs.length === 0) &&
+        asset.streetPairRole !== 'canonical-alternative'
+      )),
     ];
     let selected: RegionalVisualAsset | null = null;
     let selectedScore = Number.NEGATIVE_INFINITY;
@@ -4873,6 +4880,7 @@ export class RegionalWorldTileProvider extends TileProvider {
           program,
           reservedCells,
           protectedGroupsBySite.get(positionKey(program.root.siteX, program.root.siteY)),
+          true,
         );
         if (!candidate || regionalStreetPairCandidateConflictsWithProtectedReservation(
           candidate,
@@ -4922,6 +4930,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     program: AmbientPlaceProgram,
     reserved: ReadonlySet<string>,
     excludedVisualGroups: ReadonlySet<string> = new Set(),
+    includeCanonicalAlternatives = false,
   ): AmbientStreetPairCandidate | null {
     if (!program.fabric || !program.accessPath) return null;
     const root = program.root;
@@ -4948,6 +4957,7 @@ export class RegionalWorldTileProvider extends TileProvider {
         isFocalCompositionAsset(asset) && asset.frontageAxis === axis &&
         asset.compositionSide === side && asset.frontageStations !== undefined &&
         (!asset.programs || asset.programs.length === 0) &&
+        (includeCanonicalAlternatives || asset.streetPairRole !== 'canonical-alternative') &&
         asset.families.some((family) => root.asset.families.includes(family)) &&
         !excludedVisualGroups.has(assetVisualGroup(asset)) &&
         !selectedGroups.has(assetVisualGroup(asset))
@@ -5061,6 +5071,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     const candidates = this.parcelComponents.filter((asset) => (
       isFocalCompositionAsset(asset) && asset.frontageAxis === axis &&
       asset.compositionSide !== undefined && asset.frontageStations !== undefined &&
+      asset.streetPairRole !== 'canonical-alternative' &&
       !excludedVisualGroups.has(assetVisualGroup(asset))
     )).map((asset) => {
       const compatibility = Math.max(...asset.families.map((family) => (
@@ -5287,6 +5298,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     const candidates = this.parcelComponents.filter((asset) => (
       isFocalCompositionAsset(asset) && asset.frontageAxis === axis &&
       asset.compositionSide === oppositeSide && asset.frontageStations !== undefined &&
+      asset.streetPairRole !== 'canonical-alternative' &&
       (!asset.programs || asset.programs.length === 0) &&
       assetVisualGroup(asset) !== targetVisualGroup
     )).map((asset) => {
