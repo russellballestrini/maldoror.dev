@@ -151,6 +151,7 @@ const ROUTE_HALF_WIDTH: Readonly<Record<RegionalRouteKind, number>> = {
   'local-road': 1.05,
   arterial: 1.45,
 };
+export const REGIONAL_ROUTE_MAX_HALF_WIDTH = Math.max(...Object.values(ROUTE_HALF_WIDTH));
 
 /**
  * Sparse, coordinate-stable regional route hierarchy.

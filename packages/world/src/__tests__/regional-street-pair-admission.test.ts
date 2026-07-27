@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  regionalStreetPairAnchor,
   REGIONAL_STREET_PAIR_OWNERSHIP_CELL_SIZE,
   regionalStreetPairCandidatesConflict,
+  regionalStreetPairConflictNeighbourReach,
+  regionalStreetPairConservativeFootprintBound,
   regionalStreetPairOwnershipCell,
   selectRegionalCanonicalStreetPairs,
   type RegionalStreetPairCandidate,
@@ -42,6 +45,39 @@ describe('regional canonical street-pair admission', () => {
       maxX: 63,
       maxY: -1,
     });
+  });
+
+  it('bounds every search position from the same anchor contract as production', () => {
+    const geometry = {
+      axis: 'north-south' as const,
+      side: 1 as const,
+      routeStartX: 0.5,
+      routeStartY: 0.5,
+      routeHalfWidth: 1.45,
+      spriteWidth: 10,
+      spriteHeight: 14,
+      spriteAnchorX: 5,
+      spriteAnchorY: 13,
+    };
+    expect(regionalStreetPairAnchor({
+      ...geometry,
+      extraSetback: 3,
+      nudgeIndex: 6,
+    })).toEqual({ anchorX: 11, anchorY: 12 });
+    expect(regionalStreetPairConservativeFootprintBound(geometry)).toEqual({
+      minOffsetX: 2,
+      minOffsetY: -8,
+      maxOffsetX: 16,
+      maxOffsetY: 13,
+      maximumAxisReach: 16,
+      maximumEuclideanReach: Math.hypot(16, 13),
+    });
+    expect(regionalStreetPairConflictNeighbourReach(16)).toBe(1);
+    expect(() => regionalStreetPairAnchor({
+      ...geometry,
+      extraSetback: 4,
+      nudgeIndex: 0,
+    })).toThrow('Invalid regional street-pair anchor input');
   });
 
   it('selects the same complete candidates in every traversal order', () => {

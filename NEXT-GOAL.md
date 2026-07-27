@@ -2114,6 +2114,29 @@ Completed foundations:
   Next, prove the neighbour ring against every eligible manifest family/axis,
   derive immutable fixed-space protected reservations, and compare canonical
   winner signatures across blocks/traversals before any materialization change;
+- V178 selects the manifest-wide street-pair footprint proof without claiming a
+  rendered-world change. The production fitter and proof tool now share one
+  exact route-relative anchor/search contract: three setback steps, seven
+  symmetric nudges, 1.5-tile along-side bias, 0.9-tile frontage gap, one-tile
+  visible halo, and the exported 1.45 maximum route half-width. The analytic
+  lab retains full sprite rectangles, including transparent cells, and covers
+  all 22 eligible assets across all 11 paired family/axis vocabularies rather
+  than only families observed in one field. The worst 10x14 canal-town asset
+  reaches 16 tiles per axis (20.616 Euclidean), proving one neighbouring
+  64-tile ownership-cell ring is globally sufficient under the production
+  manifest. The faithful V178 census still observes only 11/12.042 reach, 60
+  emissions, 46 in-margin unique candidates, no duplicates or ownership
+  mismatches, and three same-cell conflicts. V170 remains nine complete sites,
+  no incomplete pair, 4/11 coverage, and exact `0/6/12/24/9` opportunity
+  stages; all eight source/OCTANT hashes are byte-identical to V177. All 42
+  focused tests, world typecheck/build, lab syntax, faithful census, seven lint
+  tasks, and source diff check pass. This closes only the finite-neighbour
+  proof: canonical selection and materialization are still disconnected and no visual
+  improvement is claimed. Evidence lives in
+  `track-4-world-composition/regional-manifest-pair-bound-v178/FINDINGS.md`.
+  Next, derive immutable protected-geometry reservations in fixed space, prove
+  their signatures across blocks/traversals, and run the selector over each
+  ownership cell plus its proved one-cell ring before materialization changes;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without

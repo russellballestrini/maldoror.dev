@@ -18,6 +18,7 @@ export {
   type ConstructedWaterwaySample,
 } from './biomes/biome-world-field.js';
 export {
+  REGIONAL_ROUTE_MAX_HALF_WIDTH,
   RegionalRouteField,
   type RegionalCrossingKind,
   type RegionalLandmarkKind,
@@ -206,13 +207,24 @@ export {
   type RegionalWorldTileProviderConfig,
 } from './tiles/regional-world-tile-provider.js';
 export {
+  REGIONAL_STREET_PAIR_ALONG_SIDE_BIAS,
+  REGIONAL_STREET_PAIR_CROSS_GAP,
+  REGIONAL_STREET_PAIR_MAX_EXTRA_SETBACK,
   REGIONAL_STREET_PAIR_OWNERSHIP_CELL_SIZE,
+  REGIONAL_STREET_PAIR_SEARCH_NUDGE_COUNT,
+  REGIONAL_STREET_PAIR_VISIBLE_HALO,
+  regionalStreetPairAnchor,
   regionalStreetPairCandidateOutranks,
   regionalStreetPairCandidatesConflict,
+  regionalStreetPairConflictNeighbourReach,
+  regionalStreetPairConservativeFootprintBound,
   regionalStreetPairOwnershipCell,
   selectRegionalCanonicalStreetPairs,
+  type RegionalStreetPairAnchorInput,
   type RegionalStreetPairAdmissionKind,
+  type RegionalStreetPairAxis,
   type RegionalStreetPairCandidate,
+  type RegionalStreetPairConservativeFootprintBound,
   type RegionalStreetPairOwnershipCell,
 } from './tiles/regional-street-pair-admission.js';
 export {

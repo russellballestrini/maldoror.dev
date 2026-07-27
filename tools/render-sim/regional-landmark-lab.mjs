@@ -27,11 +27,14 @@ import {
   REGIONAL_AMBIENT_CONNECTED_PLACE_CELL_SIZE,
   REGIONAL_AMBIENT_CONNECTED_PLACE_SOURCE_REACH,
   REGIONAL_MATERIAL_TEXTURE_PROFILE,
+  REGIONAL_ROUTE_MAX_HALF_WIDTH,
   REGIONAL_STREET_PAIR_OWNERSHIP_CELL_SIZE,
   RegionalMaterialCompositor,
   RegionalRouteField,
   RegionalWorldTileProvider,
   regionalStreetPairCandidatesConflict,
+  regionalStreetPairConflictNeighbourReach,
+  regionalStreetPairConservativeFootprintBound,
   regionalStreetPairOwnershipCell,
   rasterizeRegionalEnvironmentProgramLayout,
   rasterizeRegionalLandmarkFabricLayout,
@@ -521,6 +524,55 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
     sides.has(-1) && sides.has(1)
   )).map(([key]) => key).sort();
   const expectedSet = new Set(expected);
+  const manifestCandidateBounds = parcelKit.assets.filter((asset) => (
+    asset.compositionRole === 'focal' && asset.frontageAxis &&
+    asset.compositionSide !== undefined && asset.frontageStations !== undefined &&
+    asset.families.some((family) => expectedSet.has(`${family}:${asset.frontageAxis}`))
+  )).map((asset) => {
+    const [spriteAnchorX, spriteAnchorY] = asset.spriteAnchor ?? [
+      Math.floor(asset.sprite.width / 2),
+      asset.sprite.height - 1,
+    ];
+    return {
+      id: asset.id,
+      families: asset.families,
+      axis: asset.frontageAxis,
+      side: asset.compositionSide,
+      sprite: [asset.sprite.width, asset.sprite.height],
+      spriteAnchor: [spriteAnchorX, spriteAnchorY],
+      bound: regionalStreetPairConservativeFootprintBound({
+        axis: asset.frontageAxis,
+        side: asset.compositionSide,
+        routeStartX: 0.5,
+        routeStartY: 0.5,
+        routeHalfWidth: REGIONAL_ROUTE_MAX_HALF_WIDTH,
+        spriteWidth: asset.sprite.width,
+        spriteHeight: asset.sprite.height,
+        spriteAnchorX,
+        spriteAnchorY,
+      }),
+    };
+  }).sort((a, b) => a.id.localeCompare(b.id));
+  const manifestMaximumAxisReach = Math.max(...manifestCandidateBounds.map((entry) => (
+    entry.bound.maximumAxisReach
+  )));
+  const manifestMaximumEuclideanReach = Math.max(...manifestCandidateBounds.map((entry) => (
+    entry.bound.maximumEuclideanReach
+  )));
+  const manifestWideCandidateBound = {
+    routeMaximumHalfWidth: REGIONAL_ROUTE_MAX_HALF_WIDTH,
+    eligibleAssetCount: manifestCandidateBounds.length,
+    vocabularyCount: expected.length,
+    maximumAxisReach: manifestMaximumAxisReach,
+    maximumEuclideanReach: Number(manifestMaximumEuclideanReach.toFixed(3)),
+    conflictNeighbourReach: regionalStreetPairConflictNeighbourReach(
+      manifestMaximumAxisReach,
+    ),
+    maximumAxisReachAssetIds: manifestCandidateBounds.filter((entry) => (
+      entry.bound.maximumAxisReach === manifestMaximumAxisReach
+    )).map((entry) => entry.id),
+    assets: manifestCandidateBounds,
+  };
   const searchRadius = Number(process.env.MALDOROR_REGIONAL_STREET_OVERLAY_RADIUS ?? '256');
   if (!Number.isInteger(searchRadius) || searchRadius < 64 || searchRadius > 1024) {
     throw new Error(`Invalid street-overlay atlas radius: ${searchRadius}`);
@@ -662,17 +714,18 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
       );
     }
   }
-  const conservativeConflictNeighbourReach = maximumFootprintAxisReach === 0
-    ? 0
-    : Math.floor(
-      Math.max(0, maximumFootprintAxisReach * 2 - 1) /
-      REGIONAL_STREET_PAIR_OWNERSHIP_CELL_SIZE,
-    ) + 1;
+  const conservativeConflictNeighbourReach = regionalStreetPairConflictNeighbourReach(
+    maximumFootprintAxisReach,
+  );
   if (inMarginCandidateEmissions !== canonicalCandidates.size) {
     throw new Error('Street candidate ownership emitted a duplicate complete identity');
   }
   if (observedConflictNeighbourReach > conservativeConflictNeighbourReach) {
     throw new Error('Observed street conflict exceeds conservative ownership-cell reach');
+  }
+  if (maximumFootprintAxisReach > manifestWideCandidateBound.maximumAxisReach ||
+      conservativeConflictNeighbourReach > manifestWideCandidateBound.conflictNeighbourReach) {
+    throw new Error('Observed street footprint exceeds the manifest-wide conservative bound');
   }
   const canonicalCandidateDiagnostics = {
     ownershipCellSize: REGIONAL_STREET_PAIR_OWNERSHIP_CELL_SIZE,
@@ -831,6 +884,7 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
     opportunityStageTotals,
     opportunityByVocabulary,
     canonicalCandidateDiagnostics,
+    manifestWideCandidateBound,
     complete: missing.length === 0 && incompleteSites.length === 0,
     discoveryMs: Number((performance.now() - discoveryStartedAt).toFixed(2)),
   };

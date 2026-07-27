@@ -66,7 +66,11 @@ import {
   type RegionalQuayLayout,
 } from './regional-quay-layout.js';
 import {
+  REGIONAL_STREET_PAIR_MAX_EXTRA_SETBACK,
   REGIONAL_STREET_PAIR_OWNERSHIP_CELL_SIZE,
+  REGIONAL_STREET_PAIR_SEARCH_NUDGE_COUNT,
+  REGIONAL_STREET_PAIR_VISIBLE_HALO,
+  regionalStreetPairAnchor,
   regionalStreetPairOwnershipCell,
   type RegionalStreetPairCandidate,
 } from './regional-street-pair-admission.js';
@@ -4583,8 +4587,6 @@ export class RegionalWorldTileProvider extends TileProvider {
       Math.abs(route.directionY) ? 'east-west' : 'north-south';
     const tangentX = axis === 'east-west' ? 1 : 0;
     const tangentY = axis === 'east-west' ? 0 : 1;
-    const normalX = axis === 'east-west' ? 0 : 1;
-    const normalY = axis === 'east-west' ? 1 : 0;
     const localReserved = new Set(reserved);
     const localBiome = this.field.sample(routeX, routeY);
     // The street node may be dozens of tiles from its owning common. Enforce
@@ -4612,16 +4614,26 @@ export class RegionalWorldTileProvider extends TileProvider {
       })).sort((a, b) => b.score - a.score || a.asset.id.localeCompare(b.asset.id));
       let selected: Placement | null = null;
       for (const { asset } of candidates) {
-        const crossSpan = axis === 'east-west' ? asset.sprite.height : asset.sprite.width;
-        for (let extraSetback = 0; extraSetback <= 3 && !selected; extraSetback++) {
-          for (let nudgeIndex = 0; nudgeIndex <= 6 && !selected; nudgeIndex++) {
-            const along = symmetricSearchOffset(nudgeIndex) + side * 1.5;
-            const across = side * (route.halfWidth + crossSpan * 0.5 + 0.9 + extraSetback);
-            const anchor = visualCentreAnchor(
-              asset,
-              routeStart.x + tangentX * along + normalX * across,
-              routeStart.y + tangentY * along + normalY * across,
-            );
+        for (let extraSetback = 0;
+          extraSetback <= REGIONAL_STREET_PAIR_MAX_EXTRA_SETBACK && !selected;
+          extraSetback++) {
+          for (let nudgeIndex = 0;
+            nudgeIndex < REGIONAL_STREET_PAIR_SEARCH_NUDGE_COUNT && !selected;
+            nudgeIndex++) {
+            const [spriteAnchorX, spriteAnchorY] = getSpriteAnchor(asset);
+            const anchor = regionalStreetPairAnchor({
+              axis,
+              side,
+              routeStartX: routeStart.x,
+              routeStartY: routeStart.y,
+              routeHalfWidth: route.halfWidth,
+              spriteWidth: asset.sprite.width,
+              spriteHeight: asset.sprite.height,
+              spriteAnchorX,
+              spriteAnchorY,
+              extraSetback,
+              nudgeIndex,
+            });
             if (!this.assetFits(anchor.anchorX, anchor.anchorY, asset) ||
                 visibleFootprintIntersects(asset, anchor.anchorX, anchor.anchorY, localReserved)) {
               continue;
@@ -4653,7 +4665,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       if (!selected) return null;
       placements.push(selected);
       selectedGroups.add(assetVisualGroup(selected.asset));
-      reserveVisibleFootprint(selected, localReserved, 1);
+      reserveVisibleFootprint(selected, localReserved, REGIONAL_STREET_PAIR_VISIBLE_HALO);
     }
     const first = placements[0];
     const second = placements[1];
@@ -4663,7 +4675,9 @@ export class RegionalWorldTileProvider extends TileProvider {
     const id = `street-pair:${root.siteX},${root.siteY}:${program.accessTargetKey ?? `${routeX},${routeY}`}:` +
       `${axis}:${memberIdentity}`;
     const footprint = new Set<string>();
-    for (const placement of pair) reserveVisibleFootprint(placement, footprint, 1);
+    for (const placement of pair) {
+      reserveVisibleFootprint(placement, footprint, REGIONAL_STREET_PAIR_VISIBLE_HALO);
+    }
     return Object.freeze({
       id,
       ownerSiteX: root.siteX,
