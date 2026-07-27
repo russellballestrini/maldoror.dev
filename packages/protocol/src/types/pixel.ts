@@ -153,6 +153,13 @@ export interface BuildingTileData {
   packedPixels?: PackedPixelGrid;
 }
 
+/** One sparse visual-only overlay resolved in world tile coordinates. */
+export interface DynamicOverlayTile {
+  tileX: number;
+  tileY: number;
+  tile: BuildingTileData;
+}
+
 /** Declarative world-space light. Providers expose authored semantics; the
  * renderer never guesses lamps from filenames or pixel colours. */
 export interface WorldLightSource {
@@ -202,6 +209,17 @@ export interface WorldDataProvider {
     tileY: number,
     direction?: BuildingDirection,
   ): BuildingTileData | null;
+  /** Sparse counterpart to `getDynamicOverlayTileAt`. Providers that already
+   * retain activity as a coordinate map can avoid a full viewport lookup
+   * sweep. `null` requests the point-query fallback; an empty array is an
+   * authoritative answer that the range contains no dynamic overlays. */
+  getDynamicOverlayTilesInBounds?(
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number,
+    direction?: BuildingDirection,
+  ): readonly DynamicOverlayTile[] | null;
   getPlayers(): PlayerVisualState[];
   getPlayerSprite(userId: string): Sprite | null;
   getLocalPlayerId(): string;

@@ -36,6 +36,12 @@ import { REGIONAL_ORIGIN_PREWARM } from '../game/regional-runtime-config.js';
 import { coalesceNPCNavigationBounds } from '../game/npc-navigation-bounds.js';
 import { getHeapStatistics } from 'node:v8';
 import { monitorEventLoopDelay, performance } from 'node:perf_hooks';
+import {
+  IpcSendTelemetry,
+  RollingLatencyWindow,
+  type IpcSendSnapshot,
+  type RollingLatencySnapshot,
+} from './ipc-telemetry.js';
 
 // Message types for IPC
 export interface WorkerInitMessage {
@@ -181,6 +187,7 @@ export interface SessionInputMessage {
   type: 'session_input';
   sessionId: string;
   data: number[]; // Buffer as array
+  sentAtUnixMs?: number;
 }
 
 export interface SessionResizeMessage {
@@ -309,6 +316,7 @@ export interface SessionOutputMessage {
   output: string;
   keyframe: boolean;
   immediate: boolean;
+  workerQueuedAtUnixMs?: number;
 }
 
 export interface SessionUserIdMessage {
@@ -349,6 +357,13 @@ export interface WorkerRuntimeSnapshot {
     delay_p95_ms: number;
     delay_p99_ms: number;
     delay_max_ms: number;
+  };
+  ipc: {
+    main_to_worker_input_ms: RollingLatencySnapshot;
+    input_handler_ms: RollingLatencySnapshot;
+    worker_to_main_send: IpcSendSnapshot;
+    worker_to_main_receive_ms?: RollingLatencySnapshot;
+    worker_to_main_immediate_receive_ms?: RollingLatencySnapshot;
   };
   prewarm: ReturnType<RegionalPrewarmService['getStats']> | null;
   admission: ReturnType<SessionAdmissionQueue['getStats']>;
@@ -402,6 +417,9 @@ let shuttingDown = false;
 const workerEventLoopDelay = monitorEventLoopDelay({ resolution: 1 });
 workerEventLoopDelay.enable();
 let lastWorkerEventLoopUtilization = performance.eventLoopUtilization();
+const mainToWorkerInputLatency = new RollingLatencyWindow();
+const inputHandlerLatency = new RollingLatencyWindow();
+const workerToMainSendTelemetry = new IpcSendTelemetry();
 
 function runtimeMetric(value: number): number {
   return Number(value.toFixed(3));
@@ -466,9 +484,18 @@ async function installRegionalNPCCollisionWorld(
 }
 
 function send(message: WorkerToMainMessage): void {
-  if (process.send) {
-    process.send(message);
-  }
+  if (!process.send) return;
+  const immediate = message.type === 'session_output' && message.immediate;
+  const token = workerToMainSendTelemetry.begin(immediate, performance.now());
+  const accepted = process.send(
+    message,
+    undefined,
+    undefined,
+    (error: Error | null) => {
+      workerToMainSendTelemetry.finish(token, performance.now(), error);
+    },
+  );
+  workerToMainSendTelemetry.recordReturn(token, accepted);
 }
 
 function sendSessionOutput(
@@ -477,7 +504,14 @@ function sendSessionOutput(
   keyframe = false,
   immediate = false,
 ): void {
-  send({ type: 'session_output', sessionId, output, keyframe, immediate });
+  send({
+    type: 'session_output',
+    sessionId,
+    output,
+    keyframe,
+    immediate,
+    workerQueuedAtUnixMs: Date.now(),
+  });
 }
 
 function sendSessionUserId(sessionId: string, userId: string): void {
@@ -819,9 +853,14 @@ process.on('message', async (msg: MainToWorkerMessage) => {
       }
 
       case 'session_input': {
+        if (msg.sentAtUnixMs !== undefined) {
+          mainToWorkerInputLatency.record(Math.max(0, Date.now() - msg.sentAtUnixMs));
+        }
         const session = workerSessions.get(msg.sessionId);
         if (session) {
+          const inputStartedAt = performance.now();
           session.handleInput(Buffer.from(msg.data));
+          inputHandlerLatency.record(performance.now() - inputStartedAt);
         }
         break;
       }
@@ -880,6 +919,11 @@ process.on('message', async (msg: MainToWorkerMessage) => {
               delay_p95_ms: delayMilliseconds(workerEventLoopDelay.percentile(95)),
               delay_p99_ms: delayMilliseconds(workerEventLoopDelay.percentile(99)),
               delay_max_ms: delayMilliseconds(workerEventLoopDelay.max),
+            },
+            ipc: {
+              main_to_worker_input_ms: mainToWorkerInputLatency.snapshot(),
+              input_handler_ms: inputHandlerLatency.snapshot(),
+              worker_to_main_send: workerToMainSendTelemetry.snapshot(),
             },
             prewarm: regionalPrewarmService?.getStats() ?? null,
             admission: sessionAdmissionQueue.getStats(),

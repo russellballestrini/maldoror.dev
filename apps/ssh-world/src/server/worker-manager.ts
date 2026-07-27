@@ -22,6 +22,7 @@ import type {
   WorkerRuntimeSnapshot,
 } from '../worker/game-worker.js';
 import type { NPCCreateData } from '../utils/npc-storage.js';
+import { RollingLatencyWindow } from '../worker/ipc-telemetry.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -121,6 +122,8 @@ export class WorkerManager {
   private workerSessions: Map<string, WorkerSessionConfig> = new Map();
   private restartTimer: NodeJS.Timeout | null = null;
   private stopping = false;
+  private readonly workerOutputReceiveLatency = new RollingLatencyWindow();
+  private readonly workerImmediateOutputReceiveLatency = new RollingLatencyWindow();
 
   constructor(config: WorkerManagerConfig) {
     this.config = config;
@@ -571,11 +574,15 @@ export class WorkerManager {
   async getWorkerRuntime(): Promise<WorkerRuntimeSnapshot | null> {
     if (!this.workerReady || !this.worker?.connected) return null;
     const requestId = this.nextRequestId();
-    return this.sendRequest<WorkerRuntimeSnapshot>(
+    const runtime = await this.sendRequest<WorkerRuntimeSnapshot>(
       { type: 'get_worker_runtime', requestId },
       requestId,
       'worker_runtime',
     );
+    runtime.ipc.worker_to_main_receive_ms = this.workerOutputReceiveLatency.snapshot();
+    runtime.ipc.worker_to_main_immediate_receive_ms =
+      this.workerImmediateOutputReceiveLatency.snapshot();
+    return runtime;
   }
 
   async getNPCSprite(npcId: string): Promise<Sprite | null> {
@@ -702,6 +709,7 @@ export class WorkerManager {
       type: 'session_input',
       sessionId,
       data: Array.from(data),
+      sentAtUnixMs: Date.now(),
     });
   }
 
@@ -995,6 +1003,11 @@ export class WorkerManager {
       }
 
       case 'session_output': {
+        if (msg.workerQueuedAtUnixMs !== undefined) {
+          const receiveLatency = Math.max(0, Date.now() - msg.workerQueuedAtUnixMs);
+          this.workerOutputReceiveLatency.record(receiveLatency);
+          if (msg.immediate) this.workerImmediateOutputReceiveLatency.record(receiveLatency);
+        }
         const callback = this.sessionOutputCallbacks.get(msg.sessionId);
         if (callback) {
           callback(msg.sessionId, msg.output, msg.keyframe, msg.immediate);

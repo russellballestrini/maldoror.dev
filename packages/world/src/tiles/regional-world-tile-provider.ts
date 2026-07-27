@@ -2,6 +2,7 @@ import type {
   BuildingDirection,
   BuildingSprite,
   BuildingTileData,
+  DynamicOverlayTile,
   PackedPixelGrid,
   Pixel,
   PixelGrid,
@@ -1547,6 +1548,40 @@ export class RegionalWorldTileProvider extends TileProvider {
       }
     }
     return overlay;
+  }
+
+  /** Enumerate prepared persistent-time activity from its retained sparse
+   * coordinate map. `null` preserves point-query fallback semantics when no
+   * single prepared viewport authoritatively covers the complete range. */
+  getDynamicOverlayTilesInBounds(
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number,
+    _direction: BuildingDirection = 'north',
+  ): readonly DynamicOverlayTile[] | null {
+    if (!this.quayDetails.some(isAnimatedQuayDetailAsset)) return [];
+    const bounds = normalizedPreparedBounds(minX, minY, maxX, maxY);
+    let prepared: ImportedPreparedViewport | null = null;
+    for (const viewport of this.preparedViewports.values()) {
+      if (viewport.bounds.minX > bounds.minX || viewport.bounds.maxX < bounds.maxX ||
+          viewport.bounds.minY > bounds.minY || viewport.bounds.maxY < bounds.maxY) continue;
+      prepared = viewport;
+    }
+    if (!prepared) return null;
+
+    const worldMinute = this.getWorldLifeState()?.worldMinute ?? this.quayDetailDefaultWorldMinute;
+    const overlays = this.getPreparedDynamicQuayOverlays(prepared, worldMinute);
+    const entries: DynamicOverlayTile[] = [];
+    for (const [key, tile] of overlays) {
+      const separator = key.indexOf(',');
+      const tileX = Number(key.slice(0, separator));
+      const tileY = Number(key.slice(separator + 1));
+      if (tileX < bounds.minX || tileX > bounds.maxX ||
+          tileY < bounds.minY || tileY > bounds.maxY) continue;
+      entries.push({ tileX, tileY, tile });
+    }
+    return entries;
   }
 
   private getDynamicQuayOverlayBlock(

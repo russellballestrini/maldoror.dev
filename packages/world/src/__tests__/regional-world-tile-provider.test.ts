@@ -1487,11 +1487,20 @@ describe('RegionalWorldTileProvider', () => {
     );
     imported.importPreparedViewport(structuredClone(prepared));
     imported.setWorldLifeState(worldLifeAt(750));
+    const dynamicCoordinates: string[] = [];
     for (let y = -4; y <= 20; y++) {
       for (let x = -24; x <= 56; x++) {
-        expect(imported.getDynamicOverlayTileAt(x, y))
-          .toEqual(first.getDynamicOverlayTileAt(x, y));
+        const importedTile = imported.getDynamicOverlayTileAt(x, y);
+        expect(importedTile).toEqual(first.getDynamicOverlayTileAt(x, y));
+        if (importedTile) dynamicCoordinates.push(`${x},${y}`);
       }
+    }
+    const sparse = imported.getDynamicOverlayTilesInBounds(-24, -4, 56, 20);
+    expect(sparse).not.toBeNull();
+    expect(sparse!.map((entry) => `${entry.tileX},${entry.tileY}`).sort())
+      .toEqual(dynamicCoordinates.sort());
+    for (const entry of sparse!) {
+      expect(entry.tile).toBe(imported.getDynamicOverlayTileAt(entry.tileX, entry.tileY));
     }
     expect(imported.getRegionalStats().cachedBlocks).toBe(0);
     expect(first.getRegionalStats()).toMatchObject({

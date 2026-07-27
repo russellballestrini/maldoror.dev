@@ -7,6 +7,7 @@ import type {
   Direction,
   BuildingDirection,
   BuildingTileData,
+  DynamicOverlayTile,
   WorldLifeState,
   WorldLightSource,
 } from '@maldoror/protocol';
@@ -271,6 +272,10 @@ export class ViewportRenderer {
   private dynamicOctantDirtyMask: Uint8Array | null = null;
   private dynamicOctantDirtyOffsets: number[] = [];
   private dynamicOctantCellWidth = 0;
+  private dynamicPixelDirtyMask: Uint8Array | null = null;
+  private dynamicPixelDirtyOffsets: number[] = [];
+  private dynamicPixelWidth = 0;
+  private dynamicAtmospherePatches: Array<RGB | null> = [];
 
   constructor(config: ViewportConfig) {
     this.config = config;
@@ -643,9 +648,10 @@ export class ViewportRenderer {
     }
 
     for (let y = 0; y < buffer.length; y++) {
-      const target = buffer[y]!;
       const source = frame.buffer[y]!;
-      for (let x = 0; x < target.length; x++) target[x] = source[x] ?? null;
+      // Native shallow row copies preserve the immutable RGB identities that
+      // power atmosphere reuse without a JavaScript assignment per pixel.
+      buffer[y] = source.slice();
       materialGrid[y]!.set(frame.materialGrid[y]!);
     }
     return frame;
@@ -791,6 +797,39 @@ export class ViewportRenderer {
           frames.delete(oldest);
         }
       }
+    }
+
+    // The normal clear/day path has no local-light or precipitation pass.
+    // Every dynamic writer already records exact 2x4 terminal cells for the
+    // packed renderer. Grade only those raw actor/activity patches, clone the
+    // shared graded static rows natively, then restore the patches. This is
+    // pixel-identical to the exhaustive identity scan below while scaling the
+    // JavaScript work with what moved rather than viewport area.
+    if (
+      staticAtmosphere && lights.length === 0 &&
+      world.weather !== 'rain' && world.weather !== 'storm'
+    ) {
+      const patches = this.dynamicAtmospherePatches;
+      patches.length = 0;
+      const pixelWidth = this.dynamicPixelWidth;
+      for (const offset of this.dynamicPixelDirtyOffsets) {
+        const y = Math.floor(offset / pixelWidth);
+        const x = offset - y * pixelWidth;
+        const pixel = buffer[y]?.[x] ?? null;
+        patches.push(pixel
+          ? gradeAt(pixel, materialGrid[y]?.[x] ?? 0, x, y)
+          : null);
+      }
+      for (let y = 0; y < buffer.length; y++) {
+        buffer[y] = staticAtmosphere[y]!.slice();
+      }
+      for (let index = 0; index < this.dynamicPixelDirtyOffsets.length; index++) {
+        const offset = this.dynamicPixelDirtyOffsets[index]!;
+        const y = Math.floor(offset / pixelWidth);
+        const x = offset - y * pixelWidth;
+        buffer[y]![x] = patches[index] ?? null;
+      }
+      return staticAtmosphere;
     }
 
     for (let y = 0; y < buffer.length; y++) {
@@ -1157,6 +1196,26 @@ export class ViewportRenderer {
     _origin: { x: number; y: number },
   ): void {
     if (!world.getDynamicOverlayTileAt) return;
+    const { startTileX, startTileY, endTileX, endTileY } =
+      this.getVisibleTileBounds(buffer[0]!.length, buffer.length);
+    const buildingDirection = this.getBuildingDirection();
+    const sparse = world.getDynamicOverlayTilesInBounds?.(
+      startTileX,
+      startTileY,
+      endTileX,
+      endTileY,
+      buildingDirection,
+    );
+    if (sparse !== undefined && sparse !== null) {
+      this.renderSparseBuildingLayer(
+        buffer,
+        materialGrid,
+        'dynamic-building',
+        sparse,
+        true,
+      );
+      return;
+    }
     this.renderBuildingLayer(
       buffer,
       materialGrid,
@@ -1189,55 +1248,104 @@ export class ViewportRenderer {
       for (let worldTileX = startTileX; worldTileX <= endTileX; worldTileX++) {
         const buildingTile = lookup(worldTileX, worldTileY, buildingDirection);
         if (!buildingTile) continue;
+        this.renderBuildingTile(
+          buffer,
+          materialGrid,
+          layer,
+          worldTileX,
+          worldTileY,
+          buildingDirection,
+          buildingTile,
+          resKey,
+          screenCenterX,
+          screenCenterY,
+          markDynamic,
+        );
+      }
+    }
+  }
 
-        // Get the appropriate resolution
-        const tilePixels = buildingTile.packedPixels
-          ? unpackPackedPixelGrid(buildingTile.packedPixels)
-          : buildingTile.resolutions?.[resKey] ?? buildingTile.pixels;
+  private renderSparseBuildingLayer(
+    buffer: PixelGrid,
+    materialGrid: Uint8Array[],
+    layer: string,
+    entries: readonly DynamicOverlayTile[],
+    markDynamic = false,
+  ): void {
+    const resKey = String(this.dataResolution);
+    const buildingDirection = this.getBuildingDirection();
+    const screenCenterX = buffer[0]!.length / 2;
+    const screenCenterY = buffer.length / 2;
+    for (const entry of entries) {
+      this.renderBuildingTile(
+        buffer,
+        materialGrid,
+        layer,
+        entry.tileX,
+        entry.tileY,
+        buildingDirection,
+        entry.tile,
+        resKey,
+        screenCenterX,
+        screenCenterY,
+        markDynamic,
+      );
+    }
+  }
 
-        // Scale to exact tile render size if needed (with caching by position)
-        const frameId = `${layer}:${worldTileX},${worldTileY}:${buildingDirection}`;
-        const scaledPixels = this.scaleFrame(tilePixels, this.tileRenderSize, this.tileRenderSize, frameId);
+  private renderBuildingTile(
+    buffer: PixelGrid,
+    materialGrid: Uint8Array[],
+    layer: string,
+    worldTileX: number,
+    worldTileY: number,
+    buildingDirection: BuildingDirection,
+    buildingTile: BuildingTileData,
+    resKey: string,
+    screenCenterX: number,
+    screenCenterY: number,
+    markDynamic: boolean,
+  ): void {
+    const tilePixels = buildingTile.packedPixels
+      ? unpackPackedPixelGrid(buildingTile.packedPixels)
+      : buildingTile.resolutions?.[resKey] ?? buildingTile.pixels;
+    const frameId = `${layer}:${worldTileX},${worldTileY}:${buildingDirection}`;
+    const scaledPixels = this.scaleFrame(
+      tilePixels,
+      this.tileRenderSize,
+      this.tileRenderSize,
+      frameId,
+    );
+    const worldPixelX = (worldTileX + 0.5) * this.tileRenderSize;
+    const worldPixelY = (worldTileY + 0.5) * this.tileRenderSize;
+    const screenOffset = this.worldToScreen(
+      worldPixelX,
+      worldPixelY,
+      this.cameraCenterX,
+      this.cameraCenterY,
+    );
+    const screenX = Math.floor(screenCenterX + screenOffset.x - this.tileRenderSize / 2);
+    const screenY = Math.floor(screenCenterY + screenOffset.y - this.tileRenderSize / 2);
 
-        // Calculate screen position with rotation
-        // World pixel position of tile center
-        const worldPixelX = (worldTileX + 0.5) * this.tileRenderSize;
-        const worldPixelY = (worldTileY + 0.5) * this.tileRenderSize;
-        // Transform to screen coordinates (offset from screen center)
-        const screenOffset = this.worldToScreen(worldPixelX, worldPixelY, this.cameraCenterX, this.cameraCenterY);
-        // Convert to buffer coordinates (top-left of tile)
-        // Use Math.floor for consistent alignment of adjacent tiles
-        const screenX = Math.floor(screenCenterX + screenOffset.x - this.tileRenderSize / 2);
-        const screenY = Math.floor(screenCenterY + screenOffset.y - this.tileRenderSize / 2);
-
-        // Copy building pixels to buffer (only non-transparent pixels)
-        for (let py = 0; py < scaledPixels.length; py++) {
-          const tileRow = scaledPixels[py];
-          if (!tileRow) continue;
-
-          const bufferY = screenY + py;
-          if (bufferY < 0 || bufferY >= buffer.length) continue;
-
-          for (let px = 0; px < tileRow.length; px++) {
-            const bufferX = screenX + px;
-            if (bufferX < 0 || bufferX >= buffer[bufferY]!.length) continue;
-
-            const pixel = tileRow[px];
-            if (pixel) {
-              // Preserve authored edge coverage over the underlying material.
-              buffer[bufferY]![bufferX] = alphaOverLinear(
-                buffer[bufferY]![bufferX] ?? null,
-                pixel,
-              );
-              materialGrid[bufferY]![bufferX] = 0;
-              // The packed octant encoder starts from the shared immutable
-              // scene and recomputes only dirty terminal cells. Activity is
-              // deliberately outside that scene, so every touched cell must
-              // be carried through the sparse dynamic plane just like actors.
-              if (markDynamic) this.markDynamicOctantPixel(bufferX, bufferY);
-            }
-          }
-        }
+    for (let py = 0; py < scaledPixels.length; py++) {
+      const tileRow = scaledPixels[py];
+      if (!tileRow) continue;
+      const bufferY = screenY + py;
+      if (bufferY < 0 || bufferY >= buffer.length) continue;
+      for (let px = 0; px < tileRow.length; px++) {
+        const bufferX = screenX + px;
+        if (bufferX < 0 || bufferX >= buffer[bufferY]!.length) continue;
+        const pixel = tileRow[px];
+        if (!pixel) continue;
+        // Preserve authored edge coverage over the underlying material.
+        buffer[bufferY]![bufferX] = alphaOverLinear(
+          buffer[bufferY]![bufferX] ?? null,
+          pixel,
+        );
+        materialGrid[bufferY]![bufferX] = 0;
+        // The packed octant encoder starts from the shared immutable scene and
+        // recomputes only cells touched by visual activity or actors.
+        if (markDynamic) this.markDynamicOctantPixel(bufferX, bufferY);
       }
     }
   }
@@ -1633,9 +1741,26 @@ export class ViewportRenderer {
     }
     this.dynamicOctantDirtyOffsets.length = 0;
     this.dynamicOctantCellWidth = width;
+    const pixelSize = pixelWidth * pixelHeight;
+    if (!this.dynamicPixelDirtyMask || this.dynamicPixelDirtyMask.length !== pixelSize) {
+      this.dynamicPixelDirtyMask = new Uint8Array(pixelSize);
+    } else {
+      for (const offset of this.dynamicPixelDirtyOffsets) {
+        this.dynamicPixelDirtyMask[offset] = 0;
+      }
+    }
+    this.dynamicPixelDirtyOffsets.length = 0;
+    this.dynamicPixelWidth = pixelWidth;
   }
 
   private markDynamicOctantPixel(pixelX: number, pixelY: number): void {
+    const pixelMask = this.dynamicPixelDirtyMask;
+    const pixelOffset = pixelY * this.dynamicPixelWidth + pixelX;
+    if (pixelMask && pixelOffset >= 0 && pixelOffset < pixelMask.length &&
+        pixelMask[pixelOffset] === 0) {
+      pixelMask[pixelOffset] = 1;
+      this.dynamicPixelDirtyOffsets.push(pixelOffset);
+    }
     const mask = this.dynamicOctantDirtyMask;
     if (!mask || this.dynamicOctantCellWidth <= 0) return;
     const offset = Math.floor(pixelY / 4) * this.dynamicOctantCellWidth

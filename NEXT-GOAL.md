@@ -1697,6 +1697,47 @@ Completed foundations:
   Ghostty acceptance remain open. Production remains `vb07c0d4`; there was no
   deploy, service restart, push, production database write, complete-gate
   claim, or physical Ghostty claim;
+- V162 selects a sparse clear-day dynamic-composition path and bounded direct
+  IPC telemetry while **continuing to reject Gate D**. Providers may now
+  enumerate visual activity from a prepared viewport's sparse persistent-time
+  map, with explicit authoritative-empty versus point-query-fallback semantics.
+  The renderer grades only exact actor/activity pixels, clones the shared
+  graded static atmosphere rows, restores those patches, and retains the full
+  path for night/lights, rain, and storm. An alternating 800-frame-per-lane
+  160x46 benchmark with 20 colocated players, five baked viewports, and 18
+  sparse activity tiles is pixel-identical at hash
+  `ac04069dfe0e3e3f15644407da0f0ddcde00dbf899794a005e0e2a85b89bb751`:
+  viewport-composition p95 improves 5.666→5.015 ms (-11.498%) and production
+  `renderToString` p95 improves 6.360→5.935 ms (-6.692%). The V8 profile moves
+  `applyWorldAtmosphere` from 50.1% to 12.8% of non-library JavaScript ticks.
+  Direct `process.send` remains selected; cumulative bounded telemetry now
+  decomposes main→worker input, handler time, callback pressure/latency, and all
+  versus immediate worker→main receipt. Three built and measured dispatcher
+  variants are rejected: callback serialization creates a 16.038-second
+  synchronized 10-client response tail; one-yield dispatch reaches 459.757 ms
+  20-client input p95 and a 333-message queue; callback bursts do not provide a
+  durable gain. A final direct-send diagnostic localizes only about 13--15 ms
+  of the p95 server-side worker path, leaving the larger main/ssh2/OpenSSH PTY/
+  kernel/harness tail unassigned. The first 60-second real-SSH smoke preserves
+  exact origin and zero drops/drains/recovery but fails response at 10 and 20
+  clients (114.883/158.849 ms p95) on a severely memory/CPU-pressured host, so
+  it is not a sustained or production pass. The probes also prove that scratch
+  world-time drift into night/lights expands work materially; every future
+  variant must reset environment state and measure clear day, night/lights,
+  rain, and storm separately before the mixed run. Complete controls, failed
+  variants, metrics, profiles, hashes, host-pressure limits, and next proof are
+  retained in
+  `track-7-performance/sparse-dynamic-overlay-v162/FINDINGS.md`. Full repository
+  verification passes 51 files / 284 tests, 18/18 typecheck tasks, 7/7 lint
+  tasks, 12/12 build tasks, and diff hygiene; the build produces a
+  10,120,822-byte runtime pack and 17,643,726-byte six-viewport prewarm. The
+  selected source is not deployed. A reset sustained 5/10/20 ladder under a
+  recorded normal-load window, separate environment-mode audits, downstream
+  terminal-delivery decomposition, mixed 30-minute movement/zoom/weather,
+  mode/keyframe bandwidth, deployed cgroup observation, larger physical
+  Ghostty viewport, and operator use remain open. Production remains
+  `vb07c0d4`; there was no deploy, service restart, push, production database
+  write, complete-gate claim, or physical Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
@@ -1712,7 +1753,9 @@ Still open and therefore goal-blocking:
   response target and expose multi-second worker/render tails. Worker reuse and
   scheduling, the 30-minute mixed movement/zoom/weather run, separated
   mode/keyframe bandwidth audit, deployed cgroup observation, larger physical
-  Ghostty viewport, and operator use remain unproven;
+  Ghostty viewport, and operator use remain unproven. V162 reduces the ordinary
+  clear-day atmosphere traversal and instruments both IPC directions, but its
+  short host-confounded SSH probes do not replace the reset sustained ladder;
 - the first six-family landmark silhouettes and shared-boundary parcel
   compounds now include a selected two-sided canal-town focal core, but remain
   sparse research prototypes rather than a complete world layer. The core now

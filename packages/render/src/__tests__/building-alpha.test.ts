@@ -206,10 +206,22 @@ describe('ViewportRenderer building alpha', () => {
     first.renderToBuffer(base(false), 0);
     const second = new ViewportRenderer(config);
     second.setCamera(0, 0);
-    const result = second.renderToBuffer(base(true), 0);
+    let pointQueries = 0;
+    const dynamicWorld = base(true);
+    dynamicWorld.getDynamicOverlayTileAt = () => {
+      pointQueries++;
+      return overlay;
+    };
+    dynamicWorld.getDynamicOverlayTilesInBounds = () => [{
+      tileX: 0,
+      tileY: 0,
+      tile: overlay,
+    }];
+    const result = second.renderToBuffer(dynamicWorld, 0);
     const buffer = result.buffer;
 
     expect(secondTileReads).toBe(0);
+    expect(pointQueries).toBe(0);
     expect(buffer.flat().some((pixel) => (
       pixel?.r === moving.r && pixel.g === moving.g && pixel.b === moving.b
     ))).toBe(true);
