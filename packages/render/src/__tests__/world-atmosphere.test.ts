@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import type { Tile, WorldDataProvider, WorldLifeState, WorldLightSource } from '@maldoror/protocol';
+import { PassThrough } from 'node:stream';
+import type {
+  DirectionFrames,
+  PixelGrid,
+  Sprite,
+  Tile,
+  WorldDataProvider,
+  WorldLifeState,
+  WorldLightSource,
+} from '@maldoror/protocol';
 import { ViewportRenderer } from '../pixel/viewport-renderer.js';
+import { PixelGameRenderer } from '../pixel/pixel-game-renderer.js';
 
 const terrain: Tile = {
   id: 'atmosphere-ground',
@@ -156,11 +166,92 @@ describe('persistent world atmosphere', () => {
       color: { r: 255, g: 177, b: 88 },
     }];
     const uncached = renderer().renderToBuffer(world(life, { lights }), 31).buffer;
-    const cached = renderer().renderToBuffer(world(life, {
+    const cachedResult = renderer().renderToBuffer(world(life, {
       lights,
       staticIdentity: {},
-    }), 31).buffer;
+    }), 31);
 
-    expect(cached).toEqual(uncached);
+    expect(cachedResult.buffer).toEqual(uncached);
+    expect(cachedResult.sharedStaticBuffer).toBeDefined();
+  });
+
+  it('reuses a lit static night plane while preserving exact actor pixels', () => {
+    const life = state(0, 'clear');
+    const lights: WorldLightSource[] = [{
+      id: 'lamp:actor-proof',
+      x: 0,
+      y: 0,
+      radius: 4,
+      intensity: 0.9,
+      color: { r: 255, g: 177, b: 88 },
+    }];
+    const actorFrame: PixelGrid = [[{ r: 45, g: 91, b: 214, a: 190 }]];
+    const actorFrames = [actorFrame, actorFrame, actorFrame, actorFrame] as DirectionFrames;
+    const actor: Sprite = {
+      width: 1,
+      height: 1,
+      frames: {
+        up: actorFrames,
+        down: actorFrames,
+        left: actorFrames,
+        right: actorFrames,
+      },
+    };
+    const actorWorld = (
+      staticIdentity?: object,
+      worldLife: WorldLifeState = life,
+    ): WorldDataProvider => ({
+      ...world(worldLife, { lights, staticIdentity }),
+      getPlayers: () => [{
+        userId: 'local',
+        username: 'local',
+        x: 0,
+        y: 0,
+        direction: 'down',
+        animationFrame: 0,
+        isMoving: false,
+      }],
+      getPlayerSprite: () => actor,
+    });
+
+    const uncached = renderer().renderToBuffer(actorWorld(), 17);
+    const cached = renderer().renderToBuffer(actorWorld({}), 17);
+
+    expect(cached.buffer).toEqual(uncached.buffer);
+    expect(cached.sharedStaticBuffer).toBeDefined();
+    expect(cached.sharedStaticDirtyCellOffsets?.length).toBeGreaterThan(0);
+    expect(cached.buffer).not.toEqual(cached.sharedStaticBuffer);
+
+    const storm = {
+      ...state(0, 'storm'),
+      surfaceWetness: 0.93,
+    };
+    expect(renderer().renderToBuffer(actorWorld({}, storm), 31).buffer)
+      .toEqual(renderer().renderToBuffer(actorWorld(undefined, storm), 31).buffer);
+
+    const gameRenderer = (): PixelGameRenderer => {
+      const value = new PixelGameRenderer({
+        stream: new PassThrough(),
+        cols: 12,
+        rows: 8,
+        username: 'local',
+        renderMode: 'octant',
+        zoomLevel: 10,
+        paletteAnimation: false,
+        layout: {
+          headerRows: 0,
+          footerRows: 0,
+          leftSidebarCols: 0,
+          rightSidebarCols: 0,
+        },
+      });
+      value.setCamera(0, 0);
+      value.setAuthoritativePosition(0, 0);
+      return value;
+    };
+    expect(gameRenderer().renderToString(actorWorld({})))
+      .toBe(gameRenderer().renderToString(actorWorld()));
+    expect(gameRenderer().renderToString(actorWorld({}, storm)))
+      .toBe(gameRenderer().renderToString(actorWorld(undefined, storm)));
   });
 });

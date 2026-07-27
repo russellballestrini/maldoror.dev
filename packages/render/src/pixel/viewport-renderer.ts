@@ -52,8 +52,8 @@ export interface ViewportRenderResult {
   brightnessGrid?: number[][];  // Cell-level brightness for lighting
   /** 0 = ordinary scene, 1..8 = water, 9..16 = foliage, 255 = actor. */
   materialGrid?: Uint8Array[];
-  /** Immutable, atmosphere-graded scene before session-local actors. Present
-   * only when later weather/light passes do not make the static plane dynamic. */
+  /** Immutable atmosphere/light/weather-graded scene before session-local
+   * activity and actors. Present when the provider exposes a static identity. */
   sharedStaticBuffer?: PixelGrid;
   sharedStaticMaterialGrid?: Uint8Array[];
   sharedStaticDirtyCellOffsets?: readonly number[];
@@ -163,6 +163,31 @@ const STATIC_SCENE_FRAMES = new WeakMap<object, Map<string, StaticSceneFrame>>()
 const MAX_STATIC_SCENE_FRAMES_PER_IDENTITY = 4;
 const STATIC_ATMOSPHERE_FRAMES = new WeakMap<StaticSceneFrame, Map<string, PixelGrid>>();
 const MAX_STATIC_ATMOSPHERE_FRAMES_PER_SCENE = 4;
+const STATIC_LIT_ATMOSPHERE_FRAMES = new WeakMap<PixelGrid, Map<string, PixelGrid>>();
+const MAX_STATIC_LIT_FRAMES_PER_ATMOSPHERE = 4;
+const STATIC_PRECIPITATION_FRAMES = new WeakMap<PixelGrid, Map<string, PixelGrid>>();
+const MAX_STATIC_PRECIPITATION_FRAMES_PER_ATMOSPHERE = 4;
+
+interface PreparedWorldLight {
+  id: string;
+  centerX: number;
+  centerY: number;
+  radius: number;
+  radiusSquared: number;
+  intensity: number;
+  nightFactor: number;
+  wetBounce: number;
+  color: RGB;
+}
+
+interface PreparedPrecipitation {
+  density: number;
+  streakLength: number;
+  color: RGB;
+  initialStrength: number;
+  strengthFalloff: number;
+  phase: number;
+}
 
 function rgbWithoutAlpha(source: RGB): RGB {
   if (source.a === undefined) return source;
@@ -799,16 +824,25 @@ export class ViewportRenderer {
       }
     }
 
-    // The normal clear/day path has no local-light or precipitation pass.
-    // Every dynamic writer already records exact 2x4 terminal cells for the
-    // packed renderer. Grade only those raw actor/activity patches, clone the
-    // shared graded static rows natively, then restore the patches. This is
-    // pixel-identical to the exhaustive identity scan below while scaling the
-    // JavaScript work with what moved rather than viewport area.
-    if (
-      staticAtmosphere && lights.length === 0 &&
-      world.weather !== 'rain' && world.weather !== 'storm'
-    ) {
+    const nightFactor = nightLightFactor(world.worldMinute);
+    const preparedLights = this.prepareLocalLights(
+      buffer,
+      lights,
+      nightFactor,
+      world.surfaceWetness,
+    );
+    const precipitation = this.preparePrecipitation(world, tick, nightFactor);
+
+    // Every dynamic writer records both exact pixels and the 2x4 terminal
+    // cells needed by the packed encoder. Grade and light only those
+    // session-local patches, clone the immutable shared static result, then
+    // restore the patches. Local lights and precipitation are deterministic in
+    // screen space, so their static contribution is shared while dynamic
+    // pixels replay the same source-ordered transformations.
+    if (staticAtmosphere) {
+      let sharedAtmosphere = preparedLights.length > 0
+        ? this.getStaticLitAtmosphere(staticAtmosphere, preparedLights)
+        : staticAtmosphere;
       const patches = this.dynamicAtmospherePatches;
       patches.length = 0;
       const pixelWidth = this.dynamicPixelWidth;
@@ -816,12 +850,36 @@ export class ViewportRenderer {
         const y = Math.floor(offset / pixelWidth);
         const x = offset - y * pixelWidth;
         const pixel = buffer[y]?.[x] ?? null;
-        patches.push(pixel
+        const graded = pixel
           ? gradeAt(pixel, materialGrid[y]?.[x] ?? 0, x, y)
+          : null;
+        patches.push(graded
+          ? this.applyPreparedLocalLightsToPixel(graded, x, y, preparedLights)
           : null);
       }
+      if (precipitation) {
+        sharedAtmosphere = this.getStaticPrecipitation(
+          sharedAtmosphere,
+          precipitation,
+        );
+        for (let index = 0; index < this.dynamicPixelDirtyOffsets.length; index++) {
+          const offset = this.dynamicPixelDirtyOffsets[index]!;
+          const y = Math.floor(offset / pixelWidth);
+          const x = offset - y * pixelWidth;
+          const patch = patches[index];
+          if (!patch) continue;
+          patches[index] = this.applyPrecipitationToPixel(
+            patch,
+            x,
+            y,
+            buffer[0]?.length ?? 0,
+            buffer.length,
+            precipitation,
+          );
+        }
+      }
       for (let y = 0; y < buffer.length; y++) {
-        buffer[y] = staticAtmosphere[y]!.slice();
+        buffer[y] = sharedAtmosphere[y]!.slice();
       }
       for (let index = 0; index < this.dynamicPixelDirtyOffsets.length; index++) {
         const offset = this.dynamicPixelDirtyOffsets[index]!;
@@ -829,7 +887,7 @@ export class ViewportRenderer {
         const x = offset - y * pixelWidth;
         buffer[y]![x] = patches[index] ?? null;
       }
-      return staticAtmosphere;
+      return sharedAtmosphere;
     }
 
     for (let y = 0; y < buffer.length; y++) {
@@ -853,44 +911,137 @@ export class ViewportRenderer {
       }
     }
 
-    this.applyLocalLights(buffer, lights, nightLightFactor(world.worldMinute), world.surfaceWetness);
+    this.applyPreparedLocalLights(buffer, preparedLights);
 
-    if (world.weather !== 'rain' && world.weather !== 'storm') {
-      return lights.length === 0 ? staticAtmosphere : undefined;
-    }
+    if (!precipitation) return undefined;
+    this.applyPrecipitation(buffer, precipitation);
+    return undefined;
+  }
+
+  private preparePrecipitation(
+    world: WorldLifeState,
+    tick: number,
+    nightFactor: number,
+  ): PreparedPrecipitation | null {
+    if (world.weather !== 'rain' && world.weather !== 'storm') return null;
     const storm = world.weather === 'storm';
-    const density = storm ? 17 : 11;
-    const streakLength = world.weather === 'storm' ? 3 : 2;
-    const night = nightLightFactor(world.worldMinute);
-    const precipitation = night > 0.5
-      ? { r: 110, g: 140, b: 174 }
-      : { r: 160, g: 190, b: 220 };
-    const initialStrength = storm ? 0.34 : 0.44;
-    const strengthFalloff = storm ? 0.07 : 0.09;
-    const phase = tick + world.worldMinute * 3;
+    return {
+      density: storm ? 17 : 11,
+      streakLength: storm ? 3 : 2,
+      color: nightFactor > 0.5
+        ? { r: 110, g: 140, b: 174 }
+        : { r: 160, g: 190, b: 220 },
+      initialStrength: storm ? 0.34 : 0.44,
+      strengthFalloff: storm ? 0.07 : 0.09,
+      phase: tick + world.worldMinute * 3,
+    };
+  }
+
+  private getStaticPrecipitation(
+    staticAtmosphere: PixelGrid,
+    precipitation: PreparedPrecipitation,
+  ): PixelGrid {
+    const signature = [
+      precipitation.density,
+      precipitation.streakLength,
+      precipitation.color.r,
+      precipitation.color.g,
+      precipitation.color.b,
+      precipitation.initialStrength,
+      precipitation.strengthFalloff,
+      precipitation.phase,
+    ].join('|');
+    let frames = STATIC_PRECIPITATION_FRAMES.get(staticAtmosphere);
+    if (!frames) {
+      frames = new Map();
+      STATIC_PRECIPITATION_FRAMES.set(staticAtmosphere, frames);
+    }
+    let weather = frames.get(signature);
+    if (weather) {
+      frames.delete(signature);
+      frames.set(signature, weather);
+      return weather;
+    }
+
+    weather = staticAtmosphere.map((row) => row.slice());
+    this.applyPrecipitation(weather, precipitation);
+    frames.set(signature, weather);
+    while (frames.size > MAX_STATIC_PRECIPITATION_FRAMES_PER_ATMOSPHERE) {
+      const oldest = frames.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      frames.delete(oldest);
+    }
+    return weather;
+  }
+
+  private applyPrecipitation(
+    buffer: PixelGrid,
+    precipitation: PreparedPrecipitation,
+  ): void {
     for (let y = 0; y < buffer.length; y++) {
       const row = buffer[y]!;
       for (let x = 0; x < row.length; x++) {
-        const hash = (
-          Math.imul(x + phase, 73856093)
-          ^ Math.imul(y - phase * 2, 19349663)
-        ) >>> 0;
-        if (hash % 1000 >= density) continue;
-        for (let offset = 0; offset < streakLength; offset++) {
+        if (!this.precipitationAnchorActive(x, y, precipitation)) continue;
+        for (let offset = 0; offset < precipitation.streakLength; offset++) {
           const streakY = y + offset;
           const streakX = x - Math.floor((offset + 1) / 2);
           const pixel = buffer[streakY]?.[streakX];
           if (!pixel) continue;
-          const strength = initialStrength - offset * strengthFalloff;
-          buffer[streakY]![streakX] = {
-            r: clampByte(pixel.r * (1 - strength) + precipitation.r * strength),
-            g: clampByte(pixel.g * (1 - strength) + precipitation.g * strength),
-            b: clampByte(pixel.b * (1 - strength) + precipitation.b * strength),
-          };
+          buffer[streakY]![streakX] = this.mixPrecipitation(
+            pixel,
+            offset,
+            precipitation,
+          );
         }
       }
     }
-    return undefined;
+  }
+
+  private applyPrecipitationToPixel(
+    pixel: RGB,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    precipitation: PreparedPrecipitation,
+  ): RGB {
+    let weather = pixel;
+    // The exhaustive pass visits anchors in ascending Y. For one target pixel,
+    // larger streak offsets therefore arrive first and must be replayed in
+    // reverse offset order to preserve exact repeated colour mixing.
+    for (let offset = precipitation.streakLength - 1; offset >= 0; offset--) {
+      const anchorX = x + Math.floor((offset + 1) / 2);
+      const anchorY = y - offset;
+      if (anchorX < 0 || anchorX >= width || anchorY < 0 || anchorY >= height) continue;
+      if (!this.precipitationAnchorActive(anchorX, anchorY, precipitation)) continue;
+      weather = this.mixPrecipitation(weather, offset, precipitation);
+    }
+    return weather;
+  }
+
+  private precipitationAnchorActive(
+    x: number,
+    y: number,
+    precipitation: PreparedPrecipitation,
+  ): boolean {
+    const hash = (
+      Math.imul(x + precipitation.phase, 73856093)
+      ^ Math.imul(y - precipitation.phase * 2, 19349663)
+    ) >>> 0;
+    return hash % 1000 < precipitation.density;
+  }
+
+  private mixPrecipitation(
+    pixel: RGB,
+    offset: number,
+    precipitation: PreparedPrecipitation,
+  ): RGB {
+    const strength = precipitation.initialStrength - offset * precipitation.strengthFalloff;
+    return {
+      r: clampByte(pixel.r * (1 - strength) + precipitation.color.r * strength),
+      g: clampByte(pixel.g * (1 - strength) + precipitation.color.g * strength),
+      b: clampByte(pixel.b * (1 - strength) + precipitation.color.b * strength),
+    };
   }
 
   private screenPixelToWorldPixel(
@@ -908,58 +1059,154 @@ export class ViewportRenderer {
     };
   }
 
-  private applyLocalLights(
+  private prepareLocalLights(
     buffer: PixelGrid,
     sources: readonly WorldLightSource[],
     nightFactor: number,
     surfaceWetness: number,
-  ): void {
-    if (nightFactor <= 0.01 || sources.length === 0) return;
+  ): PreparedWorldLight[] {
+    if (nightFactor <= 0.01 || sources.length === 0) return [];
     const screenCenterX = (buffer[0]?.length ?? 0) / 2;
     const screenCenterY = buffer.length / 2;
-    const nearest = [...sources]
+    const wetBounce = 1 + surfaceWetness * 0.12;
+    return [...sources]
       .sort((a, b) => {
         const ad = Math.hypot(a.x * this.tileRenderSize - this.cameraCenterX, a.y * this.tileRenderSize - this.cameraCenterY);
         const bd = Math.hypot(b.x * this.tileRenderSize - this.cameraCenterX, b.y * this.tileRenderSize - this.cameraCenterY);
         return ad - bd || a.id.localeCompare(b.id);
       })
-      .slice(0, 48);
+      .slice(0, 48)
+      .map((source) => {
+        const worldX = (source.x + 0.5) * this.tileRenderSize;
+        const worldY = (source.y + 0.5) * this.tileRenderSize;
+        const offset = this.worldToScreen(
+          worldX,
+          worldY,
+          this.cameraCenterX,
+          this.cameraCenterY,
+        );
+        const radius = Math.max(5, Math.min(140, source.radius * this.tileRenderSize));
+        return {
+          id: source.id,
+          centerX: screenCenterX + offset.x,
+          centerY: screenCenterY + offset.y,
+          radius,
+          radiusSquared: radius * radius,
+          intensity: source.intensity,
+          nightFactor,
+          wetBounce,
+          color: source.color,
+        };
+      });
+  }
 
-    for (const source of nearest) {
-      const worldX = (source.x + 0.5) * this.tileRenderSize;
-      const worldY = (source.y + 0.5) * this.tileRenderSize;
-      const offset = this.worldToScreen(worldX, worldY, this.cameraCenterX, this.cameraCenterY);
-      const centerX = screenCenterX + offset.x;
-      const centerY = screenCenterY + offset.y;
-      const radius = Math.max(5, Math.min(140, source.radius * this.tileRenderSize));
-      const minimumX = Math.max(0, Math.floor(centerX - radius));
-      const maximumX = Math.min((buffer[0]?.length ?? 0) - 1, Math.ceil(centerX + radius));
-      const minimumY = Math.max(0, Math.floor(centerY - radius));
-      const maximumY = Math.min(buffer.length - 1, Math.ceil(centerY + radius));
-      const wetBounce = 1 + surfaceWetness * 0.12;
+  private getStaticLitAtmosphere(
+    staticAtmosphere: PixelGrid,
+    sources: readonly PreparedWorldLight[],
+  ): PixelGrid {
+    const signature = sources.map((source) => [
+      source.id,
+      source.centerX,
+      source.centerY,
+      source.radius,
+      source.intensity,
+      source.nightFactor,
+      source.wetBounce,
+      source.color.r,
+      source.color.g,
+      source.color.b,
+    ].join(',')).join(';');
+    let frames = STATIC_LIT_ATMOSPHERE_FRAMES.get(staticAtmosphere);
+    if (!frames) {
+      frames = new Map();
+      STATIC_LIT_ATMOSPHERE_FRAMES.set(staticAtmosphere, frames);
+    }
+    let lit = frames.get(signature);
+    if (lit) {
+      frames.delete(signature);
+      frames.set(signature, lit);
+      return lit;
+    }
+
+    lit = staticAtmosphere.map((row) => row.slice());
+    this.applyPreparedLocalLights(lit, sources);
+    frames.set(signature, lit);
+    while (frames.size > MAX_STATIC_LIT_FRAMES_PER_ATMOSPHERE) {
+      const oldest = frames.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      frames.delete(oldest);
+    }
+    return lit;
+  }
+
+  private applyPreparedLocalLights(
+    buffer: PixelGrid,
+    sources: readonly PreparedWorldLight[],
+  ): void {
+    for (const source of sources) {
+      const minimumX = Math.max(0, Math.floor(source.centerX - source.radius));
+      const maximumX = Math.min(
+        (buffer[0]?.length ?? 0) - 1,
+        Math.ceil(source.centerX + source.radius),
+      );
+      const minimumY = Math.max(0, Math.floor(source.centerY - source.radius));
+      const maximumY = Math.min(
+        buffer.length - 1,
+        Math.ceil(source.centerY + source.radius),
+      );
       for (let y = minimumY; y <= maximumY; y++) {
         for (let x = minimumX; x <= maximumX; x++) {
-          const distance = Math.hypot(x - centerX, y - centerY);
-          if (distance >= radius) continue;
-          const normalized = 1 - distance / radius;
-          // A soft inverse falloff keeps the source legible over the moonlit
-          // navigation floor without turning the pool into a hard-edged disc.
-          // Squaring the falloff made most of a lamp's declared radius
-          // visually inert once the night floor was raised.
-          const strength = Math.min(
-            0.58,
-            Math.pow(normalized, 1.8) * source.intensity * nightFactor * wetBounce,
-          );
           const pixel = buffer[y]?.[x];
-          if (!pixel || strength <= 0.002) continue;
-          buffer[y]![x] = {
-            r: clampByte(pixel.r + (255 - pixel.r) * (source.color.r / 255) * strength),
-            g: clampByte(pixel.g + (255 - pixel.g) * (source.color.g / 255) * strength),
-            b: clampByte(pixel.b + (255 - pixel.b) * (source.color.b / 255) * strength),
-          };
+          if (!pixel) continue;
+          buffer[y]![x] = this.applyPreparedLocalLightToPixel(pixel, x, y, source);
         }
       }
     }
+  }
+
+  private applyPreparedLocalLightsToPixel(
+    pixel: RGB,
+    x: number,
+    y: number,
+    sources: readonly PreparedWorldLight[],
+  ): RGB {
+    let lit = pixel;
+    for (const source of sources) {
+      lit = this.applyPreparedLocalLightToPixel(lit, x, y, source);
+    }
+    return lit;
+  }
+
+  private applyPreparedLocalLightToPixel(
+    pixel: RGB,
+    x: number,
+    y: number,
+    source: PreparedWorldLight,
+  ): RGB {
+    const deltaX = x - source.centerX;
+    const deltaY = y - source.centerY;
+    if (Math.abs(deltaX) >= source.radius || Math.abs(deltaY) >= source.radius) return pixel;
+    const distanceSquared = deltaX * deltaX + deltaY * deltaY;
+    if (distanceSquared >= source.radiusSquared) return pixel;
+    // Retain Math.hypot for admitted pixels so the selected light output stays
+    // byte-identical; the square/circle rejection avoids it for distant
+    // dynamic pixels and the corners of every static bounding box.
+    const distance = Math.hypot(deltaX, deltaY);
+    const normalized = 1 - distance / source.radius;
+    // A soft inverse falloff keeps the source legible over the moonlit
+    // navigation floor without turning the pool into a hard-edged disc.
+    // Squaring the falloff made most of a lamp's declared radius visually
+    // inert once the night floor was raised.
+    const strength = Math.min(
+      0.58,
+      Math.pow(normalized, 1.8) * source.intensity * source.nightFactor * source.wetBounce,
+    );
+    if (strength <= 0.002) return pixel;
+    return {
+      r: clampByte(pixel.r + (255 - pixel.r) * (source.color.r / 255) * strength),
+      g: clampByte(pixel.g + (255 - pixel.g) * (source.color.g / 255) * strength),
+      b: clampByte(pixel.b + (255 - pixel.b) * (source.color.b / 255) * strength),
+    };
   }
 
   /**

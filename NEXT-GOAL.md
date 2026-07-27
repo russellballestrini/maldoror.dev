@@ -1738,6 +1738,42 @@ Completed foundations:
   Ghostty viewport, and operator use remain open. Production remains
   `vb07c0d4`; there was no deploy, service restart, push, production database
   write, complete-gate claim, or physical Ghostty claim;
+- V163 generalizes V162's shared dynamic plane through authored night lights,
+  rain, and storm while **continuing to reject Gate D**. The selected renderer
+  prepares source-ordered local lights once, caches their immutable static
+  atmosphere contribution, and applies exact falloff only to actor/activity
+  pixels. Rain/storm now cache one exact anchor-ordered static weather plane per
+  phase; dynamic pixels analytically invert every streak anchor that can reach
+  them and replay repeated mixes in the original order. Weak keys and bounded
+  LRUs own retention. The exhaustive provider fallback, 15 Hz weather cadence,
+  authored colours, and pixels remain unchanged. Tests prove exact exhaustive-
+  versus-shared buffers with translucent actors under clear-night lights and
+  night storm, plus exact complete production ANSI output. At 160x46 with 20
+  colocated actors, clear-night 400-frame viewport p50/p95 improves
+  17.882/23.896→7.710/12.164 ms and `renderToString` improves
+  24.018/33.952→8.962/13.217 ms, retaining hash
+  `5d13904e9d63b8d7f3c90cff01525c9678cdb8d9e18cac5bd531bbc1343550f3`.
+  Exact 200-frame day-rain viewport p50/p95 improves
+  6.124/9.978→3.042/5.725 ms; exact night-storm improves
+  21.596/31.444→7.582/14.251 ms, while its genuinely changing terminal path
+  improves 35.102/46.939→21.793/35.585 ms. A synchronized 20-renderer
+  night-storm probe measures 27.136 ms leader p50 versus 15.516 ms across 19
+  followers, proving cross-session reuse rather than one-renderer memoization;
+  independent legal ANSI deltas are not mislabelled as visual equivalence.
+  The selected profile reduces `applyWorldAtmosphere` to 2.0% of non-library
+  JavaScript ticks (12.8% after V162; 50.1% before it); regional noise/material
+  sampling now dominates. Complete mode controls, profile logs, hashes,
+  synchronized-sharing evidence, limits, and next proof are retained in
+  `track-7-performance/static-night-light-v163/FINDINGS.md`. Full repository
+  verification passes 51 files / 285 tests, 18/18 typecheck tasks, 7/7 lint
+  tasks, 12/12 build tasks, and diff hygiene; the build produces a
+  10,120,820-byte runtime pack and 17,643,730-byte six-viewport prewarm. The
+  source is not deployed: a deterministic-mode reset, normal-host sustained
+  5/10/20 SSH ladder, mixed 30-minute run, bandwidth/delivery decomposition,
+  deployed cgroup observation, larger physical Ghostty viewport, and operator
+  use remain open. Production remains `vb07c0d4`; there was no deploy, service
+  restart, push, production database write, complete-gate claim, or physical
+  Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
@@ -1755,7 +1791,10 @@ Still open and therefore goal-blocking:
   mode/keyframe bandwidth audit, deployed cgroup observation, larger physical
   Ghostty viewport, and operator use remain unproven. V162 reduces the ordinary
   clear-day atmosphere traversal and instruments both IPC directions, but its
-  short host-confounded SSH probes do not replace the reset sustained ladder;
+  short host-confounded SSH probes do not replace the reset sustained ladder.
+  V163 makes night/light/rain/storm static planes reusable and moves the local
+  profile bottleneck into regional sampling, but it likewise has no normal-host
+  sustained/deployed SSH evidence;
 - the first six-family landmark silhouettes and shared-boundary parcel
   compounds now include a selected two-sided canal-town focal core, but remain
   sparse research prototypes rather than a complete world layer. The core now

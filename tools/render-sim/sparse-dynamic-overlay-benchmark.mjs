@@ -30,6 +30,11 @@ const ROOT = path.resolve(import.meta.dirname, '../..');
 const WORLD_SEED = BigInt(process.env.MALDOROR_WORLD_SEED ?? '8801799478018485');
 const RESOLUTION = 12;
 const FRAMES = Number.parseInt(process.env.MALDOROR_BENCHMARK_FRAMES ?? '400', 10);
+const WORLD_MINUTE = Number.parseInt(process.env.MALDOROR_WORLD_MINUTE ?? '480', 10);
+const WEATHER = process.env.MALDOROR_WEATHER ?? 'clear';
+const WEATHER_INTENSITY = Number.parseFloat(process.env.MALDOROR_WEATHER_INTENSITY ?? '0.1');
+const SHARED_SESSIONS = Number.parseInt(process.env.MALDOROR_SHARED_SESSIONS ?? '0', 10);
+const SHARED_FRAMES = Number.parseInt(process.env.MALDOROR_SHARED_FRAMES ?? '100', 10);
 const assets = defaultRegionalWorldAssetPaths(ROOT);
 const kit = await loadRegionalWorldKit({ worldSeed: WORLD_SEED, assets });
 const prewarm = await readRegionalRuntimePrewarmBundle(assets.runtimePrewarm);
@@ -79,15 +84,24 @@ for (let frame = 0; frame < FRAMES; frame++) {
     laneSamples.push(performance.now() - startedAt);
   }
 }
+const sharedSessionBatch = SHARED_SESSIONS > 0
+  ? runSharedSessionBenchmark(SHARED_SESSIONS, SHARED_FRAMES)
+  : undefined;
 const report = {
   generatedAt: new Date().toISOString(),
   framesPerLane: FRAMES,
   geometry: { cols: 160, rows: 46, pixels: [320, 176], resolution: RESOLUTION },
+  environment: {
+    worldMinute: WORLD_MINUTE,
+    weather: WEATHER,
+    weatherIntensity: WEATHER_INTENSITY,
+  },
   colocatedPlayers: 20,
   bakedViewports: viewports.length,
   sparseOverlayTilesInRepresentativeBounds: sparseEntries.length,
   viewportComposition: comparison(samples),
   productionRenderToString: comparison(gameSamples),
+  sharedSessionBatch,
   exactFinalPixelHash: hashGrid(controlFrame.buffer) === hashGrid(sparseFrame.buffer),
   finalPixelHash: hashGrid(sparseFrame.buffer),
 };
@@ -127,6 +141,46 @@ function makeGameLane(useSparseRange) {
   return { world, renderer };
 }
 
+function runSharedSessionBenchmark(sessionCount, frameCount) {
+  const lanes = Array.from({ length: sessionCount }, () => makeGameLane(true));
+  for (let frame = 0; frame < 30; frame++) {
+    for (const lane of lanes) runGameFrame(lane, frame);
+  }
+  const leader = [];
+  const followers = [];
+  const batches = [];
+  let exactFinalAnsiDelta = true;
+  let finalHash;
+  let uniqueFinalAnsiDeltas = 0;
+  for (let frame = 0; frame < frameCount; frame++) {
+    const batchStartedAt = performance.now();
+    const hashes = [];
+    for (let index = 0; index < lanes.length; index++) {
+      const startedAt = performance.now();
+      const output = runGameFrame(lanes[index], frame + 30);
+      (index === 0 ? leader : followers).push(performance.now() - startedAt);
+      hashes.push(crypto.createHash('sha256').update(output).digest('hex'));
+    }
+    batches.push((performance.now() - batchStartedAt) / lanes.length);
+    finalHash = hashes[0];
+    uniqueFinalAnsiDeltas = new Set(hashes).size;
+    if (uniqueFinalAnsiDeltas !== 1) exactFinalAnsiDelta = false;
+  }
+  for (const lane of lanes) lane.world.destroy();
+  return {
+    sessions: sessionCount,
+    frames: frameCount,
+    leader: distribution(leader),
+    followers: distribution(followers),
+    batchPerSession: distribution(batches),
+    // Independent encoders may emit different legal ANSI deltas for the same
+    // terminal state; exhaustive-vs-shared pixel tests own visual equivalence.
+    exactFinalAnsiDelta,
+    uniqueFinalAnsiDeltas,
+    finalOutputHash: finalHash,
+  };
+}
+
 function makeWorld(useSparseRange) {
   const world = kit.createSessionWorld({ maxPreparedViewports: viewports.length + 1 });
   for (const viewport of viewports) world.importPreparedViewport(viewport);
@@ -134,10 +188,10 @@ function makeWorld(useSparseRange) {
   world.setWorldLifeState({
     worldId: 'sparse-overlay-benchmark',
     worldSeed: String(WORLD_SEED),
-    worldMinute: 480,
-    weather: 'clear',
-    weatherIntensity: 0.1,
-    weatherUntilWorldMinute: 600,
+    worldMinute: WORLD_MINUTE,
+    weather: WEATHER,
+    weatherIntensity: WEATHER_INTENSITY,
+    weatherUntilWorldMinute: WORLD_MINUTE + 120,
     season: 'spring',
     rngState: 1,
     surfaceWetness: 0.2,
