@@ -65,7 +65,11 @@ import {
   sampleRegionalQuayLayout,
   type RegionalQuayLayout,
 } from './regional-quay-layout.js';
-import type { RegionalStreetPairCandidate } from './regional-street-pair-admission.js';
+import {
+  REGIONAL_STREET_PAIR_OWNERSHIP_CELL_SIZE,
+  regionalStreetPairOwnershipCell,
+  type RegionalStreetPairCandidate,
+} from './regional-street-pair-admission.js';
 import { TileProvider, type TileProviderConfig } from './tile-provider.js';
 
 export interface RegionalVisualAsset {
@@ -579,6 +583,10 @@ export class RegionalWorldDerivedCache {
   readonly ambientPlaceAccessCellCache = new Map<string, readonly RegionalParcelPathCell[]>();
   readonly ambientPlaceAccessCivicReservationCache = new Map<string, ReadonlySet<string>>();
   readonly ambientPlaceFabricCache = new Map<string, LandmarkFabricSurface | null>();
+  readonly ambientStreetPairCandidateCache = new Map<
+    string,
+    readonly AmbientStreetPairCandidate[]
+  >();
   readonly quayDetailPlacementCache = new Map<string, readonly Placement[]>();
   readonly quayFrontagePlacementCache = new Map<string, readonly Placement[]>();
   readonly dynamicQuayOverlayCache = new Map<string, Map<string, BuildingTileData>>();
@@ -597,6 +605,7 @@ export class RegionalWorldDerivedCache {
     this.ambientPlaceAccessCellCache.clear();
     this.ambientPlaceAccessCivicReservationCache.clear();
     this.ambientPlaceFabricCache.clear();
+    this.ambientStreetPairCandidateCache.clear();
     this.quayDetailPlacementCache.clear();
     this.quayFrontagePlacementCache.clear();
     this.dynamicQuayOverlayCache.clear();
@@ -707,6 +716,10 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly ambientPlaceAccessCellCache: Map<string, readonly RegionalParcelPathCell[]>;
   private readonly ambientPlaceAccessCivicReservationCache: Map<string, ReadonlySet<string>>;
   private readonly ambientPlaceFabricCache: Map<string, LandmarkFabricSurface | null>;
+  private readonly ambientStreetPairCandidateCache: Map<
+    string,
+    readonly AmbientStreetPairCandidate[]
+  >;
   private readonly quayDetailPlacementCache: Map<string, readonly Placement[]>;
   private readonly quayFrontagePlacementCache: Map<string, readonly Placement[]>;
   private readonly dynamicQuayOverlayCache: Map<string, Map<string, BuildingTileData>>;
@@ -788,6 +801,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     this.ambientPlaceAccessCivicReservationCache =
       this.derivedCache.ambientPlaceAccessCivicReservationCache;
     this.ambientPlaceFabricCache = this.derivedCache.ambientPlaceFabricCache;
+    this.ambientStreetPairCandidateCache = this.derivedCache.ambientStreetPairCandidateCache;
     this.quayDetailPlacementCache = this.derivedCache.quayDetailPlacementCache;
     this.quayFrontagePlacementCache = this.derivedCache.quayFrontagePlacementCache;
     this.dynamicQuayOverlayCache = this.derivedCache.dynamicQuayOverlayCache;
@@ -1722,6 +1736,8 @@ export class RegionalWorldTileProvider extends TileProvider {
     cachedAmbientEnsembleCells: number;
     cachedAmbientPlacePrograms: number;
     cachedAmbientPlaceFabrics: number;
+    cachedAmbientStreetPairOwnershipCells: number;
+    cachedAmbientStreetPairCandidates: number;
     cachedAmbientPlaceConnectorCells: number;
     cachedCivicDetailPlacements: number;
     cachedQuayDetailPlacements: number;
@@ -1784,6 +1800,11 @@ export class RegionalWorldTileProvider extends TileProvider {
         (program) => program !== null,
       ).length,
       cachedAmbientPlaceFabrics: this.ambientPlaceFabricCache.size,
+      cachedAmbientStreetPairOwnershipCells: this.ambientStreetPairCandidateCache.size,
+      cachedAmbientStreetPairCandidates: [...this.ambientStreetPairCandidateCache.values()].reduce(
+        (total, candidates) => total + candidates.length,
+        0,
+      ),
       cachedAmbientPlaceConnectorCells: [...this.blockCache.values()].reduce(
         (total, block) => total + block.placeConnectors.size,
         0,
@@ -4451,6 +4472,84 @@ export class RegionalWorldTileProvider extends TileProvider {
       }
     }
     return reserved;
+  }
+
+  /** @internal Enumerate intrinsic complete pairs by a fixed route-contact ownership
+   * cell. The 64-tile connected-place source reach bounds which 24-tile meso
+   * cells can possibly target this ownership cell. Runtime provider blocks do
+   * not participate, and every candidate is filtered back to its exact owner. */
+  getAmbientStreetPairCandidates(
+    ownershipCellX: number,
+    ownershipCellY: number,
+  ): readonly AmbientStreetPairCandidate[] {
+    const cacheKey = `${this.ambientPlaceFabricProfile}:${this.ambientPlaceAccessProfile}:` +
+      `${ownershipCellX},${ownershipCellY}`;
+    const cached = this.ambientStreetPairCandidateCache.get(cacheKey);
+    if (cached) {
+      this.ambientStreetPairCandidateCache.delete(cacheKey);
+      this.ambientStreetPairCandidateCache.set(cacheKey, cached);
+      return cached;
+    }
+    if (this.ambientPlaceFabricProfile !== 'shared-common-street-overlay' ||
+        this.ambientPlaceAccessProfile !== 'route-frontage') {
+      return this.cacheAmbientStreetPairCandidates(cacheKey, Object.freeze([]));
+    }
+    const ownership = regionalStreetPairOwnershipCell(
+      ownershipCellX * REGIONAL_STREET_PAIR_OWNERSHIP_CELL_SIZE,
+      ownershipCellY * REGIONAL_STREET_PAIR_OWNERSHIP_CELL_SIZE,
+    );
+    const firstPlaceCellX = floorDiv(
+      ownership.minX - REGIONAL_AMBIENT_CONNECTED_PLACE_SOURCE_REACH,
+      REGIONAL_AMBIENT_CONNECTED_PLACE_CELL_SIZE,
+    );
+    const lastPlaceCellX = floorDiv(
+      ownership.maxX + REGIONAL_AMBIENT_CONNECTED_PLACE_SOURCE_REACH,
+      REGIONAL_AMBIENT_CONNECTED_PLACE_CELL_SIZE,
+    );
+    const firstPlaceCellY = floorDiv(
+      ownership.minY - REGIONAL_AMBIENT_CONNECTED_PLACE_SOURCE_REACH,
+      REGIONAL_AMBIENT_CONNECTED_PLACE_CELL_SIZE,
+    );
+    const lastPlaceCellY = floorDiv(
+      ownership.maxY + REGIONAL_AMBIENT_CONNECTED_PLACE_SOURCE_REACH,
+      REGIONAL_AMBIENT_CONNECTED_PLACE_CELL_SIZE,
+    );
+    const unique = new Map<string, AmbientStreetPairCandidate>();
+    for (let placeCellY = firstPlaceCellY; placeCellY <= lastPlaceCellY; placeCellY++) {
+      for (let placeCellX = firstPlaceCellX; placeCellX <= lastPlaceCellX; placeCellX++) {
+        const program = this.getAmbientPlaceProgram(placeCellX, placeCellY);
+        if (!program) continue;
+        const candidate = this.buildAmbientSharedStreetPairCandidate(program, new Set());
+        if (!candidate) continue;
+        const candidateOwner = regionalStreetPairOwnershipCell(
+          candidate.ownershipX,
+          candidate.ownershipY,
+        );
+        if (candidateOwner.cellX !== ownershipCellX ||
+            candidateOwner.cellY !== ownershipCellY) continue;
+        unique.set(candidate.id, candidate);
+      }
+    }
+    const stable = Object.freeze([...unique.values()].sort((a, b) => (
+      a.id === b.id ? 0 : a.id < b.id ? -1 : 1
+    )));
+    return this.cacheAmbientStreetPairCandidates(cacheKey, stable);
+  }
+
+  private cacheAmbientStreetPairCandidates(
+    key: string,
+    candidates: readonly AmbientStreetPairCandidate[],
+  ): readonly AmbientStreetPairCandidate[] {
+    this.ambientStreetPairCandidateCache.set(key, candidates);
+    // A provider block can touch several fixed ownership cells through source
+    // reach. Keep a generous but finite worker-shared LRU proportional to the
+    // already bounded block cache.
+    while (this.ambientStreetPairCandidateCache.size > this.maxCachedBlocks * 16) {
+      const oldest = this.ambientStreetPairCandidateCache.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.ambientStreetPairCandidateCache.delete(oldest);
+    }
+    return candidates;
   }
 
   /** Fit optional route-facing detail only after the authoritative meso

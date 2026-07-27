@@ -38,6 +38,7 @@ import {
   type RegionalQuayDetailAsset,
   type RegionalRouteContactAsset,
 } from '../tiles/regional-world-tile-provider.js';
+import { regionalStreetPairOwnershipCell } from '../tiles/regional-street-pair-admission.js';
 
 const COLOURS: Record<BiomeFamily, RGB> = {
   'canal-town': { r: 210, g: 120, b: 60 },
@@ -1143,6 +1144,14 @@ describe('RegionalWorldTileProvider', () => {
         program: unknown,
         reserved: ReadonlySet<string>,
       ): InspectedStreetPairCandidate | null;
+      getAmbientStreetPairCandidates(
+        ownershipCellX: number,
+        ownershipCellY: number,
+      ): readonly InspectedStreetPairCandidate[];
+      cacheAmbientStreetPairCandidates(
+        key: string,
+        candidates: readonly InspectedStreetPairCandidate[],
+      ): readonly InspectedStreetPairCandidate[];
     };
     const inspectFirst = first as unknown as StreetPairInspection;
     const inspectReplay = replay as unknown as StreetPairInspection;
@@ -1191,6 +1200,49 @@ describe('RegionalWorldTileProvider', () => {
     expect(intrinsicPair!.visualGroups).toHaveLength(2);
     expect(new Set(intrinsicPair!.visualGroups).size).toBe(2);
     expect(intrinsicPair!.placements).toHaveLength(2);
+
+    const ownershipCells = Array.from({ length: 5 }, (_, index) => ({
+      cellX: index - 2,
+      cellY: 0,
+    }));
+    const enumerateCandidates = (
+      inspection: StreetPairInspection,
+      cells: readonly { cellX: number; cellY: number }[],
+    ) => {
+      const candidates = new Map<string, InspectedStreetPairCandidate>();
+      for (const cell of cells) {
+        for (const candidate of inspection.getAmbientStreetPairCandidates(
+          cell.cellX,
+          cell.cellY,
+        )) {
+          const owner = regionalStreetPairOwnershipCell(
+            candidate.ownershipX,
+            candidate.ownershipY,
+          );
+          expect([owner.cellX, owner.cellY]).toEqual([cell.cellX, cell.cellY]);
+          candidates.set(candidate.id, candidate);
+        }
+      }
+      return [...candidates.values()].map(candidateSignature).sort((a, b) => (
+        a.id === b.id ? 0 : a.id < b.id ? -1 : 1
+      ));
+    };
+    const forwardCandidates = enumerateCandidates(inspectFirst, ownershipCells);
+    const reverseCandidates = enumerateCandidates(inspectReplay, [...ownershipCells].reverse());
+    expect(forwardCandidates.length).toBeGreaterThan(0);
+    expect(reverseCandidates).toEqual(forwardCandidates);
+    expect(enumerateCandidates(inspectFirst, [...ownershipCells].reverse()))
+      .toEqual(forwardCandidates);
+    expect(first.getRegionalStats()).toMatchObject({
+      cachedAmbientStreetPairOwnershipCells: ownershipCells.length,
+      cachedAmbientStreetPairCandidates: forwardCandidates.length,
+    });
+    const streetCandidateCacheLimit = first.getRegionalStats().maxCachedBlocks * 16;
+    for (let index = 0; index < streetCandidateCacheLimit + 2; index++) {
+      inspectFirst.cacheAmbientStreetPairCandidates(`test-overflow:${index}`, Object.freeze([]));
+    }
+    expect(first.getRegionalStats().cachedAmbientStreetPairOwnershipCells)
+      .toBe(streetCandidateCacheLimit);
     expect(first.getRegionalStats()).toMatchObject({
       ambientPlaceFabricProfile: 'shared-common-street-overlay',
       ambientPlaceAccessProfile: 'route-frontage',

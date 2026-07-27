@@ -2089,6 +2089,31 @@ Completed foundations:
   measure and prove the finite footprint neighbour ring, validate complete
   pairs against immutable protected geometry, and compare cached winner
   signatures across block sizes/traversals before materialization changes;
+- V177 selects diagnostic-only fixed-cell enumeration of real intrinsic pair
+  candidates. A worker-shared bounded LRU enumerates canonical 24-tile meso
+  sources through the proved 64-tile source reach, filters each pair to an exact
+  64-tile route-contact owner, and never consults provider block geometry. Five
+  ownership cells produce exact signatures under forward 32-tile, reverse
+  47-tile, and reversed cached traversal. The faithful radius-160 production-
+  manifest census resolves the unchanged 400/181/112 place/program/fabric
+  field and enumerates 36 ownership cells: 60 total candidates, 46 inside the
+  exact margin, 46 unique identities, zero duplicate emissions, and zero owner
+  mismatches. Observed complete halos contain at most 76 cells and reach at most
+  11 tiles per axis (12.042 Euclidean), yielding a conservative one-cell ring;
+  all three observed conflicts are same-cell. A saturation test overfills the
+  worker LRU and proves its exact `maxCachedBlocks * 16` cap. The proof is
+  field-bounded—not yet global—because missing canal/coast and several missing
+  axes could carry a larger manifest asset. V170 remains nine complete sites
+  with no incomplete pair, the same 4/11 coverage and exact `0/6/12/24/9`
+  opportunity partition;
+  all eight source/OCTANT PNG hashes are byte-identical to V172. All 41 tests,
+  world typecheck/build, lab syntax, faithful census, and seven lint tasks pass.
+  The cache remains diagnostic-only, so no rendered improvement is claimed.
+  Evidence lives in
+  `track-4-world-composition/regional-fixed-cell-candidates-v177/FINDINGS.md`.
+  Next, prove the neighbour ring against every eligible manifest family/axis,
+  derive immutable fixed-space protected reservations, and compare canonical
+  winner signatures across blocks/traversals before any materialization change;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without

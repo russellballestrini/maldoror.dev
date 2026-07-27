@@ -27,9 +27,12 @@ import {
   REGIONAL_AMBIENT_CONNECTED_PLACE_CELL_SIZE,
   REGIONAL_AMBIENT_CONNECTED_PLACE_SOURCE_REACH,
   REGIONAL_MATERIAL_TEXTURE_PROFILE,
+  REGIONAL_STREET_PAIR_OWNERSHIP_CELL_SIZE,
   RegionalMaterialCompositor,
   RegionalRouteField,
   RegionalWorldTileProvider,
+  regionalStreetPairCandidatesConflict,
+  regionalStreetPairOwnershipCell,
   rasterizeRegionalEnvironmentProgramLayout,
   rasterizeRegionalLandmarkFabricLayout,
   sampleRegionalLandmarkFabricLayout,
@@ -578,6 +581,115 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
       routeWindows.set(`${blockX},${blockY}`, { blockX, blockY });
     }
   }
+  const ownershipMargin = searchRadius + 16;
+  const firstOwnership = regionalStreetPairOwnershipCell(-ownershipMargin, -ownershipMargin);
+  const lastOwnership = regionalStreetPairOwnershipCell(ownershipMargin, ownershipMargin);
+  const canonicalCandidates = new Map();
+  const ownershipMismatches = [];
+  let enumeratedOwnershipCells = 0;
+  let enumeratedCandidateEmissions = 0;
+  let inMarginCandidateEmissions = 0;
+  for (let ownershipCellY = firstOwnership.cellY;
+    ownershipCellY <= lastOwnership.cellY; ownershipCellY++) {
+    for (let ownershipCellX = firstOwnership.cellX;
+      ownershipCellX <= lastOwnership.cellX; ownershipCellX++) {
+      enumeratedOwnershipCells++;
+      for (const candidate of world.getAmbientStreetPairCandidates(
+        ownershipCellX,
+        ownershipCellY,
+      )) {
+        enumeratedCandidateEmissions++;
+        const owner = regionalStreetPairOwnershipCell(
+          candidate.ownershipX,
+          candidate.ownershipY,
+        );
+        if (owner.cellX !== ownershipCellX || owner.cellY !== ownershipCellY) {
+          ownershipMismatches.push({
+            id: candidate.id,
+            emittedBy: [ownershipCellX, ownershipCellY],
+            actualOwner: [owner.cellX, owner.cellY],
+          });
+          continue;
+        }
+        if (Math.abs(candidate.ownershipX) > ownershipMargin ||
+            Math.abs(candidate.ownershipY) > ownershipMargin) continue;
+        inMarginCandidateEmissions++;
+        canonicalCandidates.set(candidate.id, candidate);
+      }
+    }
+  }
+  if (ownershipMismatches.length > 0) {
+    throw new Error(`Street candidate ownership mismatch: ${JSON.stringify(ownershipMismatches)}`);
+  }
+  let maximumFootprintAxisReach = 0;
+  let maximumFootprintEuclideanReach = 0;
+  let maximumReservedCellCount = 0;
+  for (const candidate of canonicalCandidates.values()) {
+    maximumReservedCellCount = Math.max(
+      maximumReservedCellCount,
+      candidate.reservedCells.length,
+    );
+    for (const key of candidate.reservedCells) {
+      const [cellX, cellY] = key.split(',').map(Number);
+      if (!Number.isFinite(cellX) || !Number.isFinite(cellY)) {
+        throw new Error(`Invalid street candidate footprint key: ${candidate.id}:${key}`);
+      }
+      const deltaX = Math.abs(cellX - candidate.ownershipX);
+      const deltaY = Math.abs(cellY - candidate.ownershipY);
+      maximumFootprintAxisReach = Math.max(maximumFootprintAxisReach, deltaX, deltaY);
+      maximumFootprintEuclideanReach = Math.max(
+        maximumFootprintEuclideanReach,
+        Math.hypot(deltaX, deltaY),
+      );
+    }
+  }
+  const canonicalCandidateValues = [...canonicalCandidates.values()];
+  let observedConflictNeighbourReach = 0;
+  let observedConflictEdges = 0;
+  for (let firstIndex = 0; firstIndex < canonicalCandidateValues.length; firstIndex++) {
+    const first = canonicalCandidateValues[firstIndex];
+    const firstOwner = regionalStreetPairOwnershipCell(first.ownershipX, first.ownershipY);
+    for (let secondIndex = firstIndex + 1;
+      secondIndex < canonicalCandidateValues.length; secondIndex++) {
+      const second = canonicalCandidateValues[secondIndex];
+      if (!regionalStreetPairCandidatesConflict(first, second)) continue;
+      observedConflictEdges++;
+      const secondOwner = regionalStreetPairOwnershipCell(second.ownershipX, second.ownershipY);
+      observedConflictNeighbourReach = Math.max(
+        observedConflictNeighbourReach,
+        Math.abs(firstOwner.cellX - secondOwner.cellX),
+        Math.abs(firstOwner.cellY - secondOwner.cellY),
+      );
+    }
+  }
+  const conservativeConflictNeighbourReach = maximumFootprintAxisReach === 0
+    ? 0
+    : Math.floor(
+      Math.max(0, maximumFootprintAxisReach * 2 - 1) /
+      REGIONAL_STREET_PAIR_OWNERSHIP_CELL_SIZE,
+    ) + 1;
+  if (inMarginCandidateEmissions !== canonicalCandidates.size) {
+    throw new Error('Street candidate ownership emitted a duplicate complete identity');
+  }
+  if (observedConflictNeighbourReach > conservativeConflictNeighbourReach) {
+    throw new Error('Observed street conflict exceeds conservative ownership-cell reach');
+  }
+  const canonicalCandidateDiagnostics = {
+    ownershipCellSize: REGIONAL_STREET_PAIR_OWNERSHIP_CELL_SIZE,
+    ownershipMargin,
+    enumeratedOwnershipCells,
+    enumeratedCandidateEmissions,
+    inMarginCandidateEmissions,
+    uniqueCandidateCount: canonicalCandidates.size,
+    duplicateCandidateEmissionCount: inMarginCandidateEmissions - canonicalCandidates.size,
+    ownershipMismatches,
+    maximumReservedCellCount,
+    maximumFootprintAxisReach,
+    maximumFootprintEuclideanReach: Number(maximumFootprintEuclideanReach.toFixed(3)),
+    conservativeConflictNeighbourReach,
+    observedConflictEdges,
+    observedConflictNeighbourReach,
+  };
   console.error(JSON.stringify({ streetOverlayDiscovery: {
     searchRadius,
     evaluatedPlaceCells,
@@ -718,6 +830,7 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
     missing,
     opportunityStageTotals,
     opportunityByVocabulary,
+    canonicalCandidateDiagnostics,
     complete: missing.length === 0 && incompleteSites.length === 0,
     discoveryMs: Number((performance.now() - discoveryStartedAt).toFixed(2)),
   };
