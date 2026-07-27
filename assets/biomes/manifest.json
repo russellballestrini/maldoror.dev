@@ -11,6 +11,18 @@
     "prompt": "generated/regional-materials-atlas-v1-source.md",
     "sha256": "08069e992cbfaf93532f55198fbaf123b57e6a798bbcf5408ab214a3c54d92e0"
   },
+  "materialSuccessors": [
+    {
+      "date": "2026-07-27",
+      "mode": "Codex built-in image generation on ChatGPT subscription",
+      "meteredApiSpend": false,
+      "source": "generated/regional-materials-atlas-v2-source.png",
+      "prompt": "generated/regional-materials-atlas-v2-source.md",
+      "sourceSha256": "e8262e6f33fc65bd7105ab627714794038f4a3ecca7aeb8fe919fd03b77138ac",
+      "selectedFamilies": ["canal-town", "coast"],
+      "rejectedFamilies": ["forest", "rural", "mountain", "ruins"]
+    }
+  ],
   "overviewGeneration": {
     "date": "2026-07-24",
     "mode": "Codex built-in image generation on ChatGPT subscription",
@@ -33,7 +45,7 @@
       "family": "canal-town",
       "role": "paving",
       "id": "regional-canal-town-paving",
-      "file": "materials/canal-town-paving-master-v1.png",
+      "file": "materials/canal-town-paving-master-v2.png",
       "landmarkFabricFile": "settlement-materials/canal-town-limestone-plaza-master-v2-terminal.png",
       "landmarkFabricVariants": 1,
       "overviewFile": "overview-materials/canal-town-overview-master-v1.png",
@@ -56,7 +68,7 @@
       "family": "coast",
       "role": "marsh",
       "id": "regional-coast-marsh",
-      "file": "materials/coast-marsh-master-v1.png",
+      "file": "materials/coast-marsh-master-v2.png",
       "overviewFile": "overview-materials/coast-overview-master-v1.png",
       "overviewVariants": 1,
       "variants": 4,

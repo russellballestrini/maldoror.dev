@@ -1860,6 +1860,48 @@ Completed foundations:
   larger physical Ghostty viewport, and operator use remain open. Production
   remains `vb07c0d4`; there was no deploy, service restart, push, production
   database write, complete-gate claim, or physical Ghostty claim;
+- V167 selects a faithfully reviewed **hybrid regional-material successor**
+  while continuing to reject Gate A. Codex's built-in image-generation path on
+  the existing ChatGPT subscription produced one untouched six-panel V2 atlas,
+  with exact prompt and SHA-256 provenance and no metered API spend. Fresh
+  gutter-derived reconstruction reproduces all six derivatives byte for byte.
+  Direct 160x44 OCTANT review accepts only the less-washed canal limestone and
+  more cohesive blue-green coast marsh: coast walking boundary/interior ratio
+  improves `0.862 -> 0.839`, arrival detail `1.094 -> 1.045`, and bridge detail
+  `0.959 -> 0.939`. V2 forest, rural, mountain, and ruins are explicitly
+  rejected for softened identity, conspicuous furrow repetition, lost rock
+  fractures, or lost mosaic identity even where a metric improved. Six
+  full-world shared-common frames retain exact placement counts; the deliberate
+  coast change measures 7.63% normalized mean pixel difference from V161 while
+  forest/rural/mountain/ruins/transition remain bounded at 1.30/1.05/0.79/
+  0.22/1.36%. An independent default-manifest proof reproduces the accepted
+  material-only and full-world PNGs byte for byte, the exact full-world semantic
+  hash `c1a18d782e652e5c95e6c9a83fe652c8dc0db84efa7c6958243e8d2d58f4ecb8`,
+  44 placements, 7 parcel components, and four valid visible fabrics. The labs
+  now resolve material files from an overridable manifest and fail early on
+  duplicate, missing-family, missing-field, or missing-file input instead of
+  retaining stale V1 filename tables. A parallel continuous-frontage inquiry
+  rejects and reverts route-frontage candidates A--J: the compatible rural road
+  was about 42 tiles from the visible core, and the road-centred view exposed
+  only two clipped objects. Occupation-yard candidates K--M are likewise
+  reverted after one displaced a good shed and the corrected/stronger versions
+  remained visually too subtle (about 0.59--1.03% rural change) for their cost.
+  Complete generation, derivation, hybrid, parity, direct-review, and rejected
+  evidence lives in
+  `track-1-material-blending/regional-imagegen-materials-v167/FINDINGS.md` and
+  `track-4-world-composition/regional-continuous-frontage-v167/FINDINGS.md`.
+  Repository verification passes 51 files / 286 tests, 18/18 typecheck tasks,
+  7/7 lint tasks, 12/12 build tasks, lab syntax, derivation reproducibility,
+  and manifest/full-world parity. The uncached build produces a 10,119,049-byte
+  runtime pack from 126 source files and a 17,299,670-byte six-viewport prewarm.
+  Its 9m46s wall time and the 19.986--31.583s research frames are correctness
+  observations only: the host showed load above 20, about 22 GiB resident swap,
+  and severe memory/I/O PSI, so V166 correctly excludes them from Gate D.
+  Continuous frontage, stronger coast/rural/transition composition, the fresh
+  complete Gate A atlas, a qualified sustained 5/10/20 ladder, Gate C, deployed
+  cgroup proof, and explicit physical Ghostty acceptance remain open. Production
+  remains `vb07c0d4`; there was no deploy, service restart, push, production
+  database write, complete-gate claim, or physical Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
@@ -1899,7 +1941,10 @@ Still open and therefore goal-blocking:
   route-frontage meso place field supplies the first non-origin multi-mass
   layer with proved circulation; V161's selected experimental successor adds
   the first two-parent shared commons and bounded frontage wings, with strong
-  local forest/ruins evidence but no production enablement. V159's full fixed
+  local forest/ruins evidence but no production enablement. V167 selects only a
+  canal/coast material successor and explicitly rejects its attempted
+  continuous-frontage composition; texture improvement is not a substitute for
+  occupied topology. V159's full fixed
   atlas and V161's still-sparse coast/rural/transition frames prove that a few
   connected public compounds are not a substitute for continuous frontage,
   crossings, activity, or settlement fabric.
@@ -1925,8 +1970,9 @@ Still open and therefore goal-blocking:
   remaining multi-parent generalization, route/crossing/frontage, overview-LOD,
   and dynamically enumerated material-boundary failures are corrected and the
   exact fixed atlas passes on a fresh build. V161 closes only the first bounded
-  forest/ruins public-common case; it has not earned production enablement or
-  an atlas rerun. V160 corrects process-local cold
+  forest/ruins public-common case, and V167 closes only a bounded canal/coast
+  material-quality case; neither has earned production enablement or an atlas
+  rerun. V160 corrects process-local cold
   session admission in scratch, but is not deployed and exposes a separate
   20-presence worker-latency failure. The selected
   night/storm and water/route/quay corrections have now been tested by the

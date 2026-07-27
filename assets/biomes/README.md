@@ -4,6 +4,11 @@ The V1 atlas is a bounded source-art prototype generated through Codex's
 built-in ChatGPT image workflow. It uses no metered image API. The untouched
 source, exact prompt, hash, derived masters, and semantic manifest live here.
 
+The V2 successor is deliberately hybrid rather than a wholesale replacement.
+Faithful 160x44 octant comparison selected its less-seamed canal paving and
+coast marsh masters while retaining V1 forest, rural, mountain, and ruins
+identity. The V2 source note records both accepted and rejected derivatives.
+
 Run `node tools/render-sim/derive-biome-materials.mjs` to detect the flat
 magenta gutters and reproduce the six square material masters. Crop geometry is
 derived from the source image rather than hand-maintained coordinates.

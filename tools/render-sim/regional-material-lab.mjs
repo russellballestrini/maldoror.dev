@@ -17,34 +17,53 @@ const OUTPUT = process.env.MALDOROR_REGIONAL_MATERIAL_OUTPUT ??
   '/mnt/donto-data/donto-resources/maldoror/rendering-research/track-1-material-blending/regional-v3-routes';
 const WORLD_SEED = BigInt(process.env.MALDOROR_WORLD_SEED ?? '8801799478018485');
 const SOURCE_TILE_SIZE = Number.parseInt(process.env.MALDOROR_REGIONAL_SOURCE_TILE_SIZE ?? '48', 10);
+const ROOT = path.resolve(import.meta.dirname, '../..');
+const BIOME_MANIFEST = path.resolve(process.env.MALDOROR_REGIONAL_BIOME_MANIFEST ??
+  path.join(ROOT, 'assets/biomes/manifest.json'));
+const biomeManifest = JSON.parse(fs.readFileSync(BIOME_MANIFEST, 'utf8'));
+if (!Array.isArray(biomeManifest.materialMasters)) {
+  throw new Error(`Invalid regional biome manifest: ${BIOME_MANIFEST}`);
+}
+const manifestDirectory = path.dirname(BIOME_MANIFEST);
+const materialEntries = new Map(biomeManifest.materialMasters.map((entry) => (
+  [entry.family, entry]
+)));
+if (materialEntries.size !== biomeManifest.materialMasters.length) {
+  throw new Error(`Duplicate material family in regional biome manifest: ${BIOME_MANIFEST}`);
+}
+for (const family of BIOME_FAMILIES) {
+  const entry = materialEntries.get(family);
+  if (!entry) {
+    throw new Error(`Missing ${family} material in regional biome manifest: ${BIOME_MANIFEST}`);
+  }
+  for (const field of ['file', 'overviewFile']) {
+    if (typeof entry[field] !== 'string' || entry[field].length === 0) {
+      throw new Error(`Missing ${family}.${field} in regional biome manifest: ${BIOME_MANIFEST}`);
+    }
+    const materialPath = path.resolve(manifestDirectory, entry[field]);
+    if (!fs.existsSync(materialPath)) {
+      throw new Error(`Missing ${family}.${field} asset: ${materialPath}`);
+    }
+  }
+}
 const WIDTH = 320;
 const HEIGHT = 176;
-const MATERIAL_FILES = {
-  'canal-town': 'assets/biomes/materials/canal-town-paving-master-v1.png',
-  forest: 'assets/biomes/materials/forest-floor-master-v1.png',
-  coast: 'assets/biomes/materials/coast-marsh-master-v1.png',
-  rural: 'assets/biomes/materials/rural-orchard-master-v1.png',
-  mountain: 'assets/biomes/materials/mountain-highland-master-v1.png',
-  ruins: 'assets/biomes/materials/ancient-ruins-master-v1.png',
-};
-const OVERVIEW_MATERIAL_FILES = {
-  'canal-town': 'assets/biomes/overview-materials/canal-town-overview-master-v1.png',
-  forest: 'assets/biomes/overview-materials/forest-overview-master-v1.png',
-  coast: 'assets/biomes/overview-materials/coast-overview-master-v1.png',
-  rural: 'assets/biomes/overview-materials/rural-overview-master-v1.png',
-  mountain: 'assets/biomes/overview-materials/mountain-overview-master-v1.png',
-  ruins: 'assets/biomes/overview-materials/ruins-overview-master-v1.png',
-};
+const MATERIAL_FILES = Object.fromEntries([...materialEntries].map(([family, entry]) => (
+  [family, path.resolve(manifestDirectory, entry.file)]
+)));
+const OVERVIEW_MATERIAL_FILES = Object.fromEntries([...materialEntries].map(([family, entry]) => (
+  [family, path.resolve(manifestDirectory, entry.overviewFile)]
+)));
 const ROUTE_MATERIAL_FILES = {
-  arterial: 'assets/routes/materials/arterial-stone-master-v1.png',
-  'local-road': 'assets/routes/materials/local-earth-master-v1.png',
-  trail: 'assets/routes/materials/trail-floor-master-v1.png',
+  arterial: path.join(ROOT, 'assets/routes/materials/arterial-stone-master-v1.png'),
+  'local-road': path.join(ROOT, 'assets/routes/materials/local-earth-master-v1.png'),
+  trail: path.join(ROOT, 'assets/routes/materials/trail-floor-master-v1.png'),
 };
 const CROSSING_MATERIAL_FILES = {
-  bridge: 'assets/routes/materials/bridge-timber-master-v1.png',
+  bridge: path.join(ROOT, 'assets/routes/materials/bridge-timber-master-v1.png'),
 };
 const FRAME_FILTER = process.env.MALDOROR_REGIONAL_FRAME;
-const FRAMES = [
+let FRAMES = [
   { name: 'arrival-material-detail', origin: [-10, -5], displayTileSize: 16 },
   { name: 'bridge-material-detail', origin: [249, -75], displayTileSize: 16 },
   { name: 'arrival-route-overview', origin: [-40, -22], displayTileSize: 4, overviewLod: true },
@@ -53,6 +72,21 @@ const FRAMES = [
   { name: 'ruins-route-overview', origin: [-16, -232], displayTileSize: 4, overviewLod: true },
 ].filter((frame) => !FRAME_FILTER || frame.name === FRAME_FILTER);
 if (FRAMES.length === 0) throw new Error(`Unknown regional material frame: ${FRAME_FILTER}`);
+const ORIGIN_OVERRIDE = process.env.MALDOROR_REGIONAL_MATERIAL_ORIGIN;
+if (ORIGIN_OVERRIDE) {
+  const origin = ORIGIN_OVERRIDE.split(',').map(Number);
+  if (origin.length !== 2 || origin.some((value) => !Number.isFinite(value))) {
+    throw new Error(`Invalid regional material origin: ${ORIGIN_OVERRIDE}`);
+  }
+  const displayTileSize = Number.parseInt(
+    process.env.MALDOROR_REGIONAL_MATERIAL_DISPLAY_TILE_SIZE ?? '16',
+    10,
+  );
+  if (![4, 8, 12, 16].includes(displayTileSize)) {
+    throw new Error(`Invalid regional material display tile size: ${displayTileSize}`);
+  }
+  FRAMES = [{ name: 'custom-material', origin, displayTileSize }];
+}
 
 fs.mkdirSync(OUTPUT, { recursive: true });
 

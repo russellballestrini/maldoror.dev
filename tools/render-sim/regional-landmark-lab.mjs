@@ -42,6 +42,8 @@ const ROOT = path.resolve(import.meta.dirname, '../..');
 const OUTPUT = process.env.MALDOROR_REGIONAL_LANDMARK_OUTPUT ??
   '/mnt/donto-data/donto-resources/maldoror/rendering-research/track-4-world-composition/regional-landmark-v2-alpha';
 const WORLD_SEED = BigInt(process.env.MALDOROR_WORLD_SEED ?? '8801799478018485');
+const BIOME_MANIFEST = path.resolve(process.env.MALDOROR_REGIONAL_BIOME_MANIFEST ??
+  path.join(ROOT, 'assets/biomes/manifest.json'));
 const WIDTH = 320;
 const HEIGHT = 176;
 const FRAME_FILTER = process.env.MALDOROR_REGIONAL_LANDMARK_FRAME;
@@ -309,7 +311,7 @@ const [
   parcelKit,
   environmentKit,
 ] = await Promise.all([
-  loadRegionalBiomeMaterialKit(path.join(ROOT, 'assets/biomes/manifest.json')),
+  loadRegionalBiomeMaterialKit(BIOME_MANIFEST),
   loadRegionalRouteMaterialKit(path.join(ROOT, 'assets/routes/manifest.json')),
   loadRegionalLandmarkKit(path.join(ROOT, 'assets/biomes/landmarks-manifest.json')),
   loadRegionalAmbientKit(path.join(ROOT, 'assets/biomes/ambient-manifest.json')),
@@ -1245,6 +1247,8 @@ for (const frame of FRAMES) {
         role: apron.role,
         axis: apron.axis,
         centre: [apron.centreX, apron.centreY],
+        halfAlong: apron.halfAlong,
+        halfAcross: apron.halfAcross,
       })),
     })),
     landmarkFabricAudit: auditLandmarkFabrics(visibleLandmarkFabrics),
