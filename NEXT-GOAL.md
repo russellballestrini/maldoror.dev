@@ -2018,6 +2018,24 @@ Completed foundations:
   but let only fine access-path frontage props yield to a complete street pair
   and cull the displaced props afterward. Program parity, cache/block exactness,
   coast/arrival preservation, and expanded atlas coverage are mandatory;
+- V173 rejects and fully reverts the access-frontage replacement experiment.
+  The candidate preserved all nine strict V170 pairs and added five complete
+  replacement pairs, reducing final detail rejections 24→19 and exposing one
+  rural east-west frame. However, authoritative collection reported 15 sites
+  with street detail but only 14 complete pairs: one real site emitted a
+  cross-block half-pair. The rural east-west frame also repeats semantic visual
+  group `rural-stone-barn-v1` between its new street barn and preserved common
+  frontage, so both the street uniqueness and whole-place composition audits
+  fail. Direct review found the new forest/mountain selections locally strong,
+  but they cannot outweigh atomicity and repetition failures. A synthetic
+  32/47-block invariant and all 34 provider tests had passed, proving that the
+  fixture was insufficient; the faithful dynamic atlas remains authoritative.
+  All provider/test/lab changes were reverted, accepted `dist` output rebuilt,
+  and the restored focused invariant re-passed. Evidence lives in
+  `track-4-world-composition/regional-frontage-replacement-v173/FINDINGS.md`.
+  Next work requires one canonical pair-level detail decision reused by every
+  block/cache size plus whole-place semantic-group reservation; hash thinning
+  cannot repair a block-context admission contract;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
