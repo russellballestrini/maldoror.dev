@@ -1838,6 +1838,28 @@ Completed foundations:
   The selected source is not deployed. Production remains `vb07c0d4`; there
   was no deploy, service restart, push, production database write,
   complete-gate claim, or physical Ghostty claim;
+- V166 makes normal-host qualification a machine-enforced part of the real-SSH
+  proof contract while **continuing to reject Gate D**. The ladder now records
+  CPU/memory/I/O PSI, load per logical CPU, available memory, resident swap, and
+  swap-I/O rate before admission, continuously across warmup/rungs/churn, and
+  per rung. `--require-normal-host` rejects a contaminated preflight before
+  opening SSH clients and returns exit code 2 if any later workload sample
+  invalidates the window; completed raw evidence remains retained with
+  `normalHostQualified=false`. Fixed limits reject memory or I/O full-PSI above
+  1%, CPU some-PSI above 20%, load above one runnable task per logical CPU,
+  available memory below 2 GiB, or swap I/O above 1 MiB/s. Three deterministic
+  tests cover a passing window, all six rejection signals, and the live kernel
+  snapshot contract. The first live preflight correctly refuses this host
+  without admitting a client: memory full-PSI 44.37%, I/O full-PSI 37.94%, and
+  load/core 1.290 violate the contract. Evidence and threshold rationale are in
+  `track-7-performance/host-pressure-qualification-v166/FINDINGS.md`. Full
+  repository verification remains green at 51 files / 286 tests, 18/18
+  typecheck tasks, 7/7 lint tasks, and 12/12 build tasks. This closes the
+  evidence loophole, not the sustained 5/10/20 run: a genuine qualified window,
+  environment-mode audit, mixed 30-minute run, deployed cgroup observation,
+  larger physical Ghostty viewport, and operator use remain open. Production
+  remains `vb07c0d4`; there was no deploy, service restart, push, production
+  database write, complete-gate claim, or physical Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without

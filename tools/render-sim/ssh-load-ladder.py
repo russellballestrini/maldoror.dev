@@ -26,7 +26,7 @@ import time
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 SYNC_START = b"\x1b[?2026h"
@@ -44,6 +44,14 @@ COUNTER_FIELDS = (
     "recovery_keyframes_accepted",
     "recovery_requests",
 )
+DEFAULT_HOST_THRESHOLDS = {
+    "cpuSomeAvg10Max": 20.0,
+    "memoryFullAvg10Max": 1.0,
+    "ioFullAvg10Max": 1.0,
+    "load1PerLogicalCpuMax": 1.0,
+    "availableMemoryMiBMin": 2048.0,
+    "swapIoMiBPerSecondMax": 1.0,
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -65,6 +73,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--ssh-debug-dir",
         help="optional directory for per-connection OpenSSH negotiation/wire logs",
+    )
+    parser.add_argument(
+        "--require-normal-host",
+        action="store_true",
+        help="fail before SSH admission unless a pressure-qualified host window passes",
+    )
+    parser.add_argument(
+        "--host-preflight-duration",
+        type=float,
+        default=10.0,
+        help="seconds sampled before admission when --require-normal-host is set",
     )
     return parser.parse_args()
 
@@ -390,6 +409,7 @@ def run_rung(
     duration: float,
     movement_interval: float,
     max_tree_rss_mib: float,
+    host_thresholds: dict[str, float],
 ) -> dict[str, Any]:
     before = runtime_while_pumping(stats_port, clients)
     if before["active_sessions"] != len(clients):
@@ -406,6 +426,7 @@ def run_rung(
     root_pid = int(before["pid"])
     process_before = process_tree_snapshot(root_pid)
     process_peak = process_before
+    host_pressure_samples = [host_pressure_snapshot()]
     worker_samples = [before["worker"]] if before.get("worker") else []
     runtime_sample_failures: list[dict[str, Any]] = []
     sampler_stop = threading.Event()
@@ -454,6 +475,7 @@ def run_rung(
                         client.next_input_at = now + movement_interval
             if now >= next_process_sample:
                 sample = process_tree_snapshot(root_pid)
+                host_pressure_samples.append(host_pressure_snapshot())
                 if sample["rssMiB"] > process_peak["rssMiB"]:
                     process_peak = sample
                 if sample["rssMiB"] > max_tree_rss_mib:
@@ -486,6 +508,7 @@ def run_rung(
     if after["active_sessions"] != len(clients):
         raise RuntimeError(f"rung ended with {after['active_sessions']} sessions, expected {len(clients)}")
     process_after = process_tree_snapshot(root_pid)
+    host_pressure_samples.append(host_pressure_snapshot())
     if after.get("worker"):
         worker_samples.append(after["worker"])
     elapsed = time.monotonic() - started
@@ -544,6 +567,7 @@ def run_rung(
             "peakRssMiB": process_peak["rssMiB"],
             "processesAtPeak": process_peak["processes"],
         },
+        "hostPressure": summarize_host_pressure(host_pressure_samples, host_thresholds),
         "worker": summarize_worker_samples(worker_samples),
         "runtimeSampleFailures": runtime_sample_failures,
         "clients": client_rows,
@@ -613,6 +637,146 @@ def distribution(values: list[float]) -> dict[str, float | int] | None:
         "max": round(ordered[-1], 3),
         "mean": round(sum(ordered) / len(ordered), 3),
     }
+
+
+def pressure_file(path: Path) -> dict[str, dict[str, float | int]]:
+    result: dict[str, dict[str, float | int]] = {}
+    for line in path.read_text().splitlines():
+        fields = line.split()
+        values: dict[str, float | int] = {}
+        for field in fields[1:]:
+            key, value = field.split("=", 1)
+            values[key] = int(value) if key == "total" else float(value)
+        result[fields[0]] = values
+    return result
+
+
+def keyed_proc_file(path: Path) -> dict[str, int]:
+    result: dict[str, int] = {}
+    for line in path.read_text().splitlines():
+        fields = line.split()
+        if len(fields) >= 2:
+            result[fields[0].rstrip(":")] = int(fields[1])
+    return result
+
+
+def host_pressure_snapshot() -> dict[str, Any]:
+    load_fields = Path("/proc/loadavg").read_text().split()
+    runnable, processes = load_fields[3].split("/", 1)
+    memory = keyed_proc_file(Path("/proc/meminfo"))
+    vmstat = keyed_proc_file(Path("/proc/vmstat"))
+    logical_cpus = os.cpu_count() or 1
+    load_one = float(load_fields[0])
+    return {
+        "epochMs": round(time.time() * 1000),
+        "pressure": {
+            "cpu": pressure_file(Path("/proc/pressure/cpu")),
+            "memory": pressure_file(Path("/proc/pressure/memory")),
+            "io": pressure_file(Path("/proc/pressure/io")),
+        },
+        "load": {
+            "one": load_one,
+            "five": float(load_fields[1]),
+            "fifteen": float(load_fields[2]),
+            "runnable": int(runnable),
+            "processes": int(processes),
+            "logicalCpus": logical_cpus,
+            "onePerLogicalCpu": load_one / logical_cpus,
+        },
+        "memory": {
+            "availableMiB": memory["MemAvailable"] / 1024,
+            "swapUsedMiB": (memory["SwapTotal"] - memory["SwapFree"]) / 1024,
+        },
+        "vmstat": {
+            "swapPagesIn": vmstat.get("pswpin", 0),
+            "swapPagesOut": vmstat.get("pswpout", 0),
+        },
+    }
+
+
+def summarize_host_pressure(
+    samples: list[dict[str, Any]],
+    thresholds: dict[str, float],
+) -> dict[str, Any]:
+    def values(selector: Callable[[dict[str, Any]], float]) -> list[float]:
+        return [float(selector(sample)) for sample in samples]
+
+    elapsed_seconds = max(
+        0.001,
+        (float(samples[-1]["epochMs"]) - float(samples[0]["epochMs"])) / 1000,
+    )
+    page_mib = os.sysconf("SC_PAGE_SIZE") / 1024 / 1024
+    swap_pages = max(
+        0,
+        int(samples[-1]["vmstat"]["swapPagesIn"])
+        - int(samples[0]["vmstat"]["swapPagesIn"]),
+    ) + max(
+        0,
+        int(samples[-1]["vmstat"]["swapPagesOut"])
+        - int(samples[0]["vmstat"]["swapPagesOut"]),
+    )
+    swap_io_mib_per_second = swap_pages * page_mib / elapsed_seconds
+    observed = {
+        "cpuSomeAvg10Max": max(values(lambda sample: sample["pressure"]["cpu"]["some"]["avg10"])),
+        "memoryFullAvg10Max": max(values(lambda sample: sample["pressure"]["memory"]["full"]["avg10"])),
+        "ioFullAvg10Max": max(values(lambda sample: sample["pressure"]["io"]["full"]["avg10"])),
+        "load1PerLogicalCpuMax": max(values(lambda sample: sample["load"]["onePerLogicalCpu"])),
+        "availableMemoryMiBMin": min(values(lambda sample: sample["memory"]["availableMiB"])),
+        "swapIoMiBPerSecondMax": swap_io_mib_per_second,
+    }
+    violations = [
+        {
+            "metric": metric,
+            "observed": round(observed[metric], 3),
+            "operator": "min" if metric == "availableMemoryMiBMin" else "max",
+            "threshold": threshold,
+        }
+        for metric, threshold in thresholds.items()
+        if (
+            observed[metric] < threshold
+            if metric == "availableMemoryMiBMin"
+            else observed[metric] > threshold
+        )
+    ]
+    return {
+        "qualifiedNormal": not violations,
+        "thresholds": thresholds,
+        "observed": {key: round(value, 3) for key, value in observed.items()},
+        "violations": violations,
+        "samples": len(samples),
+        "durationMs": round(elapsed_seconds * 1000, 3),
+        "start": samples[0],
+        "end": samples[-1],
+        "distributions": {
+            "cpuSomeAvg10": distribution(values(
+                lambda sample: sample["pressure"]["cpu"]["some"]["avg10"]
+            )),
+            "memoryFullAvg10": distribution(values(
+                lambda sample: sample["pressure"]["memory"]["full"]["avg10"]
+            )),
+            "ioFullAvg10": distribution(values(
+                lambda sample: sample["pressure"]["io"]["full"]["avg10"]
+            )),
+            "load1PerLogicalCpu": distribution(values(
+                lambda sample: sample["load"]["onePerLogicalCpu"]
+            )),
+            "availableMemoryMiB": distribution(values(
+                lambda sample: sample["memory"]["availableMiB"]
+            )),
+            "swapUsedMiB": distribution(values(
+                lambda sample: sample["memory"]["swapUsedMiB"]
+            )),
+        },
+    }
+
+
+def sample_host_pressure_window(duration: float) -> list[dict[str, Any]]:
+    samples = [host_pressure_snapshot()]
+    deadline = time.monotonic() + max(0.0, duration)
+    while time.monotonic() < deadline:
+        time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
+        samples.append(host_pressure_snapshot())
+    return samples
 
 
 def summarize_worker_samples(samples: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -716,6 +880,38 @@ def main() -> int:
     churn: dict[str, Any] | None = None
     generated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     output = Path(args.output).resolve()
+    host_thresholds = dict(DEFAULT_HOST_THRESHOLDS)
+    host_preflight = summarize_host_pressure(
+        sample_host_pressure_window(
+            args.host_preflight_duration if args.require_normal_host else 0.0
+        ),
+        host_thresholds,
+    )
+    atomic_json(output / "host-preflight.json", {
+        "generatedAt": generated_at,
+        "required": args.require_normal_host,
+        "hostPressure": host_preflight,
+    })
+    if args.require_normal_host and not host_preflight["qualifiedNormal"]:
+        print(json.dumps({
+            "event": "load_ladder_host_preflight_rejected",
+            "output": str(output / "host-preflight.json"),
+            "violations": host_preflight["violations"],
+        }), flush=True)
+        return 2
+    host_run_samples = [host_pressure_snapshot()]
+    host_sampler_stop = threading.Event()
+
+    def sample_host_during_run() -> None:
+        while not host_sampler_stop.wait(1.0):
+            host_run_samples.append(host_pressure_snapshot())
+
+    host_sampler = threading.Thread(
+        target=sample_host_during_run,
+        name="maldoror-host-pressure-sampler",
+        daemon=True,
+    )
+    host_sampler.start()
     try:
         targets = [target for target in (1, 3, 5, 10, 20) if target <= args.max_presences]
         for target in targets:
@@ -747,11 +943,13 @@ def main() -> int:
                 args.duration,
                 args.movement_interval,
                 args.max_tree_rss_mib,
+                host_thresholds,
             )
             rungs.append(rung)
             atomic_json(output / "partial-metrics.json", {
                 "generatedAt": generated_at,
                 "status": "in-progress",
+                "hostPreflight": host_preflight,
                 "warmups": warmups,
                 "rungs": rungs,
             })
@@ -789,6 +987,11 @@ def main() -> int:
         atomic_json(output / "failure-metrics.json", {
             "generatedAt": generated_at,
             "status": "failed",
+            "hostPreflight": host_preflight,
+            "hostRunAtFailure": summarize_host_pressure(
+                [*host_run_samples, host_pressure_snapshot()],
+                host_thresholds,
+            ),
             "error": {
                 "type": type(error).__name__,
                 "message": str(error),
@@ -810,7 +1013,11 @@ def main() -> int:
     finally:
         for client in active:
             client.close()
+        host_sampler_stop.set()
+        host_sampler.join(timeout=3.0)
+        host_run_samples.append(host_pressure_snapshot())
     zero = wait_sessions(int(config["statsPort"]), 0)
+    host_run = summarize_host_pressure(host_run_samples, host_thresholds)
     report = {
         "generatedAt": generated_at,
         "topology": "loopback OpenSSH PTYs -> ssh2 -> SessionProxy -> worker IPC -> regional renderer",
@@ -819,6 +1026,8 @@ def main() -> int:
         "rungWarmupSeconds": args.warmup_duration,
         "movementIntervalSeconds": args.movement_interval,
         "maxPresences": args.max_presences,
+        "hostPreflight": host_preflight,
+        "hostRun": host_run,
         "warmups": warmups,
         "rungs": rungs,
         "churn": churn,
@@ -837,6 +1046,12 @@ def main() -> int:
             "physicalGhostty": False,
             "productionDeployment": False,
             "steadyStatePercentilesExcludeRetainedWarmup": True,
+            "normalHostRequired": args.require_normal_host,
+            "normalHostQualified": (
+                host_preflight["qualifiedNormal"]
+                and host_run["qualifiedNormal"]
+                and all(rung["hostPressure"]["qualifiedNormal"] for rung in rungs)
+            ),
         },
     }
     atomic_json(output / "metrics.json", report)
@@ -845,8 +1060,13 @@ def main() -> int:
         "output": str(output),
         "rungs": len(rungs),
         "cleanupActiveSessions": zero["active_sessions"],
+        "normalHostQualified": report["interpretation"]["normalHostQualified"],
     }), flush=True)
-    return 0
+    return (
+        0
+        if not args.require_normal_host or report["interpretation"]["normalHostQualified"]
+        else 2
+    )
 
 
 if __name__ == "__main__":
