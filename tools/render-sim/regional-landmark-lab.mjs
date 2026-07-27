@@ -640,6 +640,17 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
   }
   const found = [...pairsByVocabulary.keys()].sort();
   const missing = expected.filter((key) => !pairsByVocabulary.has(key));
+  const incompleteSites = [...placementsBySite.entries()].filter(([, site]) => (
+    site.size !== 2
+  )).map(([siteKey, site]) => ({
+    siteKey,
+    placementCount: site.size,
+    placements: [...site.values()].map((placement) => ({
+      assetId: placement.assetId,
+      anchor: [placement.anchorX, placement.anchorY],
+      pathTangent: [placement.pathTangentX, placement.pathTangentY],
+    })).sort((a, b) => a.assetId.localeCompare(b.assetId)),
+  })).sort((a, b) => a.siteKey.localeCompare(b.siteKey));
   const admittedOverlaySites = new Set([...pairsByVocabulary.values()].flat().map((candidate) => (
     candidate.siteKey
   )));
@@ -700,12 +711,14 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
     routeWindowCount: routeWindows.size,
     admittedFabricCount: admittedFabricIds.size,
     admittedSiteCount: placementsBySite.size,
+    completePairSiteCount: [...pairsByVocabulary.values()].flat().length,
+    incompleteSites,
     expected,
     found,
     missing,
     opportunityStageTotals,
     opportunityByVocabulary,
-    complete: missing.length === 0,
+    complete: missing.length === 0 && incompleteSites.length === 0,
     discoveryMs: Number((performance.now() - discoveryStartedAt).toFixed(2)),
   };
   console.error(JSON.stringify({ streetOverlayCoverage }));

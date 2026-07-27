@@ -2036,6 +2036,20 @@ Completed foundations:
   Next work requires one canonical pair-level detail decision reused by every
   block/cache size plus whole-place semantic-group reservation; hash thinning
   cannot repair a block-context admission contract;
+- V174 hardens the dynamic atlas with explicit `completePairSiteCount` and
+  structured `incompleteSites`; coverage can no longer report complete when a
+  block emits only one side. Its mounted-drive research contract synthesizes
+  primary parallel Poisson-disk, unique-priority conflict-resolution, and
+  counter-based deterministic-randomness work into a Maldoror-specific design:
+  one coordinate-addressed complete-pair candidate, fixed world ownership cells
+  independent of provider block size, immutable protected geometry, semantic
+  visual-group conflict edges, strict V170 pairs at higher priority, and a
+  bounded one-pass local-priority independent set. Blocks may materialize a
+  winning pair but never decide it. Exact 32/47 signatures, traversal-order
+  equality, empty incomplete-site diagnostics, whole-place semantic uniqueness,
+  bounded cache/neighbour counts, and coast/arrival regression are mandatory
+  before another regional atlas. Research lives in
+  `track-4-world-composition/regional-canonical-pair-admission-v174/RESEARCH.md`;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
