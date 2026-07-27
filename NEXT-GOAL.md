@@ -1902,6 +1902,26 @@ Completed foundations:
   cgroup proof, and explicit physical Ghostty acceptance remain open. Production
   remains `vb07c0d4`; there was no deploy, service restart, push, production
   database write, complete-gate claim, or physical Ghostty claim;
+- V168 **rejects and fully reverts** a route-first `route-common` topology.
+  The candidate projected one meso district from a solved road tangent/normal
+  before choosing its landmark, paired parents, common, approach, and frontage.
+  Its synthetic invariant was sound across cache sizes: two public parents,
+  route-starting access no longer than 24 tiles, and a common within 18 tiles
+  of the road. At the actual admitted mountain common `(96,116)`, direct
+  same-coordinate comparison materially improved one isolated-object V161
+  control into four unique masses around valid public ground. That local win
+  failed the family preservation gate: the established rural coordinate became
+  nearly empty, Candidate A duplicated a mountain visual group, and the V167
+  coast coordinate fell from 44 to 25 cached placements with zero visible
+  ambient masses, leaving bare marsh. A continuous six-family biome-distance
+  penalty could move the failure but could not preserve meso ownership. The
+  batch therefore stopped after the decisive coast regression, every source,
+  type, lab, and test change was removed, and all candidates/controls remain in
+  `track-4-world-composition/regional-route-common-v168/FINDINGS.md`. The next
+  topology must keep the low-frequency place/identity field stable while
+  jointly reserving an additional route-owned street node; short access alone
+  cannot replace an accepted destination. Gate A, production enablement, and
+  physical Ghostty acceptance remain open;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
