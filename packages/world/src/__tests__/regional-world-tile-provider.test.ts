@@ -1138,6 +1138,18 @@ describe('RegionalWorldTileProvider', () => {
         anchorY: number;
       }[];
     };
+    type InspectedStreetPairProtectedReservation = {
+      ownershipCellX: number;
+      ownershipCellY: number;
+      manifestMaximumAxisReach: number;
+      reservedCells: readonly string[];
+      visualGroups: readonly {
+        ownerSiteX: number;
+        ownerSiteY: number;
+        visualGroup: string;
+      }[];
+      sourceIds: readonly string[];
+    };
     type StreetPairInspection = {
       getAmbientPlaceProgram(cellX: number, cellY: number): unknown;
       buildAmbientSharedStreetPairCandidate(
@@ -1152,6 +1164,14 @@ describe('RegionalWorldTileProvider', () => {
         key: string,
         candidates: readonly InspectedStreetPairCandidate[],
       ): readonly InspectedStreetPairCandidate[];
+      getAmbientStreetPairProtectedReservation(
+        ownershipCellX: number,
+        ownershipCellY: number,
+      ): InspectedStreetPairProtectedReservation;
+      cacheAmbientStreetPairProtectedReservation(
+        key: string,
+        reservation: InspectedStreetPairProtectedReservation,
+      ): InspectedStreetPairProtectedReservation;
     };
     const inspectFirst = first as unknown as StreetPairInspection;
     const inspectReplay = replay as unknown as StreetPairInspection;
@@ -1233,9 +1253,41 @@ describe('RegionalWorldTileProvider', () => {
     expect(reverseCandidates).toEqual(forwardCandidates);
     expect(enumerateCandidates(inspectFirst, [...ownershipCells].reverse()))
       .toEqual(forwardCandidates);
+    const reservationSignature = (reservation: InspectedStreetPairProtectedReservation) => ({
+      ownership: [reservation.ownershipCellX, reservation.ownershipCellY],
+      manifestMaximumAxisReach: reservation.manifestMaximumAxisReach,
+      reservedCells: reservation.reservedCells,
+      visualGroups: reservation.visualGroups,
+      sourceIds: reservation.sourceIds,
+    });
+    const enumerateReservations = (
+      inspection: StreetPairInspection,
+      cells: readonly { cellX: number; cellY: number }[],
+    ) => cells.map((cell) => reservationSignature(
+      inspection.getAmbientStreetPairProtectedReservation(cell.cellX, cell.cellY),
+    )).sort((a, b) => (
+      a.ownership[1]! - b.ownership[1]! || a.ownership[0]! - b.ownership[0]!
+    ));
+    const forwardReservations = enumerateReservations(inspectFirst, ownershipCells);
+    const reverseReservations = enumerateReservations(
+      inspectReplay,
+      [...ownershipCells].reverse(),
+    );
+    expect(reverseReservations).toEqual(forwardReservations);
+    expect(enumerateReservations(inspectFirst, [...ownershipCells].reverse()))
+      .toEqual(forwardReservations);
+    expect(forwardReservations.some((reservation) => (
+      reservation.reservedCells.length > 0 && reservation.sourceIds.length > 0
+    ))).toBe(true);
+    expect(forwardReservations.every((reservation) => (
+      reservation.manifestMaximumAxisReach > 0 &&
+      [...reservation.reservedCells].sort().join('|') === reservation.reservedCells.join('|') &&
+      [...reservation.sourceIds].sort().join('|') === reservation.sourceIds.join('|')
+    ))).toBe(true);
     expect(first.getRegionalStats()).toMatchObject({
       cachedAmbientStreetPairOwnershipCells: ownershipCells.length,
       cachedAmbientStreetPairCandidates: forwardCandidates.length,
+      cachedAmbientStreetPairProtectedOwnershipCells: ownershipCells.length,
     });
     const streetCandidateCacheLimit = first.getRegionalStats().maxCachedBlocks * 16;
     for (let index = 0; index < streetCandidateCacheLimit + 2; index++) {
@@ -1243,6 +1295,19 @@ describe('RegionalWorldTileProvider', () => {
     }
     expect(first.getRegionalStats().cachedAmbientStreetPairOwnershipCells)
       .toBe(streetCandidateCacheLimit);
+    const protectedReservationCacheLimit = first.getRegionalStats().maxCachedBlocks * 16;
+    for (let index = 0; index < protectedReservationCacheLimit + 2; index++) {
+      inspectFirst.cacheAmbientStreetPairProtectedReservation(`test-overflow:${index}`, Object.freeze({
+        ownershipCellX: index,
+        ownershipCellY: 0,
+        manifestMaximumAxisReach: 1,
+        reservedCells: Object.freeze([]),
+        visualGroups: Object.freeze([]),
+        sourceIds: Object.freeze([]),
+      }));
+    }
+    expect(first.getRegionalStats().cachedAmbientStreetPairProtectedOwnershipCells)
+      .toBe(protectedReservationCacheLimit);
     expect(first.getRegionalStats()).toMatchObject({
       ambientPlaceFabricProfile: 'shared-common-street-overlay',
       ambientPlaceAccessProfile: 'route-frontage',

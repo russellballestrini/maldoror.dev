@@ -32,6 +32,7 @@ import {
   RegionalMaterialCompositor,
   RegionalRouteField,
   RegionalWorldTileProvider,
+  regionalStreetPairCandidateConflictsWithProtectedReservation,
   regionalStreetPairCandidatesConflict,
   regionalStreetPairConflictNeighbourReach,
   regionalStreetPairConservativeFootprintBound,
@@ -637,6 +638,7 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
   const firstOwnership = regionalStreetPairOwnershipCell(-ownershipMargin, -ownershipMargin);
   const lastOwnership = regionalStreetPairOwnershipCell(ownershipMargin, ownershipMargin);
   const canonicalCandidates = new Map();
+  const canonicalProtectedReservations = new Map();
   const ownershipMismatches = [];
   let enumeratedOwnershipCells = 0;
   let enumeratedCandidateEmissions = 0;
@@ -646,6 +648,14 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
     for (let ownershipCellX = firstOwnership.cellX;
       ownershipCellX <= lastOwnership.cellX; ownershipCellX++) {
       enumeratedOwnershipCells++;
+      const protectedReservation = world.getAmbientStreetPairProtectedReservation(
+        ownershipCellX,
+        ownershipCellY,
+      );
+      canonicalProtectedReservations.set(
+        `${ownershipCellX},${ownershipCellY}`,
+        protectedReservation,
+      );
       for (const candidate of world.getAmbientStreetPairCandidates(
         ownershipCellX,
         ownershipCellY,
@@ -742,6 +752,84 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
     conservativeConflictNeighbourReach,
     observedConflictEdges,
     observedConflictNeighbourReach,
+  };
+  const protectedReservationCells = new Set();
+  const protectedReservationSources = new Set();
+  let protectedReservationCellReferences = 0;
+  let protectedReservationSourceReferences = 0;
+  let protectedVisualGroupReferences = 0;
+  let nonemptyProtectedReservationCount = 0;
+  let maximumProtectedReservationCellCount = 0;
+  const protectedManifestReachMismatches = [];
+  for (const [ownershipKey, reservation] of canonicalProtectedReservations) {
+    if (reservation.reservedCells.length > 0 || reservation.visualGroups.length > 0) {
+      nonemptyProtectedReservationCount++;
+    }
+    maximumProtectedReservationCellCount = Math.max(
+      maximumProtectedReservationCellCount,
+      reservation.reservedCells.length,
+    );
+    protectedReservationCellReferences += reservation.reservedCells.length;
+    protectedReservationSourceReferences += reservation.sourceIds.length;
+    protectedVisualGroupReferences += reservation.visualGroups.length;
+    for (const key of reservation.reservedCells) protectedReservationCells.add(key);
+    for (const sourceId of reservation.sourceIds) protectedReservationSources.add(sourceId);
+    if (reservation.manifestMaximumAxisReach !== manifestWideCandidateBound.maximumAxisReach) {
+      protectedManifestReachMismatches.push({
+        ownershipKey,
+        reservationReach: reservation.manifestMaximumAxisReach,
+        manifestReach: manifestWideCandidateBound.maximumAxisReach,
+      });
+    }
+    if (!Object.isFrozen(reservation) || !Object.isFrozen(reservation.reservedCells) ||
+        !Object.isFrozen(reservation.visualGroups) || !Object.isFrozen(reservation.sourceIds)) {
+      throw new Error(`Street protected reservation is mutable: ${ownershipKey}`);
+    }
+  }
+  if (protectedManifestReachMismatches.length > 0) {
+    throw new Error(
+      `Street protected reservation reach mismatch: ${JSON.stringify(protectedManifestReachMismatches)}`,
+    );
+  }
+  let protectedGeometryConflictCount = 0;
+  let protectedSemanticConflictCount = 0;
+  let protectedAnyConflictCount = 0;
+  for (const candidate of canonicalCandidates.values()) {
+    const owner = regionalStreetPairOwnershipCell(candidate.ownershipX, candidate.ownershipY);
+    const reservation = canonicalProtectedReservations.get(`${owner.cellX},${owner.cellY}`);
+    if (!reservation) throw new Error(`Missing protected reservation for ${candidate.id}`);
+    const protectedCells = new Set(reservation.reservedCells);
+    const geometryConflict = candidate.reservedCells.some((cell) => protectedCells.has(cell));
+    const candidateGroups = new Set(candidate.visualGroups);
+    const semanticConflict = reservation.visualGroups.some((entry) => (
+      entry.ownerSiteX === candidate.ownerSiteX && entry.ownerSiteY === candidate.ownerSiteY &&
+      candidateGroups.has(entry.visualGroup)
+    ));
+    const anyConflict = regionalStreetPairCandidateConflictsWithProtectedReservation(
+      candidate,
+      reservation,
+    );
+    if (anyConflict !== (geometryConflict || semanticConflict)) {
+      throw new Error(`Protected street conflict audit mismatch: ${candidate.id}`);
+    }
+    if (geometryConflict) protectedGeometryConflictCount++;
+    if (semanticConflict) protectedSemanticConflictCount++;
+    if (anyConflict) protectedAnyConflictCount++;
+  }
+  const canonicalProtectedReservationDiagnostics = {
+    ownershipCellCount: canonicalProtectedReservations.size,
+    manifestMaximumAxisReach: manifestWideCandidateBound.maximumAxisReach,
+    nonemptyReservationCount: nonemptyProtectedReservationCount,
+    cellReferenceCount: protectedReservationCellReferences,
+    uniqueCellCount: protectedReservationCells.size,
+    maximumCellCount: maximumProtectedReservationCellCount,
+    sourceReferenceCount: protectedReservationSourceReferences,
+    uniqueSourceCount: protectedReservationSources.size,
+    visualGroupReferenceCount: protectedVisualGroupReferences,
+    candidateGeometryConflictCount: protectedGeometryConflictCount,
+    candidateSemanticConflictCount: protectedSemanticConflictCount,
+    candidateAnyConflictCount: protectedAnyConflictCount,
+    manifestReachMismatches: protectedManifestReachMismatches,
   };
   console.error(JSON.stringify({ streetOverlayDiscovery: {
     searchRadius,
@@ -884,6 +972,7 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
     opportunityStageTotals,
     opportunityByVocabulary,
     canonicalCandidateDiagnostics,
+    canonicalProtectedReservationDiagnostics,
     manifestWideCandidateBound,
     complete: missing.length === 0 && incompleteSites.length === 0,
     discoveryMs: Number((performance.now() - discoveryStartedAt).toFixed(2)),

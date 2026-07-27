@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   regionalStreetPairAnchor,
+  regionalStreetPairCandidateConflictsWithProtectedReservation,
   REGIONAL_STREET_PAIR_OWNERSHIP_CELL_SIZE,
   regionalStreetPairCandidatesConflict,
   regionalStreetPairConflictNeighbourReach,
@@ -95,6 +96,35 @@ describe('regional canonical street-pair admission', () => {
     const enriched = values.map((value) => ({ ...value, payload: `payload:${value.id}` }));
     expect(selectRegionalCanonicalStreetPairs(enriched).map((value) => value.payload))
       .toEqual(['payload:a', 'payload:c']);
+  });
+
+  it('treats protected geometry and same-place visual groups as immutable', () => {
+    const base = candidate('base', {
+      ownerSiteX: 4,
+      ownerSiteY: -2,
+      reservedCells: ['1,1', '2,2'],
+      visualGroups: ['market-hall', 'workshop'],
+    });
+    expect(regionalStreetPairCandidateConflictsWithProtectedReservation(base, {
+      reservedCells: ['2,2'],
+      visualGroups: [],
+    })).toBe(true);
+    expect(regionalStreetPairCandidateConflictsWithProtectedReservation(base, {
+      reservedCells: [],
+      visualGroups: [{
+        ownerSiteX: 4,
+        ownerSiteY: -2,
+        visualGroup: 'workshop',
+      }],
+    })).toBe(true);
+    expect(regionalStreetPairCandidateConflictsWithProtectedReservation(base, {
+      reservedCells: ['9,9'],
+      visualGroups: [{
+        ownerSiteX: 5,
+        ownerSiteY: -2,
+        visualGroup: 'workshop',
+      }],
+    })).toBe(false);
   });
 
   it('gives an established strict pair precedence over replacement detail', () => {

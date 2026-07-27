@@ -52,6 +52,17 @@ export interface RegionalStreetPairCandidate {
   visualGroups: readonly string[];
 }
 
+export interface RegionalStreetPairProtectedVisualGroup {
+  ownerSiteX: number;
+  ownerSiteY: number;
+  visualGroup: string;
+}
+
+export interface RegionalStreetPairProtectedReservation {
+  reservedCells: readonly string[];
+  visualGroups: readonly RegionalStreetPairProtectedVisualGroup[];
+}
+
 export interface RegionalStreetPairOwnershipCell {
   cellX: number;
   cellY: number;
@@ -194,6 +205,23 @@ export function regionalStreetPairCandidatesConflict(
   const larger = smaller === first.reservedCells ? second.reservedCells : first.reservedCells;
   const largerCells = new Set(larger);
   return smaller.some((cell) => largerCells.has(cell));
+}
+
+/** Protected meso/civic geometry is immutable input to pair validity. It is
+ * intentionally separate from pair-pair conflict selection so optional detail
+ * can never evict an established composition. */
+export function regionalStreetPairCandidateConflictsWithProtectedReservation(
+  candidate: RegionalStreetPairCandidate,
+  reservation: RegionalStreetPairProtectedReservation,
+): boolean {
+  const protectedCells = new Set(reservation.reservedCells);
+  if (candidate.reservedCells.some((cell) => protectedCells.has(cell))) return true;
+  const candidateGroups = new Set(candidate.visualGroups);
+  return reservation.visualGroups.some((entry) => (
+    entry.ownerSiteX === candidate.ownerSiteX &&
+    entry.ownerSiteY === candidate.ownerSiteY &&
+    candidateGroups.has(entry.visualGroup)
+  ));
 }
 
 export function regionalStreetPairCandidateOutranks(

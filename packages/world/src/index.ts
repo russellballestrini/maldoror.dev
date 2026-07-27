@@ -215,6 +215,7 @@ export {
   REGIONAL_STREET_PAIR_VISIBLE_HALO,
   regionalStreetPairAnchor,
   regionalStreetPairCandidateOutranks,
+  regionalStreetPairCandidateConflictsWithProtectedReservation,
   regionalStreetPairCandidatesConflict,
   regionalStreetPairConflictNeighbourReach,
   regionalStreetPairConservativeFootprintBound,
@@ -226,6 +227,8 @@ export {
   type RegionalStreetPairCandidate,
   type RegionalStreetPairConservativeFootprintBound,
   type RegionalStreetPairOwnershipCell,
+  type RegionalStreetPairProtectedReservation,
+  type RegionalStreetPairProtectedVisualGroup,
 } from './tiles/regional-street-pair-admission.js';
 export {
   CornerCodedTileSet,

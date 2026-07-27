@@ -2131,12 +2131,38 @@ Completed foundations:
   stages; all eight source/OCTANT hashes are byte-identical to V177. All 42
   focused tests, world typecheck/build, lab syntax, faithful census, seven lint
   tasks, and source diff check pass. This closes only the finite-neighbour
-  proof: canonical selection and materialization are still disconnected and no visual
-  improvement is claimed. Evidence lives in
+  proof: canonical selection and materialization are still disconnected and no
+  visual improvement is claimed. Evidence lives in
   `track-4-world-composition/regional-manifest-pair-bound-v178/FINDINGS.md`.
   Next, derive immutable protected-geometry reservations in fixed space, prove
   their signatures across blocks/traversals, and run the selector over each
   ownership cell plus its proved one-cell ring before materialization changes;
+- V179 selects a diagnostic-only fixed-space protected-reservation layer. Each
+  64-tile ownership cell now derives sorted, frozen cells, same-place visual
+  groups, and exact provenance sources from pathless/common masses, explicitly
+  protected common frontage, collision/visible halos, fabric, connectors, and
+  bounded civic composition. Fine access-path props explicitly opt into
+  `streetPairProtection='replaceable'`; all other geometry is protected by
+  default, avoiding brittle path-ID inference. The clip/source envelope is
+  derived dynamically from the actual paired manifest and route widths, not an
+  asset/family table or remembered reach. Five-cell signatures are exact across
+  forward 32-tile, reverse 47-tile, and reversed cached traversal; the separate
+  LRU saturates at `maxCachedBlocks * 16`. The faithful census produces 36
+  non-empty reservations, 76,286 cell references (41,799 unique; max 3,969 per
+  cell), 1,293 unique sources, 503 protected group references, a 16-tile
+  manifest reach, and zero reach mismatch. Crucially, all 46 intrinsic first
+  fits conflict geometrically and all 46 repeat a protected same-place visual
+  group. Filtering V177 candidates would therefore erase the layer: canonical
+  candidates must be refit against immutable reservations and use genuinely
+  distinct semantic groups. V170 remains nine complete pairs, 4/11 coverage,
+  exact `0/6/12/24/9` stages, and eight PNG hashes byte-identical to V178. All
+  43 focused tests, world typecheck/build, lab syntax, faithful census, seven
+  lint tasks, and source diff check pass. No admission/materialization path
+  changed and no visual improvement is claimed. Evidence lives in
+  `track-4-world-composition/regional-protected-reservations-v179/FINDINGS.md`.
+  Next, generate protected-fit alternatives with non-repeating visual groups,
+  prove their exact signatures, then feed the one-cell selector without
+  changing V170 materialization;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without

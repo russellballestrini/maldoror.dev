@@ -17,12 +17,13 @@ import {
   type ConstructedWaterwaySample,
 } from '../biomes/biome-world-field.js';
 import { spatialHash2DUnit } from '../spatial-hash.js';
-import type {
-  RegionalLandmarkKind,
-  RegionalLandmarkSite,
-  RegionalRouteKind,
-  RegionalRouteSample,
-  RegionalWalkableRouteCandidate,
+import {
+  REGIONAL_ROUTE_MAX_HALF_WIDTH,
+  type RegionalLandmarkKind,
+  type RegionalLandmarkSite,
+  type RegionalRouteKind,
+  type RegionalRouteSample,
+  type RegionalWalkableRouteCandidate,
 } from '../routes/regional-route-field.js';
 import { RegionalMaterialCompositor } from './regional-material-compositor.js';
 import {
@@ -71,8 +72,11 @@ import {
   REGIONAL_STREET_PAIR_SEARCH_NUDGE_COUNT,
   REGIONAL_STREET_PAIR_VISIBLE_HALO,
   regionalStreetPairAnchor,
+  regionalStreetPairConservativeFootprintBound,
   regionalStreetPairOwnershipCell,
   type RegionalStreetPairCandidate,
+  type RegionalStreetPairProtectedReservation,
+  type RegionalStreetPairProtectedVisualGroup,
 } from './regional-street-pair-admission.js';
 import { TileProvider, type TileProviderConfig } from './tile-provider.js';
 
@@ -438,6 +442,10 @@ interface Placement {
   quayAccessPath?: readonly (readonly [number, number])[];
   environmentProgram?: RegionalEnvironmentProgramKind;
   environmentProgramId?: string;
+  /** Optional street-pair admission policy authored by the composition stage.
+   * Undefined geometry is protected by default. Only fine access-path props
+   * explicitly opt into replacement by a winning complete pair. */
+  streetPairProtection?: 'protected' | 'replaceable';
 }
 
 type AnimatedQuayPlacement = Pick<
@@ -531,6 +539,13 @@ interface AmbientStreetPairCandidate extends RegionalStreetPairCandidate {
   placements: readonly [Placement, Placement];
 }
 
+interface AmbientStreetPairProtectedReservation extends RegionalStreetPairProtectedReservation {
+  ownershipCellX: number;
+  ownershipCellY: number;
+  manifestMaximumAxisReach: number;
+  sourceIds: readonly string[];
+}
+
 interface CachedParcelGroup {
   contact: Placement;
   components: Placement[];
@@ -591,6 +606,10 @@ export class RegionalWorldDerivedCache {
     string,
     readonly AmbientStreetPairCandidate[]
   >();
+  readonly ambientStreetPairProtectedReservationCache = new Map<
+    string,
+    AmbientStreetPairProtectedReservation
+  >();
   readonly quayDetailPlacementCache = new Map<string, readonly Placement[]>();
   readonly quayFrontagePlacementCache = new Map<string, readonly Placement[]>();
   readonly dynamicQuayOverlayCache = new Map<string, Map<string, BuildingTileData>>();
@@ -610,6 +629,7 @@ export class RegionalWorldDerivedCache {
     this.ambientPlaceAccessCivicReservationCache.clear();
     this.ambientPlaceFabricCache.clear();
     this.ambientStreetPairCandidateCache.clear();
+    this.ambientStreetPairProtectedReservationCache.clear();
     this.quayDetailPlacementCache.clear();
     this.quayFrontagePlacementCache.clear();
     this.dynamicQuayOverlayCache.clear();
@@ -724,6 +744,10 @@ export class RegionalWorldTileProvider extends TileProvider {
     string,
     readonly AmbientStreetPairCandidate[]
   >;
+  private readonly ambientStreetPairProtectedReservationCache: Map<
+    string,
+    AmbientStreetPairProtectedReservation
+  >;
   private readonly quayDetailPlacementCache: Map<string, readonly Placement[]>;
   private readonly quayFrontagePlacementCache: Map<string, readonly Placement[]>;
   private readonly dynamicQuayOverlayCache: Map<string, Map<string, BuildingTileData>>;
@@ -806,6 +830,8 @@ export class RegionalWorldTileProvider extends TileProvider {
       this.derivedCache.ambientPlaceAccessCivicReservationCache;
     this.ambientPlaceFabricCache = this.derivedCache.ambientPlaceFabricCache;
     this.ambientStreetPairCandidateCache = this.derivedCache.ambientStreetPairCandidateCache;
+    this.ambientStreetPairProtectedReservationCache =
+      this.derivedCache.ambientStreetPairProtectedReservationCache;
     this.quayDetailPlacementCache = this.derivedCache.quayDetailPlacementCache;
     this.quayFrontagePlacementCache = this.derivedCache.quayFrontagePlacementCache;
     this.dynamicQuayOverlayCache = this.derivedCache.dynamicQuayOverlayCache;
@@ -1742,6 +1768,8 @@ export class RegionalWorldTileProvider extends TileProvider {
     cachedAmbientPlaceFabrics: number;
     cachedAmbientStreetPairOwnershipCells: number;
     cachedAmbientStreetPairCandidates: number;
+    cachedAmbientStreetPairProtectedOwnershipCells: number;
+    cachedAmbientStreetPairProtectedCells: number;
     cachedAmbientPlaceConnectorCells: number;
     cachedCivicDetailPlacements: number;
     cachedQuayDetailPlacements: number;
@@ -1809,6 +1837,13 @@ export class RegionalWorldTileProvider extends TileProvider {
         (total, candidates) => total + candidates.length,
         0,
       ),
+      cachedAmbientStreetPairProtectedOwnershipCells:
+        this.ambientStreetPairProtectedReservationCache.size,
+      cachedAmbientStreetPairProtectedCells:
+        [...this.ambientStreetPairProtectedReservationCache.values()].reduce(
+          (total, reservation) => total + reservation.reservedCells.length,
+          0,
+        ),
       cachedAmbientPlaceConnectorCells: [...this.blockCache.values()].reduce(
         (total, block) => total + block.placeConnectors.size,
         0,
@@ -4556,6 +4591,206 @@ export class RegionalWorldTileProvider extends TileProvider {
     return candidates;
   }
 
+  /** @internal Derive immutable protected input for every possible pair owned
+   * by one fixed route-contact cell. Runtime provider blocks do not contribute
+   * to the source bounds, clipping bounds, identity, or cache key. Fine props
+   * attached directly to an access path remain replaceable; pathless/common
+   * masses and common frontage remain protected. */
+  getAmbientStreetPairProtectedReservation(
+    ownershipCellX: number,
+    ownershipCellY: number,
+  ): AmbientStreetPairProtectedReservation {
+    const cacheKey = `${this.ambientPlaceFabricProfile}:${this.ambientPlaceAccessProfile}:` +
+      `${ownershipCellX},${ownershipCellY}`;
+    const cached = this.ambientStreetPairProtectedReservationCache.get(cacheKey);
+    if (cached) {
+      this.ambientStreetPairProtectedReservationCache.delete(cacheKey);
+      this.ambientStreetPairProtectedReservationCache.set(cacheKey, cached);
+      return cached;
+    }
+    const manifestMaximumAxisReach = this.ambientStreetPairManifestMaximumAxisReach();
+    if (this.ambientPlaceFabricProfile !== 'shared-common-street-overlay' ||
+        this.ambientPlaceAccessProfile !== 'route-frontage') {
+      return this.cacheAmbientStreetPairProtectedReservation(cacheKey, Object.freeze({
+        ownershipCellX,
+        ownershipCellY,
+        manifestMaximumAxisReach,
+        reservedCells: Object.freeze([]),
+        visualGroups: Object.freeze([]),
+        sourceIds: Object.freeze([]),
+      }));
+    }
+    const ownership = regionalStreetPairOwnershipCell(
+      ownershipCellX * REGIONAL_STREET_PAIR_OWNERSHIP_CELL_SIZE,
+      ownershipCellY * REGIONAL_STREET_PAIR_OWNERSHIP_CELL_SIZE,
+    );
+    const minX = ownership.minX - manifestMaximumAxisReach;
+    const minY = ownership.minY - manifestMaximumAxisReach;
+    const maxX = ownership.maxX + manifestMaximumAxisReach;
+    const maxY = ownership.maxY + manifestMaximumAxisReach;
+    const sourceReach = REGIONAL_AMBIENT_CONNECTED_PLACE_SOURCE_REACH +
+      manifestMaximumAxisReach;
+    const firstPlaceCellX = floorDiv(
+      ownership.minX - sourceReach,
+      REGIONAL_AMBIENT_CONNECTED_PLACE_CELL_SIZE,
+    );
+    const lastPlaceCellX = floorDiv(
+      ownership.maxX + sourceReach,
+      REGIONAL_AMBIENT_CONNECTED_PLACE_CELL_SIZE,
+    );
+    const firstPlaceCellY = floorDiv(
+      ownership.minY - sourceReach,
+      REGIONAL_AMBIENT_CONNECTED_PLACE_CELL_SIZE,
+    );
+    const lastPlaceCellY = floorDiv(
+      ownership.maxY + sourceReach,
+      REGIONAL_AMBIENT_CONNECTED_PLACE_CELL_SIZE,
+    );
+    const candidateOwnerSites = new Set(this.getAmbientStreetPairCandidates(
+      ownershipCellX,
+      ownershipCellY,
+    ).map((candidate) => positionKey(candidate.ownerSiteX, candidate.ownerSiteY)));
+    const programs = new Map<string, AmbientPlaceProgram>();
+    for (let placeCellY = firstPlaceCellY; placeCellY <= lastPlaceCellY; placeCellY++) {
+      for (let placeCellX = firstPlaceCellX; placeCellX <= lastPlaceCellX; placeCellX++) {
+        const program = this.getAmbientPlaceProgram(placeCellX, placeCellY);
+        if (!program) continue;
+        programs.set(positionKey(program.root.siteX, program.root.siteY), program);
+      }
+    }
+    const reservedCells = new Set<string>();
+    const sourceIds = new Set<string>();
+    const visualGroups = new Map<string, RegionalStreetPairProtectedVisualGroup>();
+    const addCell = (key: string, sourceId: string): void => {
+      const separator = key.indexOf(',');
+      if (separator < 1) return;
+      const x = Number(key.slice(0, separator));
+      const y = Number(key.slice(separator + 1));
+      if (!Number.isInteger(x) || !Number.isInteger(y) ||
+          x < minX || x > maxX || y < minY || y > maxY) return;
+      reservedCells.add(key);
+      sourceIds.add(sourceId);
+    };
+    for (const program of [...programs.values()].sort((a, b) => (
+      a.root.siteY - b.root.siteY || a.root.siteX - b.root.siteX ||
+      a.root.asset.id.localeCompare(b.root.asset.id)
+    ))) {
+      const siteKey = positionKey(program.root.siteX, program.root.siteY);
+      for (const placement of program.placements) {
+        const protectsPair = placement.streetPairProtection !== 'replaceable';
+        if (!protectsPair) continue;
+        const placementSource = `placement:${siteKey}:${placement.asset.id}@` +
+          `${placement.anchorX},${placement.anchorY}`;
+        const footprint = new Set<string>();
+        reserveVisibleFootprint(placement, footprint, REGIONAL_STREET_PAIR_VISIBLE_HALO);
+        for (const key of footprint) addCell(key, placementSource);
+        for (const [offsetX, offsetY] of placement.asset.collision) {
+          addCell(positionKey(
+            placement.anchorX + offsetX,
+            placement.anchorY + offsetY,
+          ), placementSource);
+        }
+        if (candidateOwnerSites.has(siteKey)) {
+          const visualGroup = assetVisualGroup(placement.asset);
+          visualGroups.set(`${siteKey}:${visualGroup}`, Object.freeze({
+            ownerSiteX: program.root.siteX,
+            ownerSiteY: program.root.siteY,
+            visualGroup,
+          }));
+          sourceIds.add(placementSource);
+        }
+      }
+      if (program.fabric) {
+        const fabricSource = `fabric:${siteKey}:${program.fabric.layout.id}`;
+        for (const cell of rasterizeRegionalLandmarkFabricLayout(program.fabric.layout)) {
+          if (sampleRegionalLandmarkFabricLayout(
+            cell.x + 0.5,
+            cell.y + 0.5,
+            program.fabric.layout,
+          ).pavingWeight > 0.2) addCell(positionKey(cell.x, cell.y), fabricSource);
+        }
+      }
+      if (program.accessPath) {
+        const connectorSource = `connector:${siteKey}:${program.accessPath.id}`;
+        for (const cell of this.getAmbientPlaceAccessCells(program.accessPath)) {
+          addCell(positionKey(cell.x, cell.y), connectorSource);
+        }
+        const civicSource = `civic:${siteKey}:${program.accessPath.id}`;
+        for (const key of this.ambientAccessCivicReserved(program.accessPath)) {
+          addCell(key, civicSource);
+        }
+      }
+    }
+    const stableVisualGroups = [...visualGroups.values()].sort((a, b) => (
+      a.ownerSiteY - b.ownerSiteY || a.ownerSiteX - b.ownerSiteX ||
+      (a.visualGroup === b.visualGroup ? 0 : a.visualGroup < b.visualGroup ? -1 : 1)
+    ));
+    return this.cacheAmbientStreetPairProtectedReservation(cacheKey, Object.freeze({
+      ownershipCellX,
+      ownershipCellY,
+      manifestMaximumAxisReach,
+      reservedCells: Object.freeze([...reservedCells].sort()),
+      visualGroups: Object.freeze(stableVisualGroups),
+      sourceIds: Object.freeze([...sourceIds].sort()),
+    }));
+  }
+
+  private ambientStreetPairManifestMaximumAxisReach(): number {
+    const eligibleAssets = this.parcelComponents.filter((asset) => (
+      isFocalCompositionAsset(asset) && asset.frontageAxis !== undefined &&
+      asset.compositionSide !== undefined && asset.frontageStations !== undefined &&
+      (!asset.programs || asset.programs.length === 0)
+    ));
+    const vocabularySides = new Map<string, Set<-1 | 1>>();
+    for (const asset of eligibleAssets) {
+      for (const family of asset.families) {
+        const key = `${family}:${asset.frontageAxis}`;
+        const sides = vocabularySides.get(key) ?? new Set<-1 | 1>();
+        sides.add(asset.compositionSide!);
+        vocabularySides.set(key, sides);
+      }
+    }
+    const pairedVocabularies = new Set([...vocabularySides].filter(([, sides]) => (
+      sides.has(-1) && sides.has(1)
+    )).map(([key]) => key));
+    let maximumAxisReach = 0;
+    for (const asset of eligibleAssets) {
+      if (!asset.families.some((family) => (
+        pairedVocabularies.has(`${family}:${asset.frontageAxis}`)
+      ))) continue;
+      const [spriteAnchorX, spriteAnchorY] = getSpriteAnchor(asset);
+      maximumAxisReach = Math.max(
+        maximumAxisReach,
+        regionalStreetPairConservativeFootprintBound({
+          axis: asset.frontageAxis!,
+          side: asset.compositionSide!,
+          routeStartX: 0.5,
+          routeStartY: 0.5,
+          routeHalfWidth: REGIONAL_ROUTE_MAX_HALF_WIDTH,
+          spriteWidth: asset.sprite.width,
+          spriteHeight: asset.sprite.height,
+          spriteAnchorX,
+          spriteAnchorY,
+        }).maximumAxisReach,
+      );
+    }
+    return maximumAxisReach;
+  }
+
+  private cacheAmbientStreetPairProtectedReservation(
+    key: string,
+    reservation: AmbientStreetPairProtectedReservation,
+  ): AmbientStreetPairProtectedReservation {
+    this.ambientStreetPairProtectedReservationCache.set(key, reservation);
+    while (this.ambientStreetPairProtectedReservationCache.size > this.maxCachedBlocks * 16) {
+      const oldest = this.ambientStreetPairProtectedReservationCache.keys().next().value as
+        string | undefined;
+      if (oldest === undefined) break;
+      this.ambientStreetPairProtectedReservationCache.delete(oldest);
+    }
+    return reservation;
+  }
+
   /** Fit optional route-facing detail only after the authoritative meso
    * program set has been admitted. The complete pair may yield to any accepted
    * program, connector, civic mass, terrain constraint, or earlier detail; it
@@ -5134,6 +5369,7 @@ export class RegionalWorldTileProvider extends TileProvider {
               parcelPathId: `${fabric.layout.id}:frontage`,
               pathTangentX: northSouth ? 0 : direction,
               pathTangentY: northSouth ? direction : 0,
+              streetPairProtection: 'protected',
             };
           }
         }
@@ -5213,6 +5449,7 @@ export class RegionalWorldTileProvider extends TileProvider {
         parcelStation: station.distance,
         pathTangentX: station.tangentX,
         pathTangentY: station.tangentY,
+        streetPairProtection: 'replaceable',
       };
       supports.push(placement);
       const visualGroup = assetVisualGroup(asset);
