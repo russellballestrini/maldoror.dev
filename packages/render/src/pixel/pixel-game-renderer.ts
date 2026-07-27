@@ -1512,6 +1512,8 @@ export class PixelGameRenderer {
       sharedStaticBuffer,
       sharedStaticMaterialGrid,
       sharedStaticDirtyCellOffsets,
+      sharedStaticParentBuffer,
+      sharedStaticParentDirtyCellOffsets,
     } = this.viewportRenderer.renderToBuffer(world, this.tickCount);
 
     // Apply color quantization with dithering at high zoom levels to reduce ANSI codes
@@ -1543,6 +1545,8 @@ export class PixelGameRenderer {
               buffer: sharedStaticBuffer,
               materialGrid: sharedStaticMaterialGrid,
               dirtyCellOffsets: sharedStaticDirtyCellOffsets,
+              parentBuffer: sharedStaticParentBuffer,
+              parentDirtyCellOffsets: sharedStaticParentDirtyCellOffsets,
             }
           : undefined,
       );

@@ -7,6 +7,8 @@
  * back to one dynamic-overlay lookup for every visible world tile.
  */
 import crypto from 'node:crypto';
+import fs from 'node:fs/promises';
+import inspector from 'node:inspector';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { Duplex } from 'node:stream';
@@ -35,6 +37,7 @@ const WEATHER = process.env.MALDOROR_WEATHER ?? 'clear';
 const WEATHER_INTENSITY = Number.parseFloat(process.env.MALDOROR_WEATHER_INTENSITY ?? '0.1');
 const SHARED_SESSIONS = Number.parseInt(process.env.MALDOROR_SHARED_SESSIONS ?? '0', 10);
 const SHARED_FRAMES = Number.parseInt(process.env.MALDOROR_SHARED_FRAMES ?? '100', 10);
+const CPU_PROFILE_PATH = process.env.MALDOROR_CPU_PROFILE_PATH;
 const assets = defaultRegionalWorldAssetPaths(ROOT);
 const kit = await loadRegionalWorldKit({ worldSeed: WORLD_SEED, assets });
 const prewarm = await readRegionalRuntimePrewarmBundle(assets.runtimePrewarm);
@@ -73,6 +76,7 @@ for (let frame = 0; frame < 30; frame++) {
   runGameFrame(gameControl, frame);
   runGameFrame(gameSparse, frame);
 }
+const profiler = CPU_PROFILE_PATH ? await startCpuProfile() : null;
 const gameSamples = { control: [], sparse: [] };
 for (let frame = 0; frame < FRAMES; frame++) {
   const order = frame % 2 === 0
@@ -83,6 +87,9 @@ for (let frame = 0; frame < FRAMES; frame++) {
     runGameFrame(lane, frame + 30);
     laneSamples.push(performance.now() - startedAt);
   }
+}
+if (profiler && CPU_PROFILE_PATH) {
+  await finishCpuProfile(profiler, CPU_PROFILE_PATH);
 }
 const sharedSessionBatch = SHARED_SESSIONS > 0
   ? runSharedSessionBenchmark(SHARED_SESSIONS, SHARED_FRAMES)
@@ -286,4 +293,27 @@ function percentile(values, quantile) {
 
 function round(value) {
   return Number(value.toFixed(3));
+}
+
+async function startCpuProfile() {
+  const session = new inspector.Session();
+  session.connect();
+  await inspectorPost(session, 'Profiler.enable');
+  await inspectorPost(session, 'Profiler.start');
+  return session;
+}
+
+async function finishCpuProfile(session, outputPath) {
+  const result = await inspectorPost(session, 'Profiler.stop');
+  session.disconnect();
+  await fs.writeFile(outputPath, JSON.stringify(result.profile));
+}
+
+function inspectorPost(session, method) {
+  return new Promise((resolve, reject) => {
+    session.post(method, (error, result) => {
+      if (error) reject(error);
+      else resolve(result);
+    });
+  });
 }

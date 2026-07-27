@@ -106,4 +106,35 @@ describe('octant perceptual fitting', () => {
     expect([...optimized.foregroundIndex]).toEqual([...expected.foregroundIndex]);
     expect([...optimized.backgroundIndex]).toEqual([...expected.backgroundIndex]);
   });
+
+  it('derives a weather frame exactly from only its dirty parent cells', () => {
+    const ground = { r: 42, g: 91, b: 67 };
+    const streak = { r: 129, g: 177, b: 226 };
+    const parentGrid = Array.from({ length: 8 }, () =>
+      Array.from({ length: 4 }, () => ground));
+    const weatherGrid = parentGrid.map((row) => [...row]);
+    weatherGrid[1]![0] = streak;
+    weatherGrid[6]![3] = streak;
+    const materials = Array.from({ length: 8 }, () => new Uint8Array(4));
+
+    const expected = renderOctantPackedGridCells(weatherGrid, undefined, materials);
+    const optimized = renderOctantPackedGridCells(
+      weatherGrid,
+      undefined,
+      materials,
+      undefined,
+      {
+        buffer: weatherGrid,
+        materialGrid: materials,
+        parentBuffer: parentGrid,
+        parentDirtyCellOffsets: [0, 3],
+      },
+    );
+
+    expect([...optimized.codepoints]).toEqual([...expected.codepoints]);
+    expect([...optimized.foreground]).toEqual([...expected.foreground]);
+    expect([...optimized.background]).toEqual([...expected.background]);
+    expect([...optimized.foregroundIndex]).toEqual([...expected.foregroundIndex]);
+    expect([...optimized.backgroundIndex]).toEqual([...expected.backgroundIndex]);
+  });
 });

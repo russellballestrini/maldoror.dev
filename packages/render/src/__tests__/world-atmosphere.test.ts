@@ -173,6 +173,8 @@ describe('persistent world atmosphere', () => {
 
     expect(cachedResult.buffer).toEqual(uncached);
     expect(cachedResult.sharedStaticBuffer).toBeDefined();
+    expect(cachedResult.sharedStaticParentBuffer).toBeDefined();
+    expect(cachedResult.sharedStaticParentDirtyCellOffsets?.length).toBeGreaterThan(0);
   });
 
   it('reuses a lit static night plane while preserving exact actor pixels', () => {
@@ -219,6 +221,7 @@ describe('persistent world atmosphere', () => {
 
     expect(cached.buffer).toEqual(uncached.buffer);
     expect(cached.sharedStaticBuffer).toBeDefined();
+    expect(cached.sharedStaticParentBuffer).toBeUndefined();
     expect(cached.sharedStaticDirtyCellOffsets?.length).toBeGreaterThan(0);
     expect(cached.buffer).not.toEqual(cached.sharedStaticBuffer);
 

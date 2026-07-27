@@ -93,6 +93,8 @@ export interface SharedStaticOctantFrame {
   readonly buffer: PixelGrid;
   readonly materialGrid?: Uint8Array[];
   readonly dirtyCellOffsets?: readonly number[];
+  readonly parentBuffer?: PixelGrid;
+  readonly parentDirtyCellOffsets?: readonly number[];
 }
 
 export function createPackedCellGrid(width: number, height: number): PackedCellGrid {
@@ -1104,11 +1106,49 @@ export function renderOctantPackedGridCells(
   if (canReuseStatic) {
     let staticCells = STATIC_OCTANT_CELL_FRAMES.get(sharedStatic.buffer);
     if (!staticCells) {
-      staticCells = renderOctantPackedGridCells(
-        sharedStatic.buffer,
-        undefined,
-        sharedStatic.materialGrid,
-      );
+      const parentBuffer = sharedStatic.parentBuffer;
+      const parentDirtyCellOffsets = sharedStatic.parentDirtyCellOffsets;
+      if (parentBuffer && parentDirtyCellOffsets) {
+        let parentCells = STATIC_OCTANT_CELL_FRAMES.get(parentBuffer);
+        if (!parentCells) {
+          parentCells = renderOctantPackedGridCells(
+            parentBuffer,
+            undefined,
+            sharedStatic.materialGrid,
+          );
+          STATIC_OCTANT_CELL_FRAMES.set(parentBuffer, parentCells);
+        }
+        if (parentDirtyCellOffsets.length === 0) {
+          staticCells = parentCells;
+        } else {
+          staticCells = createPackedCellGrid(width, height);
+          staticCells.codepoints.set(parentCells.codepoints);
+          staticCells.foreground.set(parentCells.foreground);
+          staticCells.background.set(parentCells.background);
+          staticCells.foregroundIndex.set(parentCells.foregroundIndex);
+          staticCells.backgroundIndex.set(parentCells.backgroundIndex);
+          for (const offset of parentDirtyCellOffsets) {
+            const cellY = Math.floor(offset / width);
+            const cellX = offset - cellY * width;
+            renderOctantPackedCell(
+              staticCells,
+              offset,
+              sharedStatic.buffer,
+              sharedStatic.materialGrid,
+              phaseCounts,
+              cellX * 2,
+              cellY * 4,
+              1,
+            );
+          }
+        }
+      } else {
+        staticCells = renderOctantPackedGridCells(
+          sharedStatic.buffer,
+          undefined,
+          sharedStatic.materialGrid,
+        );
+      }
       STATIC_OCTANT_CELL_FRAMES.set(sharedStatic.buffer, staticCells);
     }
     result.codepoints.set(staticCells.codepoints);

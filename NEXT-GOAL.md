@@ -1774,6 +1774,39 @@ Completed foundations:
   use remain open. Production remains `vb07c0d4`; there was no deploy, service
   restart, push, production database write, complete-gate claim, or physical
   Ghostty claim;
+- V164 corrects V163's profiling methodology and selects exact parent-cell
+  weather deltas while **continuing to reject Gate D**. The benchmark now starts
+  the V8 inspector profile only after regional kit initialization and 30 warmup
+  frames; the corrected V163 profile proves packed terminal emission and OCTANT
+  fitting dominate steady storm rendering, not regional sampling. Each cached
+  static precipitation plane now retains its immutable lit/graded parent and
+  the exact terminal-cell offsets touched by the original ordered streak
+  algorithm. Production OCTANT conversion copies the parent's five typed-array
+  planes and perceptually re-fits only those weather cells before the existing
+  actor/activity delta. Weak ownership, bounded weather-frame retention, 15 Hz
+  cadence, authored pixels, material phases, and exhaustive fallback remain
+  unchanged. At 160x46, world minute 0, storm intensity 0.9, 20 colocated
+  actors and 400 alternating frames, the selected control keeps the exact V163
+  hash `b73372415cd6f3e8fef9a109510edd0d80a96821ec991a526ea4c6de7a58662f`
+  while production `renderToString` p50/p95 improves
+  20.337/34.887→16.470/25.252 ms. Corrected-profile sampled
+  `renderOctantScratchPacked` falls 2248.1→871.6 ms (-61.2%) and total sampled
+  CPU falls 16.535→13.668 seconds (-17.3%). The new direct proof compares all
+  five parent-derived packed planes with exhaustive reconstruction, alongside
+  complete cached-versus-exhaustive storm ANSI equality. Complete evidence and
+  the retained V163 profiling correction are in
+  `track-7-performance/static-weather-cell-delta-v164/FINDINGS.md`. Repository
+  verification passes 51 files / 286 tests, 18/18 typecheck tasks, 7/7 lint
+  tasks, 12/12 build tasks, and diff hygiene; the build produces a
+  10,120,806-byte runtime pack and 17,643,731-byte six-viewport prewarm. The
+  next bounded target is byte-equivalent packed terminal emission/SGR/GC, not
+  regional sampling. The source is not deployed, and the severely pressured
+  host is not accepted as sustained latency evidence. The reset normal-host
+  5/10/20 real-SSH ladder, mixed 30-minute run, bandwidth/delivery
+  decomposition, deployed cgroup observation, larger physical Ghostty viewport,
+  and operator use remain open. Production remains `vb07c0d4`; there was no
+  deploy, service restart, push, production database write, complete-gate
+  claim, or physical Ghostty claim;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
@@ -1792,8 +1825,10 @@ Still open and therefore goal-blocking:
   Ghostty viewport, and operator use remain unproven. V162 reduces the ordinary
   clear-day atmosphere traversal and instruments both IPC directions, but its
   short host-confounded SSH probes do not replace the reset sustained ladder.
-  V163 makes night/light/rain/storm static planes reusable and moves the local
-  profile bottleneck into regional sampling, but it likewise has no normal-host
+  V163 makes night/light/rain/storm static planes reusable. V164's corrected
+  post-warmup profile supersedes the earlier regional-sampling inference,
+  selects exact weather-cell OCTANT deltas, and leaves packed terminal emission
+  as the dominant bounded local target; neither milestone has normal-host
   sustained/deployed SSH evidence;
 - the first six-family landmark silhouettes and shared-boundary parcel
   compounds now include a selected two-sided canal-town focal core, but remain

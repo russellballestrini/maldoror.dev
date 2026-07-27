@@ -57,6 +57,10 @@ export interface ViewportRenderResult {
   sharedStaticBuffer?: PixelGrid;
   sharedStaticMaterialGrid?: Uint8Array[];
   sharedStaticDirtyCellOffsets?: readonly number[];
+  /** Optional immutable parent plane used to derive the shared static frame by
+   * recomputing only `sharedStaticParentDirtyCellOffsets`. */
+  sharedStaticParentBuffer?: PixelGrid;
+  sharedStaticParentDirtyCellOffsets?: readonly number[];
 }
 
 // Re-export for convenience
@@ -165,7 +169,7 @@ const STATIC_ATMOSPHERE_FRAMES = new WeakMap<StaticSceneFrame, Map<string, Pixel
 const MAX_STATIC_ATMOSPHERE_FRAMES_PER_SCENE = 4;
 const STATIC_LIT_ATMOSPHERE_FRAMES = new WeakMap<PixelGrid, Map<string, PixelGrid>>();
 const MAX_STATIC_LIT_FRAMES_PER_ATMOSPHERE = 4;
-const STATIC_PRECIPITATION_FRAMES = new WeakMap<PixelGrid, Map<string, PixelGrid>>();
+const STATIC_PRECIPITATION_FRAMES = new WeakMap<PixelGrid, Map<string, StaticPrecipitationFrame>>();
 const MAX_STATIC_PRECIPITATION_FRAMES_PER_ATMOSPHERE = 4;
 
 interface PreparedWorldLight {
@@ -187,6 +191,17 @@ interface PreparedPrecipitation {
   initialStrength: number;
   strengthFalloff: number;
   phase: number;
+}
+
+interface StaticPrecipitationFrame {
+  buffer: PixelGrid;
+  dirtyCellOffsets: readonly number[];
+}
+
+interface SharedAtmosphereFrame {
+  buffer: PixelGrid;
+  parentBuffer?: PixelGrid;
+  parentDirtyCellOffsets?: readonly number[];
 }
 
 function rgbWithoutAlpha(source: RGB): RGB {
@@ -550,7 +565,9 @@ export class ViewportRenderer {
     // 5. The persistent world clock grades the whole scene. Overlays remain
     // crisp UI, while terrain, architecture, and inhabitants share one sky.
     const worldLife = world.getWorldLifeState?.();
-    let sharedStaticBuffer = worldLife ? undefined : staticScene?.buffer;
+    let sharedStatic: SharedAtmosphereFrame | undefined = !worldLife && staticScene
+      ? { buffer: staticScene.buffer }
+      : undefined;
     if (worldLife) {
       const bounds = this.getVisibleTileBounds(pixelWidth, pixelHeight);
       const lightReach = 9;
@@ -562,7 +579,7 @@ export class ViewportRenderer {
             bounds.endTileY + lightReach,
           ) ?? []
         : [];
-      sharedStaticBuffer = this.applyWorldAtmosphere(
+      sharedStatic = this.applyWorldAtmosphere(
         buffer,
         materialGrid,
         worldLife,
@@ -607,11 +624,13 @@ export class ViewportRenderer {
       overlays: this.pendingOverlays,
       brightnessGrid,
       materialGrid,
-      sharedStaticBuffer,
-      sharedStaticMaterialGrid: sharedStaticBuffer ? staticScene?.materialGrid : undefined,
-      sharedStaticDirtyCellOffsets: sharedStaticBuffer
+      sharedStaticBuffer: sharedStatic?.buffer,
+      sharedStaticMaterialGrid: sharedStatic ? staticScene?.materialGrid : undefined,
+      sharedStaticDirtyCellOffsets: sharedStatic
         ? this.dynamicOctantDirtyOffsets
         : undefined,
+      sharedStaticParentBuffer: sharedStatic?.parentBuffer,
+      sharedStaticParentDirtyCellOffsets: sharedStatic?.parentDirtyCellOffsets,
     };
   }
 
@@ -689,7 +708,7 @@ export class ViewportRenderer {
     tick: number,
     lights: readonly WorldLightSource[],
     staticScene?: StaticSceneFrame,
-  ): PixelGrid | undefined {
+  ): SharedAtmosphereFrame | undefined {
     const minuteOfDay = ((world.worldMinute % 1440) + 1440) % 1440;
     const solar = Math.max(0, Math.sin(((minuteOfDay - 360) / 720) * Math.PI));
     // Preserve a moonlit navigation floor before weather grading. The old
@@ -843,6 +862,8 @@ export class ViewportRenderer {
       let sharedAtmosphere = preparedLights.length > 0
         ? this.getStaticLitAtmosphere(staticAtmosphere, preparedLights)
         : staticAtmosphere;
+      let parentBuffer: PixelGrid | undefined;
+      let parentDirtyCellOffsets: readonly number[] | undefined;
       const patches = this.dynamicAtmospherePatches;
       patches.length = 0;
       const pixelWidth = this.dynamicPixelWidth;
@@ -858,10 +879,13 @@ export class ViewportRenderer {
           : null);
       }
       if (precipitation) {
-        sharedAtmosphere = this.getStaticPrecipitation(
+        parentBuffer = sharedAtmosphere;
+        const weatherFrame = this.getStaticPrecipitation(
           sharedAtmosphere,
           precipitation,
         );
+        sharedAtmosphere = weatherFrame.buffer;
+        parentDirtyCellOffsets = weatherFrame.dirtyCellOffsets;
         for (let index = 0; index < this.dynamicPixelDirtyOffsets.length; index++) {
           const offset = this.dynamicPixelDirtyOffsets[index]!;
           const y = Math.floor(offset / pixelWidth);
@@ -887,7 +911,11 @@ export class ViewportRenderer {
         const x = offset - y * pixelWidth;
         buffer[y]![x] = patches[index] ?? null;
       }
-      return sharedAtmosphere;
+      return {
+        buffer: sharedAtmosphere,
+        parentBuffer,
+        parentDirtyCellOffsets,
+      };
     }
 
     for (let y = 0; y < buffer.length; y++) {
@@ -940,7 +968,7 @@ export class ViewportRenderer {
   private getStaticPrecipitation(
     staticAtmosphere: PixelGrid,
     precipitation: PreparedPrecipitation,
-  ): PixelGrid {
+  ): StaticPrecipitationFrame {
     const signature = [
       precipitation.density,
       precipitation.streakLength,
@@ -956,27 +984,41 @@ export class ViewportRenderer {
       frames = new Map();
       STATIC_PRECIPITATION_FRAMES.set(staticAtmosphere, frames);
     }
-    let weather = frames.get(signature);
-    if (weather) {
+    let frame = frames.get(signature);
+    if (frame) {
       frames.delete(signature);
-      frames.set(signature, weather);
-      return weather;
+      frames.set(signature, frame);
+      return frame;
     }
 
-    weather = staticAtmosphere.map((row) => row.slice());
-    this.applyPrecipitation(weather, precipitation);
-    frames.set(signature, weather);
+    const weather = staticAtmosphere.map((row) => row.slice());
+    const cellWidth = Math.ceil((weather[0]?.length ?? 0) / 2);
+    const cellHeight = Math.ceil(weather.length / 4);
+    const dirtyCellMask = new Uint8Array(cellWidth * cellHeight);
+    const dirtyCellOffsets: number[] = [];
+    this.applyPrecipitation(
+      weather,
+      precipitation,
+      dirtyCellMask,
+      dirtyCellOffsets,
+      cellWidth,
+    );
+    frame = { buffer: weather, dirtyCellOffsets };
+    frames.set(signature, frame);
     while (frames.size > MAX_STATIC_PRECIPITATION_FRAMES_PER_ATMOSPHERE) {
       const oldest = frames.keys().next().value as string | undefined;
       if (oldest === undefined) break;
       frames.delete(oldest);
     }
-    return weather;
+    return frame;
   }
 
   private applyPrecipitation(
     buffer: PixelGrid,
     precipitation: PreparedPrecipitation,
+    dirtyCellMask?: Uint8Array,
+    dirtyCellOffsets?: number[],
+    dirtyCellWidth = 0,
   ): void {
     for (let y = 0; y < buffer.length; y++) {
       const row = buffer[y]!;
@@ -992,6 +1034,14 @@ export class ViewportRenderer {
             offset,
             precipitation,
           );
+          if (dirtyCellMask && dirtyCellOffsets && dirtyCellWidth > 0) {
+            const cellOffset = Math.floor(streakY / 4) * dirtyCellWidth
+              + Math.floor(streakX / 2);
+            if (dirtyCellMask[cellOffset] === 0) {
+              dirtyCellMask[cellOffset] = 1;
+              dirtyCellOffsets.push(cellOffset);
+            }
+          }
         }
       }
     }
