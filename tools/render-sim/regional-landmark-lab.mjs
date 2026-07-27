@@ -639,6 +639,7 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
   const lastOwnership = regionalStreetPairOwnershipCell(ownershipMargin, ownershipMargin);
   const canonicalCandidates = new Map();
   const canonicalProtectedReservations = new Map();
+  const canonicalProtectedFitCandidates = new Map();
   const ownershipMismatches = [];
   let enumeratedOwnershipCells = 0;
   let enumeratedCandidateEmissions = 0;
@@ -656,6 +657,16 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
         `${ownershipCellX},${ownershipCellY}`,
         protectedReservation,
       );
+      for (const candidate of world.getAmbientStreetPairProtectedFitCandidates(
+        ownershipCellX,
+        ownershipCellY,
+      )) {
+        if (regionalStreetPairCandidateConflictsWithProtectedReservation(
+          candidate,
+          protectedReservation,
+        )) throw new Error(`Protected-fit candidate still conflicts: ${candidate.id}`);
+        canonicalProtectedFitCandidates.set(candidate.id, candidate);
+      }
       for (const candidate of world.getAmbientStreetPairCandidates(
         ownershipCellX,
         ownershipCellY,
@@ -831,6 +842,12 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
     candidateAnyConflictCount: protectedAnyConflictCount,
     manifestReachMismatches: protectedManifestReachMismatches,
   };
+  const canonicalProtectedFitDiagnostics = {
+    candidateCount: canonicalProtectedFitCandidates.size,
+    candidateIds: [...canonicalProtectedFitCandidates.keys()].sort(),
+    currentManifestBlocked: canonicalCandidates.size > 0 &&
+      canonicalProtectedFitCandidates.size === 0,
+  };
   console.error(JSON.stringify({ streetOverlayDiscovery: {
     searchRadius,
     evaluatedPlaceCells,
@@ -973,6 +990,7 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
     opportunityByVocabulary,
     canonicalCandidateDiagnostics,
     canonicalProtectedReservationDiagnostics,
+    canonicalProtectedFitDiagnostics,
     manifestWideCandidateBound,
     complete: missing.length === 0 && incompleteSites.length === 0,
     discoveryMs: Number((performance.now() - discoveryStartedAt).toFixed(2)),

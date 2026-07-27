@@ -38,7 +38,10 @@ import {
   type RegionalQuayDetailAsset,
   type RegionalRouteContactAsset,
 } from '../tiles/regional-world-tile-provider.js';
-import { regionalStreetPairOwnershipCell } from '../tiles/regional-street-pair-admission.js';
+import {
+  regionalStreetPairCandidateConflictsWithProtectedReservation,
+  regionalStreetPairOwnershipCell,
+} from '../tiles/regional-street-pair-admission.js';
 
 const COLOURS: Record<BiomeFamily, RGB> = {
   'canal-town': { r: 210, g: 120, b: 60 },
@@ -1155,6 +1158,7 @@ describe('RegionalWorldTileProvider', () => {
       buildAmbientSharedStreetPairCandidate(
         program: unknown,
         reserved: ReadonlySet<string>,
+        excludedVisualGroups?: ReadonlySet<string>,
       ): InspectedStreetPairCandidate | null;
       getAmbientStreetPairCandidates(
         ownershipCellX: number,
@@ -1172,6 +1176,14 @@ describe('RegionalWorldTileProvider', () => {
         key: string,
         reservation: InspectedStreetPairProtectedReservation,
       ): InspectedStreetPairProtectedReservation;
+      getAmbientStreetPairProtectedFitCandidates(
+        ownershipCellX: number,
+        ownershipCellY: number,
+      ): readonly InspectedStreetPairCandidate[];
+      cacheAmbientStreetPairProtectedFitCandidates(
+        key: string,
+        candidates: readonly InspectedStreetPairCandidate[],
+      ): readonly InspectedStreetPairCandidate[];
     };
     const inspectFirst = first as unknown as StreetPairInspection;
     const inspectReplay = replay as unknown as StreetPairInspection;
@@ -1190,6 +1202,7 @@ describe('RegionalWorldTileProvider', () => {
     });
     let intrinsicPair: InspectedStreetPairCandidate | null = null;
     let replayPair: InspectedStreetPairCandidate | null = null;
+    let intrinsicProgram: unknown = null;
     for (let cellY = -4; cellY <= 4 && !intrinsicPair; cellY++) {
       for (let cellX = -4; cellX <= 4 && !intrinsicPair; cellX++) {
         const program = inspectFirst.getAmbientPlaceProgram(cellX, cellY);
@@ -1205,6 +1218,7 @@ describe('RegionalWorldTileProvider', () => {
         if (!candidateReplay) continue;
         intrinsicPair = candidate;
         replayPair = candidateReplay;
+        intrinsicProgram = program;
       }
     }
     expect(intrinsicPair).not.toBeNull();
@@ -1220,6 +1234,15 @@ describe('RegionalWorldTileProvider', () => {
     expect(intrinsicPair!.visualGroups).toHaveLength(2);
     expect(new Set(intrinsicPair!.visualGroups).size).toBe(2);
     expect(intrinsicPair!.placements).toHaveLength(2);
+    const semanticAlternative = inspectFirst.buildAmbientSharedStreetPairCandidate(
+      intrinsicProgram,
+      new Set(),
+      new Set(intrinsicPair!.visualGroups),
+    );
+    expect(semanticAlternative).not.toBeNull();
+    expect(semanticAlternative!.visualGroups.every((group) => (
+      !intrinsicPair!.visualGroups.includes(group)
+    ))).toBe(true);
 
     const ownershipCells = Array.from({ length: 5 }, (_, index) => ({
       cellX: index - 2,
@@ -1284,10 +1307,46 @@ describe('RegionalWorldTileProvider', () => {
       [...reservation.reservedCells].sort().join('|') === reservation.reservedCells.join('|') &&
       [...reservation.sourceIds].sort().join('|') === reservation.sourceIds.join('|')
     ))).toBe(true);
+    const enumerateProtectedFits = (
+      inspection: StreetPairInspection,
+      cells: readonly { cellX: number; cellY: number }[],
+    ) => {
+      const candidates = new Map<string, InspectedStreetPairCandidate>();
+      for (const cell of cells) {
+        const reservation = inspection.getAmbientStreetPairProtectedReservation(
+          cell.cellX,
+          cell.cellY,
+        );
+        for (const candidate of inspection.getAmbientStreetPairProtectedFitCandidates(
+          cell.cellX,
+          cell.cellY,
+        )) {
+          expect(regionalStreetPairCandidateConflictsWithProtectedReservation(
+            candidate,
+            reservation,
+          )).toBe(false);
+          candidates.set(candidate.id, candidate);
+        }
+      }
+      return [...candidates.values()].map(candidateSignature).sort((a, b) => (
+        a.id === b.id ? 0 : a.id < b.id ? -1 : 1
+      ));
+    };
+    const forwardProtectedFits = enumerateProtectedFits(inspectFirst, ownershipCells);
+    const reverseProtectedFits = enumerateProtectedFits(
+      inspectReplay,
+      [...ownershipCells].reverse(),
+    );
+    expect(forwardProtectedFits).toEqual([]);
+    expect(reverseProtectedFits).toEqual(forwardProtectedFits);
+    expect(enumerateProtectedFits(inspectFirst, [...ownershipCells].reverse()))
+      .toEqual(forwardProtectedFits);
     expect(first.getRegionalStats()).toMatchObject({
       cachedAmbientStreetPairOwnershipCells: ownershipCells.length,
       cachedAmbientStreetPairCandidates: forwardCandidates.length,
       cachedAmbientStreetPairProtectedOwnershipCells: ownershipCells.length,
+      cachedAmbientStreetPairProtectedFitOwnershipCells: ownershipCells.length,
+      cachedAmbientStreetPairProtectedFitCandidates: forwardProtectedFits.length,
     });
     const streetCandidateCacheLimit = first.getRegionalStats().maxCachedBlocks * 16;
     for (let index = 0; index < streetCandidateCacheLimit + 2; index++) {
@@ -1308,6 +1367,15 @@ describe('RegionalWorldTileProvider', () => {
     }
     expect(first.getRegionalStats().cachedAmbientStreetPairProtectedOwnershipCells)
       .toBe(protectedReservationCacheLimit);
+    const protectedFitCacheLimit = first.getRegionalStats().maxCachedBlocks * 16;
+    for (let index = 0; index < protectedFitCacheLimit + 2; index++) {
+      inspectFirst.cacheAmbientStreetPairProtectedFitCandidates(
+        `test-overflow:${index}`,
+        Object.freeze([]),
+      );
+    }
+    expect(first.getRegionalStats().cachedAmbientStreetPairProtectedFitOwnershipCells)
+      .toBe(protectedFitCacheLimit);
     expect(first.getRegionalStats()).toMatchObject({
       ambientPlaceFabricProfile: 'shared-common-street-overlay',
       ambientPlaceAccessProfile: 'route-frontage',

@@ -2163,6 +2163,28 @@ Completed foundations:
   Next, generate protected-fit alternatives with non-repeating visual groups,
   prove their exact signatures, then feed the one-cell selector without
   changing V170 materialization;
+- V180 selects the diagnostic protected-refit factory and proves the current
+  production manifest is insufficient. For each fixed ownership cell it loads
+  V179's immutable cells/groups, indexes protected groups by owning site,
+  reruns the exact bounded production setback/nudge fitter with those groups
+  excluded, rejects residual conflicts through the V175 kernel, and stores
+  sorted frozen candidates in its own bounded LRU. An alternative-rich fixture
+  proves the fitter can select a complete second semantic pair when geometry is
+  open; the full conservative fixture truthfully yields zero across forward
+  32-tile, reverse 47-tile, and reversed cached traversal. The faithful census
+  likewise refits all 36 ownership cells to **zero** protected candidates from
+  the current atlas, so `currentManifestBlocked=true`: each required
+  family/axis has only the same pair already protected in its owning common.
+  The one-cell selector remains disconnected because connecting it now would
+  erase the active layer. V170 stays at nine complete pairs, 4/11 coverage,
+  exact `0/6/12/24/9` stages, and all eight PNG hashes byte-identical to V179.
+  All 43 focused tests, world typecheck/build, lab syntax, faithful census,
+  seven lint tasks, and source diff check pass. No visual improvement is
+  claimed. Evidence lives in
+  `track-4-world-composition/regional-protected-refit-v180/FINDINGS.md`. Next,
+  author a genuinely distinct paired focal vocabulary for every required
+  family/axis through the selected hybrid imagegen-to-ANSI pipeline, prove
+  non-empty exact protected-fit signatures, and only then exercise the selector;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
