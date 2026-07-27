@@ -1020,6 +1020,111 @@ describe('RegionalWorldTileProvider', () => {
     });
   });
 
+  it('adds optional street overlays after freezing meso program admission', () => {
+    const continuousRoute = (x: number, y: number): RegionalRouteSample => ({
+      ...routeSample(x, y),
+      directionX: 1,
+      directionY: 0,
+    });
+    const placeBiome = () => biomeSample('canal-town');
+    const focal = (
+      id: string,
+      side: -1 | 1,
+    ): RegionalParcelComponentAsset => ({
+      id,
+      families: ['canal-town'],
+      role: 'mass',
+      visualGroup: `focal:${id}`,
+      compositionRole: 'focal',
+      frontageAxis: 'east-west',
+      compositionSide: side,
+      frontageStations: [0],
+      sprite: sprite(COLOURS['canal-town']),
+      collision: [[0, 0]],
+    });
+    const extraFocals = [
+      focal('parcel:canal-town:street-negative-a', -1),
+      focal('parcel:canal-town:street-negative-b', -1),
+      focal('parcel:canal-town:street-positive-a', 1),
+      focal('parcel:canal-town:street-positive-b', 1),
+    ];
+    const control = makeWorld(
+      32, 64, continuousRoute, placeBiome, false, undefined, false, false, false,
+      'east-west', extraFocals, [], 'cluster-field-blue-noise',
+      'hierarchical-place-field', 'shared-common', 'route-frontage', false,
+    );
+    const first = makeWorld(
+      32, 64, continuousRoute, placeBiome, false, undefined, false, false, false,
+      'east-west', extraFocals, [], 'cluster-field-blue-noise',
+      'hierarchical-place-field', 'shared-common-street-overlay', 'route-frontage', false,
+    );
+    const replay = makeWorld(
+      47, 64, continuousRoute, placeBiome, false, undefined, false, false, false,
+      'east-west', extraFocals, [], 'cluster-field-blue-noise',
+      'hierarchical-place-field', 'shared-common-street-overlay', 'route-frontage', false,
+    );
+    type InspectedProgram = {
+      root: { asset: { id: string }; siteX: number; siteY: number };
+      placements: readonly { asset: { id: string }; anchorX: number; anchorY: number }[];
+      publicFocalKeys?: readonly string[];
+      fabric?: { layout: { id: string } };
+    };
+    const admittedPrograms = (world: RegionalWorldTileProvider) => {
+      const inspect = world as unknown as {
+        buildAmbientPlacements(originX: number, originY: number): {
+          placePrograms: readonly InspectedProgram[];
+        };
+      };
+      const programs = new Map<string, unknown>();
+      for (const originY of [-64, -32, 0, 32, 64]) {
+        for (const originX of [-64, -32, 0, 32, 64]) {
+          for (const program of inspect.buildAmbientPlacements(originX, originY).placePrograms) {
+            const key = `${program.root.siteX},${program.root.siteY}`;
+            programs.set(key, {
+              root: `${program.root.asset.id}@${key}`,
+              placements: program.placements.map((placement) => (
+                `${placement.asset.id}@${placement.anchorX},${placement.anchorY}`
+              )),
+              publicFocalKeys: program.publicFocalKeys,
+              fabric: program.fabric?.layout.id,
+            });
+          }
+        }
+      }
+      return [...programs.entries()].sort(([a], [b]) => a.localeCompare(b));
+    };
+    expect(admittedPrograms(first)).toEqual(admittedPrograms(control));
+
+    const bounds = [-96, -72, 128, 72] as const;
+    const placements = first.getAmbientPlacementsInBounds(...bounds);
+    expect(placements).toEqual(replay.getAmbientPlacementsInBounds(...bounds));
+    expect(placements.filter((placement) => placement.parcelPathId === undefined)).toEqual(
+      control.getAmbientPlacementsInBounds(...bounds).filter((placement) => (
+        placement.parcelPathId === undefined
+      )),
+    );
+    const streetBySite = new Map<string, typeof placements>();
+    for (const placement of placements.filter((candidate) => (
+      candidate.parcelPathId?.endsWith(':street-overlay')
+    ))) {
+      const key = `${placement.siteX},${placement.siteY}`;
+      streetBySite.set(key, [...(streetBySite.get(key) ?? []), placement]);
+    }
+    expect(streetBySite.size).toBeGreaterThan(0);
+    expect([...streetBySite.values()].every((street) => (
+      street.length === 2 &&
+      new Set(street.map((placement) => placement.assetId)).size === 2 &&
+      new Set(street.map((placement) => Math.sign(placement.anchorY))).size === 2 &&
+      street.every((placement) => (
+        placement.pathTangentX === 1 && placement.pathTangentY === 0
+      ))
+    ))).toBe(true);
+    expect(first.getRegionalStats()).toMatchObject({
+      ambientPlaceFabricProfile: 'shared-common-street-overlay',
+      ambientPlaceAccessProfile: 'route-frontage',
+    });
+  });
+
   it('places deterministic civic details only on route-safe landmark shoulders', () => {
     const civicRoute = (x: number, y: number): RegionalRouteSample => {
       const base = routeSample(x, y);

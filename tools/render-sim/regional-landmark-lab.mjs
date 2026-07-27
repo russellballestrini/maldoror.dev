@@ -63,7 +63,12 @@ const RUN_AMBIENT_DISTRIBUTION_AUDIT =
 if (!['single', 'bounded-ensemble', 'hierarchical-place-field'].includes(AMBIENT_COMPOSITION_PROFILE)) {
   throw new Error(`Unknown ambient composition profile: ${AMBIENT_COMPOSITION_PROFILE}`);
 }
-if (!['terrain-only', 'internal-spine', 'shared-common'].includes(AMBIENT_PLACE_FABRIC_PROFILE)) {
+if (![
+  'terrain-only',
+  'internal-spine',
+  'shared-common',
+  'shared-common-street-overlay',
+].includes(AMBIENT_PLACE_FABRIC_PROFILE)) {
   throw new Error(`Unknown ambient place-fabric profile: ${AMBIENT_PLACE_FABRIC_PROFILE}`);
 }
 if (!['isolated', 'route-frontage'].includes(AMBIENT_PLACE_ACCESS_PROFILE)) {

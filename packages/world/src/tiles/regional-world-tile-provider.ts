@@ -347,7 +347,8 @@ export type RegionalAmbientCompositionProfile =
 export type RegionalAmbientPlaceFabricProfile =
   | 'terrain-only'
   | 'internal-spine'
-  | 'shared-common';
+  | 'shared-common'
+  | 'shared-common-street-overlay';
 
 /** Whether a meso place remains an isolated wilderness composition or proves
  * a walkable connection to the regional route graph and authors frontage along
@@ -4044,12 +4045,46 @@ export class RegionalWorldTileProvider extends TileProvider {
       [...uniquePrograms.values()],
     );
     const connectorReserved = new Set(connectors.keys());
+    if (this.ambientPlaceFabricProfile === 'shared-common-street-overlay') {
+      const detailReserved = new Set([
+        ...establishedReserved,
+        ...programReserved,
+        ...connectorReserved,
+      ]);
+      // Shared-common admission deliberately retains pathless roots from a
+      // neighbouring non-winning program as low-frequency identity. Protect
+      // those roots from the optional overlay too. Route-frontage props carry
+      // path IDs and remain replaceable by the more coherent street node.
+      for (const placement of placements) {
+        if (placement.parcelPathId === undefined && sourcePlaceSites.has(
+          positionKey(placement.siteX, placement.siteY),
+        )) reserveVisibleFootprint(placement, detailReserved, 1);
+      }
+      for (const program of [...uniquePrograms.values()].sort((a, b) => (
+        a.root.siteY - b.root.siteY || a.root.siteX - b.root.siteX ||
+        a.root.asset.id.localeCompare(b.root.asset.id)
+      ))) {
+        const street = this.buildAmbientSharedStreetOverlay(program, detailReserved);
+        if (street.length !== 2) continue;
+        for (const placement of street) {
+          if (placement.anchorX >= originX && placement.anchorX < originX + this.blockSize &&
+              placement.anchorY >= originY && placement.anchorY < originY + this.blockSize) {
+            placements.push(placement);
+          }
+          reserveVisibleFootprint(placement, detailReserved, 1);
+          // Fine ambient props are non-authoritative and may yield to the
+          // admitted street detail. This happens only after the meso program
+          // set is frozen, so the detail can never evict a peer place.
+          reserveVisibleFootprint(placement, programReserved, 1);
+        }
+      }
+    }
     const unique = new Map<string, Placement>();
     for (const placement of placements) {
       const siteKey = positionKey(placement.siteX, placement.siteY);
       const belongsToPlace = uniquePrograms.has(siteKey);
       if (sourcePlaceSites.has(siteKey) && !belongsToPlace && !(
-        this.ambientPlaceFabricProfile === 'shared-common' &&
+        usesSharedCommonFabric(this.ambientPlaceFabricProfile) &&
         placement.parcelPathId === undefined
       )) continue;
       if ((!belongsToPlace && visibleFootprintIntersects(
@@ -4294,7 +4329,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       : [];
     const fallbackStable = Object.freeze([...basePlacements, ...fallbackFrontage]
       .map((placement) => Object.freeze({ ...placement })));
-    const sharedCommon = access && this.ambientPlaceFabricProfile === 'shared-common' &&
+    const sharedCommon = access && usesSharedCommonFabric(this.ambientPlaceFabricProfile) &&
       !this.ambientPlaceAccessIntersectsCivic(access.path)
       ? this.buildAmbientSharedCommon(root, basePlacements, access.path, access.targetKey)
       : null;
@@ -4406,6 +4441,102 @@ export class RegionalWorldTileProvider extends TileProvider {
       }
     }
     return reserved;
+  }
+
+  /** Fit optional route-facing detail only after the authoritative meso
+   * program set has been admitted. The complete pair may yield to any accepted
+   * program, connector, civic mass, terrain constraint, or earlier detail; it
+   * is never included in a program reservation and therefore cannot change
+   * which places exist. */
+  private buildAmbientSharedStreetOverlay(
+    program: AmbientPlaceProgram,
+    reserved: ReadonlySet<string>,
+  ): Placement[] {
+    if (!program.fabric || !program.accessPath) return [];
+    const root = program.root;
+    const routeStart = program.accessPath.points[0];
+    if (!routeStart) return [];
+    const routeX = Math.floor(routeStart.x);
+    const routeY = Math.floor(routeStart.y);
+    const route = this.routes.sample(routeX, routeY);
+    if (this.field.sample(routeX, routeY).isWater || !route.routeKind) return [];
+    const axis: RegionalRouteContactAxis = Math.abs(route.directionX) >
+      Math.abs(route.directionY) ? 'east-west' : 'north-south';
+    const tangentX = axis === 'east-west' ? 1 : 0;
+    const tangentY = axis === 'east-west' ? 0 : 1;
+    const normalX = axis === 'east-west' ? 0 : 1;
+    const normalY = axis === 'east-west' ? 1 : 0;
+    const localReserved = new Set(reserved);
+    const localBiome = this.field.sample(routeX, routeY);
+    // The street node may be dozens of tiles from its owning common. Enforce
+    // uniqueness within the simultaneously visible pair; place-wide exclusion
+    // would suppress a family's useful vocabulary because an offscreen parent
+    // happened to use the same semantic silhouette.
+    const selectedGroups = new Set<string>();
+    const placements: Placement[] = [];
+    for (const side of [-1, 1] as const) {
+      const candidates = this.parcelComponents.filter((asset) => (
+        isFocalCompositionAsset(asset) && asset.frontageAxis === axis &&
+        asset.compositionSide === side && asset.frontageStations !== undefined &&
+        (!asset.programs || asset.programs.length === 0) &&
+        asset.families.some((family) => root.asset.families.includes(family)) &&
+        !selectedGroups.has(assetVisualGroup(asset))
+      )).map((asset) => ({
+        asset,
+        score: Math.max(...asset.families.map((family) => (
+          localBiome.weights[BIOME_FAMILIES.indexOf(family)] ?? 0
+        ))) * 0.45 + this.hashUnit(
+          root.siteX,
+          root.siteY,
+          stringHash(asset.id) ^ 0x62d1,
+        ) * 0.12,
+      })).sort((a, b) => b.score - a.score || a.asset.id.localeCompare(b.asset.id));
+      let selected: Placement | null = null;
+      for (const { asset } of candidates) {
+        const crossSpan = axis === 'east-west' ? asset.sprite.height : asset.sprite.width;
+        for (let extraSetback = 0; extraSetback <= 3 && !selected; extraSetback++) {
+          for (let nudgeIndex = 0; nudgeIndex <= 6 && !selected; nudgeIndex++) {
+            const along = symmetricSearchOffset(nudgeIndex) + side * 1.5;
+            const across = side * (route.halfWidth + crossSpan * 0.5 + 0.9 + extraSetback);
+            const anchor = visualCentreAnchor(
+              asset,
+              routeStart.x + tangentX * along + normalX * across,
+              routeStart.y + tangentY * along + normalY * across,
+            );
+            if (!this.assetFits(anchor.anchorX, anchor.anchorY, asset) ||
+                visibleFootprintIntersects(asset, anchor.anchorX, anchor.anchorY, localReserved)) {
+              continue;
+            }
+            const placement: Placement = {
+              asset,
+              kind: 'ambient',
+              siteX: root.siteX,
+              siteY: root.siteY,
+              ...anchor,
+              parcelId: `place:${root.siteX}:${root.siteY}`,
+              routeKind: route.routeKind,
+              parcelPathId: `${program.accessPath.id}:street-overlay`,
+              parcelStation: 0,
+              pathTangentX: tangentX,
+              pathTangentY: tangentY,
+            };
+            const entrances = ambientPlaceEntrances(placement as Placement & {
+              asset: RegionalParcelComponentAsset;
+            });
+            if (entrances.length === 0 || Math.min(...entrances.map((entrance) => (
+              this.routes.sample(Math.floor(entrance.x), Math.floor(entrance.y)).distance
+            ))) > 2.8) continue;
+            selected = placement;
+          }
+        }
+        if (selected) break;
+      }
+      if (!selected) return [];
+      placements.push(selected);
+      selectedGroups.add(assetVisualGroup(selected.asset));
+      reserveVisibleFootprint(selected, localReserved, 1);
+    }
+    return placements;
   }
 
   /** Ensure a route-connected place has one manifest-declared doorway even
@@ -6461,6 +6592,10 @@ function setsIntersect(first: ReadonlySet<string>, second: ReadonlySet<string>):
   const [smaller, larger] = first.size <= second.size ? [first, second] : [second, first];
   for (const key of smaller) if (larger.has(key)) return true;
   return false;
+}
+
+function usesSharedCommonFabric(profile: RegionalAmbientPlaceFabricProfile): boolean {
+  return profile === 'shared-common' || profile === 'shared-common-street-overlay';
 }
 
 /** Large unrotated blocks use their authored screen-space frontage rather than

@@ -1941,6 +1941,34 @@ Completed foundations:
   omittable route detail in a non-authoritative second pass that cannot evict or
   resize any accepted place. Gate A, production enablement, and physical
   Ghostty acceptance remain open;
+- V170 selects a bounded experimental `shared-common-street-overlay` successor
+  while continuing to reject Gate A. Meso roots, parents, commons, access,
+  fabrics, overlap admission, and connectors are frozen first; only then may a
+  stable second pass fit a complete two-sided family-coherent route node. The
+  detail pair yields as a unit to every accepted program, connector, civic mass,
+  terrain constraint, earlier detail, and pathless low-frequency meso root, so
+  it cannot resize or evict a place. A focused invariant proves complete
+  admitted-program identity parity against `shared-common`, exact pathless-root
+  parity, paired opposite-side semantics, and exact output across 32/47-tile
+  cache blocks; it also caught and eliminated duplicate source-block emission.
+  At the real rural road `(106,122)`, two clipped mountain props become a
+  coherent rural stone-barn/produce-awning pair belonging to the unchanged
+  destination. At the decisive coast coordinate, the accepted V167 frame now
+  reproduces byte for byte: semantic hash `c1a18d...ecb8`, OCTANT SHA
+  `7a7115...58`, 44 placements, both coast masses, and four valid fabrics.
+  Forest and transition are also byte-identical; rural/mountain/ruins keep exact
+  visible inventories and fabric counts with directly reviewed normalized PNG
+  deltas of 1.03/0.79/0.21%. Candidate A's place-wide vocabulary suppression
+  and Candidate B's unprotected retained-root regression remain as negative
+  evidence. Full verification passes 51 files / 287 tests, 18/18 typecheck,
+  7/7 lint, and 12/12 build; the 10,119,052-byte runtime pack and 17,299,671-byte
+  six-viewport prewarm completed. The 7m30 uncached SSH-world build ran under
+  roughly 23 GiB swap and severe memory/I/O PSI, so it is correctness only, not
+  Gate D. Complete evidence lives in
+  `track-4-world-composition/regional-post-admission-street-overlay-v170/FINDINGS.md`.
+  The profile is not production-enabled. A dynamically enumerated multi-place/
+  multi-route atlas, fresh complete Gate A atlas, production proof, Gate C, and
+  physical Ghostty acceptance remain open;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
