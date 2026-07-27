@@ -2050,6 +2050,27 @@ Completed foundations:
   bounded cache/neighbour counts, and coast/arrival regression are mandatory
   before another regional atlas. Research lives in
   `track-4-world-composition/regional-canonical-pair-admission-v174/RESEARCH.md`;
+- V175 selects the pure canonical street-pair admission kernel without claiming
+  a rendered-world change. Complete candidates now carry owning-place identity,
+  strict/replacement rank, coordinate-keyed priority, full visible-halo cell
+  reservations, and semantic visual groups. Exact geometry intersections and
+  same-place group reuse form conflict edges; established strict pairs outrank
+  replacements; locale-independent identity breaks exact ties. The bounded
+  one-pass local-priority result is traversal-order independent and deliberately
+  conservative rather than globally maximal. Seven focused tests prove fixed
+  negative-coordinate ownership, three traversal orders, strict precedence,
+  conservative chain suppression, semantic isolation, cross-place reuse, ties,
+  and invalid-input rejection; all 34 existing provider tests still pass, as do
+  world typecheck/build and all seven repository lint tasks. The proposed
+  64-cell ownership size is not yet an
+  empirically proved neighbour bound, and the kernel is not connected to the
+  provider. No placement or frame has changed and no atlas is warranted.
+  Evidence lives in
+  `track-4-world-composition/regional-canonical-pair-kernel-v175/FINDINGS.md`.
+  Next work must derive real complete-pair candidates, prove footprint/reach
+  bounds, cache canonical winners by ownership cell, materialize both halves
+  from the same winner, and pass exact 32/47/traversal/atomicity/semantic/
+  coast-arrival gates before any visual comparison;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without

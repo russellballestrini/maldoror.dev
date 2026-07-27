@@ -206,6 +206,16 @@ export {
   type RegionalWorldTileProviderConfig,
 } from './tiles/regional-world-tile-provider.js';
 export {
+  REGIONAL_STREET_PAIR_OWNERSHIP_CELL_SIZE,
+  regionalStreetPairCandidateOutranks,
+  regionalStreetPairCandidatesConflict,
+  regionalStreetPairOwnershipCell,
+  selectRegionalCanonicalStreetPairs,
+  type RegionalStreetPairAdmissionKind,
+  type RegionalStreetPairCandidate,
+  type RegionalStreetPairOwnershipCell,
+} from './tiles/regional-street-pair-admission.js';
+export {
   CornerCodedTileSet,
   type CornerCodedTileSetConfig,
   type CornerTileAddress,
