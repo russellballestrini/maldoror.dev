@@ -65,6 +65,7 @@ import {
   sampleRegionalQuayLayout,
   type RegionalQuayLayout,
 } from './regional-quay-layout.js';
+import type { RegionalStreetPairCandidate } from './regional-street-pair-admission.js';
 import { TileProvider, type TileProviderConfig } from './tile-provider.js';
 
 export interface RegionalVisualAsset {
@@ -511,6 +512,15 @@ interface AmbientBlockComposition {
   placements: Placement[];
   placePrograms: AmbientPlaceProgram[];
   connectors: Map<string, ParcelConnector>;
+}
+
+interface AmbientStreetPairCandidate extends RegionalStreetPairCandidate {
+  /** Route contact owns spatial enumeration; the place site owns semantics. */
+  ownershipX: number;
+  ownershipY: number;
+  axis: RegionalRouteContactAxis;
+  accessTargetKey?: string;
+  placements: readonly [Placement, Placement];
 }
 
 interface CachedParcelGroup {
@@ -4452,14 +4462,24 @@ export class RegionalWorldTileProvider extends TileProvider {
     program: AmbientPlaceProgram,
     reserved: ReadonlySet<string>,
   ): Placement[] {
-    if (!program.fabric || !program.accessPath) return [];
+    return this.buildAmbientSharedStreetPairCandidate(program, reserved)?.placements.slice() ?? [];
+  }
+
+  /** Preserve both street sides as one addressable candidate. This factory is
+   * still called through the accepted V170 sequential fitter; V176 records the
+   * complete identity without yet enabling canonical cross-candidate admission. */
+  private buildAmbientSharedStreetPairCandidate(
+    program: AmbientPlaceProgram,
+    reserved: ReadonlySet<string>,
+  ): AmbientStreetPairCandidate | null {
+    if (!program.fabric || !program.accessPath) return null;
     const root = program.root;
     const routeStart = program.accessPath.points[0];
-    if (!routeStart) return [];
+    if (!routeStart) return null;
     const routeX = Math.floor(routeStart.x);
     const routeY = Math.floor(routeStart.y);
     const route = this.routes.sample(routeX, routeY);
-    if (this.field.sample(routeX, routeY).isWater || !route.routeKind) return [];
+    if (this.field.sample(routeX, routeY).isWater || !route.routeKind) return null;
     const axis: RegionalRouteContactAxis = Math.abs(route.directionX) >
       Math.abs(route.directionY) ? 'east-west' : 'north-south';
     const tangentX = axis === 'east-west' ? 1 : 0;
@@ -4531,12 +4551,34 @@ export class RegionalWorldTileProvider extends TileProvider {
         }
         if (selected) break;
       }
-      if (!selected) return [];
+      if (!selected) return null;
       placements.push(selected);
       selectedGroups.add(assetVisualGroup(selected.asset));
       reserveVisibleFootprint(selected, localReserved, 1);
     }
-    return placements;
+    const first = placements[0];
+    const second = placements[1];
+    if (!first || !second) return null;
+    const pair = Object.freeze([first, second]) as readonly [Placement, Placement];
+    const memberIdentity = pair.map(placementIdentity).sort().join('|');
+    const id = `street-pair:${root.siteX},${root.siteY}:${program.accessTargetKey ?? `${routeX},${routeY}`}:` +
+      `${axis}:${memberIdentity}`;
+    const footprint = new Set<string>();
+    for (const placement of pair) reserveVisibleFootprint(placement, footprint, 1);
+    return Object.freeze({
+      id,
+      ownerSiteX: root.siteX,
+      ownerSiteY: root.siteY,
+      ownershipX: routeX,
+      ownershipY: routeY,
+      axis,
+      accessTargetKey: program.accessTargetKey,
+      kind: 'strict',
+      priority: this.hashUnit(root.siteX, root.siteY, stringHash(id) ^ 0x41b7),
+      reservedCells: Object.freeze([...footprint].sort()),
+      visualGroups: Object.freeze([...selectedGroups].sort()),
+      placements: pair,
+    });
   }
 
   /** Ensure a route-connected place has one manifest-declared doorway even

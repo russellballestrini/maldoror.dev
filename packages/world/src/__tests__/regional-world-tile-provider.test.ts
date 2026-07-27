@@ -1119,6 +1119,78 @@ describe('RegionalWorldTileProvider', () => {
         placement.pathTangentX === 1 && placement.pathTangentY === 0
       ))
     ))).toBe(true);
+
+    type InspectedStreetPairCandidate = {
+      id: string;
+      ownerSiteX: number;
+      ownerSiteY: number;
+      ownershipX: number;
+      ownershipY: number;
+      axis: 'north-south' | 'east-west';
+      kind: 'strict' | 'replacement';
+      priority: number;
+      reservedCells: readonly string[];
+      visualGroups: readonly string[];
+      placements: readonly {
+        asset: { id: string };
+        anchorX: number;
+        anchorY: number;
+      }[];
+    };
+    type StreetPairInspection = {
+      getAmbientPlaceProgram(cellX: number, cellY: number): unknown;
+      buildAmbientSharedStreetPairCandidate(
+        program: unknown,
+        reserved: ReadonlySet<string>,
+      ): InspectedStreetPairCandidate | null;
+    };
+    const inspectFirst = first as unknown as StreetPairInspection;
+    const inspectReplay = replay as unknown as StreetPairInspection;
+    const candidateSignature = (candidate: InspectedStreetPairCandidate) => ({
+      id: candidate.id,
+      owner: [candidate.ownerSiteX, candidate.ownerSiteY],
+      ownership: [candidate.ownershipX, candidate.ownershipY],
+      axis: candidate.axis,
+      kind: candidate.kind,
+      priority: candidate.priority,
+      reservedCells: candidate.reservedCells,
+      visualGroups: candidate.visualGroups,
+      placements: candidate.placements.map((placement) => (
+        `${placement.asset.id}@${placement.anchorX},${placement.anchorY}`
+      )),
+    });
+    let intrinsicPair: InspectedStreetPairCandidate | null = null;
+    let replayPair: InspectedStreetPairCandidate | null = null;
+    for (let cellY = -4; cellY <= 4 && !intrinsicPair; cellY++) {
+      for (let cellX = -4; cellX <= 4 && !intrinsicPair; cellX++) {
+        const program = inspectFirst.getAmbientPlaceProgram(cellX, cellY);
+        if (!program) continue;
+        const candidate = inspectFirst.buildAmbientSharedStreetPairCandidate(program, new Set());
+        if (!candidate) continue;
+        const replayProgram = inspectReplay.getAmbientPlaceProgram(cellX, cellY);
+        if (!replayProgram) continue;
+        const candidateReplay = inspectReplay.buildAmbientSharedStreetPairCandidate(
+          replayProgram,
+          new Set(),
+        );
+        if (!candidateReplay) continue;
+        intrinsicPair = candidate;
+        replayPair = candidateReplay;
+      }
+    }
+    expect(intrinsicPair).not.toBeNull();
+    expect(replayPair).not.toBeNull();
+    expect(candidateSignature(replayPair!)).toEqual(candidateSignature(intrinsicPair!));
+    expect(intrinsicPair).toMatchObject({
+      kind: 'strict',
+      axis: 'east-west',
+    });
+    expect(intrinsicPair!.priority).toBeGreaterThanOrEqual(0);
+    expect(intrinsicPair!.priority).toBeLessThanOrEqual(1);
+    expect(intrinsicPair!.reservedCells.length).toBeGreaterThan(0);
+    expect(intrinsicPair!.visualGroups).toHaveLength(2);
+    expect(new Set(intrinsicPair!.visualGroups).size).toBe(2);
+    expect(intrinsicPair!.placements).toHaveLength(2);
     expect(first.getRegionalStats()).toMatchObject({
       ambientPlaceFabricProfile: 'shared-common-street-overlay',
       ambientPlaceAccessProfile: 'route-frontage',

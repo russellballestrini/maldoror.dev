@@ -2071,6 +2071,24 @@ Completed foundations:
   bounds, cache canonical winners by ownership cell, materialize both halves
   from the same winner, and pass exact 32/47/traversal/atomicity/semantic/
   coast-arrival gates before any visual comparison;
+- V176 selects real complete-pair candidate identity while preserving V170
+  output exactly. Every successful production fitter result is now one typed
+  record containing owning-place and route-ownership coordinates, access/axis/
+  two-placement identity, the union of both visible one-tile-halo footprints,
+  manifest visual groups, strict rank, and a world/full-identity keyed priority.
+  The generic selector retains enriched placement payloads. A focused real-
+  provider proof derives the same intrinsic candidate from 32- and 47-tile
+  providers and compares its full ID, ownership, priority, footprint, groups,
+  and asset/anchor tuple exactly. All 41 kernel/provider tests, world typecheck/
+  build, and seven repository lint tasks pass. This is still a compatibility
+  refactor: candidate fitting receives V170's sequential block-local reservation
+  set, canonical competition is disabled, no placement changed, and no atlas is
+  warranted. Evidence lives in
+  `track-4-world-composition/regional-real-pair-candidates-v176/FINDINGS.md`.
+  Next, enumerate these real candidates by fixed route-contact ownership cells,
+  measure and prove the finite footprint neighbour ring, validate complete
+  pairs against immutable protected geometry, and compare cached winner
+  signatures across block sizes/traversals before materialization changes;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without

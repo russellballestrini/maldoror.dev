@@ -56,6 +56,9 @@ describe('regional canonical street-pair admission', () => {
     expect(signature(values)).toEqual(['a', 'c']);
     expect(signature([...values].reverse())).toEqual(['a', 'c']);
     expect(signature([values[1]!, values[2]!, values[0]!])).toEqual(['a', 'c']);
+    const enriched = values.map((value) => ({ ...value, payload: `payload:${value.id}` }));
+    expect(selectRegionalCanonicalStreetPairs(enriched).map((value) => value.payload))
+      .toEqual(['payload:a', 'payload:c']);
   });
 
   it('gives an established strict pair precedence over replacement detail', () => {

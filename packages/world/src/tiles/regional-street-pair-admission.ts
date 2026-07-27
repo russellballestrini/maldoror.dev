@@ -81,10 +81,10 @@ export function regionalStreetPairCandidateOutranks(
  * is suppressed by every higher-ranked conflicting candidate, even when that
  * blocker is itself suppressed elsewhere. That makes the result a pure local
  * function without scheduler- or cache-order fixpoint iteration. */
-export function selectRegionalCanonicalStreetPairs(
-  candidates: readonly RegionalStreetPairCandidate[],
-): RegionalStreetPairCandidate[] {
-  const unique = new Map<string, RegionalStreetPairCandidate>();
+export function selectRegionalCanonicalStreetPairs<Candidate extends RegionalStreetPairCandidate>(
+  candidates: readonly Candidate[],
+): Candidate[] {
+  const unique = new Map<string, Candidate>();
   for (const candidate of candidates) {
     if (unique.has(candidate.id)) throw new Error(`Duplicate street-pair candidate: ${candidate.id}`);
     if (!Number.isFinite(candidate.priority) || candidate.priority < 0 || candidate.priority > 1) {
