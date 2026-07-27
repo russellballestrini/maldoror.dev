@@ -1922,6 +1922,25 @@ Completed foundations:
   jointly reserving an additional route-owned street node; short access alone
   cannot replace an accepted destination. Gate A, production enablement, and
   physical Ghostty acceptance remain open;
+- V169 **rejects and fully reverts** the additive `shared-street` successor.
+  Unlike V168 it keeps the selected meso root and common fixed, then fits a
+  two-sided route node at the start of that place's proved access path. The
+  rural destination retained all four accepted visible masses, and the
+  route-centred view genuinely improved two clipped mountain props into a
+  complete rural barn/produce-awning pair with distinct visual groups on
+  opposite sides of the trail. The architecture still failed the decisive
+  coast-preservation gate: the accepted marsh-beacon cluster disappeared,
+  visible fabric layouts fell 4 -> 3, and a clipped forest lean-to replaced it
+  at the frame edge even though local audits remained valid. This proves that
+  adding child footprints before global program admission can evict a peer
+  program without relocating its own root. The batch stopped at that failure,
+  all source/type/lab/test changes were removed, and controls, candidates,
+  metrics, logs, and diagnosis remain in
+  `track-4-world-composition/regional-shared-street-v169/FINDINGS.md`. The next
+  experiment must freeze meso program admission and identities first, then add
+  omittable route detail in a non-authoritative second pass that cannot evict or
+  resize any accepted place. Gate A, production enablement, and physical
+  Ghostty acceptance remain open;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
