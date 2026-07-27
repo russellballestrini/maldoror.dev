@@ -517,6 +517,7 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
   const expected = [...vocabularySides.entries()].filter(([, sides]) => (
     sides.has(-1) && sides.has(1)
   )).map(([key]) => key).sort();
+  const expectedSet = new Set(expected);
   const searchRadius = Number(process.env.MALDOROR_REGIONAL_STREET_OVERLAY_RADIUS ?? '256');
   if (!Number.isInteger(searchRadius) || searchRadius < 64 || searchRadius > 1024) {
     throw new Error(`Invalid street-overlay atlas radius: ${searchRadius}`);
@@ -527,6 +528,7 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
   const firstCell = Math.floor(-expandedRadius / REGIONAL_AMBIENT_CONNECTED_PLACE_CELL_SIZE);
   const lastCell = Math.floor(expandedRadius / REGIONAL_AMBIENT_CONNECTED_PLACE_CELL_SIZE);
   const routeWindows = new Map();
+  const routeOpportunities = [];
   let evaluatedPlaceCells = 0;
   let resolvedPlacePrograms = 0;
   let resolvedFabricPrograms = 0;
@@ -540,8 +542,37 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
       if (program) resolvedPlacePrograms++;
       if (program?.fabric) resolvedFabricPrograms++;
       const routeStart = program?.fabric && program.accessPath?.points[0];
-      if (!routeStart || Math.abs(routeStart.x) > searchRadius + 16 ||
-          Math.abs(routeStart.y) > searchRadius + 16) continue;
+      if (!routeStart) continue;
+      const routeX = Math.floor(routeStart.x);
+      const routeY = Math.floor(routeStart.y);
+      const route = routes.sample(routeX, routeY);
+      const axis = Math.abs(route.directionX) > Math.abs(route.directionY)
+        ? 'east-west'
+        : 'north-south';
+      const family = program.fabric.layout.materialFamily;
+      const key = `${family}:${axis}`;
+      const withinSearch = Math.abs(routeStart.x) <= searchRadius + 16 &&
+        Math.abs(routeStart.y) <= searchRadius + 16;
+      const routeValid = !field.sample(routeX, routeY).isWater && Boolean(route.routeKind);
+      // TypeScript-private, not ECMAScript-private: this empty-reservation
+      // probe runs the exact production fitter and isolates intrinsic terrain,
+      // doorway, and manifest feasibility from meso/detail occupancy.
+      const intrinsicPair = routeValid && expectedSet.has(key)
+        ? world.buildAmbientSharedStreetOverlay(program, new Set())
+        : [];
+      routeOpportunities.push({
+        key,
+        siteKey: `${program.root.siteX},${program.root.siteY}`,
+        site: [program.root.siteX, program.root.siteY],
+        fabricId: program.fabric.layout.id,
+        routeStart: [routeStart.x, routeStart.y],
+        routeKind: route.routeKind,
+        routeValid,
+        withinSearch,
+        intrinsicFit: intrinsicPair.length === 2,
+        intrinsicAssets: intrinsicPair.map((placement) => placement.asset.id).sort(),
+      });
+      if (!withinSearch) continue;
       const blockX = Math.floor(routeStart.x / providerBlockSize);
       const blockY = Math.floor(routeStart.y / providerBlockSize);
       routeWindows.set(`${blockX},${blockY}`, { blockX, blockY });
@@ -555,6 +586,7 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
     routeWindowCount: routeWindows.size,
   } }));
   const placementsBySite = new Map();
+  const admittedFabricIds = new Set();
   const pairsByVocabulary = new Map();
   for (const { blockX, blockY } of [...routeWindows.values()].sort((a, b) => (
     a.blockY - b.blockY || a.blockX - b.blockX
@@ -564,6 +596,9 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
     const minY = blockY * providerBlockSize - margin;
     const maxX = (blockX + 1) * providerBlockSize - 1 + margin;
     const maxY = (blockY + 1) * providerBlockSize - 1 + margin;
+    for (const layout of world.getLandmarkFabricLayoutsInBounds(minX, minY, maxX, maxY)) {
+      if (layout.connectionMode === 'shared-common') admittedFabricIds.add(layout.id);
+    }
     for (const placement of world.getAmbientPlacementsInBounds(minX, minY, maxX, maxY)) {
       if (!placement.parcelPathId?.endsWith(':street-overlay') ||
           Math.abs(placement.anchorX) > searchRadius ||
@@ -605,17 +640,71 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
   }
   const found = [...pairsByVocabulary.keys()].sort();
   const missing = expected.filter((key) => !pairsByVocabulary.has(key));
+  const admittedOverlaySites = new Set([...pairsByVocabulary.values()].flat().map((candidate) => (
+    candidate.siteKey
+  )));
+  const opportunityByVocabulary = Object.fromEntries(expected.map((key) => {
+    const candidates = routeOpportunities.filter((candidate) => (
+      candidate.withinSearch && candidate.key === key
+    ));
+    const stages = {
+      invalidRoute: 0,
+      intrinsicFitRejected: 0,
+      mesoAdmissionRejected: 0,
+      detailReservationRejected: 0,
+      overlayAdmitted: 0,
+    };
+    for (const candidate of candidates) {
+      if (!candidate.routeValid) stages.invalidRoute++;
+      else if (!candidate.intrinsicFit) stages.intrinsicFitRejected++;
+      else if (!admittedFabricIds.has(candidate.fabricId)) stages.mesoAdmissionRejected++;
+      else if (!admittedOverlaySites.has(candidate.siteKey)) stages.detailReservationRejected++;
+      else stages.overlayAdmitted++;
+    }
+    return [key, {
+      routeOpportunityCount: candidates.length,
+      validRouteOpportunityCount: candidates.filter((candidate) => candidate.routeValid).length,
+      intrinsicFitCount: candidates.filter((candidate) => candidate.intrinsicFit).length,
+      mesoAdmittedCount: candidates.filter((candidate) => (
+        admittedFabricIds.has(candidate.fabricId)
+      )).length,
+      overlayAdmittedCount: candidates.filter((candidate) => (
+        admittedOverlaySites.has(candidate.siteKey)
+      )).length,
+      stages,
+      exampleSites: candidates.slice(0, 4).map((candidate) => ({
+        site: candidate.site,
+        routeStart: candidate.routeStart,
+        intrinsicAssets: candidate.intrinsicAssets,
+      })),
+    }];
+  }));
+  const opportunityStageTotals = Object.values(opportunityByVocabulary).reduce((totals, entry) => {
+    for (const [stage, count] of Object.entries(entry.stages)) totals[stage] += count;
+    return totals;
+  }, {
+    invalidRoute: 0,
+    intrinsicFitRejected: 0,
+    mesoAdmissionRejected: 0,
+    detailReservationRejected: 0,
+    overlayAdmitted: 0,
+  });
   streetOverlayCoverage = {
     searchRadius,
     expandedRadius,
     evaluatedPlaceCells,
     resolvedPlacePrograms,
     resolvedFabricPrograms,
+    inSearchFabricPrograms: routeOpportunities.filter((candidate) => candidate.withinSearch).length,
+    outsideSearchFabricPrograms: routeOpportunities.filter((candidate) => !candidate.withinSearch).length,
     routeWindowCount: routeWindows.size,
+    admittedFabricCount: admittedFabricIds.size,
     admittedSiteCount: placementsBySite.size,
     expected,
     found,
     missing,
+    opportunityStageTotals,
+    opportunityByVocabulary,
     complete: missing.length === 0,
     discoveryMs: Number((performance.now() - discoveryStartedAt).toFixed(2)),
   };

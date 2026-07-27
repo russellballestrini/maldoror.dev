@@ -1998,6 +1998,26 @@ Completed foundations:
   then solve cross-site repetition without coupling detail back into meso
   admission. Production, fresh Gate A, Gate C, Gate D, and physical Ghostty
   acceptance remain open;
+- V172 selects the manifest-derived street opportunity census and identifies
+  the missing vocabulary's distinct causes without changing world topology.
+  Inside radius 160, 112 raw shared-fabric programs yield 51 in-scope route
+  opportunities across the same 40 authoritative route windows; every route is
+  valid. The ordered outcomes partition exactly into six intrinsic-fit
+  rejections, 12 meso-admission rejections, 24 final detail-reservation
+  rejections, and nine admitted pairs. Canal-town and both coast axes have no
+  opportunity in this field; mountain and ruins have no east-west opportunity.
+  Forest has four and rural three valid east-west opportunities, all with exact
+  production-fitter pairs under empty reservation, but their final overlays are
+  lost downstream (forest: two meso + two detail; rural: one meso + two detail).
+  Thus missing east-west forest/rural is not an art or route-axis problem. The
+  four selected OCTANT PNGs remain byte-identical to V171 and forest retains
+  its correctly failing viewport repetition audit. Evidence lives in
+  `track-4-world-composition/regional-street-opportunity-v172/FINDINGS.md`.
+  Next, test the documented-but-not-realized replacement contract: preserve all
+  meso parents, commons, fabric, paths, connectors, and earlier street pairs,
+  but let only fine access-path frontage props yield to a complete street pair
+  and cull the displaced props afterward. Program parity, cache/block exactness,
+  coast/arrival preservation, and expanded atlas coverage are mandatory;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
