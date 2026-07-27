@@ -73,8 +73,10 @@ import {
   REGIONAL_STREET_PAIR_VISIBLE_HALO,
   regionalStreetPairAnchor,
   regionalStreetPairCandidateConflictsWithProtectedReservation,
+  regionalStreetPairConflictNeighbourReach,
   regionalStreetPairConservativeFootprintBound,
   regionalStreetPairOwnershipCell,
+  selectRegionalCanonicalStreetPairs,
   type RegionalStreetPairCandidate,
   type RegionalStreetPairProtectedReservation,
   type RegionalStreetPairProtectedVisualGroup,
@@ -619,6 +621,10 @@ export class RegionalWorldDerivedCache {
     string,
     readonly AmbientStreetPairCandidate[]
   >();
+  readonly ambientStreetPairCanonicalWinnerCache = new Map<
+    string,
+    readonly AmbientStreetPairCandidate[]
+  >();
   readonly quayDetailPlacementCache = new Map<string, readonly Placement[]>();
   readonly quayFrontagePlacementCache = new Map<string, readonly Placement[]>();
   readonly dynamicQuayOverlayCache = new Map<string, Map<string, BuildingTileData>>();
@@ -640,6 +646,7 @@ export class RegionalWorldDerivedCache {
     this.ambientStreetPairCandidateCache.clear();
     this.ambientStreetPairProtectedReservationCache.clear();
     this.ambientStreetPairProtectedFitCandidateCache.clear();
+    this.ambientStreetPairCanonicalWinnerCache.clear();
     this.quayDetailPlacementCache.clear();
     this.quayFrontagePlacementCache.clear();
     this.dynamicQuayOverlayCache.clear();
@@ -762,6 +769,10 @@ export class RegionalWorldTileProvider extends TileProvider {
     string,
     readonly AmbientStreetPairCandidate[]
   >;
+  private readonly ambientStreetPairCanonicalWinnerCache: Map<
+    string,
+    readonly AmbientStreetPairCandidate[]
+  >;
   private readonly quayDetailPlacementCache: Map<string, readonly Placement[]>;
   private readonly quayFrontagePlacementCache: Map<string, readonly Placement[]>;
   private readonly dynamicQuayOverlayCache: Map<string, Map<string, BuildingTileData>>;
@@ -848,6 +859,8 @@ export class RegionalWorldTileProvider extends TileProvider {
       this.derivedCache.ambientStreetPairProtectedReservationCache;
     this.ambientStreetPairProtectedFitCandidateCache =
       this.derivedCache.ambientStreetPairProtectedFitCandidateCache;
+    this.ambientStreetPairCanonicalWinnerCache =
+      this.derivedCache.ambientStreetPairCanonicalWinnerCache;
     this.quayDetailPlacementCache = this.derivedCache.quayDetailPlacementCache;
     this.quayFrontagePlacementCache = this.derivedCache.quayFrontagePlacementCache;
     this.dynamicQuayOverlayCache = this.derivedCache.dynamicQuayOverlayCache;
@@ -1788,6 +1801,8 @@ export class RegionalWorldTileProvider extends TileProvider {
     cachedAmbientStreetPairProtectedCells: number;
     cachedAmbientStreetPairProtectedFitOwnershipCells: number;
     cachedAmbientStreetPairProtectedFitCandidates: number;
+    cachedAmbientStreetPairCanonicalWinnerOwnershipCells: number;
+    cachedAmbientStreetPairCanonicalWinners: number;
     cachedAmbientPlaceConnectorCells: number;
     cachedCivicDetailPlacements: number;
     cachedQuayDetailPlacements: number;
@@ -1866,6 +1881,13 @@ export class RegionalWorldTileProvider extends TileProvider {
         this.ambientStreetPairProtectedFitCandidateCache.size,
       cachedAmbientStreetPairProtectedFitCandidates:
         [...this.ambientStreetPairProtectedFitCandidateCache.values()].reduce(
+          (total, candidates) => total + candidates.length,
+          0,
+        ),
+      cachedAmbientStreetPairCanonicalWinnerOwnershipCells:
+        this.ambientStreetPairCanonicalWinnerCache.size,
+      cachedAmbientStreetPairCanonicalWinners:
+        [...this.ambientStreetPairCanonicalWinnerCache.values()].reduce(
           (total, candidates) => total + candidates.length,
           0,
         ),
@@ -4907,6 +4929,58 @@ export class RegionalWorldTileProvider extends TileProvider {
         string | undefined;
       if (oldest === undefined) break;
       this.ambientStreetPairProtectedFitCandidateCache.delete(oldest);
+    }
+    return candidates;
+  }
+
+  /** @internal Select fixed-cell winners from the complete proved neighbour
+   * ring. Candidate generation, protected validity, and pair competition stay
+   * separate; this remains diagnostic-only and does not materialize a tile. */
+  getAmbientCanonicalStreetPairWinners(
+    ownershipCellX: number,
+    ownershipCellY: number,
+  ): readonly AmbientStreetPairCandidate[] {
+    const cacheKey = `${this.ambientPlaceFabricProfile}:${this.ambientPlaceAccessProfile}:` +
+      `${ownershipCellX},${ownershipCellY}`;
+    const cached = this.ambientStreetPairCanonicalWinnerCache.get(cacheKey);
+    if (cached) {
+      this.ambientStreetPairCanonicalWinnerCache.delete(cacheKey);
+      this.ambientStreetPairCanonicalWinnerCache.set(cacheKey, cached);
+      return cached;
+    }
+    const neighbourReach = regionalStreetPairConflictNeighbourReach(
+      this.ambientStreetPairManifestMaximumAxisReach(),
+    );
+    const candidates = new Map<string, AmbientStreetPairCandidate>();
+    for (let offsetY = -neighbourReach; offsetY <= neighbourReach; offsetY++) {
+      for (let offsetX = -neighbourReach; offsetX <= neighbourReach; offsetX++) {
+        for (const candidate of this.getAmbientStreetPairProtectedFitCandidates(
+          ownershipCellX + offsetX,
+          ownershipCellY + offsetY,
+        )) {
+          candidates.set(candidate.id, candidate);
+        }
+      }
+    }
+    const winners = Object.freeze(selectRegionalCanonicalStreetPairs(
+      [...candidates.values()],
+    ).filter((candidate) => {
+      const owner = regionalStreetPairOwnershipCell(candidate.ownershipX, candidate.ownershipY);
+      return owner.cellX === ownershipCellX && owner.cellY === ownershipCellY;
+    }));
+    return this.cacheAmbientCanonicalStreetPairWinners(cacheKey, winners);
+  }
+
+  private cacheAmbientCanonicalStreetPairWinners(
+    key: string,
+    candidates: readonly AmbientStreetPairCandidate[],
+  ): readonly AmbientStreetPairCandidate[] {
+    this.ambientStreetPairCanonicalWinnerCache.set(key, candidates);
+    while (this.ambientStreetPairCanonicalWinnerCache.size > this.maxCachedBlocks * 16) {
+      const oldest = this.ambientStreetPairCanonicalWinnerCache.keys().next().value as
+        string | undefined;
+      if (oldest === undefined) break;
+      this.ambientStreetPairCanonicalWinnerCache.delete(oldest);
     }
     return candidates;
   }

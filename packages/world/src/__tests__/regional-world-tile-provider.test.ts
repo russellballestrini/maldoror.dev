@@ -1184,6 +1184,14 @@ describe('RegionalWorldTileProvider', () => {
         key: string,
         candidates: readonly InspectedStreetPairCandidate[],
       ): readonly InspectedStreetPairCandidate[];
+      getAmbientCanonicalStreetPairWinners(
+        ownershipCellX: number,
+        ownershipCellY: number,
+      ): readonly InspectedStreetPairCandidate[];
+      cacheAmbientCanonicalStreetPairWinners(
+        key: string,
+        candidates: readonly InspectedStreetPairCandidate[],
+      ): readonly InspectedStreetPairCandidate[];
     };
     const inspectFirst = first as unknown as StreetPairInspection;
     const inspectReplay = replay as unknown as StreetPairInspection;
@@ -1348,6 +1356,25 @@ describe('RegionalWorldTileProvider', () => {
       cachedAmbientStreetPairProtectedFitOwnershipCells: ownershipCells.length,
       cachedAmbientStreetPairProtectedFitCandidates: forwardProtectedFits.length,
     });
+    const enumerateWinners = (
+      inspection: StreetPairInspection,
+      cells: readonly { cellX: number; cellY: number }[],
+    ) => cells.flatMap((cell) => inspection.getAmbientCanonicalStreetPairWinners(
+      cell.cellX,
+      cell.cellY,
+    )).map(candidateSignature).sort((a, b) => (
+      a.id === b.id ? 0 : a.id < b.id ? -1 : 1
+    ));
+    const forwardWinners = enumerateWinners(inspectFirst, ownershipCells);
+    const reverseWinners = enumerateWinners(inspectReplay, [...ownershipCells].reverse());
+    expect(forwardWinners).toEqual([]);
+    expect(reverseWinners).toEqual(forwardWinners);
+    expect(enumerateWinners(inspectFirst, [...ownershipCells].reverse()))
+      .toEqual(forwardWinners);
+    expect(first.getRegionalStats()).toMatchObject({
+      cachedAmbientStreetPairCanonicalWinnerOwnershipCells: ownershipCells.length,
+      cachedAmbientStreetPairCanonicalWinners: forwardWinners.length,
+    });
     const streetCandidateCacheLimit = first.getRegionalStats().maxCachedBlocks * 16;
     for (let index = 0; index < streetCandidateCacheLimit + 2; index++) {
       inspectFirst.cacheAmbientStreetPairCandidates(`test-overflow:${index}`, Object.freeze([]));
@@ -1376,6 +1403,15 @@ describe('RegionalWorldTileProvider', () => {
     }
     expect(first.getRegionalStats().cachedAmbientStreetPairProtectedFitOwnershipCells)
       .toBe(protectedFitCacheLimit);
+    const canonicalWinnerCacheLimit = first.getRegionalStats().maxCachedBlocks * 16;
+    for (let index = 0; index < canonicalWinnerCacheLimit + 2; index++) {
+      inspectFirst.cacheAmbientCanonicalStreetPairWinners(
+        `test-overflow:${index}`,
+        Object.freeze([]),
+      );
+    }
+    expect(first.getRegionalStats().cachedAmbientStreetPairCanonicalWinnerOwnershipCells)
+      .toBe(canonicalWinnerCacheLimit);
     expect(first.getRegionalStats()).toMatchObject({
       ambientPlaceFabricProfile: 'shared-common-street-overlay',
       ambientPlaceAccessProfile: 'route-frontage',

@@ -361,7 +361,7 @@ const compositor = new RegionalMaterialCompositor({
   infrastructureVisualProfile: INFRASTRUCTURE_PROFILE,
   waterVisualProfile: WATER_PROFILE,
 });
-const world = new RegionalWorldTileProvider({
+const regionalWorldProviderConfig = {
   worldSeed: WORLD_SEED,
   field,
   routes,
@@ -373,8 +373,6 @@ const world = new RegionalWorldTileProvider({
   routeContacts: routeContactKit.assets,
   parcelComponents: parcelKit.assets,
   environmentContacts: environmentKit.assets,
-  blockSize: landmarkKit.blockSize,
-  maxCachedBlocks: 64,
   ambientCellSize: ambientKit.cellSize,
   ambientDensity: ambientKit.density,
   ambientDistributionProfile: AMBIENT_DISTRIBUTION_PROFILE,
@@ -396,6 +394,11 @@ const world = new RegionalWorldTileProvider({
   environmentContactCellSize: environmentKit.cellSize,
   environmentContactDensity: environmentKit.density,
   environmentContactLandmarkClearance: environmentKit.landmarkClearance,
+};
+const world = new RegionalWorldTileProvider({
+  ...regionalWorldProviderConfig,
+  blockSize: landmarkKit.blockSize,
+  maxCachedBlocks: 64,
 });
 const environmentProgramLayouts = new Map();
 
@@ -640,6 +643,7 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
   const canonicalCandidates = new Map();
   const canonicalProtectedReservations = new Map();
   const canonicalProtectedFitCandidates = new Map();
+  const canonicalWinnerCandidates = new Map();
   const ownershipMismatches = [];
   let enumeratedOwnershipCells = 0;
   let enumeratedCandidateEmissions = 0;
@@ -667,6 +671,10 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
         )) throw new Error(`Protected-fit candidate still conflicts: ${candidate.id}`);
         canonicalProtectedFitCandidates.set(candidate.id, candidate);
       }
+      for (const winner of world.getAmbientCanonicalStreetPairWinners(
+        ownershipCellX,
+        ownershipCellY,
+      )) canonicalWinnerCandidates.set(winner.id, winner);
       for (const candidate of world.getAmbientStreetPairCandidates(
         ownershipCellX,
         ownershipCellY,
@@ -848,6 +856,86 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
     currentManifestBlocked: canonicalCandidates.size > 0 &&
       canonicalProtectedFitCandidates.size === 0,
   };
+  const streetPairSignature = (candidate) => ({
+    id: candidate.id,
+    ownerSite: [candidate.ownerSiteX, candidate.ownerSiteY],
+    ownership: [candidate.ownershipX, candidate.ownershipY],
+    axis: candidate.axis,
+    kind: candidate.kind,
+    priority: candidate.priority,
+    reservedCells: [...candidate.reservedCells],
+    visualGroups: [...candidate.visualGroups],
+    placements: candidate.placements.map((placement) => ({
+      assetId: placement.asset.id,
+      site: [placement.siteX, placement.siteY],
+      anchor: [placement.anchorX, placement.anchorY],
+      parcelId: placement.parcelId,
+      parcelPathId: placement.parcelPathId,
+      parcelStation: placement.parcelStation,
+      pathTangent: [placement.pathTangentX, placement.pathTangentY],
+    })),
+  });
+  const nonemptyOwnershipCells = [...canonicalProtectedFitCandidates.values()].map((candidate) => {
+    const owner = regionalStreetPairOwnershipCell(candidate.ownershipX, candidate.ownershipY);
+    return [owner.cellX, owner.cellY];
+  }).filter((cell, index, cells) => (
+    cells.findIndex((candidate) => candidate[0] === cell[0] && candidate[1] === cell[1]) === index
+  )).sort((a, b) => a[1] - b[1] || a[0] - b[0]);
+  const replayWorld = new RegionalWorldTileProvider({
+    ...regionalWorldProviderConfig,
+    blockSize: 47,
+    maxCachedBlocks: 64,
+  });
+  const replayProtectedFits = new Map();
+  const replayWinners = new Map();
+  for (const [ownershipCellX, ownershipCellY] of [...nonemptyOwnershipCells].reverse()) {
+    for (const candidate of replayWorld.getAmbientStreetPairProtectedFitCandidates(
+      ownershipCellX,
+      ownershipCellY,
+    )) replayProtectedFits.set(candidate.id, candidate);
+    for (const winner of replayWorld.getAmbientCanonicalStreetPairWinners(
+      ownershipCellX,
+      ownershipCellY,
+    )) replayWinners.set(winner.id, winner);
+  }
+  const mainProtectedSignatures = [...canonicalProtectedFitCandidates.values()]
+    .map(streetPairSignature).sort((a, b) => a.id.localeCompare(b.id));
+  const replayProtectedSignatures = [...replayProtectedFits.values()]
+    .map(streetPairSignature).sort((a, b) => a.id.localeCompare(b.id));
+  const cachedProtectedSignatures = [...nonemptyOwnershipCells].reverse().flatMap(
+    ([ownershipCellX, ownershipCellY]) => world.getAmbientStreetPairProtectedFitCandidates(
+      ownershipCellX,
+      ownershipCellY,
+    ),
+  ).map(streetPairSignature).sort((a, b) => a.id.localeCompare(b.id));
+  if (JSON.stringify(replayProtectedSignatures) !== JSON.stringify(mainProtectedSignatures) ||
+      JSON.stringify(cachedProtectedSignatures) !== JSON.stringify(mainProtectedSignatures)) {
+    throw new Error('Protected-fit production signatures differ across block/traversal/cache order');
+  }
+  const mainWinnerSignatures = [...canonicalWinnerCandidates.values()]
+    .map(streetPairSignature).sort((a, b) => a.id.localeCompare(b.id));
+  const replayWinnerSignatures = [...replayWinners.values()]
+    .map(streetPairSignature).sort((a, b) => a.id.localeCompare(b.id));
+  const cachedWinnerSignatures = [...nonemptyOwnershipCells].reverse().flatMap(
+    ([ownershipCellX, ownershipCellY]) => world.getAmbientCanonicalStreetPairWinners(
+      ownershipCellX,
+      ownershipCellY,
+    ),
+  ).map(streetPairSignature).sort((a, b) => a.id.localeCompare(b.id));
+  if (JSON.stringify(replayWinnerSignatures) !== JSON.stringify(mainWinnerSignatures) ||
+      JSON.stringify(cachedWinnerSignatures) !== JSON.stringify(mainWinnerSignatures)) {
+    throw new Error('Canonical-winner production signatures differ across block/traversal/cache order');
+  }
+  const canonicalSelectionDiagnostics = {
+    neighbourReach: manifestWideCandidateBound.conflictNeighbourReach,
+    nonemptyOwnershipCells,
+    candidateCount: mainProtectedSignatures.length,
+    winnerCount: mainWinnerSignatures.length,
+    winnerIds: mainWinnerSignatures.map((candidate) => candidate.id),
+    providerBlockSizes: [landmarkKit.blockSize, 47],
+    reverseTraversalExact: true,
+    cachedReplayExact: true,
+  };
   console.error(JSON.stringify({ streetOverlayDiscovery: {
     searchRadius,
     evaluatedPlaceCells,
@@ -991,6 +1079,7 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
     canonicalCandidateDiagnostics,
     canonicalProtectedReservationDiagnostics,
     canonicalProtectedFitDiagnostics,
+    canonicalSelectionDiagnostics,
     manifestWideCandidateBound,
     complete: missing.length === 0 && incompleteSites.length === 0,
     discoveryMs: Number((performance.now() - discoveryStartedAt).toFixed(2)),

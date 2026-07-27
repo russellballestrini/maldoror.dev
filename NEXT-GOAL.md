@@ -2211,6 +2211,27 @@ Completed foundations:
   Next, prove the non-empty production signature across 32/47/reversed/cached
   providers, exercise the V175 one-cell selector, and diagnose the other ten
   geometry/admission absences before materialization changes;
+- V182 selects a diagnostic-only canonical winner cache over the proved
+  one-cell conflict ring. Each ownership cell gathers the complete protected-
+  fit neighbourhood implied by the manifest-wide 16-tile reach, applies the
+  pure V175 selector before ownership filtering, and stores sorted frozen
+  winners in a separate `maxCachedBlocks * 16` LRU. The faithful radius-160
+  census produces exactly one protected candidate and one winner: the V181
+  forest north-south charcoal-kiln/resin-distillery pair in ownership cell
+  `(-2,-2)`. Its full ID, owner, priority, reserved cells, visual groups, asset
+  placements, anchors, parcel provenance, station, and tangent are exact across
+  32- and 47-tile providers, reversed traversal, and cached replay. The global
+  proof remains 44 eligible aliases, 11 vocabularies, 16/20.616 maximum reach,
+  and one neighbouring cell. Active V170 materialization remains disconnected:
+  nine complete sites, 4/11 coverage, exact `0/6/12/24/9` stages, and all eight
+  PNGs byte-identical to V181. Focused 43/43 tests, world typecheck/build,
+  faithful census, lint, and source diff checks pass. No visual improvement is
+  claimed. Evidence lives in
+  `track-4-world-composition/regional-canonical-selection-v182/FINDINGS.md`.
+  Next, record conflict-source/stage diagnostics for the other ten protected-
+  fit absences, compare the proved winner against the active V170 pair, and
+  render the canonical candidate at walking/district/regional scales in
+  scratch before any materialization change;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
