@@ -81,6 +81,11 @@ const COMPOSITION_EXACT_SOURCE =
 const STREET_OVERLAY_FABRIC_PROFILES = new Set([
   'shared-common-street-overlay',
   'shared-common-street-overlay-exact',
+  'shared-common-street-overlay-exact-alternatives',
+]);
+const EXACT_COMPOSITION_FABRIC_PROFILES = new Set([
+  'shared-common-street-overlay-exact',
+  'shared-common-street-overlay-exact-alternatives',
 ]);
 if (!['single', 'bounded-ensemble', 'hierarchical-place-field'].includes(AMBIENT_COMPOSITION_PROFILE)) {
   throw new Error(`Unknown ambient composition profile: ${AMBIENT_COMPOSITION_PROFILE}`);
@@ -91,6 +96,7 @@ if (![
   'shared-common',
   'shared-common-street-overlay',
   'shared-common-street-overlay-exact',
+  'shared-common-street-overlay-exact-alternatives',
 ].includes(AMBIENT_PLACE_FABRIC_PROFILE)) {
   throw new Error(`Unknown ambient place-fabric profile: ${AMBIENT_PLACE_FABRIC_PROFILE}`);
 }
@@ -489,6 +495,7 @@ if (ATLAS_MODES > 1) {
 let streetOverlayCoverage = null;
 let canonicalScratchAtlas = null;
 let compositionExactAtlas = null;
+let compositionExactSourceDirectory = null;
 const canonicalScratchCandidates = new Map();
 const canonicalScratchWorlds = new Map();
 
@@ -1404,16 +1411,17 @@ if (process.env.MALDOROR_REGIONAL_CANONICAL_SCRATCH_ATLAS === '1') {
 }
 
 if (process.env.MALDOROR_REGIONAL_COMPOSITION_EXACT_ATLAS === '1') {
-  if (AMBIENT_PLACE_FABRIC_PROFILE !== 'shared-common-street-overlay-exact' ||
+  if (!EXACT_COMPOSITION_FABRIC_PROFILES.has(AMBIENT_PLACE_FABRIC_PROFILE) ||
       AMBIENT_PLACE_ACCESS_PROFILE !== 'route-frontage') {
     throw new Error(
-      'Composition-exact atlas requires shared-common-street-overlay-exact and route-frontage',
+      'Composition-exact atlas requires an exact street-overlay profile and route-frontage',
     );
   }
   if (!COMPOSITION_EXACT_SOURCE) {
     throw new Error('Composition-exact atlas requires MALDOROR_REGIONAL_COMPOSITION_EXACT_SOURCE');
   }
   const sourcePath = path.resolve(COMPOSITION_EXACT_SOURCE);
+  compositionExactSourceDirectory = path.dirname(sourcePath);
   const sourceBuffer = fs.readFileSync(sourcePath);
   const source = JSON.parse(sourceBuffer.toString('utf8'));
   if (source.worldSeed !== String(WORLD_SEED) ||
@@ -1437,6 +1445,7 @@ if (process.env.MALDOROR_REGIONAL_COMPOSITION_EXACT_ATLAS === '1') {
     sourceFrameCount: source.frames.length,
     sourceProfile: source.ambientPlaceFabricProfile,
     candidateProfile: AMBIENT_PLACE_FABRIC_PROFILE,
+    baselinePixels: 'verified V186 comparison left-half RGB',
     contactSheets: [],
   };
   FRAMES = source.frames.map((frame) => ({
@@ -1823,6 +1832,31 @@ function renderFrame(frame, targetWorld = world) {
   });
   renderer.setCamera(frame.centre[0], frame.centre[1]);
   return renderer.renderToBuffer(targetWorld, 0).buffer;
+}
+
+async function readCompositionExactBaseGrid(frame) {
+  if (!compositionExactSourceDirectory || !frame.compositionExactSourceFrame) {
+    throw new Error(`Composition-exact baseline source is missing: ${frame.name}`);
+  }
+  const comparisonPath = path.join(
+    compositionExactSourceDirectory,
+    `${frame.compositionExactSourceFrame}-compare-base-left-scratch-right.png`,
+  );
+  if (!fs.existsSync(comparisonPath)) {
+    throw new Error(`Composition-exact comparison image is missing: ${comparisonPath}`);
+  }
+  const { data, info } = await sharp(comparisonPath)
+    .extract({ left: 0, top: 0, width: WIDTH, height: HEIGHT })
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  if (info.width !== WIDTH || info.height !== HEIGHT || info.channels !== 3) {
+    throw new Error(`Composition-exact baseline dimensions are invalid: ${comparisonPath}`);
+  }
+  return Array.from({ length: HEIGHT }, (_, y) => Array.from({ length: WIDTH }, (_, x) => {
+    const offset = (y * WIDTH + x) * 3;
+    return { r: data[offset], g: data[offset + 1], b: data[offset + 2] };
+  }));
 }
 
 function gridColours(grid) {
@@ -2671,7 +2705,18 @@ for (const frame of FRAMES) {
   const baseWorld = scratchCandidate
     ? world
     : frame.compositionExactComparison ? compositionBaselineWorld : null;
-  const baseGrid = baseWorld ? renderFrame(frame, baseWorld) : null;
+  const baseGrid = frame.compositionExactComparison
+    ? await readCompositionExactBaseGrid(frame)
+    : baseWorld ? renderFrame(frame, baseWorld) : null;
+  const baseSha256 = baseGrid
+    ? crypto.createHash('sha256').update(gridColours(baseGrid)).digest('hex')
+    : null;
+  if (frame.expectedBaseSha256 && baseSha256 !== frame.expectedBaseSha256) {
+    throw new Error(
+      `Composition-exact legacy baseline drift: ${frame.name}:` +
+      `${baseSha256}!=${frame.expectedBaseSha256}`,
+    );
+  }
   const grid = renderFrame(
     frame,
     scratchCandidate ? canonicalScratchWorld(scratchCandidate) : world,
@@ -2705,18 +2750,14 @@ for (const frame of FRAMES) {
   const baseVisibleAmbient = baseWorld
     ? baseWorld.getAmbientPlacementsInBounds(...visibleBounds)
     : null;
-  const baseSha256 = baseGrid
-    ? crypto.createHash('sha256').update(gridColours(baseGrid)).digest('hex')
-    : null;
-  if (frame.expectedBaseSha256 && baseSha256 !== frame.expectedBaseSha256) {
-    throw new Error(
-      `Composition-exact legacy baseline drift: ${frame.name}:` +
-      `${baseSha256}!=${frame.expectedBaseSha256}`,
-    );
-  }
   const visibleLandmarkFabrics = world.getLandmarkFabricLayoutsInBounds(...visibleBounds);
-  const visiblePlaceConnectors = world.getParcelConnectorCellsInBounds(...visibleBounds)
+  const placeConnectorAuditCells = world.getParcelConnectorCellsInBounds(...visibleBounds)
     .filter((cell) => cell.parcelId.startsWith('place:'));
+  const basePlaceConnectorAuditCells = baseWorld
+    ? baseWorld.getParcelConnectorCellsInBounds(...visibleBounds)
+      .filter((cell) => cell.parcelId.startsWith('place:'))
+    : null;
+  const visiblePlaceConnectors = placeConnectorAuditCells;
   metrics.frames.push({
     ...frame,
     elapsedMs: Number((performance.now() - startedAt).toFixed(2)),
@@ -2747,9 +2788,19 @@ for (const frame of FRAMES) {
     visibleAmbient,
     visiblePlaceConnectorCells: visiblePlaceConnectors.length,
     visiblePlaceConnectorPrograms: [...new Set(visiblePlaceConnectors.map((cell) => cell.parcelId))],
-    landmarkCompositionAudit: auditLandmarkCompositions(visibleAmbient),
+    landmarkCompositionAudit: auditLandmarkCompositions(
+      visibleAmbient,
+      world,
+      placeConnectorAuditCells,
+      visibleBounds,
+    ),
     baseLandmarkCompositionAudit: baseVisibleAmbient
-      ? auditLandmarkCompositions(baseVisibleAmbient)
+      ? auditLandmarkCompositions(
+        baseVisibleAmbient,
+        baseWorld,
+        basePlaceConnectorAuditCells,
+        visibleBounds,
+      )
       : null,
     streetOverlayAudit: auditStreetOverlay(frame, visibleAmbient),
     visibleLandmarkFabrics: visibleLandmarkFabrics.map((layout) => ({
@@ -3036,7 +3087,7 @@ function auditLandmarkFabrics(layouts) {
   };
 }
 
-function auditLandmarkCompositions(placements) {
+function auditLandmarkCompositions(placements, targetWorld, connectorCells, visibleBounds) {
   const assetById = new Map([
     ...landmarkKit.assets,
     ...ambientKit.assets,
@@ -3052,6 +3103,16 @@ function auditLandmarkCompositions(placements) {
   const focalSites = new Set(placements
     .filter((placement) => focalIds.has(placement.assetId))
     .map((placement) => `${placement.siteX},${placement.siteY}`));
+  const protectedConnectorCells = new Set(
+    (connectorCells ?? []).filter((cell) => cell.protected).map((cell) => `${cell.x},${cell.y}`),
+  );
+  const cellIsVisible = (cell) => {
+    const separator = cell.indexOf(',');
+    const x = Number(cell.slice(0, separator));
+    const y = Number(cell.slice(separator + 1));
+    return x >= visibleBounds[0] && x <= visibleBounds[2] &&
+      y >= visibleBounds[1] && y <= visibleBounds[3];
+  };
   const compositions = [...focalSites].sort().map((site) => {
     const members = placements.filter((placement) => (
       `${placement.siteX},${placement.siteY}` === site
@@ -3059,12 +3120,26 @@ function auditLandmarkCompositions(placements) {
     const memberAudits = members.map((placement) => {
       const asset = assetById.get(placement.assetId);
       if (!asset) throw new Error(`Unknown composed parcel asset: ${placement.assetId}`);
+      const visibleCells = visibleAssetCells(asset, placement.anchorX, placement.anchorY)
+        .filter(cellIsVisible);
+      const realizedCells = [];
+      const protectedConnectorClipCells = [];
+      for (const cell of visibleCells) {
+        const separator = cell.indexOf(',');
+        const x = Number(cell.slice(0, separator));
+        const y = Number(cell.slice(separator + 1));
+        if (targetWorld.getBuildingTileAt(x, y)) realizedCells.push(cell);
+        if (protectedConnectorCells.has(cell)) protectedConnectorClipCells.push(cell);
+      }
       return {
         identity: `${placement.assetId}@${placement.anchorX},${placement.anchorY}`,
         assetId: placement.assetId,
         visualGroup: asset.visualGroup ?? `asset:${placement.assetId}`,
+        streetOverlay: placement.parcelPathId?.endsWith(':street-overlay') ?? false,
         anchor: [placement.anchorX, placement.anchorY],
-        visibleCells: visibleAssetCells(asset, placement.anchorX, placement.anchorY),
+        visibleCells,
+        realizedCells,
+        protectedConnectorClipCells,
       };
     });
     const identityCounts = countValues(memberAudits.map((member) => member.identity));
@@ -3075,6 +3150,7 @@ function auditLandmarkCompositions(placements) {
       member.identity,
       member,
     ])).values()];
+    const streetOverlayMembers = physicalMembers.filter((member) => member.streetOverlay);
     const groups = physicalMembers.map((member) => member.visualGroup);
     const counts = Object.fromEntries([...new Set(groups)].sort().map((group) => [
       group,
@@ -3103,13 +3179,33 @@ function auditLandmarkCompositions(placements) {
       memberCount: members.length,
       physicalPlacementCount: physicalMembers.length,
       renderedVisibleCellCount: visibleCellMembers.size,
+      streetOverlayMemberCount: streetOverlayMembers.length,
+      streetOverlayVisibleCellCount: streetOverlayMembers.reduce(
+        (total, member) => total + member.visibleCells.length,
+        0,
+      ),
+      streetOverlayProviderOverlayCellCount: streetOverlayMembers.reduce(
+        (total, member) => total + member.realizedCells.length,
+        0,
+      ),
+      streetOverlayProtectedConnectorClipCellCount: streetOverlayMembers.reduce(
+        (total, member) => total + member.protectedConnectorClipCells.length,
+        0,
+      ),
       assetIds: physicalMembers.map((member) => member.assetId).sort(),
       members: physicalMembers.map((member) => ({
         identity: member.identity,
         assetId: member.assetId,
         visualGroup: member.visualGroup,
+        streetOverlay: member.streetOverlay,
         anchor: member.anchor,
         visibleCellCount: member.visibleCells.length,
+        providerOverlayCellCount: member.realizedCells.length,
+        providerOverlayRate: member.realizedCells.length / Math.max(1, member.visibleCells.length),
+        protectedConnectorClipCellCount: member.protectedConnectorClipCells.length,
+        missingProviderOverlayCells: member.visibleCells.filter((cell) => (
+          !member.realizedCells.includes(cell)
+        )),
       })).sort((a, b) => a.identity.localeCompare(b.identity)),
       duplicateQueryIdentities,
       duplicatePhysicalAnchors,
@@ -3119,8 +3215,16 @@ function auditLandmarkCompositions(placements) {
       queryIdentitiesUnique: duplicateQueryIdentities.length === 0,
       physicalAnchorsUnique: duplicatePhysicalAnchors.length === 0,
       visibleFootprintsDisjoint: overlappingVisibleCells.length === 0,
+      visibleCellsMaterialized: physicalMembers.every((member) => (
+        member.realizedCells.length === member.visibleCells.length
+      )),
+      streetOverlayCellsMaterialized: streetOverlayMembers.every((member) => (
+        member.realizedCells.length === member.visibleCells.length &&
+        member.protectedConnectorClipCells.length === 0
+      )),
       valid: duplicateQueryIdentities.length === 0 && duplicatePhysicalAnchors.length === 0 &&
-        overlappingVisibleCells.length === 0 && duplicateVisualGroups.length === 0,
+        overlappingVisibleCells.length === 0 && duplicateVisualGroups.length === 0 &&
+        physicalMembers.every((member) => member.realizedCells.length === member.visibleCells.length),
     };
   });
   return {
@@ -3136,6 +3240,12 @@ function auditLandmarkCompositions(placements) {
     )),
     allVisualGroupsUnique: compositions.every((composition) => (
       composition.duplicateVisualGroups.length === 0
+    )),
+    allVisibleCellsMaterialized: compositions.every((composition) => (
+      composition.visibleCellsMaterialized
+    )),
+    allStreetOverlayCellsMaterialized: compositions.every((composition) => (
+      composition.streetOverlayCellsMaterialized
     )),
     allValid: compositions.every((composition) => composition.valid),
     compositions,

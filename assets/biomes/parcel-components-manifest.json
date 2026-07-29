@@ -89,21 +89,21 @@
           "parcel-components/ruins-sunken-bathhouse-v1.png"
         ],
         "derivedSha256": [
-          "a41196372f4218060e5b2dc7c2ce911d2cd472d7e877e3f0d136991631bb1698",
-          "7431a7cfaec84208b0066849b5fd835b7b92cfc58edb1a7e9895b805aa0d1f6c",
-          "4a6711b0dba06a9cf346a6a88a86f56c5fd8e785bd994ceb6cc389b60d383fce",
-          "9f9024ef43100150bf8be398a87e2d87b3195f5dd4e05d007103729d9dd403db",
-          "cf2966b6a1953d2a074f2b0a20bf2c512470b4a5d3ce797053d44a1357b75e35",
-          "5c0a4040bac98832ec0765fa312fa02c53538a588f0374cf013a01b6234ab77f",
-          "a19dc6da582225b6abc6caec5fb90be30be8206767b7fab0859b81817caea456",
-          "a15120d8f34a32da93450d98e72ded4c387168b1890a8a83535deee88b974a73",
-          "1f4ce8f21f01dc8a4fb6d8136752d39ffb59bbb41283ddf7f1d9a4933620f235",
-          "cd00b90314820862b18d1d8a5d621683a7468e6e89c0a546fa03290f5c89e7dd",
-          "b30304429734080a3db8341fe462c21fc51eefe1d47ee995b375159c65078911",
-          "887fd44c7a799b7d9b3fca6617b144c9add84d2a69984c9dc9f51fa10bf43f23"
+          "34f42642bbfebcbc366d891b2d5467c5c01244d122a43b7af7d85719b6100c7a",
+          "f770f12036f8fc588a40dce4039fce98738b4732f60384c1fb1cfa96e063d872",
+          "325f4fab19b03615d82e4746085c45d963d57962a40e730e17bc01a2d92c0a9d",
+          "6e1194668928ea5b6784ba2576534051e5eb2dec7b0a00c22cf40d197962a20b",
+          "e7dbc7f14fe07128815f39725edc6e953fa6aecf8ca31a99ccd16a88d2771042",
+          "7410ca357f982554de3776d4f0082586970050be58b59f4fff40fff62fda477d",
+          "21145554e7bd4c1fd9b8e32727b460e204b1e67dd1c8769aad91a9d988a50888",
+          "65284dfad3b0bed189b34cff9164d0f92d0a7119d2b989647a17abd43b18eec6",
+          "d85082f7d8fa826e4ec064f3cd87555e19a1f92feb41e87ff00d9860e1b6f3f6",
+          "85bd5bee8eb30fc6b6f75ba7b6a67fedba01fffffb106436c66006367d7a8983",
+          "6e57b3819841299afcef9fec9b7543ecda023985e95e025d98d499a6ebf6760e",
+          "3537d27d4977d95de674d2cb5b0fecda10eb0e354e309ce5e1eb7edec52dd920"
         ],
         "generation": "built-in Codex/ChatGPT image generation subscription; no metered API",
-        "derivation": "pnpm assets:derive-paired-focal-alternatives; fixed 3x2 crops, adaptive border matte, transparent trim, gamma 1.32"
+        "derivation": "pnpm assets:derive-paired-focal-alternatives; fixed 3x2 crops, dark-key 8..32 soft matte, alpha-strength gates, transparent trim, gamma 1.32"
       }
     ],
     "note": "Ambient silhouettes and dedicated parcel modules have explicit roles; no pixel or filename inference decides runtime placement or collision."

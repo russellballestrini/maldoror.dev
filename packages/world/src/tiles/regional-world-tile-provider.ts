@@ -369,7 +369,8 @@ export type RegionalAmbientPlaceFabricProfile =
   | 'internal-spine'
   | 'shared-common'
   | 'shared-common-street-overlay'
-  | 'shared-common-street-overlay-exact';
+  | 'shared-common-street-overlay-exact'
+  | 'shared-common-street-overlay-exact-alternatives';
 
 /** Whether a meso place remains an isolated wilderness composition or proves
  * a walkable connection to the regional route graph and authors frontage along
@@ -4619,8 +4620,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       : [];
     const stable = Object.freeze([...districtPlacements, ...frontage]
       .map((placement) => Object.freeze({ ...placement })));
-    const exactComposition = this.ambientPlaceFabricProfile ===
-      'shared-common-street-overlay-exact';
+    const exactComposition = usesExactCompositionFabric(this.ambientPlaceFabricProfile);
     const fallbackRequired = new Set([
       placementIdentity(root),
       ...(access?.targetKey ? [access.targetKey] : []),
@@ -4668,6 +4668,7 @@ export class RegionalWorldTileProvider extends TileProvider {
         provisional,
         this.ambientPlaceProgramReservation(provisional),
         excludedVisualGroups,
+        usesCanonicalStreetPairAlternatives(this.ambientPlaceFabricProfile),
       );
       if (pair) {
         const pairPlacements = Object.freeze([
@@ -5423,8 +5424,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     program: AmbientPlaceProgram,
     reserved: ReadonlySet<string>,
   ): Placement[] {
-    const excludedVisualGroups = this.ambientPlaceFabricProfile ===
-      'shared-common-street-overlay-exact'
+    const excludedVisualGroups = usesExactCompositionFabric(this.ambientPlaceFabricProfile)
       ? new Set(program.placements.map((placement) => assetVisualGroup(placement.asset)))
       : new Set<string>();
     return this.buildAmbientSharedStreetPairCandidate(
@@ -7801,7 +7801,18 @@ function usesSharedCommonFabric(profile: RegionalAmbientPlaceFabricProfile): boo
 
 function usesStreetOverlayFabric(profile: RegionalAmbientPlaceFabricProfile): boolean {
   return profile === 'shared-common-street-overlay' ||
-    profile === 'shared-common-street-overlay-exact';
+    usesExactCompositionFabric(profile);
+}
+
+function usesExactCompositionFabric(profile: RegionalAmbientPlaceFabricProfile): boolean {
+  return profile === 'shared-common-street-overlay-exact' ||
+    profile === 'shared-common-street-overlay-exact-alternatives';
+}
+
+function usesCanonicalStreetPairAlternatives(
+  profile: RegionalAmbientPlaceFabricProfile,
+): boolean {
+  return profile === 'shared-common-street-overlay-exact-alternatives';
 }
 
 /** Large unrotated blocks use their authored screen-space frontage rather than

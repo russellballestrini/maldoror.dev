@@ -10,6 +10,10 @@ const VERSION = process.env.MALDOROR_PAIRED_FOCAL_VERSION ?? 'v1';
 if (!/^v\d+$/.test(VERSION)) throw new Error(`Invalid paired focal version: ${VERSION}`);
 
 const OUTPUT = path.join(ROOT, 'assets/biomes/parcel-components');
+const TRANSPARENT_DISTANCE = 8;
+const OPAQUE_DISTANCE = 32;
+const MINIMUM_WEIGHTED_ALPHA_COVERAGE = 0.12;
+const MINIMUM_STRONG_ALPHA_COVERAGE = 0.08;
 const CHROMA_HELPER = process.env.MALDOROR_CHROMA_HELPER ?? path.join(
   process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex'),
   'skills/.system/imagegen/scripts/remove_chroma_key.py',
@@ -70,8 +74,8 @@ try {
         '--out', keyedPath,
         '--auto-key', 'border',
         '--soft-matte',
-        '--transparent-threshold', '12',
-        '--opaque-threshold', '220',
+        '--transparent-threshold', String(TRANSPARENT_DISTANCE),
+        '--opaque-threshold', String(OPAQUE_DISTANCE),
         '--despill',
         '--force',
       ], { stdio: 'pipe' });
@@ -89,23 +93,33 @@ try {
       let transparent = 0;
       let partial = 0;
       let opaque = 0;
+      let strong = 0;
+      let alphaTotal = 0;
       for (let pixel = 0; pixel < info.width * info.height; pixel++) {
         const alpha = data[pixel * info.channels + 3] ?? 0;
+        alphaTotal += alpha;
         if (alpha === 0) transparent++;
         else if (alpha === 255) opaque++;
         else partial++;
+        if (alpha >= 128) strong++;
       }
       const total = transparent + partial + opaque;
       const coverage = (partial + opaque) / total;
+      const weightedAlphaCoverage = alphaTotal / (255 * total);
+      const strongAlphaCoverage = strong / total;
       const cornerAlpha = [
         data[3],
         data[(info.width - 1) * info.channels + 3],
         data[((info.height - 1) * info.width) * info.channels + 3],
         data[(info.width * info.height - 1) * info.channels + 3],
       ];
-      if (coverage < 0.08 || coverage > 0.88 || cornerAlpha.some((alpha) => alpha !== 0)) {
+      if (coverage < 0.08 || coverage > 0.88 ||
+          weightedAlphaCoverage < MINIMUM_WEIGHTED_ALPHA_COVERAGE ||
+          strongAlphaCoverage < MINIMUM_STRONG_ALPHA_COVERAGE ||
+          cornerAlpha.some((alpha) => alpha !== 0)) {
         throw new Error(
           `Invalid alpha extraction for ${id}: coverage=${coverage.toFixed(4)} ` +
+          `weighted=${weightedAlphaCoverage.toFixed(4)} strong=${strongAlphaCoverage.toFixed(4)} ` +
           `corners=${cornerAlpha.join(',')}`,
         );
       }
@@ -117,6 +131,8 @@ try {
         file: path.relative(path.join(ROOT, 'assets/biomes'), outputPath),
         dimensions: [info.width, info.height],
         coverage: Number(coverage.toFixed(4)),
+        weightedAlphaCoverage: Number(weightedAlphaCoverage.toFixed(4)),
+        strongAlphaCoverage: Number(strongAlphaCoverage.toFixed(4)),
         partialAlpha: Number((partial / total).toFixed(4)),
         sha256: createHash('sha256').update(await fs.promises.readFile(outputPath)).digest('hex'),
       });
@@ -129,7 +145,7 @@ try {
 console.log(JSON.stringify({
   version: VERSION,
   generation: 'built-in Codex/ChatGPT image generation subscription; no metered API',
-  segmentation: 'fixed 3x2 cells plus adaptive border chroma matte',
+  segmentation: `fixed 3x2 cells plus dark-key matte ${TRANSPARENT_DISTANCE}..${OPAQUE_DISTANCE}`,
   colourGrade: 'RGB gamma 1.32 for terminal-scale shadow legibility',
   sourceSha256: Object.fromEntries(await Promise.all(BOARDS.map(async (board) => [
     board.id,

@@ -1642,6 +1642,83 @@ describe('RegionalWorldTileProvider', () => {
     });
   });
 
+  it('admits distinct canonical alternatives only through the exact alternative profile', () => {
+    const continuousRoute = (x: number, y: number): RegionalRouteSample => ({
+      ...routeSample(x, y),
+      directionX: 1,
+      directionY: 0,
+    });
+    const focal = (
+      id: string,
+      side: -1 | 1,
+      canonicalAlternative = false,
+    ): RegionalParcelComponentAsset => ({
+      id,
+      families: ['canal-town'],
+      role: 'mass',
+      visualGroup: `${canonicalAlternative ? 'alternative' : 'ordinary'}:${side}`,
+      compositionRole: 'focal',
+      streetPairRole: canonicalAlternative ? 'canonical-alternative' : undefined,
+      frontageAxis: 'east-west',
+      compositionSide: side,
+      frontageStations: [0],
+      sprite: sprite(COLOURS['canal-town']),
+      collision: [[0, 0]],
+    });
+    const alternatives = [
+      focal('parcel:canal-town:alternative-negative', -1, true),
+      focal('parcel:canal-town:alternative-positive', 1, true),
+    ];
+    const components = [
+      focal('parcel:canal-town:ordinary-negative-a', -1),
+      focal('parcel:canal-town:ordinary-negative-b', -1),
+      focal('parcel:canal-town:ordinary-positive-a', 1),
+      focal('parcel:canal-town:ordinary-positive-b', 1),
+      ...alternatives,
+    ];
+    const makeCandidate = (
+      blockSize: number,
+      profile: RegionalAmbientPlaceFabricProfile,
+    ) => makeWorld(
+      blockSize, 64, continuousRoute, () => biomeSample('canal-town'),
+      false, undefined, false, false, false, 'east-west', components, [],
+      'cluster-field-blue-noise', 'hierarchical-place-field', profile, 'route-frontage', false,
+    );
+    const strict = makeCandidate(32, 'shared-common-street-overlay-exact');
+    const candidate = makeCandidate(
+      32,
+      'shared-common-street-overlay-exact-alternatives',
+    );
+    const replay = makeCandidate(
+      47,
+      'shared-common-street-overlay-exact-alternatives',
+    );
+    const bounds = [-96, -72, 128, 72] as const;
+    const isStreet = (placement: { parcelPathId?: string }) => (
+      placement.parcelPathId?.endsWith(':street-overlay') ?? false
+    );
+    const alternativeIds = new Set(alternatives.map((asset) => asset.id));
+    expect(strict.getAmbientPlacementsInBounds(...bounds).filter((placement) => (
+      isStreet(placement) && alternativeIds.has(placement.assetId)
+    ))).toHaveLength(0);
+    const placements = candidate.getAmbientPlacementsInBounds(...bounds);
+    expect(placements).toEqual(replay.getAmbientPlacementsInBounds(...bounds));
+    const street = placements.filter(isStreet);
+    expect(street.length).toBeGreaterThan(0);
+    expect(street.some((placement) => alternativeIds.has(placement.assetId))).toBe(true);
+    const streetBySite = new Map<string, typeof street>();
+    for (const placement of street) {
+      const site = `${placement.siteX},${placement.siteY}`;
+      streetBySite.set(site, [...(streetBySite.get(site) ?? []), placement]);
+    }
+    expect([...streetBySite.values()].every((pair) => (
+      pair.length === 2 && new Set(pair.map((placement) => placement.assetId)).size === 2
+    ))).toBe(true);
+    expect(candidate.getRegionalStats()).toMatchObject({
+      ambientPlaceFabricProfile: 'shared-common-street-overlay-exact-alternatives',
+    });
+  });
+
   it('places deterministic civic details only on route-safe landmark shoulders', () => {
     const civicRoute = (x: number, y: number): RegionalRouteSample => {
       const base = routeSample(x, y);

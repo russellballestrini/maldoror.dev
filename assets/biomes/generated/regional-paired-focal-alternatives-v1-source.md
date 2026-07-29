@@ -16,7 +16,9 @@ stable, and sunken bathhouse, in canal-town/forest/coast/rural/mountain/ruins
 order.
 
 Run `pnpm assets:derive-paired-focal-alternatives` for fixed-cell extraction,
-adaptive border chroma matting, transparent trim, and the selected gamma-1.32
-terminal-legibility grade. Full prompts, rejected/raw grade comparisons,
-source copies, and reduced-scale evidence live in the mounted V181 research
-record.
+dark-key soft matting over the measured 8..32 colour-distance band, transparent
+trim, and the selected gamma-1.32 terminal-legibility grade. The derivation fails
+closed below 0.12 weighted-alpha or 0.08 strong-alpha coverage so dark painterly
+subjects cannot silently become transparent again. Full prompts, rejected/raw
+grade comparisons, source copies, and reduced-scale evidence live in the mounted
+V181 research record.

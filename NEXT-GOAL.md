@@ -2379,6 +2379,34 @@ Completed foundations:
   33 frames, measure its four-pair stamping, then add a deterministic spatial
   repetition budget only if it preserves occupied frontage and every exact
   invariant;
+- V189 selects an **experimental, non-active** exact-alternative profile and
+  fixes the generated focal derivation before trusting it. Candidate A passed
+  declared geometry but enlarged crops exposed functionally invisible art:
+  the dark subjects had been matted toward roughly five-percent alpha by an
+  inappropriate 12..220 soft range. The same built-in Codex/ChatGPT
+  subscription boards are now deterministically re-derived with a measured
+  dark-key 8..32 matte plus fail-closed weighted/strong-alpha gates; all 12
+  assets reconcile to their updated manifest hashes. The final faithful
+  Candidate D matches all 33 immutable V186 legacy RGB hashes, preserves
+  candidate identity/anchor/disjoint-footprint/group invariants 33/33, changes
+  26/33 frames, and visibly replaces repeated generic huts with eight occupied
+  sites across four forest, three mountain, and one rural pair. Its 44
+  frame-visible street-member occurrences have zero missing cells and zero
+  protected-connector clips. It is **not promoted**: only three pair
+  vocabularies appear, the fixed sheets show obvious forest/mountain stamping,
+  and the broadened raster audit exposes 134 missing cells in older parent
+  members (130 clipped by protected connectors) so true whole-program
+  materialization passes only 19/33 candidate frames. Host load 11..24 on eight
+  CPUs makes timing inadmissible; production and physical Ghostty remain
+  untouched. Forty-five focused tests, both TypeScript builds, and the 138-file
+  regional runtime-pack build pass. Metrics SHA
+  `044aed3b70b45a376c05725ae13eb1d6c7d4a4602267f35a3fba275f5c259220`;
+  evidence lives in
+  `track-4-world-composition/regional-composition-exact-alternatives-v189/FINDINGS.md`.
+  Next, attribute every raster cell to its owning placement and remove parent
+  connector/overlay suppression by re-routing or refitting; only after full
+  program materialization passes should a district repetition budget and new
+  family/axis vocabularies be tested;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
