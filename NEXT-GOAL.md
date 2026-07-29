@@ -2810,6 +2810,21 @@ Completed foundations:
   is 28.67%/60s, and `/mnt/donto-data` is 96% full with 41 GiB available, so
   further large benchmarks and V194 admission remain suspended until storage
   pressure and the fixed host contract recover.
+  V210 is the next larger exact candidate and remains deliberately unselected.
+  In the shared-static OCTANT production path it materializes atmosphere only
+  into the already-recorded dynamic 2x4 cells instead of cloning all 56,320
+  pixel references a second time. A production-shape census finds 492 dirty
+  cells, bounding the candidate at 3,936 writes and avoiding 52,384 reference
+  writes (93.011%). The new oracle proves exact packed codepoint, foreground,
+  background, and both palette-index planes between full and deferred storm
+  frames; all 11 render files / 78 tests and the render build pass. This is
+  cardinality and semantic evidence only: V210 must remain an uncommitted,
+  undeployed candidate until candidate/original/candidate production profiles
+  pass under host admission. Evidence lives in
+  `track-7-performance/dirty-atmosphere-materialization-v210/FINDINGS.md`.
+  After the census/checks, I/O-full PSI is 60.39%/10s and 51.34%/60s,
+  memory-full PSI is 9.98%/10s and 5.24%/60s, `/mnt/donto-data` remains 96%
+  full, and `/` is 91% full. No latency or Gate D claim is admissible.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission
   contract, then remove larger exact composition traversals, share prepared
