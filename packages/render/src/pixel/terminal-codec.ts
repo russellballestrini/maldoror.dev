@@ -343,8 +343,15 @@ export class TerminalCodec {
     const top = this.config.headerRows + 1;
     for (let y = 0; y < target.height; y++) {
       chunks.push(`${ESC}[${top + y};1H`);
-      const emitted = this.emitPackedCells(target, y * target.width, (y + 1) * target.width, cellWidth, lastFg, lastBg);
-      chunks.push(emitted.output);
+      const emitted = this.emitPackedCells(
+        chunks,
+        target,
+        y * target.width,
+        (y + 1) * target.width,
+        cellWidth,
+        lastFg,
+        lastBg,
+      );
       lastFg = emitted.lastFg;
       lastBg = emitted.lastBg;
     }
@@ -393,8 +400,15 @@ export class TerminalCodec {
         } else {
           chunks.push(`${ESC}[${top + y};${startColumn}H`);
         }
-        const emitted = this.emitPackedCells(target, start, end, cellWidth, lastFg, lastBg);
-        chunks.push(emitted.output);
+        const emitted = this.emitPackedCells(
+          chunks,
+          target,
+          start,
+          end,
+          cellWidth,
+          lastFg,
+          lastBg,
+        );
         lastFg = emitted.lastFg;
         lastBg = emitted.lastBg;
         cursorRow = emitted.singleColumn ? y : -1;
@@ -406,6 +420,7 @@ export class TerminalCodec {
   }
 
   private emitPackedCells(
+    chunks: string[],
     frame: PackedCellGrid,
     start: number,
     end: number,
@@ -413,12 +428,10 @@ export class TerminalCodec {
     initialFg: number | null,
     initialBg: number | null,
   ): {
-    output: string;
     lastFg: number | null;
     lastBg: number | null;
     singleColumn: boolean;
   } {
-    const chunks: string[] = [];
     let lastFg = initialFg;
     let lastBg = initialBg;
     let singleColumn = true;
@@ -477,7 +490,7 @@ export class TerminalCodec {
       else for (let i = 1; i < count; i++) chunks.push(char);
       offset += count;
     }
-    return { output: chunks.join(''), lastFg, lastBg, singleColumn };
+    return { lastFg, lastBg, singleColumn };
   }
 
   private packedCellsEqual(

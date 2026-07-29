@@ -2654,11 +2654,27 @@ Completed foundations:
   vocabulary has the opposite shape. Evidence lives in
   `track-7-performance/dynamic-palette-cardinality-v198/FINDINGS.md`. This is a
   retained negative result, not a production change or Gate-D claim.
+  V199 removes nested packed-run string arrays and intermediate joins while
+  preserving V197 output byte-for-byte. Packed cells now append directly to
+  one frame chunk buffer and join once. Two full workloads retain 87,711
+  application bytes, 24,961 deflated bytes, 2,841 changed cells, the exact
+  final world-pixel hash, and the width-safe cursor split. Against V195, the
+  combined packed helper/parent, SGR, and GC self-time group falls 5,951 to
+  4,913 ms (-17.4%) and profiled user CPU falls 92.13 to 88.76 seconds (-3.66%).
+  Two pressured-host 20-session batch p95 readings reach 18.946 and 20.228 ms
+  versus V195's 32.017 ms, directionally better but still above the 16.7-ms
+  target and not host-admissible. Eleven render test files / 76 tests pass.
+  Profiled benchmark SHA
+  `b9f73091f2c1160fb3a7db9d41b4cfb7088c99b10ed5c5bfb4fc02bb0aa9a013`;
+  evidence lives in
+  `track-7-performance/flat-packed-emission-v199/FINDINGS.md`. This is selected
+  source evidence, not deployment, sustained Gate D, real-SSH proof, or
+  physical Ghostty acceptance.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
-  host window, repeat V196 under the same admission contract, then attack the
-  remaining packed string-allocation/SGR architecture or move emission off the
-  input-critical path with the semantic oracle, alternating same-workload
-  profiles, exact decoded-frame parity, and real SSH proof; in
+  host window, repeat the V196/V197/V199 stack under the same admission
+  contract, then attack the remaining SGR/composition architecture or move
+  emission off the input-critical path with the semantic oracle, alternating
+  same-workload profiles, exact decoded-frame parity, and real SSH proof; in
   parallel test
   compact bank-aware geometry for the two unresolved origin north/south coast
   sites without relaxing dry-core, threshold, slope, collision, civic, or
