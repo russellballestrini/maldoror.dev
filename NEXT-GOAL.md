@@ -2840,6 +2840,19 @@ Completed foundations:
   by exact PID and terminated; I/O-full avg10 fell from 64.33% to 23.58%, but
   unrelated long-running work and the service remained far outside admission.
   No database, corpus job, service, or other agent process was interrupted.
+  V211 closes the immediate observability gap exposed by that audit without
+  claiming a fix. The on-demand worker `/runtime` response now reports every
+  dynamically enumerated V8 heap space plus cumulative maximum RSS, minor and
+  major page faults, filesystem operations, and voluntary/involuntary context
+  switches. It starts no timer, forces no GC, names no expected spaces, and
+  adds nothing to frame/input/simulation paths. Focused telemetry plus existing
+  worker-manager IPC tests pass 7/7 and SSH-world typecheck passes; commit
+  `8e341ff`, with evidence in
+  `track-7-performance/worker-runtime-memory-telemetry-v211/FINDINGS.md`.
+  This is selected measurement infrastructure, not performance acceptance,
+  deployment, or Gate D. At its final source check, CPU-some PSI was
+  25.29%/10s, memory-full PSI 1.10%/10s, I/O-full PSI 13.46%/10s, and
+  load-per-CPU 3.411, so three host thresholds still failed.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission
   contract, then remove larger exact composition traversals, share prepared
