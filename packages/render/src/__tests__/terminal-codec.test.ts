@@ -203,4 +203,36 @@ describe('TerminalCodec', () => {
     expect(widePatch.output).not.toContain('\x1b[4C');
     expect(widePatch.output.match(/\x1b\[[0-9;]*H/g)).toHaveLength(2);
   });
+
+  it('keeps packed changed runs contiguous instead of repainting stable cells', () => {
+    const codec = new TerminalCodec({ headerRows: 2, terminalCols: 6, terminalRows: 5 });
+    const terminal = new TerminalEmulator(6, 5);
+    const first = coloredGrid(
+      ['██████', '██████', '██████'],
+      Array.from({ length: 3 }, (_, y) => Array.from({ length: 6 }, (_, x) => ({
+        r: 30 + x * 18,
+        g: 45 + y * 25,
+        b: 80 + x * 11,
+      }))),
+    );
+    const second = coloredGrid(
+      ['██████', '██████', '██████'],
+      Array.from({ length: 3 }, (_, y) => Array.from({ length: 6 }, (_, x) => ({
+        r: 30 + x * 18 + (y === 1 && (x === 0 || x === 3) ? 7 : 0),
+        g: 45 + y * 25,
+        b: 80 + x * 11,
+      }))),
+    );
+
+    terminal.apply(codec.encodePacked(packed(first), camera(0, 0)).output);
+    const patch = codec.encodePacked(packed(second), camera(0, 0));
+    expect(patch.metrics.changedCells).toBe(2);
+    expect(patch.output).toContain('\x1b[2C');
+    terminal.apply(patch.output);
+
+    const oracle = new TerminalEmulator(6, 5);
+    const keyframe = new TerminalCodec({ headerRows: 2, terminalCols: 6, terminalRows: 5 });
+    oracle.apply(keyframe.encodePacked(packed(second), camera(0, 0)).output);
+    expect(terminal.visibleSnapshot()).toEqual(oracle.visibleSnapshot());
+  });
 });

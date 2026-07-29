@@ -378,17 +378,9 @@ export class TerminalCodec {
       while (offset < rowEnd) {
         while (offset < rowEnd && this.packedCellsEqual(target, previous, offset)) offset++;
         if (offset >= rowEnd) break;
-        const start = offset++;
-        let lastChanged = offset;
-        while (offset < rowEnd) {
-          if (!this.packedCellsEqual(target, previous, offset)) {
-            lastChanged = offset + 1;
-          } else if (offset - lastChanged >= 2) {
-            break;
-          }
-          offset++;
-        }
-        const end = lastChanged;
+        const start = offset;
+        while (offset < rowEnd && !this.packedCellsEqual(target, previous, offset)) offset++;
+        const end = offset;
         changedCells += end - start;
         const startColumn = (start - rowStart) * cellWidth + 1;
         // Runs are discovered left-to-right. Within one packed OCTANT row the

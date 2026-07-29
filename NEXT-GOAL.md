@@ -2686,8 +2686,29 @@ Completed foundations:
   evidence lives in
   `track-4-world-composition/bank-aware-common-v200/FINDINGS.md`. This is a
   selected diagnostic and retained failure, not Gate A or a visual milestone.
+  V201 removes the packed delta encoder's repaint bridge: every run now
+  contains exactly one contiguous changed island, with V197's width-safe CUF
+  moving between islands. A bounded candidate ladder proves that bridging
+  three unchanged cells worsens output to 98,302 bytes, one cell improves it
+  to 78,529, and zero is the exact optimum at 73,125 bytes. Against V199's
+  identical 400-frame-per-lane, world-minute-0 storm workload, application
+  bytes fall 87,711 -> 73,125 (-16.63%), delayed-SSH deflate 24,961 -> 20,809
+  (-16.63%), SGR commands 2,847 -> 2,171 (-23.74%), changed-cell p50 2,841 ->
+  2,164 (-23.83%), and byte p95 92,774 -> 76,689 (-17.34%). More short CUF
+  commands intentionally replace much more expensive truecolor repaint. An
+  independent terminal emulator proves separated deltas equal a fresh
+  keyframe; 11 render files / 77 tests pass and the exact final world-pixel
+  hash remains
+  `43e268d450634356e365b1adb92d5b19321f18bda2553c7a876eba7866fa51bb`.
+  Comparable benchmark SHA
+  `b22ee0b7b5acab48eda143d8a4fcc8ae0d8689e1149007cc767056e6ec3a910f`;
+  evidence lives in
+  `track-7-performance/changed-run-bridge-v201/FINDINGS.md`. This is selected
+  source/protocol evidence, not deployment, sustained Gate D, real SSH, or
+  physical Ghostty acceptance: post-run I/O-full PSI was 6.07%/60s against the
+  fixed 1% host gate.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
-  host window, repeat the V196/V197/V199 stack under the same admission
+  host window, repeat the V196/V197/V199/V201 stack under the same admission
   contract, then attack the remaining SGR/composition architecture or move
   emission off the input-critical path with the semantic oracle, alternating
   same-workload profiles, exact decoded-frame parity, and real SSH proof. In

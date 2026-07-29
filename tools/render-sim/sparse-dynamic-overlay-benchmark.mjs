@@ -132,6 +132,10 @@ const report = {
   terminalDelivery: {
     control: summarizeCodecSamples(codecSamples.control),
     sparse: summarizeCodecSamples(codecSamples.sparse),
+    finalCodecMetrics: {
+      control: gameControl.renderer.getCodecMetrics(),
+      sparse: gameSparse.renderer.getCodecMetrics(),
+    },
     finalPayloadShape: {
       control: analyzeAnsiPayload(finalGameOutput.control),
       sparse: analyzeAnsiPayload(finalGameOutput.sparse),
