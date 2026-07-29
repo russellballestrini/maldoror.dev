@@ -1131,6 +1131,7 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
     const attemptRejections = {
       terrainOrRoute: 0,
       protectedReservation: 0,
+      protectedHalo: 0,
       pairFootprint: 0,
       missingEntrance: 0,
       distantEntrance: 0,
@@ -1149,6 +1150,7 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
         attemptRejections.terrainOrRoute += side.terrainOrRouteRejectedAttempts;
         attemptRejections.protectedReservation +=
           side.protectedReservationRejectedAttempts;
+        attemptRejections.protectedHalo += side.protectedHaloRejectedAttempts;
         attemptRejections.pairFootprint += side.pairFootprintRejectedAttempts;
         attemptRejections.missingEntrance += side.missingEntranceAttempts;
         attemptRejections.distantEntrance += side.distantEntranceAttempts;
@@ -1207,6 +1209,9 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
       }];
     })),
   };
+  if (canonicalProtectedFitRejectionDiagnostics.outcomes['residual-protected-conflict']) {
+    throw new Error('Halo-aware protected refit retained a residual protected conflict');
+  }
   const opportunityStageTotals = Object.values(opportunityByVocabulary).reduce((totals, entry) => {
     for (const [stage, count] of Object.entries(entry.stages)) totals[stage] += count;
     return totals;

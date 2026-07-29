@@ -1177,6 +1177,7 @@ describe('RegionalWorldTileProvider', () => {
         pairVisualGroupAssetIds: readonly string[];
         terrainOrRouteRejectedAttempts: number;
         protectedReservationRejectedAttempts: number;
+        protectedHaloRejectedAttempts: number;
         pairFootprintRejectedAttempts: number;
         missingEntranceAttempts: number;
         distantEntranceAttempts: number;
@@ -1404,7 +1405,7 @@ describe('RegionalWorldTileProvider', () => {
       inspectReplay,
       [...ownershipCells].reverse(),
     );
-    expect(forwardProtectedFits).toEqual([]);
+    expect(forwardProtectedFits.length).toBeGreaterThan(0);
     expect(reverseProtectedFits).toEqual(forwardProtectedFits);
     expect(enumerateProtectedFits(inspectFirst, [...ownershipCells].reverse()))
       .toEqual(forwardProtectedFits);
@@ -1449,6 +1450,12 @@ describe('RegionalWorldTileProvider', () => {
       diagnostic.residualProtectedConflictCells.length > 0 ||
       diagnostic.residualProtectedVisualGroups.length > 0
     ))).toBe(true);
+    expect(forwardFitDiagnostics.every((diagnostic) => (
+      diagnostic.outcome !== 'residual-protected-conflict'
+    ))).toBe(true);
+    expect(forwardFitDiagnostics.some((diagnostic) => (
+      diagnostic.sides.some((side) => side.protectedHaloRejectedAttempts > 0)
+    ))).toBe(true);
     expect(first.getRegionalStats()).toMatchObject({
       cachedAmbientStreetPairOwnershipCells: ownershipCells.length,
       cachedAmbientStreetPairCandidates: forwardCandidates.length,
@@ -1469,7 +1476,9 @@ describe('RegionalWorldTileProvider', () => {
     ));
     const forwardWinners = enumerateWinners(inspectFirst, ownershipCells);
     const reverseWinners = enumerateWinners(inspectReplay, [...ownershipCells].reverse());
-    expect(forwardWinners).toEqual([]);
+    expect(forwardWinners.length).toBeGreaterThan(0);
+    const protectedFitIds = new Set(forwardProtectedFits.map((candidate) => candidate.id));
+    expect(forwardWinners.every((candidate) => protectedFitIds.has(candidate.id))).toBe(true);
     expect(reverseWinners).toEqual(forwardWinners);
     expect(enumerateWinners(inspectFirst, [...ownershipCells].reverse()))
       .toEqual(forwardWinners);

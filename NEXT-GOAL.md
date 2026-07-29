@@ -2260,6 +2260,31 @@ Completed foundations:
   geometry, prove whether any of the 15 residuals become legal alternatives,
   then compare and render the canonical winner at walking/district/regional
   scales in scratch before materialization;
+- V184 selects a diagnostic-only halo-aware protected refit. Every bounded
+  asset/setback/nudge probe now tests the same one-tile visible halo exported by
+  the final candidate, while the immutable parent reservation, semantic
+  exclusions, and halo size stay unchanged. The exact radius-160 ledger remains
+  51 route opportunities and 51 attempts: V183's 15 residual conflicts become
+  nine newly legal accepts and six honest bounded exhaustions, for 10 accepted
+  in-radius attempts, 41 exhaustions, and zero residual conflicts. A separate
+  expanded conflict-margin site contributes one additional proved candidate,
+  so the global selector has 11 candidates and 11 winners. Search records 629
+  terrain/route, 1,104 protected-reservation (including 123 halo-specific), 26
+  distant-doorway, and zero pair-self or missing-doorway rejections across
+  1,651 exact conflict cells and 153 protected sources. All candidate,
+  rejection, and selection identities are exact across 32/47 providers,
+  reverse traversal, and cached replay. The original V182 forest winner remains
+  among the eleven. Active V170 remains nine complete sites, 4/11 coverage,
+  exact `0/6/12/24/9` stages, and all eight PNGs byte-identical to V183. The
+  five zero-opportunity vocabularies remain topology absences. Focused 43/43
+  tests, world typecheck/build, downstream SSH typecheck, faithful census,
+  seven lint tasks, lab syntax, hash parity, and source diff checks pass; the
+  two stale empty-result fixture assertions are retained as failed evidence.
+  No in-world visual improvement is claimed. Evidence lives in
+  `track-4-world-composition/regional-halo-aware-refit-v184/FINDINGS.md`. Next,
+  render and compare the eleven proved winners with their meso parents,
+  protected reservations, circulation, and halos at walking, district, and
+  regional scales in scratch before choosing any materialization policy;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without

@@ -573,6 +573,7 @@ interface AmbientStreetPairFitSideDiagnostics {
   pairVisualGroupAssetIds: readonly string[];
   terrainOrRouteRejectedAttempts: number;
   protectedReservationRejectedAttempts: number;
+  protectedHaloRejectedAttempts: number;
   pairFootprintRejectedAttempts: number;
   missingEntranceAttempts: number;
   distantEntranceAttempts: number;
@@ -617,6 +618,7 @@ interface MutableAmbientStreetPairFitSideDiagnostics {
   pairVisualGroupAssetIds: string[];
   terrainOrRouteRejectedAttempts: number;
   protectedReservationRejectedAttempts: number;
+  protectedHaloRejectedAttempts: number;
   pairFootprintRejectedAttempts: number;
   missingEntranceAttempts: number;
   distantEntranceAttempts: number;
@@ -5059,6 +5061,7 @@ export class RegionalWorldTileProvider extends TileProvider {
           protectedVisualGroups,
           true,
           diagnostics,
+          REGIONAL_STREET_PAIR_VISIBLE_HALO,
         );
         const owner = regionalStreetPairOwnershipCell(
           diagnostics.ownershipX,
@@ -5164,6 +5167,7 @@ export class RegionalWorldTileProvider extends TileProvider {
         terrainOrRouteRejectedAttempts: side.terrainOrRouteRejectedAttempts,
         protectedReservationRejectedAttempts:
           side.protectedReservationRejectedAttempts,
+        protectedHaloRejectedAttempts: side.protectedHaloRejectedAttempts,
         pairFootprintRejectedAttempts: side.pairFootprintRejectedAttempts,
         missingEntranceAttempts: side.missingEntranceAttempts,
         distantEntranceAttempts: side.distantEntranceAttempts,
@@ -5282,7 +5286,12 @@ export class RegionalWorldTileProvider extends TileProvider {
     excludedVisualGroups: ReadonlySet<string> = new Set(),
     includeCanonicalAlternatives = false,
     diagnostics?: MutableAmbientStreetPairFitDiagnostics,
+    protectedReservationHalo = 0,
   ): AmbientStreetPairCandidate | null {
+    if (!Number.isInteger(protectedReservationHalo) || protectedReservationHalo < 0 ||
+        protectedReservationHalo > REGIONAL_STREET_PAIR_VISIBLE_HALO) {
+      throw new Error(`Invalid protected street-pair halo: ${protectedReservationHalo}`);
+    }
     if (!program.fabric || !program.accessPath) return null;
     const root = program.root;
     const routeStart = program.accessPath.points[0];
@@ -5352,6 +5361,7 @@ export class RegionalWorldTileProvider extends TileProvider {
           )).map((asset) => asset.id).sort(),
           terrainOrRouteRejectedAttempts: 0,
           protectedReservationRejectedAttempts: 0,
+          protectedHaloRejectedAttempts: 0,
           pairFootprintRejectedAttempts: 0,
           missingEntranceAttempts: 0,
           distantEntranceAttempts: 0,
@@ -5429,6 +5439,25 @@ export class RegionalWorldTileProvider extends TileProvider {
                 }
               }
               continue;
+            }
+            if (protectedReservationHalo > 0) {
+              const haloConflicts = visibleFootprintHaloConflictCells(
+                asset,
+                anchor.anchorX,
+                anchor.anchorY,
+                reserved,
+                protectedReservationHalo,
+              );
+              if (haloConflicts.length > 0) {
+                if (sideDiagnostics) {
+                  sideDiagnostics.protectedReservationRejectedAttempts++;
+                  sideDiagnostics.protectedHaloRejectedAttempts++;
+                  for (const cell of haloConflicts) {
+                    sideDiagnostics.protectedConflictCells.add(cell);
+                  }
+                }
+                continue;
+              }
             }
             const placement: Placement = {
               asset,
@@ -7424,6 +7453,32 @@ function visibleFootprintConflictCells(
       if (!tile || !hasVisiblePixels(tile)) continue;
       const key = positionKey(anchorX + tileX - offsetX, anchorY + tileY - offsetY);
       if (reserved.has(key)) conflicts.add(key);
+    }
+  }
+  return [...conflicts].sort();
+}
+
+function visibleFootprintHaloConflictCells(
+  asset: RegionalVisualAsset,
+  anchorX: number,
+  anchorY: number,
+  reserved: ReadonlySet<string>,
+  halo: number,
+): string[] {
+  const conflicts = new Set<string>();
+  const [offsetX, offsetY] = getSpriteAnchor(asset);
+  for (let tileY = 0; tileY < asset.sprite.height; tileY++) {
+    for (let tileX = 0; tileX < asset.sprite.width; tileX++) {
+      const tile = asset.sprite.tiles[tileY]?.[tileX];
+      if (!tile || !hasVisiblePixels(tile)) continue;
+      const worldX = anchorX + tileX - offsetX;
+      const worldY = anchorY + tileY - offsetY;
+      for (let offsetY = -halo; offsetY <= halo; offsetY++) {
+        for (let offsetX = -halo; offsetX <= halo; offsetX++) {
+          const key = positionKey(worldX + offsetX, worldY + offsetY);
+          if (reserved.has(key)) conflicts.add(key);
+        }
+      }
     }
   }
   return [...conflicts].sort();
