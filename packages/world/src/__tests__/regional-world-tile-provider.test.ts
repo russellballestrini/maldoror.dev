@@ -2602,6 +2602,17 @@ describe('RegionalWorldTileProvider', () => {
     })).toBe(true);
   });
 
+  it('does not substitute a nearest visual LOD while exporting collision resolution', () => {
+    const control = makeWorld(32, 32);
+    const expected = control.prepareViewport(-2, -2, 2, 2, 1);
+    const candidate = makeWorld(32, 32);
+    candidate.importPreparedViewport(candidate.prepareViewport(-2, -2, 2, 2, 4));
+
+    const actual = candidate.prepareViewport(-2, -2, 2, 2, 1);
+
+    expect(actual).toEqual(expected);
+  });
+
   it('exports and imports exact bounded viewport results without cold fallback', () => {
     const source = makeWorld(32, 32);
     const prepared = source.prepareViewport(-4, -3, 4, 3, 4);

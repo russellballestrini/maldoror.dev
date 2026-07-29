@@ -2579,9 +2579,17 @@ Completed foundations:
   collision. Full build wall time falls 4:47.19 to 3:21.23 (-29.93%), summed
   generation 252,674.730 to 170,845.977 ms (-32.39%), and peak RSS 1,802,020 to
   1,387,752 KiB (-22.99%), with zero swaps. This is a selected build-path
-  milestone, not Gate D; a more aggressive overlapping packed-viewport reuse
-  candidate remains unselected until a shared-host pressure-qualified full
-  build and parity run can be completed. Parity SHA
+  milestone, not Gate D. A more aggressive overlapping packed-viewport reuse
+  candidate now passes a low-priority full build, 67/67 relevant tests, exact
+  cross-LOD regression, and six-viewport decoded parity; its contaminated run
+  directionally reaches 3:01.06 wall, 137,184.452 ms summed generation, and
+  1,172,504-KiB peak RSS with zero swaps. It remains unselected because a
+  machine-readable post-run preflight records I/O-full PSI 30.48% against the
+  fixed 1% limit. Candidate-B parity SHA
+  `400ee88b717b2915daa0ecf4a634d4d81501d5bddddbb665b897a3369f7d4a28`;
+  host-rejection SHA
+  `31e67aa295637b4aa9cb72e717890e2e9d9292d58d8c42b77efae3945c1cad12`.
+  Candidate-A selected parity SHA
   `589ab2f79ba76dd588c3bf446742638f2150b83bbfe0183dd59ec7ed3e806f80`;
   evidence lives in
   `track-7-performance/regional-prewarm-v194/FINDINGS.md`.
