@@ -3100,6 +3100,23 @@ Completed foundations:
   `track-4-world-composition/canal-modular-frontages-v238-v240-resumable-census/FINDINGS.md`.
   The final sample still fails memory, I/O, load, and disk admission, so none of
   these geometry runs supplies a runtime performance result.
+  V241 then removes irrelevant work from that resumable search without
+  approximating parent admission. A private opt-in output profile preserves
+  complete parent programs, priority/collision resolution, access paths,
+  connectors, structural reservations, and the post-parent fitter, while
+  omitting ordinary ambient-ensemble probes and parent output materialization.
+  Default production output remains unchanged and the lab fails closed unless
+  the profile is used by the discovery-only production-composition prefilter.
+  At the production block/grid shape it avoids exactly 100 ordinary ensemble
+  probes per block, or 25,600 across a 256-block scan. A focused test proves
+  identical details, parent signatures, and connectors through a real accepted
+  synthetic block while the candidate performs zero ordinary probes. A real
+  offset-63 control/candidate pair has identical combined semantic SHA
+  `1fb2e45d...bf09` and rejection SHA `7aaaad1a...dd60`, while the candidate
+  omits four irrelevant returned placements. This is selected source
+  cardinality and parity evidence only: memory, I/O, and load still fail host
+  admission, so elapsed values do not count. Evidence lives in
+  `track-7-performance/place-detail-census-detail-only-v241/FINDINGS.md`.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, admit or reject V210 and V212 under exact whole-process A/B/A,
   repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission

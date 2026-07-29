@@ -625,6 +625,8 @@ interface AmbientBlockComposition {
   connectors: Map<string, ParcelConnector>;
 }
 
+type AmbientBlockOutputProfile = 'complete' | 'post-parent-detail-only';
+
 export interface RegionalAmbientPlaceDetailAdmissionDiagnostics {
   site: readonly [number, number];
   rootAssetId: string;
@@ -4577,12 +4579,14 @@ export class RegionalWorldTileProvider extends TileProvider {
     originY: number,
     establishedComposition: readonly Placement[] = [],
     placeDetailDiagnostics?: RegionalAmbientPlaceDetailAdmissionDiagnostics[],
+    outputProfile: AmbientBlockOutputProfile = 'complete',
   ): AmbientBlockComposition {
     if (this.ambient.length === 0 || this.ambientDensity <= 0) {
       return { placements: [], placePrograms: [], connectors: new Map() };
     }
     const placements: Placement[] = [];
     const placePrograms: AmbientPlaceProgram[] = [];
+    const retainGeneralPlacements = outputProfile === 'complete';
     const enforceExactRouteParcelAdmission = usesExactCompositionFabric(
       this.ambientPlaceFabricProfile,
     );
@@ -4590,19 +4594,25 @@ export class RegionalWorldTileProvider extends TileProvider {
       enforceExactRouteParcelAdmission &&
       this.ambientPlacementIntersectsRouteParcelConnector(placement)
     );
-    const compositionReach = this.ambientCompositionProfile === 'bounded-ensemble'
-      ? Math.ceil(AMBIENT_ENSEMBLE_REACH / this.ambientCellSize) + 1
-      : 1;
-    const firstCellX = floorDiv(originX, this.ambientCellSize) - compositionReach;
-    const lastCellX = floorDiv(originX + this.blockSize - 1, this.ambientCellSize) + compositionReach;
-    const firstCellY = floorDiv(originY, this.ambientCellSize) - compositionReach;
-    const lastCellY = floorDiv(originY + this.blockSize - 1, this.ambientCellSize) + compositionReach;
-    for (let cellY = firstCellY; cellY <= lastCellY; cellY++) {
-      for (let cellX = firstCellX; cellX <= lastCellX; cellX++) {
-        for (const placement of this.getAmbientEnsemblePlacement(cellX, cellY)) {
-          if (placement.anchorX < originX || placement.anchorX >= originX + this.blockSize ||
-              placement.anchorY < originY || placement.anchorY >= originY + this.blockSize) continue;
-          placements.push(placement);
+    if (retainGeneralPlacements) {
+      const compositionReach = this.ambientCompositionProfile === 'bounded-ensemble'
+        ? Math.ceil(AMBIENT_ENSEMBLE_REACH / this.ambientCellSize) + 1
+        : 1;
+      const firstCellX = floorDiv(originX, this.ambientCellSize) - compositionReach;
+      const lastCellX = floorDiv(originX + this.blockSize - 1, this.ambientCellSize) +
+        compositionReach;
+      const firstCellY = floorDiv(originY, this.ambientCellSize) - compositionReach;
+      const lastCellY = floorDiv(originY + this.blockSize - 1, this.ambientCellSize) +
+        compositionReach;
+      for (let cellY = firstCellY; cellY <= lastCellY; cellY++) {
+        for (let cellX = firstCellX; cellX <= lastCellX; cellX++) {
+          for (const placement of this.getAmbientEnsemblePlacement(cellX, cellY)) {
+            if (placement.anchorX < originX || placement.anchorX >= originX + this.blockSize ||
+                placement.anchorY < originY || placement.anchorY >= originY + this.blockSize) {
+              continue;
+            }
+            placements.push(placement);
+          }
         }
       }
     }
@@ -4629,10 +4639,14 @@ export class RegionalWorldTileProvider extends TileProvider {
           const program = this.getAmbientPlaceProgram(cellX, cellY);
           if (!program) continue;
           placePrograms.push(program);
-          for (const placement of program.placements) {
-            if (placement.anchorX < originX || placement.anchorX >= originX + this.blockSize ||
-                placement.anchorY < originY || placement.anchorY >= originY + this.blockSize) continue;
-            placements.push(placement);
+          if (retainGeneralPlacements) {
+            for (const placement of program.placements) {
+              if (placement.anchorX < originX || placement.anchorX >= originX + this.blockSize ||
+                  placement.anchorY < originY || placement.anchorY >= originY + this.blockSize) {
+                continue;
+              }
+              placements.push(placement);
+            }
           }
         }
       }
@@ -4813,7 +4827,8 @@ export class RegionalWorldTileProvider extends TileProvider {
         placements.push(placement);
       }
     }
-    if (this.ambientPlaceFabricProfile === 'shared-common-street-overlay') {
+    if (retainGeneralPlacements &&
+        this.ambientPlaceFabricProfile === 'shared-common-street-overlay') {
       const detailReserved = new Set([
         ...establishedReserved,
         ...programReserved,

@@ -2055,6 +2055,100 @@ describe('RegionalWorldTileProvider', () => {
         cell.x === placement.anchorX - 1 && cell.y === placement.anchorY - 1
       )),
     })))).toBe(true);
+
+    type InspectedComposition = {
+      placements: Array<{
+        asset: { id: string };
+        anchorX: number;
+        anchorY: number;
+        parcelId?: string;
+        parcelPathId?: string;
+      }>;
+      placePrograms: Array<{
+        root: { asset: { id: string }; siteX: number; siteY: number };
+        placements: Array<{ asset: { id: string }; anchorX: number; anchorY: number }>;
+        accessPath?: { id: string };
+      }>;
+      connectors: Map<string, {
+        routeKind: string;
+        parcelId: string;
+        path: { id: string };
+        core: boolean;
+        protected: boolean;
+      }>;
+    };
+    type InspectedWorld = {
+      getAmbientEnsemblePlacement(cellX: number, cellY: number): unknown[];
+      buildAmbientPlacements(
+        originX: number,
+        originY: number,
+        establishedComposition?: readonly never[],
+        diagnostics?: RegionalAmbientPlaceDetailAdmissionDiagnostics[],
+        outputProfile?: 'complete' | 'post-parent-detail-only',
+      ): InspectedComposition;
+    };
+    const detailOnlyWorld = makeCandidate(32, 'corridor-frontage');
+    const fullInspect = candidate as unknown as InspectedWorld;
+    const detailOnlyInspect = detailOnlyWorld as unknown as InspectedWorld;
+    const fullEnsemblePlacement = fullInspect.getAmbientEnsemblePlacement.bind(fullInspect);
+    const detailOnlyEnsemblePlacement = detailOnlyInspect.getAmbientEnsemblePlacement
+      .bind(detailOnlyInspect);
+    let fullEnsembleProbeCount = 0;
+    let detailOnlyEnsembleProbeCount = 0;
+    fullInspect.getAmbientEnsemblePlacement = (cellX, cellY) => {
+      fullEnsembleProbeCount++;
+      return fullEnsemblePlacement(cellX, cellY);
+    };
+    detailOnlyInspect.getAmbientEnsemblePlacement = (cellX, cellY) => {
+      detailOnlyEnsembleProbeCount++;
+      return detailOnlyEnsemblePlacement(cellX, cellY);
+    };
+    const normalizePrograms = (composition: InspectedComposition) => (
+      composition.placePrograms.map((program) => ({
+        site: [program.root.siteX, program.root.siteY],
+        root: program.root.asset.id,
+        placements: program.placements.map((placement) => (
+          `${placement.asset.id}@${placement.anchorX},${placement.anchorY}`
+        )),
+        accessPath: program.accessPath?.id ?? null,
+      }))
+    );
+    const normalizeConnectors = (composition: InspectedComposition) => (
+      [...composition.connectors].map(([key, connector]) => ({
+        key,
+        routeKind: connector.routeKind,
+        parcelId: connector.parcelId,
+        pathId: connector.path.id,
+        core: connector.core,
+        protected: connector.protected,
+      }))
+    );
+    let provedAcceptedDetail = false;
+    outer: for (const originY of [-64, -32, 0, 32, 64]) {
+      for (const originX of [-64, -32, 0, 32, 64]) {
+        const full = fullInspect.buildAmbientPlacements(originX, originY);
+        const detailOnly = detailOnlyInspect.buildAmbientPlacements(
+          originX,
+          originY,
+          [],
+          undefined,
+          'post-parent-detail-only',
+        );
+        const fullDetails = full.placements.filter(({ asset }) => asset.id === detail.id);
+        expect(detailOnly.placements).toEqual(fullDetails);
+        expect(normalizePrograms(detailOnly)).toEqual(normalizePrograms(full));
+        expect(normalizeConnectors(detailOnly)).toEqual(normalizeConnectors(full));
+        expect(detailOnly.placements.every(({ asset }) => asset.id === detail.id)).toBe(true);
+        if (fullDetails.length > 0) {
+          provedAcceptedDetail = true;
+          break outer;
+        }
+      }
+    }
+    expect(provedAcceptedDetail).toBe(true);
+    expect(fullEnsembleProbeCount).toBeGreaterThan(0);
+    expect(detailOnlyEnsembleProbeCount).toBe(0);
+    detailOnlyWorld.destroy();
     expect(candidate.getRegionalStats()).toMatchObject({
       ambientPlaceDetailProfile: 'corridor-frontage',
     });

@@ -87,6 +87,8 @@ const PLACE_DETAIL_CENSUS_PREFILTER =
   process.env.MALDOROR_REGIONAL_PLACE_DETAIL_CENSUS_PREFILTER === '1';
 const PLACE_DETAIL_CENSUS_PROGRESS =
   process.env.MALDOROR_REGIONAL_PLACE_DETAIL_CENSUS_PROGRESS === '1';
+const PLACE_DETAIL_CENSUS_DETAIL_ONLY =
+  process.env.MALDOROR_REGIONAL_PLACE_DETAIL_CENSUS_DETAIL_ONLY === '1';
 const PLACE_DETAIL_CENSUS_BLOCK_OFFSET =
   process.env.MALDOROR_REGIONAL_PLACE_DETAIL_CENSUS_BLOCK_OFFSET === undefined
     ? 0
@@ -176,6 +178,9 @@ if (RUN_PLACE_DETAIL_CENSUS && (
 }
 if (PLACE_DETAIL_CENSUS_PREFILTER && !PLACE_DETAIL_CENSUS_DISCOVERY_ONLY) {
   throw new Error('Place-detail prefilter is discovery-only and cannot produce acceptance proof');
+}
+if (PLACE_DETAIL_CENSUS_DETAIL_ONLY && !PLACE_DETAIL_CENSUS_PREFILTER) {
+  throw new Error('Place-detail detail-only output requires the discovery-only prefilter');
 }
 const INFRASTRUCTURE_PROFILE_NAME = process.env.MALDOROR_INFRASTRUCTURE_PROFILE ?? 'production';
 const WATER_PROFILE_NAME = process.env.MALDOROR_WATER_PROFILE ?? 'production';
@@ -3006,6 +3011,7 @@ function auditPlaceDetailCensus(radius, centre) {
           blockOriginY,
           [],
           runtimePlaceDetailDiagnostics,
+          PLACE_DETAIL_CENSUS_DETAIL_ONLY ? 'post-parent-detail-only' : 'complete',
         ).placements.filter((placement) => (
           placement.anchorX >= minBlockX && placement.anchorX <= maxBlockX &&
           placement.anchorY >= minBlockY && placement.anchorY <= maxBlockY
@@ -3026,6 +3032,9 @@ function auditPlaceDetailCensus(radius, centre) {
         process.stderr.write(`${JSON.stringify({
           event: 'place-detail-census-progress',
           blockOrderSha256,
+          outputProfile: PLACE_DETAIL_CENSUS_DETAIL_ONLY
+            ? 'post-parent-detail-only'
+            : 'complete',
           windowBlockOffset: PLACE_DETAIL_CENSUS_BLOCK_OFFSET,
           windowScannedBlocks: scannedBlocks.length,
           windowAvailableBlocks: windowBlocks.length,
@@ -3050,6 +3059,9 @@ function auditPlaceDetailCensus(radius, centre) {
       scannedBlocks,
       availableBlockCount: blocks.length,
       blockOrderSha256,
+      outputProfile: PLACE_DETAIL_CENSUS_DETAIL_ONLY
+        ? 'post-parent-detail-only'
+        : 'complete',
       windowBlockOffset: PLACE_DETAIL_CENSUS_BLOCK_OFFSET,
       windowBlockLimit: PLACE_DETAIL_CENSUS_BLOCK_LIMIT,
       windowAvailableBlockCount: windowBlocks.length,
@@ -3161,6 +3173,7 @@ function auditPlaceDetailCensus(radius, centre) {
     discoveryScannedBlockCount: candidateDiscovery?.scannedBlocks.length ?? null,
     discoveryAvailableBlockCount: candidateDiscovery?.availableBlockCount ?? null,
     discoveryBlockOrderSha256: candidateDiscovery?.blockOrderSha256 ?? null,
+    discoveryOutputProfile: candidateDiscovery?.outputProfile ?? null,
     discoveryWindowBlockOffset: candidateDiscovery?.windowBlockOffset ?? null,
     discoveryWindowBlockLimit: candidateDiscovery?.windowBlockLimit ?? null,
     discoveryWindowAvailableBlockCount:
