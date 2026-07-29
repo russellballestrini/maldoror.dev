@@ -35,6 +35,7 @@ import {
 import {
   buildRegionalParcelPath,
   buildRegionalPolylinePath,
+  distanceToRegionalParcelPath,
   rasterizeRegionalParcelPath,
   sampleRegionalParcelPath,
   type RegionalParcelPath,
@@ -438,6 +439,9 @@ export interface RegionalWorldTileProviderConfig extends TileProviderConfig {
   ambientPlaceFabricProfile?: RegionalAmbientPlaceFabricProfile;
   ambientPlaceAccessProfile?: RegionalAmbientPlaceAccessProfile;
   ambientPlaceDetailProfile?: RegionalAmbientPlaceDetailProfile;
+  /** Optional research sink. Production leaves this undefined, so admission
+   * diagnostics have no allocation or retention cost in the live provider. */
+  ambientPlaceDetailDiagnostics?: RegionalAmbientPlaceDetailAdmissionDiagnostics[];
   ambientLandmarkClearance?: number;
   civicDetailCellSize?: number;
   civicDetailDensity?: number;
@@ -619,6 +623,34 @@ interface AmbientBlockComposition {
   placements: Placement[];
   placePrograms: AmbientPlaceProgram[];
   connectors: Map<string, ParcelConnector>;
+}
+
+export interface RegionalAmbientPlaceDetailAdmissionDiagnostics {
+  site: readonly [number, number];
+  rootAssetId: string;
+  routeStart: readonly [number, number] | null;
+  axis: RegionalRouteContactAxis | null;
+  pathCells: Array<readonly [number, number]> | null;
+  candidateAssetIds: string[];
+  anchorAttemptCount: number;
+  rejectionCounts: Record<string, number>;
+  candidateRejectionCounts: Record<string, Record<string, number>>;
+  attempts: Array<{
+    assetId: string;
+    strategy: 'route-start' | 'path-cell';
+    extraSetback: number | null;
+    nudgeIndex: number | null;
+    pathStationIndex: number | null;
+    circulationOffsetIndex: number | null;
+    anchor: readonly [number, number];
+    rejection: string;
+  }>;
+  outcome: 'disabled' | 'missing-access' | 'invalid-route' | 'no-semantic-candidate' |
+    'connector-rejected' | 'bounded-fit-exhausted' | 'accepted';
+  selected?: {
+    assetId: string;
+    anchor: readonly [number, number];
+  };
 }
 
 interface AmbientPlaceConnectorProgram {
@@ -916,6 +948,8 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly ambientPlaceFabricProfile: RegionalAmbientPlaceFabricProfile;
   private readonly ambientPlaceAccessProfile: RegionalAmbientPlaceAccessProfile;
   private readonly ambientPlaceDetailProfile: RegionalAmbientPlaceDetailProfile;
+  private readonly ambientPlaceDetailDiagnostics?:
+    RegionalAmbientPlaceDetailAdmissionDiagnostics[];
   private readonly ambientLandmarkClearance: number;
   private readonly civicDetailCellSize: number;
   private readonly civicDetailDensity: number;
@@ -1013,6 +1047,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     this.ambientPlaceFabricProfile = config.ambientPlaceFabricProfile ?? 'terrain-only';
     this.ambientPlaceAccessProfile = config.ambientPlaceAccessProfile ?? 'isolated';
     this.ambientPlaceDetailProfile = config.ambientPlaceDetailProfile ?? 'disabled';
+    this.ambientPlaceDetailDiagnostics = config.ambientPlaceDetailDiagnostics;
     this.ambientLandmarkClearance = Math.max(4, config.ambientLandmarkClearance ?? 9);
     this.civicDetailCellSize = Math.max(1, Math.min(12, config.civicDetailCellSize ?? 1));
     this.civicDetailDensity = Math.max(0, Math.min(1, config.civicDetailDensity ?? 0.92));
@@ -2943,6 +2978,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       originX,
       originY,
       civicReservedPlacements,
+      this.ambientPlaceDetailDiagnostics,
     );
     placements.push(...ambientComposition.placements);
     if (this.ambientPlaceFabricProfile !== 'terrain-only') {
@@ -4540,6 +4576,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     originX: number,
     originY: number,
     establishedComposition: readonly Placement[] = [],
+    placeDetailDiagnostics?: RegionalAmbientPlaceDetailAdmissionDiagnostics[],
   ): AmbientBlockComposition {
     if (this.ambient.length === 0 || this.ambientDensity <= 0) {
       return { placements: [], placePrograms: [], connectors: new Map() };
@@ -4741,6 +4778,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     }
     const connectorPrograms = this.resolveAmbientPlaceConnectorPrograms(
       [...uniquePrograms.values()],
+      placeDetailDiagnostics,
     );
     const connectors = this.buildAmbientPlaceConnectors(
       originX,
@@ -4766,6 +4804,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       connectorPrograms.map(({ program }) => program),
       new Set([...programReserved, ...connectorReserved]),
       parentStructuralReserved,
+      placeDetailDiagnostics,
     );
     for (const placement of placeDetails) {
       reserveVisibleFootprint(placement, programReserved, 1);
@@ -5980,8 +6019,26 @@ export class RegionalWorldTileProvider extends TileProvider {
     programs: readonly AmbientPlaceProgram[],
     protectedReserved: ReadonlySet<string>,
     parentStructuralReserved: ReadonlySet<string>,
+    diagnostics?: RegionalAmbientPlaceDetailAdmissionDiagnostics[],
   ): Placement[] {
-    if (this.ambientPlaceDetailProfile === 'disabled') return [];
+    if (this.ambientPlaceDetailProfile === 'disabled') {
+      if (diagnostics) {
+        diagnostics.push(...programs.map((program) => ({
+          site: [program.root.siteX, program.root.siteY] as const,
+          rootAssetId: program.root.asset.id,
+          routeStart: null,
+          axis: null,
+          pathCells: null,
+          candidateAssetIds: [],
+          anchorAttemptCount: 0,
+          rejectionCounts: {},
+          candidateRejectionCounts: {},
+          attempts: [],
+          outcome: 'disabled' as const,
+        })));
+      }
+      return [];
+    }
     const occupied = new Set(protectedReserved);
     const structural = new Set(parentStructuralReserved);
     const placements: Placement[] = [];
@@ -5993,6 +6050,7 @@ export class RegionalWorldTileProvider extends TileProvider {
         program,
         occupied,
         structural,
+        diagnostics,
       );
       if (!placement) continue;
       placements.push(placement);
@@ -6011,23 +6069,82 @@ export class RegionalWorldTileProvider extends TileProvider {
     program: AmbientPlaceProgram,
     protectedReserved: ReadonlySet<string>,
     parentStructuralReserved: ReadonlySet<string>,
+    diagnostics?: RegionalAmbientPlaceDetailAdmissionDiagnostics[],
   ): Placement | null {
+    const audit: RegionalAmbientPlaceDetailAdmissionDiagnostics | null = diagnostics
+      ? {
+          site: [program.root.siteX, program.root.siteY],
+          rootAssetId: program.root.asset.id,
+          routeStart: null,
+          axis: null,
+          pathCells: null,
+          candidateAssetIds: [],
+          anchorAttemptCount: 0,
+          rejectionCounts: {},
+          candidateRejectionCounts: {},
+          attempts: [],
+          outcome: 'missing-access',
+        }
+      : null;
+    let activeCandidateId: string | null = null;
+    let activeAttempt: Omit<
+      RegionalAmbientPlaceDetailAdmissionDiagnostics['attempts'][number],
+      'rejection'
+    > | null = null;
+    const reject = (reason: string): void => {
+      if (!audit) return;
+      audit.rejectionCounts[reason] = (audit.rejectionCounts[reason] ?? 0) + 1;
+      if (activeCandidateId) {
+        const candidateRejections = audit.candidateRejectionCounts[activeCandidateId] ??= {};
+        candidateRejections[reason] = (candidateRejections[reason] ?? 0) + 1;
+      }
+      if (activeAttempt) audit.attempts.push({ ...activeAttempt, rejection: reason });
+    };
+    const finish = (
+      outcome: RegionalAmbientPlaceDetailAdmissionDiagnostics['outcome'],
+      placement: Placement | null = null,
+    ): Placement | null => {
+      if (audit) {
+        audit.outcome = outcome;
+        if (placement) {
+          audit.selected = {
+            assetId: placement.asset.id,
+            anchor: [placement.anchorX, placement.anchorY],
+          };
+        }
+        diagnostics!.push(audit);
+      }
+      return placement;
+    };
     if (this.ambientPlaceDetailProfile !== 'corridor-frontage' ||
-        !program.accessPath || !program.accessRouteKind) return null;
-    const routeStart = program.accessPath.points[0];
-    if (!routeStart) return null;
+        !program.accessPath || !program.accessRouteKind) return finish('missing-access');
+    const accessPath = program.accessPath;
+    const routeStart = accessPath.points[0];
+    if (!routeStart) return finish('missing-access');
+    const accessRouteStartX = routeStart.x;
+    const accessRouteStartY = routeStart.y;
+    if (audit) audit.routeStart = [routeStart.x, routeStart.y];
     const routeX = Math.floor(routeStart.x);
     const routeY = Math.floor(routeStart.y);
     const route = this.routes.sample(routeX, routeY);
-    if (!route.routeKind || this.field.sample(routeX, routeY).isWater) return null;
+    if (!route.routeKind || this.field.sample(routeX, routeY).isWater) {
+      return finish('invalid-route');
+    }
     const axis: RegionalRouteContactAxis = Math.abs(route.directionX) >
       Math.abs(route.directionY) ? 'east-west' : 'north-south';
+    if (audit) audit.axis = axis;
     const tangentX = axis === 'east-west' ? 1 : 0;
     const tangentY = axis === 'east-west' ? 0 : 1;
     const localBiome = this.field.sample(routeX, routeY);
-    const pathCells = new Set(this.getAmbientPlaceAccessCells(program.accessPath).map((cell) => (
+    const accessCells = this.getAmbientPlaceAccessCells(accessPath);
+    const pathCells = new Set(accessCells.map((cell) => (
       positionKey(cell.x, cell.y)
     )));
+    if (audit) {
+      audit.pathCells = accessCells.map((cell) => [cell.x, cell.y] as const).sort((left, right) => (
+        left[1] - right[1] || left[0] - right[0]
+      ));
+    }
     const candidates = this.parcelComponents.filter((asset) => (
       asset.placeDetailRole === 'corridor-frontage' &&
       asset.frontageAxis === axis && asset.compositionSide !== undefined &&
@@ -6047,78 +6164,200 @@ export class RegionalWorldTileProvider extends TileProvider {
     })).sort((left, right) => (
       right.score - left.score || left.asset.id.localeCompare(right.asset.id)
     ));
+    if (audit) audit.candidateAssetIds = candidates.map(({ asset }) => asset.id);
+    if (candidates.length === 0) return finish('no-semantic-candidate');
     for (const { asset } of candidates) {
-      for (let extraSetback = 0;
-        extraSetback <= REGIONAL_STREET_PAIR_MAX_EXTRA_SETBACK; extraSetback++) {
-        for (let nudgeIndex = 0;
-          nudgeIndex < REGIONAL_STREET_PAIR_SEARCH_NUDGE_COUNT; nudgeIndex++) {
-          const [spriteAnchorX, spriteAnchorY] = getSpriteAnchor(asset);
-          const anchor = regionalStreetPairAnchor({
-            axis,
-            side: asset.compositionSide!,
-            routeStartX: routeStart.x,
-            routeStartY: routeStart.y,
-            routeHalfWidth: route.halfWidth,
-            spriteWidth: asset.sprite.width,
-            spriteHeight: asset.sprite.height,
-            spriteAnchorX,
-            spriteAnchorY,
-            extraSetback,
-            nudgeIndex,
-          });
-          if (!this.assetFits(anchor.anchorX, anchor.anchorY, asset) ||
-              visibleFootprintIntersects(
-                asset,
-                anchor.anchorX,
-                anchor.anchorY,
-                parentStructuralReserved,
-              )) continue;
-          const circulation = new Set(asset.circulationOffsets!.map(([offsetX, offsetY]) => (
-            positionKey(anchor.anchorX + offsetX, anchor.anchorY + offsetY)
-          )));
-          if (![...circulation].some((key) => pathCells.has(key)) ||
-              [...circulation].some((key) => parentStructuralReserved.has(key))) continue;
-          const collision = asset.collision.map(([offsetX, offsetY]) => (
-            positionKey(anchor.anchorX + offsetX, anchor.anchorY + offsetY)
-          ));
-          if (collision.some((key) => protectedReserved.has(key) || pathCells.has(key))) continue;
-          const unprotectedConflicts = visibleFootprintConflictCells(
-            asset,
-            anchor.anchorX,
-            anchor.anchorY,
-            protectedReserved,
-          ).filter((key) => !circulation.has(key) || !pathCells.has(key));
-          if (unprotectedConflicts.length > 0 || asset.circulationOffsets!.some(
-            ([offsetX, offsetY]) => this.field.sample(
-              anchor.anchorX + offsetX,
-              anchor.anchorY + offsetY,
-            ).isWater,
-          )) continue;
-          const placement: Placement = {
-            asset,
-            kind: 'ambient',
-            siteX: program.root.siteX,
-            siteY: program.root.siteY,
-            ...anchor,
-            parcelId: `place:${program.root.siteX}:${program.root.siteY}`,
-            routeKind: program.accessRouteKind,
-            parcelPathId: `${program.accessPath.id}:corridor-frontage`,
-            parcelStation: 0,
-            pathTangentX: tangentX,
-            pathTangentY: tangentY,
-          };
-          if (this.ambientPlacementIntersectsRouteParcelConnector(placement, false)) continue;
-          const entrances = ambientPlaceEntrances(placement as Placement & {
-            asset: RegionalParcelComponentAsset;
-          });
-          if (entrances.length === 0 || Math.min(...entrances.map((entrance) => (
-            this.routes.sample(Math.floor(entrance.x), Math.floor(entrance.y)).distance
-          ))) > 2.8) continue;
-          return placement;
+      activeCandidateId = asset.id;
+      type CorridorAnchorAttempt = {
+        strategy: 'route-start' | 'path-cell';
+        extraSetback: number | null;
+        nudgeIndex: number | null;
+        pathStationIndex: number | null;
+        circulationOffsetIndex: number | null;
+        anchorX: number;
+        anchorY: number;
+      };
+      const seenAnchors = new Set<string>();
+      function* anchorAttemptSequence(): Generator<CorridorAnchorAttempt> {
+        for (let extraSetback = 0;
+          extraSetback <= REGIONAL_STREET_PAIR_MAX_EXTRA_SETBACK; extraSetback++) {
+          for (let nudgeIndex = 0;
+            nudgeIndex < REGIONAL_STREET_PAIR_SEARCH_NUDGE_COUNT; nudgeIndex++) {
+            const [spriteAnchorX, spriteAnchorY] = getSpriteAnchor(asset);
+            const anchor = regionalStreetPairAnchor({
+              axis,
+              side: asset.compositionSide!,
+              routeStartX: accessRouteStartX,
+              routeStartY: accessRouteStartY,
+              routeHalfWidth: route.halfWidth,
+              spriteWidth: asset.sprite.width,
+              spriteHeight: asset.sprite.height,
+              spriteAnchorX,
+              spriteAnchorY,
+              extraSetback,
+              nudgeIndex,
+            });
+            const key = positionKey(anchor.anchorX, anchor.anchorY);
+            if (seenAnchors.has(key)) continue;
+            seenAnchors.add(key);
+            yield {
+              strategy: 'route-start',
+              extraSetback,
+              nudgeIndex,
+              pathStationIndex: null,
+              circulationOffsetIndex: null,
+              ...anchor,
+            };
+          }
+        }
+        // This half of the generator is lazy: a route-start acceptance returns
+        // before any path stations or fallback anchors are computed.
+        const eligiblePathCells = accessCells.some((cell) => cell.core)
+          ? accessCells.filter((cell) => cell.core)
+          : accessCells;
+        if (eligiblePathCells.length === 0) return;
+        const pathStationCount = 9;
+        for (let stationIndex = 0; stationIndex < pathStationCount; stationIndex++) {
+          const station = sampleRegionalParcelPath(
+            accessPath,
+            accessPath.arcLength * stationIndex / (pathStationCount - 1),
+          );
+          const pathCell = eligiblePathCells.reduce((nearest, cell) => {
+            const distance = (cell.x + 0.5 - station.x) ** 2 +
+              (cell.y + 0.5 - station.y) ** 2;
+            const nearestDistance = (nearest.x + 0.5 - station.x) ** 2 +
+              (nearest.y + 0.5 - station.y) ** 2;
+            return distance < nearestDistance || (distance === nearestDistance && (
+              cell.y < nearest.y || (cell.y === nearest.y && cell.x < nearest.x)
+            )) ? cell : nearest;
+          }, eligiblePathCells[0]!);
+          for (let circulationIndex = 0;
+            circulationIndex < asset.circulationOffsets!.length; circulationIndex++) {
+            const [offsetX, offsetY] = asset.circulationOffsets![circulationIndex]!;
+            const attempt: CorridorAnchorAttempt = {
+              strategy: 'path-cell',
+              extraSetback: null,
+              nudgeIndex: null,
+              pathStationIndex: stationIndex,
+              circulationOffsetIndex: circulationIndex,
+              anchorX: pathCell.x - offsetX,
+              anchorY: pathCell.y - offsetY,
+            };
+            const key = positionKey(attempt.anchorX, attempt.anchorY);
+            if (seenAnchors.has(key)) continue;
+            seenAnchors.add(key);
+            yield attempt;
+          }
         }
       }
+      for (const anchor of anchorAttemptSequence()) {
+        activeAttempt = audit
+          ? {
+              assetId: asset.id,
+              strategy: anchor.strategy,
+              extraSetback: anchor.extraSetback,
+              nudgeIndex: anchor.nudgeIndex,
+              pathStationIndex: anchor.pathStationIndex,
+              circulationOffsetIndex: anchor.circulationOffsetIndex,
+              anchor: [anchor.anchorX, anchor.anchorY],
+            }
+          : null;
+        if (audit) audit.anchorAttemptCount++;
+        const fitRejection = this.assetFitRejection(anchor.anchorX, anchor.anchorY, asset);
+        if (fitRejection) {
+          reject(fitRejection);
+          continue;
+        }
+        if (visibleFootprintIntersects(
+          asset,
+          anchor.anchorX,
+          anchor.anchorY,
+          parentStructuralReserved,
+        )) {
+          reject('parent-structural-footprint');
+          continue;
+        }
+        const circulation = new Set(asset.circulationOffsets!.map(([offsetX, offsetY]) => (
+          positionKey(anchor.anchorX + offsetX, anchor.anchorY + offsetY)
+        )));
+        if (![...circulation].some((key) => pathCells.has(key))) {
+          reject('circulation-misses-place-path');
+          continue;
+        }
+        if ([...circulation].some((key) => parentStructuralReserved.has(key))) {
+          reject('circulation-hits-parent-structure');
+          continue;
+        }
+        const collision = asset.collision.map(([offsetX, offsetY]) => (
+          positionKey(anchor.anchorX + offsetX, anchor.anchorY + offsetY)
+        ));
+        if (collision.some((key) => protectedReserved.has(key))) {
+          reject('collision-hits-protected-reservation');
+          continue;
+        }
+        if (collision.some((key) => pathCells.has(key))) {
+          reject('collision-hits-place-path');
+          continue;
+        }
+        const unprotectedConflicts = visibleFootprintConflictCells(
+          asset,
+          anchor.anchorX,
+          anchor.anchorY,
+          protectedReserved,
+        ).filter((key) => !circulation.has(key) || !pathCells.has(key));
+        if (unprotectedConflicts.length > 0) {
+          reject('visible-footprint-conflict');
+          continue;
+        }
+        if (asset.circulationOffsets!.some(
+          ([offsetX, offsetY]) => this.field.sample(
+            anchor.anchorX + offsetX,
+            anchor.anchorY + offsetY,
+          ).isWater,
+        )) {
+          reject('circulation-water');
+          continue;
+        }
+        const placement: Placement = {
+          asset,
+          kind: 'ambient',
+          siteX: program.root.siteX,
+          siteY: program.root.siteY,
+          ...anchor,
+          parcelId: `place:${program.root.siteX}:${program.root.siteY}`,
+          routeKind: program.accessRouteKind,
+          parcelPathId: `${accessPath.id}:corridor-frontage`,
+          parcelStation: 0,
+          pathTangentX: tangentX,
+          pathTangentY: tangentY,
+        };
+        if (this.ambientPlacementIntersectsRouteParcelConnector(placement, false)) {
+          reject('collision-hits-route-parcel-connector');
+          continue;
+        }
+        const entrances = ambientPlaceEntrances(placement as Placement & {
+          asset: RegionalParcelComponentAsset;
+        });
+        if (entrances.length === 0) {
+          reject('missing-entrance');
+          continue;
+        }
+        if (Math.min(...entrances.map((entrance) => (
+          Math.min(
+            this.routes.sample(Math.floor(entrance.x), Math.floor(entrance.y)).distance,
+            distanceToRegionalParcelPath(entrance.x, entrance.y, accessPath),
+          )
+        ))) > 2.8) {
+          reject('distant-entrance');
+          continue;
+        }
+        if (audit && activeAttempt) {
+          audit.attempts.push({ ...activeAttempt, rejection: 'accepted' });
+        }
+        return finish('accepted', placement);
+      }
     }
-    return null;
+    return finish('bounded-fit-exhausted');
   }
 
   /** Enumerate every geometrically valid two-sided vocabulary combination
@@ -7071,6 +7310,7 @@ export class RegionalWorldTileProvider extends TileProvider {
    * path exists or which of its cells a post-parent detail must preserve. */
   private resolveAmbientPlaceConnectorPrograms(
     programs: readonly AmbientPlaceProgram[],
+    diagnostics?: RegionalAmbientPlaceDetailAdmissionDiagnostics[],
   ): AmbientPlaceConnectorProgram[] {
     const resolved: AmbientPlaceConnectorProgram[] = [];
     const programReserved = new Map<string, Set<string>>();
@@ -7088,20 +7328,60 @@ export class RegionalWorldTileProvider extends TileProvider {
       if (!program.accessPath || !program.accessRouteKind || !program.accessTargetKey ||
           !program.placements.some((placement) => (
             placementIdentity(placement) === program.accessTargetKey
-          ))) continue;
+          ))) {
+        diagnostics?.push({
+          site: [program.root.siteX, program.root.siteY],
+          rootAssetId: program.root.asset.id,
+          routeStart: program.accessPath?.points[0]
+            ? [program.accessPath.points[0].x, program.accessPath.points[0].y]
+            : null,
+          axis: null,
+          pathCells: null,
+          candidateAssetIds: [],
+          anchorAttemptCount: 0,
+          rejectionCounts: { 'connector-missing-authoritative-target': 1 },
+          candidateRejectionCounts: {},
+          attempts: [],
+          outcome: 'connector-rejected',
+        });
+        continue;
+      }
       const siteKey = positionKey(program.root.siteX, program.root.siteY);
       const cells = this.getAmbientPlaceAccessCells(program.accessPath);
-      const intersectsOtherComposition = this.ambientPlaceAccessIntersectsCivic(
-        program.accessPath,
-      ) || (!program.fabric && cells.some((cell) => {
+      const intersectsCivic = this.ambientPlaceAccessIntersectsCivic(program.accessPath);
+      const intersectsPeer = !program.fabric && cells.some((cell) => {
         if (!cell.protected) return false;
         const key = positionKey(cell.x, cell.y);
         for (const [otherSiteKey, reserved] of programReserved) {
           if (otherSiteKey !== siteKey && reserved.has(key)) return true;
         }
         return false;
-      }));
-      if (intersectsOtherComposition) continue;
+      });
+      if (intersectsCivic || intersectsPeer) {
+        const routeStart = program.accessPath.points[0];
+        const route = routeStart
+          ? this.routes.sample(Math.floor(routeStart.x), Math.floor(routeStart.y))
+          : null;
+        diagnostics?.push({
+          site: [program.root.siteX, program.root.siteY],
+          rootAssetId: program.root.asset.id,
+          routeStart: routeStart ? [routeStart.x, routeStart.y] : null,
+          axis: !route ? null : Math.abs(route.directionX) > Math.abs(route.directionY)
+            ? 'east-west'
+            : 'north-south',
+          pathCells: cells.map((cell) => [cell.x, cell.y] as const),
+          candidateAssetIds: [],
+          anchorAttemptCount: 0,
+          rejectionCounts: {
+            ...(intersectsCivic ? { 'connector-civic-intersection': 1 } : {}),
+            ...(intersectsPeer ? { 'connector-peer-composition-intersection': 1 } : {}),
+          },
+          candidateRejectionCounts: {},
+          attempts: [],
+          outcome: 'connector-rejected',
+        });
+        continue;
+      }
       resolved.push({
         program,
         path: program.accessPath,
@@ -8321,13 +8601,22 @@ export class RegionalWorldTileProvider extends TileProvider {
   }
 
   private assetFits(anchorX: number, anchorY: number, asset: RegionalVisualAsset): boolean {
-    if (this.field.sample(anchorX, anchorY).isWater) return false;
+    return this.assetFitRejection(anchorX, anchorY, asset) === null;
+  }
+
+  private assetFitRejection(
+    anchorX: number,
+    anchorY: number,
+    asset: RegionalVisualAsset,
+  ): 'anchor-water' | 'collision-water' | 'collision-route-clearance' | null {
+    if (this.field.sample(anchorX, anchorY).isWater) return 'anchor-water';
     for (const [offsetX, offsetY] of asset.collision) {
       const x = anchorX + offsetX;
       const y = anchorY + offsetY;
-      if (this.field.sample(x, y).isWater || this.routes.sample(x, y).distance < 1.5) return false;
+      if (this.field.sample(x, y).isWater) return 'collision-water';
+      if (this.routes.sample(x, y).distance < 1.5) return 'collision-route-clearance';
     }
-    return true;
+    return null;
   }
 
   private hashUnit(x: number, y: number, salt: number): number {

@@ -79,6 +79,20 @@ const RUN_AMBIENT_DISTRIBUTION_AUDIT =
 const RUN_FOCAL_ELIGIBILITY_AUDIT =
   process.env.MALDOROR_REGIONAL_FOCAL_ELIGIBILITY_AUDIT === '1';
 const RENDER_FRAMES = process.env.MALDOROR_REGIONAL_LANDMARK_RENDER_FRAMES !== '0';
+const RUN_PLACE_DETAIL_CENSUS =
+  process.env.MALDOROR_REGIONAL_PLACE_DETAIL_CENSUS === '1';
+const PLACE_DETAIL_CENSUS_DISCOVERY_ONLY =
+  process.env.MALDOROR_REGIONAL_PLACE_DETAIL_CENSUS_DISCOVERY_ONLY === '1';
+const PLACE_DETAIL_CENSUS_PREFILTER =
+  process.env.MALDOROR_REGIONAL_PLACE_DETAIL_CENSUS_PREFILTER === '1';
+const PLACE_DETAIL_CENSUS_PROGRESS =
+  process.env.MALDOROR_REGIONAL_PLACE_DETAIL_CENSUS_PROGRESS === '1';
+const PLACE_DETAIL_CENSUS_RADIUS = Number(
+  process.env.MALDOROR_REGIONAL_PLACE_DETAIL_CENSUS_RADIUS ?? '64',
+);
+const PLACE_DETAIL_CENSUS_CENTRE = (
+  process.env.MALDOROR_REGIONAL_PLACE_DETAIL_CENSUS_CENTRE ?? '0,0'
+).split(',').map(Number);
 const FOCAL_ELIGIBILITY_RADIUS = Number(
   process.env.MALDOROR_REGIONAL_FOCAL_ELIGIBILITY_RADIUS ?? '160',
 );
@@ -135,6 +149,16 @@ if (RUN_FOCAL_ELIGIBILITY_AUDIT && (
   FOCAL_ELIGIBILITY_RADIUS > 1024
 )) {
   throw new Error(`Invalid focal-eligibility radius: ${FOCAL_ELIGIBILITY_RADIUS}`);
+}
+if (RUN_PLACE_DETAIL_CENSUS && (
+  !Number.isInteger(PLACE_DETAIL_CENSUS_RADIUS) || PLACE_DETAIL_CENSUS_RADIUS < 32 ||
+  PLACE_DETAIL_CENSUS_RADIUS > 640 || PLACE_DETAIL_CENSUS_CENTRE.length !== 2 ||
+  PLACE_DETAIL_CENSUS_CENTRE.some((value) => !Number.isInteger(value))
+)) {
+  throw new Error('Place-detail census requires an integer radius 32..640 and integer centre x,y');
+}
+if (PLACE_DETAIL_CENSUS_PREFILTER && !PLACE_DETAIL_CENSUS_DISCOVERY_ONLY) {
+  throw new Error('Place-detail prefilter is discovery-only and cannot produce acceptance proof');
 }
 const INFRASTRUCTURE_PROFILE_NAME = process.env.MALDOROR_INFRASTRUCTURE_PROFILE ?? 'production';
 const WATER_PROFILE_NAME = process.env.MALDOROR_WATER_PROFILE ?? 'production';
@@ -355,10 +379,17 @@ fs.mkdirSync(OUTPUT, { recursive: true });
 const placeDetailFixture = AMBIENT_PLACE_DETAIL_PROFILE === 'disabled'
   ? null
   : JSON.parse(fs.readFileSync(PLACE_DETAIL_DESCRIPTOR, 'utf8'));
+const placeDetailEntries = placeDetailFixture
+  ? Array.isArray(placeDetailFixture.assets)
+    ? placeDetailFixture.assets
+    : [placeDetailFixture.asset]
+  : [];
 if (placeDetailFixture && (
   placeDetailFixture.runtimeManifest !== false ||
   !Number.isInteger(placeDetailFixture.sourceTileSize) ||
-  typeof placeDetailFixture.asset !== 'object' || placeDetailFixture.asset === null
+  placeDetailEntries.length === 0 ||
+  placeDetailEntries.some((asset) => typeof asset !== 'object' || asset === null) ||
+  new Set(placeDetailEntries.map((asset) => asset.id)).size !== placeDetailEntries.length
 )) {
   throw new Error(`Invalid research-only place-detail descriptor: ${PLACE_DETAIL_DESCRIPTOR}`);
 }
@@ -382,7 +413,7 @@ const [
   quayDetailKit,
   routeContactKit,
   parcelKit,
-  placeDetailCandidate,
+  placeDetailCandidates,
   environmentKit,
 ] = await Promise.all([
   loadRegionalBiomeMaterialKit(BIOME_MANIFEST),
@@ -394,12 +425,12 @@ const [
   loadRegionalRouteContactKit(path.join(ROOT, 'assets/biomes/route-contacts-manifest.json')),
   loadRegionalParcelComponentKit(path.join(ROOT, 'assets/biomes/parcel-components-manifest.json')),
   placeDetailFixture
-    ? loadRegionalParcelComponentCandidate(
+    ? Promise.all(placeDetailEntries.map((asset) => loadRegionalParcelComponentCandidate(
         path.join(ROOT, 'assets/biomes'),
         placeDetailFixture.sourceTileSize,
-        placeDetailFixture.asset,
-      )
-    : Promise.resolve(null),
+        asset,
+      )))
+    : Promise.resolve([]),
   loadRegionalEnvironmentContactKit(path.join(ROOT, 'assets/biomes/environment-contacts-manifest.json')),
 ]);
 if (new Set([
@@ -428,6 +459,7 @@ const compositor = new RegionalMaterialCompositor({
   infrastructureVisualProfile: INFRASTRUCTURE_PROFILE,
   waterVisualProfile: WATER_PROFILE,
 });
+const runtimePlaceDetailDiagnostics = [];
 const regionalWorldProviderConfig = {
   worldSeed: WORLD_SEED,
   field,
@@ -438,8 +470,8 @@ const regionalWorldProviderConfig = {
   civicDetails: CIVIC_DETAIL_PROFILE.enabled ? civicDetailKit.assets : [],
   quayDetails: QUAY_DETAIL_PROFILE.enabled ? quayDetailKit.assets : [],
   routeContacts: routeContactKit.assets,
-  parcelComponents: placeDetailCandidate
-    ? [...parcelKit.assets, placeDetailCandidate]
+  parcelComponents: placeDetailCandidates.length > 0
+    ? [...parcelKit.assets, ...placeDetailCandidates]
     : parcelKit.assets,
   environmentContacts: environmentKit.assets,
   ambientCellSize: ambientKit.cellSize,
@@ -449,6 +481,9 @@ const regionalWorldProviderConfig = {
   ambientPlaceFabricProfile: AMBIENT_PLACE_FABRIC_PROFILE,
   ambientPlaceAccessProfile: AMBIENT_PLACE_ACCESS_PROFILE,
   ambientPlaceDetailProfile: AMBIENT_PLACE_DETAIL_PROFILE,
+  ambientPlaceDetailDiagnostics: RUN_PLACE_DETAIL_CENSUS
+    ? runtimePlaceDetailDiagnostics
+    : undefined,
   ambientLandmarkClearance: ambientKit.landmarkClearance,
   civicDetailCellSize: civicDetailKit.cellSize,
   civicDetailDensity: CIVIC_DETAIL_PROFILE.enabled ? civicDetailKit.density : 0,
@@ -2864,6 +2899,271 @@ const focalEligibilityAudit = RUN_FOCAL_ELIGIBILITY_AUDIT
   ? auditFocalEligibility(FOCAL_ELIGIBILITY_RADIUS, FOCAL_ELIGIBILITY_CENTRE)
   : null;
 
+/** Exercise the real provider without raster or terminal output. This is a
+ * geometry census, not a performance benchmark: candidate and control scan
+ * identical world bounds, while a differently tiled replay proves that the
+ * optional post-parent placement is not a cache-block accident. */
+function auditPlaceDetailCensus(radius, centre) {
+  if (placeDetailCandidates.length === 0) {
+    throw new Error('Place-detail census requires a research-only descriptor');
+  }
+  const placeDetailById = new Map(placeDetailCandidates.map((asset) => [asset.id, asset]));
+  const placeDetailIds = new Set(placeDetailById.keys());
+  const [centreX, centreY] = centre;
+  const bounds = [
+    centreX - radius,
+    centreY - radius,
+    centreX + radius - 1,
+    centreY + radius - 1,
+  ];
+  const makeWorld = (blockSize, profile) => new RegionalWorldTileProvider({
+    ...regionalWorldProviderConfig,
+    ambientPlaceDetailProfile: profile,
+    ambientPlaceDetailDiagnostics: undefined,
+    blockSize,
+    maxCachedBlocks: 64,
+  });
+  const control = makeWorld(landmarkKit.blockSize, 'disabled');
+  const replay = makeWorld(47, AMBIENT_PLACE_DETAIL_PROFILE);
+  const normalizePlacement = (placement) => ({
+    assetId: placement.assetId,
+    site: [placement.siteX, placement.siteY],
+    anchor: [placement.anchorX, placement.anchorY],
+    parcelId: placement.parcelId ?? null,
+    parcelPathId: placement.parcelPathId ?? null,
+    routeKind: placement.routeKind ?? null,
+    parcelStation: placement.parcelStation ?? null,
+    tangent: [placement.pathTangentX ?? null, placement.pathTangentY ?? null],
+  });
+  const normalizeInternalPlacement = (placement) => normalizePlacement({
+    ...placement,
+    assetId: placement.asset.id,
+  });
+  const hash = (value) => crypto.createHash('sha256')
+    .update(JSON.stringify(value)).digest('hex');
+  const isDetail = (placement) => placeDetailIds.has(placement.assetId);
+  const placementsFor = (targetWorld) => targetWorld
+    .getAmbientPlacementsInBounds(...bounds).map(normalizePlacement);
+  const discoverPlacements = (targetWorld, blockSize) => {
+    const blocks = [];
+    const firstBlockX = Math.floor(bounds[0] / blockSize);
+    const lastBlockX = Math.floor(bounds[2] / blockSize);
+    const firstBlockY = Math.floor(bounds[1] / blockSize);
+    const lastBlockY = Math.floor(bounds[3] / blockSize);
+    for (let blockY = firstBlockY; blockY <= lastBlockY; blockY++) {
+      for (let blockX = firstBlockX; blockX <= lastBlockX; blockX++) {
+        blocks.push({
+          blockX,
+          blockY,
+          distance: Math.hypot(
+            blockX * blockSize + blockSize * 0.5 - centreX,
+            blockY * blockSize + blockSize * 0.5 - centreY,
+          ),
+        });
+      }
+    }
+    blocks.sort((left, right) => left.distance - right.distance ||
+      left.blockY - right.blockY || left.blockX - right.blockX);
+    const placements = [];
+    const scannedBlocks = [];
+    for (const block of blocks) {
+      const blockOriginX = block.blockX * blockSize;
+      const blockOriginY = block.blockY * blockSize;
+      const minBlockX = Math.max(bounds[0], blockOriginX);
+      const minBlockY = Math.max(bounds[1], blockOriginY);
+      const maxBlockX = Math.min(bounds[2], blockOriginX + blockSize - 1);
+      const maxBlockY = Math.min(bounds[3], blockOriginY + blockSize - 1);
+      const blockPlacements = PLACE_DETAIL_CENSUS_PREFILTER
+        ? targetWorld.buildAmbientPlacements(
+          blockOriginX,
+          blockOriginY,
+          [],
+          runtimePlaceDetailDiagnostics,
+        ).placements.filter((placement) => (
+          placement.anchorX >= minBlockX && placement.anchorX <= maxBlockX &&
+          placement.anchorY >= minBlockY && placement.anchorY <= maxBlockY
+        )).map(normalizeInternalPlacement)
+        : targetWorld.getAmbientPlacementsInBounds(
+          minBlockX,
+          minBlockY,
+          maxBlockX,
+          maxBlockY,
+        ).map(normalizePlacement);
+      placements.push(...blockPlacements);
+      scannedBlocks.push([block.blockX, block.blockY]);
+      const discoveredDetail = blockPlacements.some(isDetail);
+      if (PLACE_DETAIL_CENSUS_PROGRESS && (
+        scannedBlocks.length % 8 === 0 || discoveredDetail || scannedBlocks.length === blocks.length
+      )) {
+        process.stderr.write(`${JSON.stringify({
+          event: 'place-detail-census-progress',
+          scannedBlocks: scannedBlocks.length,
+          availableBlocks: blocks.length,
+          latestBlock: [block.blockX, block.blockY],
+          placementCount: placements.length,
+          detailCount: placements.filter(isDetail).length,
+        })}\n`);
+      }
+      if (discoveredDetail) break;
+    }
+    return {
+      placements: placements.sort((left, right) => left.anchor[1] - right.anchor[1] ||
+        left.anchor[0] - right.anchor[0] || left.assetId.localeCompare(right.assetId)),
+      scannedBlocks,
+      availableBlockCount: blocks.length,
+    };
+  };
+  const candidateDiscovery = PLACE_DETAIL_CENSUS_DISCOVERY_ONLY
+    ? discoverPlacements(world, landmarkKit.blockSize)
+    : null;
+  const candidatePlacements = candidateDiscovery?.placements ?? placementsFor(world);
+  const candidateDetails = candidatePlacements.filter(isDetail);
+  // A zero-placement result is already a retained discovery rejection. Do not
+  // materialize two more worlds until there is candidate geometry to prove.
+  const proofScanSkipped = PLACE_DETAIL_CENSUS_DISCOVERY_ONLY || candidateDetails.length === 0;
+  const controlPlacements = proofScanSkipped ? [] : placementsFor(control);
+  const replayPlacements = proofScanSkipped ? [] : placementsFor(replay);
+  const replayDetails = replayPlacements.filter(isDetail);
+  const controlDetails = controlPlacements.filter(isDetail);
+  const candidateParents = candidatePlacements.filter((placement) => !isDetail(placement));
+  const controlParents = controlPlacements.filter((placement) => !isDetail(placement));
+
+  const parentAuditCentre = candidateDetails[0]?.anchor ?? centre;
+  const parentProgramsFor = (targetWorld, blockSize, detailDiagnostics) => {
+    const programs = new Map();
+    const originX = Math.floor(parentAuditCentre[0] / blockSize) * blockSize;
+    const originY = Math.floor(parentAuditCentre[1] / blockSize) * blockSize;
+    const composition = targetWorld.buildAmbientPlacements(
+      originX,
+      originY,
+      [],
+      detailDiagnostics,
+    );
+    for (const program of composition.placePrograms) {
+      const key = `${program.root.siteX},${program.root.siteY}`;
+      programs.set(key, {
+        site: [program.root.siteX, program.root.siteY],
+        root: program.root.asset.id,
+        placements: program.placements.map((placement) => (
+          `${placement.asset.id}@${placement.anchorX},${placement.anchorY}`
+        )),
+        accessPath: program.accessPath?.id ?? null,
+        accessRouteKind: program.accessRouteKind ?? null,
+        accessTargetKey: program.accessTargetKey ?? null,
+        fabric: program.fabric?.layout.id ?? null,
+      });
+    }
+    return [...programs.entries()].sort(([left], [right]) => left.localeCompare(right));
+  };
+  const placeDetailAdmissionDiagnostics = [];
+  const candidateParentPrograms = parentProgramsFor(
+    world,
+    landmarkKit.blockSize,
+    placeDetailAdmissionDiagnostics,
+  );
+  const controlParentPrograms = parentProgramsFor(control, landmarkKit.blockSize);
+  const candidateConnectors = proofScanSkipped
+    ? []
+    : world.getParcelConnectorCellsInBounds(...bounds);
+  const controlConnectors = proofScanSkipped
+    ? []
+    : control.getParcelConnectorCellsInBounds(...bounds);
+  const connectorKeys = new Set(candidateConnectors.map((cell) => `${cell.x},${cell.y}`));
+  const detailAudits = candidateDetails.map((placement) => {
+    const candidate = placeDetailById.get(placement.assetId);
+    if (!candidate) throw new Error(`Missing place-detail candidate: ${placement.assetId}`);
+    const [anchorX, anchorY] = placement.anchor;
+    const circulationCells = candidate.circulationOffsets.map(
+      ([offsetX, offsetY]) => `${anchorX + offsetX},${anchorY + offsetY}`,
+    );
+    const collisionCells = candidate.collision.map(
+      ([offsetX, offsetY]) => `${anchorX + offsetX},${anchorY + offsetY}`,
+    );
+    return {
+      ...placement,
+      circulationCells,
+      collisionCells,
+      circulationConnectorOverlapCount: circulationCells.filter((cell) => (
+        connectorKeys.has(cell)
+      )).length,
+      collisionConnectorOverlapCount: collisionCells.filter((cell) => (
+        connectorKeys.has(cell)
+      )).length,
+      circulationWaterCellCount: circulationCells.filter((cell) => {
+        const [x, y] = cell.split(',').map(Number);
+        return field.sample(x, y).isWater;
+      }).length,
+    };
+  });
+  const parentProgramsEqual = hash(candidateParentPrograms) === hash(controlParentPrograms);
+  const connectorsEqual = proofScanSkipped
+    ? null
+    : hash(candidateConnectors) === hash(controlConnectors);
+  const replayEqual = proofScanSkipped ? null : hash(candidateDetails) === hash(replayDetails);
+  const valid = !proofScanSkipped && controlDetails.length === 0 &&
+    parentProgramsEqual && connectorsEqual && replayEqual && detailAudits.every((detail) => (
+      detail.circulationConnectorOverlapCount > 0 &&
+      detail.collisionConnectorOverlapCount === 0 && detail.circulationWaterCellCount === 0
+    ));
+  const result = {
+    mode: 'geometry-only-no-render-no-timing-claim',
+    centre,
+    radius,
+    bounds,
+    discoveryScannedBlocks: candidateDiscovery?.scannedBlocks ?? null,
+    discoveryScannedBlockCount: candidateDiscovery?.scannedBlocks.length ?? null,
+    discoveryAvailableBlockCount: candidateDiscovery?.availableBlockCount ?? null,
+    discoveryAuthority: !candidateDiscovery ? null
+      : PLACE_DETAIL_CENSUS_PREFILTER
+        ? 'production-ambient-composition-without-established-block-composition-prefilter'
+        : 'full-production-provider',
+    candidateBlockSize: landmarkKit.blockSize,
+    replayBlockSize: 47,
+    assetIds: placeDetailCandidates.map((asset) => asset.id),
+    proofScanSkipped,
+    proofScanSkipReason: !proofScanSkipped ? null
+      : PLACE_DETAIL_CENSUS_DISCOVERY_ONLY ? 'discovery-only' : 'zero-candidate-details',
+    candidatePlacementCount: candidatePlacements.length,
+    controlPlacementCount: proofScanSkipped ? null : controlPlacements.length,
+    candidateDetailCount: candidateDetails.length,
+    controlDetailCount: controlDetails.length,
+    replayDetailCount: replayDetails.length,
+    candidateParentProgramCount: candidateParentPrograms.length,
+    controlParentProgramCount: controlParentPrograms.length,
+    parentProgramAuditScope: 'candidate-or-census-centre-containing-source-block',
+    parentProgramAuditCentre: parentAuditCentre,
+    parentPrograms: candidateParentPrograms,
+    placeDetailAdmissionDiagnostics,
+    runtimePlaceDetailAdmissionDiagnostics: [...new Map(runtimePlaceDetailDiagnostics
+      .filter((diagnostic) => (
+        diagnostic.candidateAssetIds.length > 0 || diagnostic.outcome === 'connector-rejected'
+      ))
+      .map((diagnostic) => [JSON.stringify(diagnostic), diagnostic])).values()],
+    candidateConnectorCellCount: proofScanSkipped ? null : candidateConnectors.length,
+    controlConnectorCellCount: proofScanSkipped ? null : controlConnectors.length,
+    parentProgramSha256: hash(candidateParentPrograms),
+    controlParentProgramSha256: hash(controlParentPrograms),
+    connectorSha256: proofScanSkipped ? null : hash(candidateConnectors),
+    controlConnectorSha256: proofScanSkipped ? null : hash(controlConnectors),
+    candidateDetailSha256: hash(candidateDetails),
+    replayDetailSha256: hash(replayDetails),
+    candidateNonDetailPlacementSha256: proofScanSkipped ? null : hash(candidateParents),
+    controlNonDetailPlacementSha256: proofScanSkipped ? null : hash(controlParents),
+    parentProgramsEqual,
+    connectorsEqual,
+    replayEqual,
+    detailAudits,
+    valid,
+  };
+  control.destroy();
+  replay.destroy();
+  return result;
+}
+
+const placeDetailCensus = RUN_PLACE_DETAIL_CENSUS
+  ? auditPlaceDetailCensus(PLACE_DETAIL_CENSUS_RADIUS, PLACE_DETAIL_CENSUS_CENTRE)
+  : null;
+
 const metrics = {
   worldSeed: String(WORLD_SEED),
   ambientDistributionProfile: AMBIENT_DISTRIBUTION_PROFILE,
@@ -2871,14 +3171,18 @@ const metrics = {
   ambientPlaceFabricProfile: AMBIENT_PLACE_FABRIC_PROFILE,
   ambientPlaceAccessProfile: AMBIENT_PLACE_ACCESS_PROFILE,
   ambientPlaceDetailProfile: AMBIENT_PLACE_DETAIL_PROFILE,
-  placeDetailDescriptor: placeDetailCandidate
+  placeDetailDescriptor: placeDetailCandidates.length > 0
     ? path.relative(ROOT, PLACE_DETAIL_DESCRIPTOR)
     : null,
-  placeDetailAssetId: placeDetailCandidate?.id ?? null,
+  placeDetailAssetId: placeDetailCandidates.length === 1
+    ? placeDetailCandidates[0].id
+    : null,
+  placeDetailAssetIds: placeDetailCandidates.map((asset) => asset.id),
   streetOverlayCoverage,
   canonicalScratchAtlas,
   compositionExactAtlas,
   focalEligibilityAudit,
+  placeDetailCensus,
   ambientDistributionAudit: RUN_AMBIENT_DISTRIBUTION_AUDIT
     ? auditAmbientDistribution(FRAMES[0].centre)
     : null,

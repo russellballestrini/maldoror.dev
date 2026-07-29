@@ -28,6 +28,7 @@ import {
   type RegionalAmbientCompositionProfile,
   type RegionalAmbientDistributionProfile,
   type RegionalAmbientPlaceAccessProfile,
+  type RegionalAmbientPlaceDetailAdmissionDiagnostics,
   type RegionalAmbientPlaceDetailProfile,
   type RegionalAmbientPlaceFabricProfile,
   type RegionalAmbientAsset,
@@ -197,6 +198,7 @@ function makeWorld(
   ambientPlaceAccessProfile: RegionalAmbientPlaceAccessProfile = 'isolated',
   includeLandmarkSites = true,
   ambientPlaceDetailProfile: RegionalAmbientPlaceDetailProfile = 'disabled',
+  ambientPlaceDetailDiagnostics?: RegionalAmbientPlaceDetailAdmissionDiagnostics[],
 ): RegionalWorldTileProvider {
   const quayDescriptor = {
     id: 'test-canal',
@@ -428,6 +430,7 @@ function makeWorld(
     ambientPlaceFabricProfile,
     ambientPlaceAccessProfile,
     ambientPlaceDetailProfile,
+    ambientPlaceDetailDiagnostics,
     ambientLandmarkClearance: 4,
     civicDetailCellSize: 1,
     civicDetailDensity: 1,
@@ -1977,20 +1980,26 @@ describe('RegionalWorldTileProvider', () => {
     const makeCandidate = (
       blockSize: number,
       profile: RegionalAmbientPlaceDetailProfile,
+      diagnostics?: RegionalAmbientPlaceDetailAdmissionDiagnostics[],
     ) => makeWorld(
       blockSize, 64, continuousRoute, () => biomeSample('canal-town'),
       false, undefined, false, false, false, 'east-west', [detail], [],
       'cluster-field-blue-noise', 'hierarchical-place-field',
-      'shared-common', 'route-frontage', false, profile,
+      'shared-common', 'route-frontage', false, profile, diagnostics,
     );
+    const diagnostics: RegionalAmbientPlaceDetailAdmissionDiagnostics[] = [];
     const control = makeCandidate(32, 'disabled');
-    const candidate = makeCandidate(32, 'corridor-frontage');
+    const candidate = makeCandidate(32, 'corridor-frontage', diagnostics);
     const replay = makeCandidate(47, 'corridor-frontage');
     const bounds = [-96, -72, 128, 72] as const;
     const details = candidate.getAmbientPlacementsInBounds(...bounds).filter((placement) => (
       placement.assetId === detail.id
     ));
     expect(details.length).toBeGreaterThan(0);
+    expect(diagnostics.some((entry) => (
+      entry.outcome === 'accepted' && entry.selected?.assetId === detail.id &&
+      entry.candidateAssetIds.includes(detail.id) && entry.anchorAttemptCount > 0
+    ))).toBe(true);
     expect(details).toEqual(replay.getAmbientPlacementsInBounds(...bounds).filter((placement) => (
       placement.assetId === detail.id
     )));
@@ -2049,6 +2058,102 @@ describe('RegionalWorldTileProvider', () => {
     expect(candidate.getRegionalStats()).toMatchObject({
       ambientPlaceDetailProfile: 'corridor-frontage',
     });
+  });
+
+  it('falls back to bounded connector cells when route-start frontage is occupied', () => {
+    const continuousRoute = (x: number, y: number): RegionalRouteSample => ({
+      ...routeSample(x, y),
+      directionX: 1,
+      directionY: 0,
+    });
+    const emptyTile: BuildingTile = { pixels: [], resolutions: {} };
+    const visibleTile = sprite({ r: 238, g: 164, b: 72 }).tiles[0]![0]!;
+    const detail: RegionalParcelComponentAsset = {
+      id: 'parcel:canal-town:path-cell-corridor-frontage',
+      families: ['canal-town'],
+      role: 'mass',
+      compositionRole: 'focal',
+      streetPairRole: 'canonical-alternative',
+      placeDetailRole: 'corridor-frontage',
+      frontageAxis: 'east-west',
+      compositionSide: -1,
+      frontageStations: [0],
+      circulationOffsets: [[0, 0]],
+      sprite: {
+        width: 5,
+        height: 1,
+        tiles: [
+          [emptyTile, emptyTile, emptyTile, emptyTile, visibleTile],
+        ],
+      },
+      collision: [[2, 0]],
+    };
+    const world = makeWorld(
+      32, 64, continuousRoute, () => biomeSample('canal-town'),
+      false, undefined, false, false, false, 'east-west', [detail], [],
+      'cluster-field-blue-noise', 'hierarchical-place-field',
+      'shared-common', 'route-frontage', false, 'corridor-frontage',
+    );
+    type Program = {
+      root: { siteX: number; siteY: number };
+      accessPath?: RegionalParcelPath;
+      accessRouteKind?: string;
+    };
+    const inspect = world as unknown as {
+      buildAmbientPlacements(originX: number, originY: number): {
+        placePrograms: Program[];
+      };
+      buildAmbientCorridorFrontage(
+        program: Program,
+        protectedReserved: ReadonlySet<string>,
+        parentStructuralReserved: ReadonlySet<string>,
+        diagnostics: RegionalAmbientPlaceDetailAdmissionDiagnostics[],
+      ): { asset: RegionalParcelComponentAsset; anchorX: number; anchorY: number } | null;
+    };
+    const programs = new Map<string, Program>();
+    for (const originY of [-64, -32, 0, 32, 64]) {
+      for (const originX of [-64, -32, 0, 32, 64]) {
+        for (const program of inspect.buildAmbientPlacements(originX, originY).placePrograms) {
+          if (program.accessPath) programs.set(
+            `${program.root.siteX},${program.root.siteY}`,
+            program,
+          );
+        }
+      }
+    }
+    const program = [...programs.values()].find((candidate) => (
+      candidate.accessPath && candidate.accessPath.arcLength >= 8
+    ));
+    expect(program?.accessPath).toBeDefined();
+    const routeStart = program!.accessPath!.points[0]!;
+    const occupiedRouteStart = new Set<string>();
+    for (let y = Math.floor(routeStart.y) - 6; y <= Math.floor(routeStart.y) + 6; y++) {
+      for (let x = Math.floor(routeStart.x) - 6; x <= Math.floor(routeStart.x) + 6; x++) {
+        occupiedRouteStart.add(`${x},${y}`);
+      }
+    }
+    const protectedPath = new Set(rasterizeRegionalParcelPath(program!.accessPath!)
+      .filter((cell) => cell.protected)
+      .map((cell) => `${cell.x},${cell.y}`));
+    const diagnostics: RegionalAmbientPlaceDetailAdmissionDiagnostics[] = [];
+    const placement = inspect.buildAmbientCorridorFrontage(
+      program!,
+      protectedPath,
+      occupiedRouteStart,
+      diagnostics,
+    );
+    const accepted = diagnostics.find((entry) => entry.outcome === 'accepted');
+
+    expect(placement, JSON.stringify(diagnostics, null, 2)).not.toBeNull();
+    expect(placement?.asset.id).toBe(detail.id);
+    expect(accepted?.attempts.at(-1)).toMatchObject({
+      strategy: 'path-cell',
+      rejection: 'accepted',
+    });
+    expect(accepted?.attempts.filter(({ strategy }) => strategy === 'route-start').every(
+      ({ rejection }) => rejection === 'parent-structural-footprint',
+    )).toBe(true);
+    world.destroy();
   });
 
   it('places deterministic civic details only on route-safe landmark shoulders', () => {

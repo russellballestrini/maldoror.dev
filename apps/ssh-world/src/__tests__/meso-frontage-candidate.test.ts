@@ -8,6 +8,10 @@ const FIXTURE = path.join(
   ROOT,
   'tools/render-sim/fixtures/canal-town-meso-frontage-v1.json',
 );
+const MODULAR_FIXTURE = path.join(
+  ROOT,
+  'tools/render-sim/fixtures/canal-town-modular-frontages-v1.json',
+);
 
 interface CandidateFixture {
   runtimeManifest: boolean;
@@ -17,6 +21,16 @@ interface CandidateFixture {
     collision: Array<[number, number]>;
     circulationOffsets: Array<[number, number]>;
   };
+}
+
+interface ModularCandidateFixture {
+  runtimeManifest: boolean;
+  sourceTileSize: number;
+  assets: Array<Record<string, unknown> & {
+    id: string;
+    collision: Array<[number, number]>;
+    circulationOffsets: Array<[number, number]>;
+  }>;
 }
 
 function readFixture(): CandidateFixture {
@@ -108,5 +122,77 @@ describe('research-only meso frontage candidate', () => {
     expect(manifest.assets.some(({ id }) => (
       id === 'canal-town-workshop-row-meso-frontage-v1'
     ))).toBe(false);
+  });
+});
+
+describe('research-only modular frontage candidates', () => {
+  it('loads three smaller authored thresholds through the production parser', async () => {
+    const fixture = JSON.parse(
+      fs.readFileSync(MODULAR_FIXTURE, 'utf8'),
+    ) as ModularCandidateFixture;
+    const assets = await Promise.all(fixture.assets.map((entry) => (
+      loadRegionalParcelComponentCandidate(
+        path.join(ROOT, 'assets/biomes'),
+        fixture.sourceTileSize,
+        entry,
+      )
+    )));
+
+    expect(fixture.runtimeManifest).toBe(false);
+    expect(assets.map((asset) => asset.id)).toEqual([
+      'canal-town-modular-shops-frontage-v1',
+      'canal-town-modular-arch-frontage-v1',
+      'canal-town-modular-workshop-frontage-v1',
+    ]);
+    expect(assets.every((asset) => (
+      asset.sprite.width === 6 && asset.sprite.height === 7 &&
+      asset.placeDetailRole === 'corridor-frontage' &&
+      asset.frontageAxis === 'east-west' && asset.compositionSide === -1
+    ))).toBe(true);
+
+    const expectedPacked = new Map([
+      ['canal-town-modular-shops-frontage-v1', { sparse: 5, bytes: 340_992 }],
+      ['canal-town-modular-arch-frontage-v1', { sparse: 6, bytes: 331_776 }],
+      ['canal-town-modular-workshop-frontage-v1', { sparse: 1, bytes: 377_856 }],
+    ]);
+    for (const asset of assets) {
+      const tiles = asset.sprite.tiles.flat();
+      const expected = expectedPacked.get(asset.id)!;
+      expect(tiles.filter((tile) => tile.packedPixels === undefined)).toHaveLength(
+        expected.sparse,
+      );
+      expect(tiles.reduce((total, tile) => (
+        total + (tile.packedPixels?.data.byteLength ?? 0)
+      ), 0)).toBe(expected.bytes);
+      const collision = new Set(asset.collision.map(([x, y]) => `${x},${y}`));
+      expect(asset.circulationOffsets?.every(([x, y]) => !collision.has(`${x},${y}`)))
+        .toBe(true);
+    }
+
+    const arch = assets[1]!;
+    const [openingX, openingY] = arch.circulationOffsets![0]!;
+    const opening = arch.sprite.tiles[
+      arch.sprite.height - 1 + openingY
+    ]?.[
+      Math.floor(arch.sprite.width / 2) + openingX
+    ]?.packedPixels;
+    const openingAlpha = opening
+      ? opening.data.reduce((total, value, index) => (
+        index % 4 === 3 ? total + value : total
+      ), 0) / (255 * opening.width * opening.height)
+      : 0;
+    expect(openingAlpha).toBeLessThan(0.15);
+  });
+
+  it('keeps every modular experiment out of the production parcel manifest', () => {
+    const fixture = JSON.parse(
+      fs.readFileSync(MODULAR_FIXTURE, 'utf8'),
+    ) as ModularCandidateFixture;
+    const manifest = JSON.parse(fs.readFileSync(
+      path.join(ROOT, 'assets/biomes/parcel-components-manifest.json'),
+      'utf8',
+    )) as { assets: Array<{ id: string }> };
+    const productionIds = new Set(manifest.assets.map(({ id }) => id));
+    expect(fixture.assets.every(({ id }) => !productionIds.has(id))).toBe(true);
   });
 });

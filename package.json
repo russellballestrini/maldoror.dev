@@ -28,6 +28,7 @@
     "assets:derive-paired-focal-alternatives": "node tools/render-sim/derive-regional-paired-focal-alternatives.mjs",
     "assets:derive-canal-town-focals": "node tools/render-sim/derive-canal-town-focal-blocks.mjs",
     "assets:derive-canal-quay-frontages": "node tools/render-sim/derive-canal-town-quay-frontages.mjs",
+    "assets:derive-canal-modular-frontages": "node tools/render-sim/derive-canal-town-modular-frontages.mjs",
     "assets:derive-canal-civic-details": "node tools/render-sim/derive-canal-town-civic-details.mjs",
     "assets:derive-canal-quay-details": "node tools/render-sim/derive-canal-town-quay-details.mjs",
     "assets:derive-side-canal-frontages": "node tools/render-sim/derive-canal-town-side-canal-frontages.mjs",

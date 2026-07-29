@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "runtimeManifest": false,
+  "sourceTileSize": 48,
+  "provenance": {
+    "generation": "built-in Codex/ChatGPT image generation subscription; no metered API",
+    "sourceSha256": "b3b2bb5db0814832feb284ffb99ae6d90a40108ebc7d30726cd3aa9d739afb45",
+    "derivation": "node tools/render-sim/derive-canal-town-modular-frontages.mjs",
+    "derivedSha256": {
+      "canal-town-modular-shops-frontage-v1": "b4c20b9d1aadf85bdbc14a09fc3ca89c4ac3f0149b45d83818e28e2c9d441af0",
+      "canal-town-modular-arch-frontage-v1": "ca1712ea9938fdf19dc262fdab8d71eee1ba28a68d86b65030a1a5023bfb3296",
+      "canal-town-modular-workshop-frontage-v1": "126d03f8c6a6d74c3eb25c4be841412d81a3c83a6e2c8c7e237c6fb7dcb28689"
+    }
+  },
+  "assets": [
+    {
+      "id": "canal-town-modular-shops-frontage-v1",
+      "file": "parcel-components/canal-town-modular-shops-frontage-v1.png",
+      "family": "canal-town",
+      "role": "mass",
+      "visualGroup": "canal-town-modular-shops-frontage",
+      "compositionRole": "focal",
+      "streetPairRole": "canonical-alternative",
+      "placeDetailRole": "corridor-frontage",
+      "frontageAxis": "east-west",
+      "compositionSide": -1,
+      "frontageStations": [0.3],
+      "circulationOffsets": [[1, 0]],
+      "scale": 1,
+      "spriteTiles": [6, 7],
+      "collision": [[-3, 0], [-2, 0], [-1, 0], [0, 0], [2, 0]],
+      "emitsLight": true
+    },
+    {
+      "id": "canal-town-modular-arch-frontage-v1",
+      "file": "parcel-components/canal-town-modular-arch-frontage-v1.png",
+      "family": "canal-town",
+      "role": "mass",
+      "visualGroup": "canal-town-modular-arch-frontage",
+      "compositionRole": "focal",
+      "streetPairRole": "canonical-alternative",
+      "placeDetailRole": "corridor-frontage",
+      "frontageAxis": "east-west",
+      "compositionSide": -1,
+      "frontageStations": [-0.12],
+      "circulationOffsets": [[-1, 0], [-1, -1], [-1, -2]],
+      "scale": 1,
+      "spriteTiles": [6, 7],
+      "collision": [[-3, 0], [-2, 0], [0, 0], [1, 0], [2, 0]],
+      "emitsLight": true
+    },
+    {
+      "id": "canal-town-modular-workshop-frontage-v1",
+      "file": "parcel-components/canal-town-modular-workshop-frontage-v1.png",
+      "family": "canal-town",
+      "role": "mass",
+      "visualGroup": "canal-town-modular-workshop-frontage",
+      "compositionRole": "focal",
+      "streetPairRole": "canonical-alternative",
+      "placeDetailRole": "corridor-frontage",
+      "frontageAxis": "east-west",
+      "compositionSide": -1,
+      "frontageStations": [0.08],
+      "circulationOffsets": [[0, 0]],
+      "scale": 1,
+      "spriteTiles": [6, 7],
+      "collision": [[-3, 0], [-2, 0], [-1, 0], [1, 0], [2, 0]],
+      "emitsLight": true
+    }
+  ]
+}

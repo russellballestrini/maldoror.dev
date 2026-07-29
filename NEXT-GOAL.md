@@ -3038,6 +3038,49 @@ Completed foundations:
   walking/district control-candidate render, exact incremental preparation/
   residency/frame/byte measurement, designed regional LOD, and physical SSH
   proof remain mandatory under an admitted host.
+  V224-V229 then execute the missing real-world census and reject V220 for the
+  post-parent role. The origin and radius-64 full-provider runs admit no V220
+  placement; a radius-128 production-composition prefilter finds an eligible
+  canal program at `(157,-180)` but neither side fits. The preserved V1 side
+  fails on collision-water, the V2 side fails on anchor-water, and a temporary
+  84-position lateral expansion still yields only water, frozen-parent, anchor,
+  and route-clearance rejections. The expansion is removed and no exclusion is
+  weakened. Exact parent/program/connector parity remains true where the full
+  control proof runs, but zero candidate placements means no honest faithful
+  visual or performance A/B exists. The monolith remains source/reference art,
+  not a selected runtime candidate. Consolidated evidence lives in
+  `track-4-world-composition/canal-place-detail-prefilter-v229-v1-expanded-site-157--180/FINDINGS.md`.
+  V230-V236 select the next modular source direction without pretending it is
+  in-world progress. Built-in ChatGPT/Codex image generation (no metered API)
+  produces one shared-palette atlas containing separate shops, inhabited open
+  arch, and workshop/inn modules with no baked road, terrain, quay, or water.
+  A hash-pinned derivation reproduces three clean-alpha assets and the
+  production parser loads their independent collision/circulation semantics
+  from a research-only multi-asset descriptor. Correcting the provisional 8x9
+  logical scale to 6x7 preserves the original generated sources and 48px
+  source-tile pipeline while reducing retained packed sprite planes from
+  1,732,608 to 1,050,624 bytes, an exact 681,984-byte (39.36%) reduction. The
+  disabled diagnostic path now creates no audit object, per-candidate/path
+  evidence is available only when requested, and wide-census records filter
+  irrelevant no-semantic entries. Real diagnostics also replace arbitrary
+  wider nudges with a bounded nine-station fallback derived from the already
+  authoritative connector: route-start anchors retain priority, and the path
+  stations are constructed lazily only after every route-start attempt fails,
+  so the common acceptance path pays no fallback sampling or anchor-allocation
+  cost. Every water, route, parent, circulation, collision, reservation,
+  visibility, entrance, and connector rejection remains. A full-fitter test forces all
+  route-start positions to lose to frozen structure and proves a safe
+  connector-cell acceptance. The real `(157,-180)` place still correctly
+  rejects every compact module because it is genuinely full; the radius-128
+  prefilter also finds no placement. The clean walking board selects the art;
+  its naive regional reduction is rejected as icon-like. Exact provenance,
+  hashes, memory arithmetic, tests, and V231-V236 failure distributions live
+  in `track-4-world-composition/canal-modular-frontages-v230/FINDINGS.md`.
+  V237's radius-256 pass is explicitly incomplete: it was interrupted while
+  healthy but opaque and produced no metrics, so it is not evidence. The lab
+  now emits opt-in JSON progress every eight blocks. The kit remains absent
+  from the production manifest with zero real-world placement, no faithful
+  ANSI gain, no designed regional LOD, no admitted-host A/B, and no deployment.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, admit or reject V210 and V212 under exact whole-process A/B/A,
   repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission

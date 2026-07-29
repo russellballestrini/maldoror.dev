@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "runtimeManifest": false,
+  "sourceTileSize": 48,
+  "provenance": {
+    "generation": "built-in Codex/ChatGPT image generation subscription; no metered API",
+    "sourceSha256": "94595ef00923b7f6571ce47177f29a24c4ca14d265daf944ee7d8cf11ba85502",
+    "derivedSha256": "af497a1041e20db92f1ba8e97ca0137f47f284d682b8f0fa77085418f8251fba",
+    "derivation": "node tools/render-sim/derive-canal-town-meso-frontage.mjs",
+    "semanticPrecursor": "tools/render-sim/fixtures/canal-town-meso-frontage-v1.json",
+    "semanticRevision": "Place the south-facing facade south of an east-west route so its northward arch circulation meets the connector."
+  },
+  "asset": {
+    "id": "canal-town-workshop-row-meso-frontage-v2",
+    "file": "parcel-components/canal-town-workshop-row-meso-frontage-v1.png",
+    "family": "canal-town",
+    "role": "mass",
+    "visualGroup": "canal-town-workshop-row-meso-frontage",
+    "compositionRole": "focal",
+    "streetPairRole": "canonical-alternative",
+    "placeDetailRole": "corridor-frontage",
+    "frontageAxis": "east-west",
+    "compositionSide": 1,
+    "frontageStations": [0.22],
+    "circulationOffsets": [[2, 0], [2, -1], [2, -2], [2, -3], [2, -4]],
+    "scale": 1,
+    "spriteTiles": [20, 14],
+    "collision": [
+      [-7, -2], [-6, -2], [-5, -2], [-4, -2], [-3, -2], [-2, -2],
+      [-1, -2], [0, -2], [1, -2],
+      [3, -2], [4, -2], [5, -2], [6, -2], [7, -2], [8, -2], [9, -2],
+      [6, -1], [7, -1], [8, -1], [6, 0], [7, 0], [8, 0]
+    ],
+    "emitsLight": true
+  }
+}
