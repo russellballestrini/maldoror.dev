@@ -643,6 +643,7 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
   const canonicalCandidates = new Map();
   const canonicalProtectedReservations = new Map();
   const canonicalProtectedFitCandidates = new Map();
+  const canonicalProtectedFitAttempts = new Map();
   const canonicalWinnerCandidates = new Map();
   const ownershipMismatches = [];
   let enumeratedOwnershipCells = 0;
@@ -670,6 +671,14 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
           protectedReservation,
         )) throw new Error(`Protected-fit candidate still conflicts: ${candidate.id}`);
         canonicalProtectedFitCandidates.set(candidate.id, candidate);
+      }
+      for (const diagnostics of world.getAmbientStreetPairProtectedFitDiagnostics(
+        ownershipCellX,
+        ownershipCellY,
+      )) {
+        const key = `${diagnostics.ownerSiteX},${diagnostics.ownerSiteY}:` +
+          `${diagnostics.ownershipX},${diagnostics.ownershipY}`;
+        canonicalProtectedFitAttempts.set(key, diagnostics);
       }
       for (const winner of world.getAmbientCanonicalStreetPairWinners(
         ownershipCellX,
@@ -776,11 +785,13 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
   const protectedReservationSources = new Set();
   let protectedReservationCellReferences = 0;
   let protectedReservationSourceReferences = 0;
+  let protectedReservationSourceCellReferences = 0;
   let protectedVisualGroupReferences = 0;
   let nonemptyProtectedReservationCount = 0;
   let maximumProtectedReservationCellCount = 0;
   const protectedManifestReachMismatches = [];
   for (const [ownershipKey, reservation] of canonicalProtectedReservations) {
+    const reservationCellSet = new Set(reservation.reservedCells);
     if (reservation.reservedCells.length > 0 || reservation.visualGroups.length > 0) {
       nonemptyProtectedReservationCount++;
     }
@@ -790,8 +801,12 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
     );
     protectedReservationCellReferences += reservation.reservedCells.length;
     protectedReservationSourceReferences += reservation.sourceIds.length;
+    protectedReservationSourceCellReferences += reservation.sourceReservations.reduce(
+      (total, source) => total + source.reservedCells.length,
+      0,
+    );
     protectedVisualGroupReferences += reservation.visualGroups.length;
-    for (const key of reservation.reservedCells) protectedReservationCells.add(key);
+    for (const key of reservationCellSet) protectedReservationCells.add(key);
     for (const sourceId of reservation.sourceIds) protectedReservationSources.add(sourceId);
     if (reservation.manifestMaximumAxisReach !== manifestWideCandidateBound.maximumAxisReach) {
       protectedManifestReachMismatches.push({
@@ -801,7 +816,12 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
       });
     }
     if (!Object.isFrozen(reservation) || !Object.isFrozen(reservation.reservedCells) ||
-        !Object.isFrozen(reservation.visualGroups) || !Object.isFrozen(reservation.sourceIds)) {
+        !Object.isFrozen(reservation.visualGroups) || !Object.isFrozen(reservation.sourceIds) ||
+        !Object.isFrozen(reservation.sourceReservations) ||
+        reservation.sourceReservations.some((source) => (
+          !Object.isFrozen(source) || !Object.isFrozen(source.reservedCells) ||
+          source.reservedCells.some((cell) => !reservationCellSet.has(cell))
+        ))) {
       throw new Error(`Street protected reservation is mutable: ${ownershipKey}`);
     }
   }
@@ -843,6 +863,7 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
     uniqueCellCount: protectedReservationCells.size,
     maximumCellCount: maximumProtectedReservationCellCount,
     sourceReferenceCount: protectedReservationSourceReferences,
+    sourceCellReferenceCount: protectedReservationSourceCellReferences,
     uniqueSourceCount: protectedReservationSources.size,
     visualGroupReferenceCount: protectedVisualGroupReferences,
     candidateGeometryConflictCount: protectedGeometryConflictCount,
@@ -898,6 +919,25 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
       ownershipCellY,
     )) replayWinners.set(winner.id, winner);
   }
+  const diagnosticOwnershipCells = [...new Map(
+    [...canonicalProtectedFitAttempts.values()].map((attempt) => {
+      const owner = regionalStreetPairOwnershipCell(attempt.ownershipX, attempt.ownershipY);
+      return [`${owner.cellX},${owner.cellY}`, [owner.cellX, owner.cellY]];
+    }),
+  ).values()].sort((a, b) => a[1] - b[1] || a[0] - b[0]);
+  const replayProtectedFitAttempts = new Map();
+  for (const [ownershipCellX, ownershipCellY] of [...diagnosticOwnershipCells].reverse()) {
+    for (const diagnostics of replayWorld.getAmbientStreetPairProtectedFitDiagnostics(
+      ownershipCellX,
+      ownershipCellY,
+    )) {
+      replayProtectedFitAttempts.set(
+        `${diagnostics.ownerSiteX},${diagnostics.ownerSiteY}:` +
+          `${diagnostics.ownershipX},${diagnostics.ownershipY}`,
+        diagnostics,
+      );
+    }
+  }
   const mainProtectedSignatures = [...canonicalProtectedFitCandidates.values()]
     .map(streetPairSignature).sort((a, b) => a.id.localeCompare(b.id));
   const replayProtectedSignatures = [...replayProtectedFits.values()]
@@ -926,12 +966,44 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
       JSON.stringify(cachedWinnerSignatures) !== JSON.stringify(mainWinnerSignatures)) {
     throw new Error('Canonical-winner production signatures differ across block/traversal/cache order');
   }
+  const fitDiagnosticSignatures = (attempts) => [...attempts.entries()]
+    .sort(([first], [second]) => first.localeCompare(second))
+    .map(([key, diagnostics]) => ({ key, diagnostics }));
+  const mainFitDiagnosticSignatures = fitDiagnosticSignatures(canonicalProtectedFitAttempts);
+  const replayFitDiagnosticSignatures = fitDiagnosticSignatures(replayProtectedFitAttempts);
+  const cachedProtectedFitAttempts = new Map();
+  for (const [ownershipCellX, ownershipCellY] of [...diagnosticOwnershipCells].reverse()) {
+    for (const diagnostics of world.getAmbientStreetPairProtectedFitDiagnostics(
+      ownershipCellX,
+      ownershipCellY,
+    )) {
+      cachedProtectedFitAttempts.set(
+        `${diagnostics.ownerSiteX},${diagnostics.ownerSiteY}:` +
+          `${diagnostics.ownershipX},${diagnostics.ownershipY}`,
+        diagnostics,
+      );
+    }
+  }
+  if (JSON.stringify(replayFitDiagnosticSignatures) !==
+        JSON.stringify(mainFitDiagnosticSignatures) ||
+      JSON.stringify(fitDiagnosticSignatures(cachedProtectedFitAttempts)) !==
+        JSON.stringify(mainFitDiagnosticSignatures)) {
+    throw new Error(
+      'Protected-fit rejection diagnostics differ across block/traversal/cache order',
+    );
+  }
   const canonicalSelectionDiagnostics = {
     neighbourReach: manifestWideCandidateBound.conflictNeighbourReach,
     nonemptyOwnershipCells,
     candidateCount: mainProtectedSignatures.length,
     winnerCount: mainWinnerSignatures.length,
     winnerIds: mainWinnerSignatures.map((candidate) => candidate.id),
+    providerBlockSizes: [landmarkKit.blockSize, 47],
+    reverseTraversalExact: true,
+    cachedReplayExact: true,
+  };
+  const canonicalProtectedFitDiagnosticReplay = {
+    ownershipCells: diagnosticOwnershipCells,
     providerBlockSizes: [landmarkKit.blockSize, 47],
     reverseTraversalExact: true,
     cachedReplayExact: true,
@@ -1048,6 +1120,93 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
       })),
     }];
   }));
+  const protectedFitAttempts = [...canonicalProtectedFitAttempts.values()].filter((attempt) => (
+    Math.abs(attempt.routeStartX) <= ownershipMargin &&
+    Math.abs(attempt.routeStartY) <= ownershipMargin &&
+    attempt.vocabularyKeys.some((key) => expectedSet.has(key))
+  ));
+  const summarizeProtectedFitAttempts = (attempts) => {
+    const outcomes = {};
+    const failedSides = {};
+    const attemptRejections = {
+      terrainOrRoute: 0,
+      protectedReservation: 0,
+      pairFootprint: 0,
+      missingEntrance: 0,
+      distantEntrance: 0,
+    };
+    const protectedSourceKindReferences = {};
+    const protectedSourceIds = new Set();
+    const protectedConflictCells = new Set();
+    const residualProtectedConflictCells = new Set();
+    const residualProtectedVisualGroups = new Set();
+    for (const attempt of attempts) {
+      outcomes[attempt.outcome] = (outcomes[attempt.outcome] ?? 0) + 1;
+      if (attempt.failedSide !== undefined) {
+        failedSides[attempt.failedSide] = (failedSides[attempt.failedSide] ?? 0) + 1;
+      }
+      for (const side of attempt.sides) {
+        attemptRejections.terrainOrRoute += side.terrainOrRouteRejectedAttempts;
+        attemptRejections.protectedReservation +=
+          side.protectedReservationRejectedAttempts;
+        attemptRejections.pairFootprint += side.pairFootprintRejectedAttempts;
+        attemptRejections.missingEntrance += side.missingEntranceAttempts;
+        attemptRejections.distantEntrance += side.distantEntranceAttempts;
+        for (const cell of side.protectedConflictCells) protectedConflictCells.add(cell);
+      }
+      for (const source of attempt.protectedConflictSources) {
+        protectedSourceKindReferences[source.kind] =
+          (protectedSourceKindReferences[source.kind] ?? 0) + 1;
+        protectedSourceIds.add(source.sourceId);
+      }
+      for (const cell of attempt.residualProtectedConflictCells) {
+        residualProtectedConflictCells.add(cell);
+      }
+      for (const entry of attempt.residualProtectedVisualGroups) {
+        residualProtectedVisualGroups.add(
+          `${entry.ownerSiteX},${entry.ownerSiteY}:${entry.visualGroup}`,
+        );
+      }
+    }
+    return {
+      attemptCount: attempts.length,
+      outcomes,
+      failedSides,
+      attemptRejections,
+      protectedSourceKindReferences,
+      uniqueProtectedSourceCount: protectedSourceIds.size,
+      protectedSourceIds: [...protectedSourceIds].sort(),
+      uniqueProtectedConflictCellCount: protectedConflictCells.size,
+      uniqueResidualProtectedConflictCellCount: residualProtectedConflictCells.size,
+      residualProtectedVisualGroups: [...residualProtectedVisualGroups].sort(),
+    };
+  };
+  const canonicalProtectedFitRejectionDiagnostics = {
+    ...summarizeProtectedFitAttempts(protectedFitAttempts),
+    replay: canonicalProtectedFitDiagnosticReplay,
+    zeroRouteOpportunityVocabularies: expected.filter((key) => (
+      opportunityByVocabulary[key].routeOpportunityCount === 0
+    )),
+    routeOpportunityWithoutProtectedAttemptVocabularies: expected.filter((key) => (
+      opportunityByVocabulary[key].routeOpportunityCount > 0 &&
+      !protectedFitAttempts.some((attempt) => attempt.vocabularyKeys.includes(key))
+    )),
+    byVocabulary: Object.fromEntries(expected.map((key) => {
+      const attempts = protectedFitAttempts.filter((attempt) => (
+        attempt.vocabularyKeys.includes(key)
+      ));
+      return [key, {
+        routeOpportunityCount: opportunityByVocabulary[key].routeOpportunityCount,
+        topology: opportunityByVocabulary[key].routeOpportunityCount === 0
+          ? 'zero-route-opportunity'
+          : attempts.length === 0
+            ? 'no-protected-refit-attempt'
+            : 'protected-refit-attempted',
+        ...summarizeProtectedFitAttempts(attempts),
+        attempts,
+      }];
+    })),
+  };
   const opportunityStageTotals = Object.values(opportunityByVocabulary).reduce((totals, entry) => {
     for (const [stage, count] of Object.entries(entry.stages)) totals[stage] += count;
     return totals;
@@ -1079,6 +1238,7 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
     canonicalCandidateDiagnostics,
     canonicalProtectedReservationDiagnostics,
     canonicalProtectedFitDiagnostics,
+    canonicalProtectedFitRejectionDiagnostics,
     canonicalSelectionDiagnostics,
     manifestWideCandidateBound,
     complete: missing.length === 0 && incompleteSites.length === 0,

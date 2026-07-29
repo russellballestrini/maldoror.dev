@@ -2232,6 +2232,34 @@ Completed foundations:
   fit absences, compare the proved winner against the active V170 pair, and
   render the canonical candidate at walking/district/regional scales in
   scratch before any materialization change;
+- V183 selects an exact diagnostic-only protected-refit rejection ledger. Each
+  fixed-cell reservation now retains sorted source-to-cell provenance across
+  placement, fabric, connector, and civic geometry; each refit records dynamic
+  family/axis vocabulary, exact floating route contact, semantic exclusions,
+  every bounded terrain/route, protected-cell, pair-footprint, doorway, and
+  route-distance rejection, plus any final reserved-halo conflict. The faithful
+  radius-160 census reconciles exactly 51 route opportunities to 51 attempts:
+  35 exhaust the bounded search, 15 reach a pair whose one-tile halo still
+  conflicts with protected geometry, and one is accepted. The failed searches
+  comprise 665 terrain/route attempts, 823 protected-reservation attempts, 31
+  distant-doorway attempts, and zero missing-doorway or pair-self conflicts.
+  Their exact evidence spans 1,451 protected cells and 144 unique sources;
+  the 15 residuals expose 99 halo-conflict cells and zero residual semantic-
+  group conflict. Five vocabularies have no route opportunity at all; the six
+  attempted vocabularies are accounted separately rather than conflated with
+  topology absence. All diagnostics are byte-exact across 32/47 providers,
+  reverse traversal over 29 emitting ownership cells, and cached replay. The
+  single V182 forest winner and one-cell bound remain unchanged. Active V170
+  remains nine complete sites, 4/11 coverage, exact `0/6/12/24/9` stages, and
+  all eight PNGs byte-identical to V182. The initial 52-attempt boundary probe
+  is retained as rejected evidence; exact route-contact filtering corrects it.
+  Tests, world typecheck/build, faithful census, lint, and source diff checks
+  pass. No in-world visual improvement is claimed. Evidence lives in
+  `track-4-world-composition/regional-protected-refit-diagnostics-v183/FINDINGS.md`.
+  Next, make the bounded refit search halo-aware without shrinking protected
+  geometry, prove whether any of the 15 residuals become legal alternatives,
+  then compare and render the canonical winner at walking/district/regional
+  scales in scratch before materialization;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without

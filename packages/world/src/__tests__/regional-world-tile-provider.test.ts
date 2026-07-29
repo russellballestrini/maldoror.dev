@@ -1152,6 +1152,49 @@ describe('RegionalWorldTileProvider', () => {
         visualGroup: string;
       }[];
       sourceIds: readonly string[];
+      sourceReservations: readonly {
+        sourceId: string;
+        kind: 'placement' | 'fabric' | 'connector' | 'civic';
+        reservedCells: readonly string[];
+      }[];
+    };
+    type InspectedStreetPairFitDiagnostics = {
+      ownerSiteX: number;
+      ownerSiteY: number;
+      ownershipX: number;
+      ownershipY: number;
+      routeStartX: number;
+      routeStartY: number;
+      axis: 'north-south' | 'east-west';
+      vocabularyKeys: readonly string[];
+      excludedVisualGroups: readonly string[];
+      outcome: string;
+      failedSide?: -1 | 1;
+      sides: readonly {
+        side: -1 | 1;
+        eligibleAssetIds: readonly string[];
+        protectedVisualGroupAssetIds: readonly string[];
+        pairVisualGroupAssetIds: readonly string[];
+        terrainOrRouteRejectedAttempts: number;
+        protectedReservationRejectedAttempts: number;
+        pairFootprintRejectedAttempts: number;
+        missingEntranceAttempts: number;
+        distantEntranceAttempts: number;
+        protectedConflictCells: readonly string[];
+        selectedAssetId?: string;
+      }[];
+      protectedConflictSources: readonly {
+        sourceId: string;
+        kind: 'placement' | 'fabric' | 'connector' | 'civic';
+        conflictingCells: readonly string[];
+      }[];
+      residualProtectedConflictCells: readonly string[];
+      residualProtectedVisualGroups: readonly {
+        ownerSiteX: number;
+        ownerSiteY: number;
+        visualGroup: string;
+      }[];
+      candidateId?: string;
     };
     type StreetPairInspection = {
       getAmbientPlaceProgram(cellX: number, cellY: number): unknown;
@@ -1184,6 +1227,14 @@ describe('RegionalWorldTileProvider', () => {
         key: string,
         candidates: readonly InspectedStreetPairCandidate[],
       ): readonly InspectedStreetPairCandidate[];
+      getAmbientStreetPairProtectedFitDiagnostics(
+        ownershipCellX: number,
+        ownershipCellY: number,
+      ): readonly InspectedStreetPairFitDiagnostics[];
+      cacheAmbientStreetPairProtectedFitDiagnostics(
+        key: string,
+        diagnostics: readonly InspectedStreetPairFitDiagnostics[],
+      ): readonly InspectedStreetPairFitDiagnostics[];
       getAmbientCanonicalStreetPairWinners(
         ownershipCellX: number,
         ownershipCellY: number,
@@ -1290,6 +1341,7 @@ describe('RegionalWorldTileProvider', () => {
       reservedCells: reservation.reservedCells,
       visualGroups: reservation.visualGroups,
       sourceIds: reservation.sourceIds,
+      sourceReservations: reservation.sourceReservations,
     });
     const enumerateReservations = (
       inspection: StreetPairInspection,
@@ -1314,6 +1366,13 @@ describe('RegionalWorldTileProvider', () => {
       reservation.manifestMaximumAxisReach > 0 &&
       [...reservation.reservedCells].sort().join('|') === reservation.reservedCells.join('|') &&
       [...reservation.sourceIds].sort().join('|') === reservation.sourceIds.join('|')
+    ))).toBe(true);
+    expect(forwardReservations.every((reservation) => (
+      reservation.sourceReservations.every((source) => (
+        reservation.sourceIds.includes(source.sourceId) &&
+        source.reservedCells.length > 0 &&
+        source.reservedCells.every((cell) => reservation.reservedCells.includes(cell))
+      ))
     ))).toBe(true);
     const enumerateProtectedFits = (
       inspection: StreetPairInspection,
@@ -1349,12 +1408,55 @@ describe('RegionalWorldTileProvider', () => {
     expect(reverseProtectedFits).toEqual(forwardProtectedFits);
     expect(enumerateProtectedFits(inspectFirst, [...ownershipCells].reverse()))
       .toEqual(forwardProtectedFits);
+    const enumerateFitDiagnostics = (
+      inspection: StreetPairInspection,
+      cells: readonly { cellX: number; cellY: number }[],
+    ) => cells.flatMap((cell) => inspection.getAmbientStreetPairProtectedFitDiagnostics(
+      cell.cellX,
+      cell.cellY,
+    )).sort((a, b) => (
+      a.ownerSiteY - b.ownerSiteY || a.ownerSiteX - b.ownerSiteX ||
+      a.ownershipY - b.ownershipY || a.ownershipX - b.ownershipX
+    ));
+    const forwardFitDiagnostics = enumerateFitDiagnostics(inspectFirst, ownershipCells);
+    const reverseFitDiagnostics = enumerateFitDiagnostics(
+      inspectReplay,
+      [...ownershipCells].reverse(),
+    );
+    expect(forwardFitDiagnostics.length).toBeGreaterThan(0);
+    expect(reverseFitDiagnostics).toEqual(forwardFitDiagnostics);
+    expect(enumerateFitDiagnostics(inspectFirst, [...ownershipCells].reverse()))
+      .toEqual(forwardFitDiagnostics);
+    expect(forwardFitDiagnostics.every((diagnostic) => (
+      diagnostic.vocabularyKeys.length > 0 && diagnostic.sides.length > 0
+    ))).toBe(true);
+    expect(forwardFitDiagnostics.some((diagnostic) => (
+      diagnostic.sides.some((side) => (
+        side.protectedReservationRejectedAttempts > 0 &&
+        side.protectedConflictCells.length > 0
+      )) && diagnostic.protectedConflictSources.length > 0
+    ))).toBe(true);
+    expect(forwardFitDiagnostics.every((diagnostic) => (
+      diagnostic.protectedConflictSources.every((source) => (
+        source.conflictingCells.length > 0 && source.conflictingCells.every((cell) => (
+          diagnostic.sides.some((side) => side.protectedConflictCells.includes(cell)) ||
+          diagnostic.residualProtectedConflictCells.includes(cell)
+        ))
+      ))
+    ))).toBe(true);
+    expect(forwardFitDiagnostics.every((diagnostic) => (
+      diagnostic.outcome !== 'residual-protected-conflict' ||
+      diagnostic.residualProtectedConflictCells.length > 0 ||
+      diagnostic.residualProtectedVisualGroups.length > 0
+    ))).toBe(true);
     expect(first.getRegionalStats()).toMatchObject({
       cachedAmbientStreetPairOwnershipCells: ownershipCells.length,
       cachedAmbientStreetPairCandidates: forwardCandidates.length,
       cachedAmbientStreetPairProtectedOwnershipCells: ownershipCells.length,
       cachedAmbientStreetPairProtectedFitOwnershipCells: ownershipCells.length,
       cachedAmbientStreetPairProtectedFitCandidates: forwardProtectedFits.length,
+      cachedAmbientStreetPairProtectedFitDiagnosticOwnershipCells: ownershipCells.length,
+      cachedAmbientStreetPairProtectedFitDiagnostics: forwardFitDiagnostics.length,
     });
     const enumerateWinners = (
       inspection: StreetPairInspection,
@@ -1390,6 +1492,7 @@ describe('RegionalWorldTileProvider', () => {
         reservedCells: Object.freeze([]),
         visualGroups: Object.freeze([]),
         sourceIds: Object.freeze([]),
+        sourceReservations: Object.freeze([]),
       }));
     }
     expect(first.getRegionalStats().cachedAmbientStreetPairProtectedOwnershipCells)
@@ -1403,6 +1506,15 @@ describe('RegionalWorldTileProvider', () => {
     }
     expect(first.getRegionalStats().cachedAmbientStreetPairProtectedFitOwnershipCells)
       .toBe(protectedFitCacheLimit);
+    const protectedFitDiagnosticCacheLimit = first.getRegionalStats().maxCachedBlocks * 16;
+    for (let index = 0; index < protectedFitDiagnosticCacheLimit + 2; index++) {
+      inspectFirst.cacheAmbientStreetPairProtectedFitDiagnostics(
+        `test-overflow:${index}`,
+        Object.freeze([]),
+      );
+    }
+    expect(first.getRegionalStats().cachedAmbientStreetPairProtectedFitDiagnosticOwnershipCells)
+      .toBe(protectedFitDiagnosticCacheLimit);
     const canonicalWinnerCacheLimit = first.getRegionalStats().maxCachedBlocks * 16;
     for (let index = 0; index < canonicalWinnerCacheLimit + 2; index++) {
       inspectFirst.cacheAmbientCanonicalStreetPairWinners(

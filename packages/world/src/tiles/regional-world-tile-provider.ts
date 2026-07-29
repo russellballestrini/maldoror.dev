@@ -551,6 +551,95 @@ interface AmbientStreetPairProtectedReservation extends RegionalStreetPairProtec
   ownershipCellY: number;
   manifestMaximumAxisReach: number;
   sourceIds: readonly string[];
+  sourceReservations: readonly AmbientStreetPairProtectedSourceReservation[];
+}
+
+type AmbientStreetPairProtectedSourceKind =
+  | 'placement'
+  | 'fabric'
+  | 'connector'
+  | 'civic';
+
+interface AmbientStreetPairProtectedSourceReservation {
+  sourceId: string;
+  kind: AmbientStreetPairProtectedSourceKind;
+  reservedCells: readonly string[];
+}
+
+interface AmbientStreetPairFitSideDiagnostics {
+  side: -1 | 1;
+  eligibleAssetIds: readonly string[];
+  protectedVisualGroupAssetIds: readonly string[];
+  pairVisualGroupAssetIds: readonly string[];
+  terrainOrRouteRejectedAttempts: number;
+  protectedReservationRejectedAttempts: number;
+  pairFootprintRejectedAttempts: number;
+  missingEntranceAttempts: number;
+  distantEntranceAttempts: number;
+  protectedConflictCells: readonly string[];
+  selectedAssetId?: string;
+}
+
+type AmbientStreetPairFitOutcome =
+  | 'accepted'
+  | 'invalid-route-contact'
+  | 'no-semantic-alternative'
+  | 'bounded-fit-exhausted'
+  | 'residual-protected-conflict';
+
+interface AmbientStreetPairProtectedFitDiagnostics {
+  ownerSiteX: number;
+  ownerSiteY: number;
+  ownershipX: number;
+  ownershipY: number;
+  routeStartX: number;
+  routeStartY: number;
+  axis: RegionalRouteContactAxis;
+  vocabularyKeys: readonly string[];
+  excludedVisualGroups: readonly string[];
+  outcome: AmbientStreetPairFitOutcome;
+  failedSide?: -1 | 1;
+  sides: readonly AmbientStreetPairFitSideDiagnostics[];
+  protectedConflictSources: readonly {
+    sourceId: string;
+    kind: AmbientStreetPairProtectedSourceKind;
+    conflictingCells: readonly string[];
+  }[];
+  residualProtectedConflictCells: readonly string[];
+  residualProtectedVisualGroups: readonly RegionalStreetPairProtectedVisualGroup[];
+  candidateId?: string;
+}
+
+interface MutableAmbientStreetPairFitSideDiagnostics {
+  side: -1 | 1;
+  eligibleAssetIds: string[];
+  protectedVisualGroupAssetIds: string[];
+  pairVisualGroupAssetIds: string[];
+  terrainOrRouteRejectedAttempts: number;
+  protectedReservationRejectedAttempts: number;
+  pairFootprintRejectedAttempts: number;
+  missingEntranceAttempts: number;
+  distantEntranceAttempts: number;
+  protectedConflictCells: Set<string>;
+  selectedAssetId?: string;
+}
+
+interface MutableAmbientStreetPairFitDiagnostics {
+  ownerSiteX: number;
+  ownerSiteY: number;
+  ownershipX: number;
+  ownershipY: number;
+  routeStartX: number;
+  routeStartY: number;
+  axis: RegionalRouteContactAxis;
+  vocabularyKeys: string[];
+  excludedVisualGroups: string[];
+  outcome: AmbientStreetPairFitOutcome;
+  failedSide?: -1 | 1;
+  sides: MutableAmbientStreetPairFitSideDiagnostics[];
+  residualProtectedConflictCells: Set<string>;
+  residualProtectedVisualGroups: RegionalStreetPairProtectedVisualGroup[];
+  candidateId?: string;
 }
 
 interface CachedParcelGroup {
@@ -621,6 +710,10 @@ export class RegionalWorldDerivedCache {
     string,
     readonly AmbientStreetPairCandidate[]
   >();
+  readonly ambientStreetPairProtectedFitDiagnosticCache = new Map<
+    string,
+    readonly AmbientStreetPairProtectedFitDiagnostics[]
+  >();
   readonly ambientStreetPairCanonicalWinnerCache = new Map<
     string,
     readonly AmbientStreetPairCandidate[]
@@ -646,6 +739,7 @@ export class RegionalWorldDerivedCache {
     this.ambientStreetPairCandidateCache.clear();
     this.ambientStreetPairProtectedReservationCache.clear();
     this.ambientStreetPairProtectedFitCandidateCache.clear();
+    this.ambientStreetPairProtectedFitDiagnosticCache.clear();
     this.ambientStreetPairCanonicalWinnerCache.clear();
     this.quayDetailPlacementCache.clear();
     this.quayFrontagePlacementCache.clear();
@@ -769,6 +863,10 @@ export class RegionalWorldTileProvider extends TileProvider {
     string,
     readonly AmbientStreetPairCandidate[]
   >;
+  private readonly ambientStreetPairProtectedFitDiagnosticCache: Map<
+    string,
+    readonly AmbientStreetPairProtectedFitDiagnostics[]
+  >;
   private readonly ambientStreetPairCanonicalWinnerCache: Map<
     string,
     readonly AmbientStreetPairCandidate[]
@@ -859,6 +957,8 @@ export class RegionalWorldTileProvider extends TileProvider {
       this.derivedCache.ambientStreetPairProtectedReservationCache;
     this.ambientStreetPairProtectedFitCandidateCache =
       this.derivedCache.ambientStreetPairProtectedFitCandidateCache;
+    this.ambientStreetPairProtectedFitDiagnosticCache =
+      this.derivedCache.ambientStreetPairProtectedFitDiagnosticCache;
     this.ambientStreetPairCanonicalWinnerCache =
       this.derivedCache.ambientStreetPairCanonicalWinnerCache;
     this.quayDetailPlacementCache = this.derivedCache.quayDetailPlacementCache;
@@ -1801,6 +1901,8 @@ export class RegionalWorldTileProvider extends TileProvider {
     cachedAmbientStreetPairProtectedCells: number;
     cachedAmbientStreetPairProtectedFitOwnershipCells: number;
     cachedAmbientStreetPairProtectedFitCandidates: number;
+    cachedAmbientStreetPairProtectedFitDiagnosticOwnershipCells: number;
+    cachedAmbientStreetPairProtectedFitDiagnostics: number;
     cachedAmbientStreetPairCanonicalWinnerOwnershipCells: number;
     cachedAmbientStreetPairCanonicalWinners: number;
     cachedAmbientPlaceConnectorCells: number;
@@ -1882,6 +1984,13 @@ export class RegionalWorldTileProvider extends TileProvider {
       cachedAmbientStreetPairProtectedFitCandidates:
         [...this.ambientStreetPairProtectedFitCandidateCache.values()].reduce(
           (total, candidates) => total + candidates.length,
+          0,
+        ),
+      cachedAmbientStreetPairProtectedFitDiagnosticOwnershipCells:
+        this.ambientStreetPairProtectedFitDiagnosticCache.size,
+      cachedAmbientStreetPairProtectedFitDiagnostics:
+        [...this.ambientStreetPairProtectedFitDiagnosticCache.values()].reduce(
+          (total, diagnostics) => total + diagnostics.length,
           0,
         ),
       cachedAmbientStreetPairCanonicalWinnerOwnershipCells:
@@ -4668,6 +4777,7 @@ export class RegionalWorldTileProvider extends TileProvider {
         reservedCells: Object.freeze([]),
         visualGroups: Object.freeze([]),
         sourceIds: Object.freeze([]),
+        sourceReservations: Object.freeze([]),
       }));
     }
     const ownership = regionalStreetPairOwnershipCell(
@@ -4710,8 +4820,16 @@ export class RegionalWorldTileProvider extends TileProvider {
     }
     const reservedCells = new Set<string>();
     const sourceIds = new Set<string>();
+    const sourceReservations = new Map<string, {
+      kind: AmbientStreetPairProtectedSourceKind;
+      reservedCells: Set<string>;
+    }>();
     const visualGroups = new Map<string, RegionalStreetPairProtectedVisualGroup>();
-    const addCell = (key: string, sourceId: string): void => {
+    const addCell = (
+      key: string,
+      sourceId: string,
+      kind: AmbientStreetPairProtectedSourceKind,
+    ): void => {
       const separator = key.indexOf(',');
       if (separator < 1) return;
       const x = Number(key.slice(0, separator));
@@ -4720,6 +4838,12 @@ export class RegionalWorldTileProvider extends TileProvider {
           x < minX || x > maxX || y < minY || y > maxY) return;
       reservedCells.add(key);
       sourceIds.add(sourceId);
+      const source = sourceReservations.get(sourceId) ?? {
+        kind,
+        reservedCells: new Set<string>(),
+      };
+      source.reservedCells.add(key);
+      sourceReservations.set(sourceId, source);
     };
     for (const program of [...programs.values()].sort((a, b) => (
       a.root.siteY - b.root.siteY || a.root.siteX - b.root.siteX ||
@@ -4733,12 +4857,12 @@ export class RegionalWorldTileProvider extends TileProvider {
           `${placement.anchorX},${placement.anchorY}`;
         const footprint = new Set<string>();
         reserveVisibleFootprint(placement, footprint, REGIONAL_STREET_PAIR_VISIBLE_HALO);
-        for (const key of footprint) addCell(key, placementSource);
+        for (const key of footprint) addCell(key, placementSource, 'placement');
         for (const [offsetX, offsetY] of placement.asset.collision) {
           addCell(positionKey(
             placement.anchorX + offsetX,
             placement.anchorY + offsetY,
-          ), placementSource);
+          ), placementSource, 'placement');
         }
         if (candidateOwnerSites.has(siteKey)) {
           const visualGroup = assetVisualGroup(placement.asset);
@@ -4757,17 +4881,19 @@ export class RegionalWorldTileProvider extends TileProvider {
             cell.x + 0.5,
             cell.y + 0.5,
             program.fabric.layout,
-          ).pavingWeight > 0.2) addCell(positionKey(cell.x, cell.y), fabricSource);
+          ).pavingWeight > 0.2) {
+            addCell(positionKey(cell.x, cell.y), fabricSource, 'fabric');
+          }
         }
       }
       if (program.accessPath) {
         const connectorSource = `connector:${siteKey}:${program.accessPath.id}`;
         for (const cell of this.getAmbientPlaceAccessCells(program.accessPath)) {
-          addCell(positionKey(cell.x, cell.y), connectorSource);
+          addCell(positionKey(cell.x, cell.y), connectorSource, 'connector');
         }
         const civicSource = `civic:${siteKey}:${program.accessPath.id}`;
         for (const key of this.ambientAccessCivicReserved(program.accessPath)) {
-          addCell(key, civicSource);
+          addCell(key, civicSource, 'civic');
         }
       }
     }
@@ -4782,6 +4908,13 @@ export class RegionalWorldTileProvider extends TileProvider {
       reservedCells: Object.freeze([...reservedCells].sort()),
       visualGroups: Object.freeze(stableVisualGroups),
       sourceIds: Object.freeze([...sourceIds].sort()),
+      sourceReservations: Object.freeze([...sourceReservations].map(([sourceId, source]) => (
+        Object.freeze({
+          sourceId,
+          kind: source.kind,
+          reservedCells: Object.freeze([...source.reservedCells].sort()),
+        })
+      )).sort((a, b) => a.sourceId.localeCompare(b.sourceId))),
     }));
   }
 
@@ -4859,6 +4992,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     }
     if (this.ambientPlaceFabricProfile !== 'shared-common-street-overlay' ||
         this.ambientPlaceAccessProfile !== 'route-frontage') {
+      this.cacheAmbientStreetPairProtectedFitDiagnostics(cacheKey, Object.freeze([]));
       return this.cacheAmbientStreetPairProtectedFitCandidates(cacheKey, Object.freeze([]));
     }
     const ownership = regionalStreetPairOwnershipCell(
@@ -4894,29 +5028,157 @@ export class RegionalWorldTileProvider extends TileProvider {
       protectedGroupsBySite.set(siteKey, groups);
     }
     const unique = new Map<string, AmbientStreetPairCandidate>();
+    const fitDiagnostics: AmbientStreetPairProtectedFitDiagnostics[] = [];
     for (let placeCellY = firstPlaceCellY; placeCellY <= lastPlaceCellY; placeCellY++) {
       for (let placeCellX = firstPlaceCellX; placeCellX <= lastPlaceCellX; placeCellX++) {
         const program = this.getAmbientPlaceProgram(placeCellX, placeCellY);
-        if (!program) continue;
+        const routeStart = program?.accessPath?.points[0];
+        if (!program?.fabric || !program.accessPath || !routeStart) continue;
+        const protectedVisualGroups = protectedGroupsBySite.get(positionKey(
+          program.root.siteX,
+          program.root.siteY,
+        )) ?? new Set<string>();
+        const diagnostics: MutableAmbientStreetPairFitDiagnostics = {
+          ownerSiteX: program.root.siteX,
+          ownerSiteY: program.root.siteY,
+          ownershipX: Math.floor(routeStart.x),
+          ownershipY: Math.floor(routeStart.y),
+          routeStartX: routeStart.x,
+          routeStartY: routeStart.y,
+          axis: 'north-south',
+          vocabularyKeys: [],
+          excludedVisualGroups: [...protectedVisualGroups].sort(),
+          outcome: 'invalid-route-contact',
+          sides: [],
+          residualProtectedConflictCells: new Set<string>(),
+          residualProtectedVisualGroups: [],
+        };
         const candidate = this.buildAmbientSharedStreetPairCandidate(
           program,
           reservedCells,
-          protectedGroupsBySite.get(positionKey(program.root.siteX, program.root.siteY)),
+          protectedVisualGroups,
           true,
+          diagnostics,
         );
-        if (!candidate || regionalStreetPairCandidateConflictsWithProtectedReservation(
+        const owner = regionalStreetPairOwnershipCell(
+          diagnostics.ownershipX,
+          diagnostics.ownershipY,
+        );
+        if (owner.cellX !== ownershipCellX || owner.cellY !== ownershipCellY) continue;
+        if (candidate && regionalStreetPairCandidateConflictsWithProtectedReservation(
           candidate,
           reservation,
-        )) continue;
-        const owner = regionalStreetPairOwnershipCell(candidate.ownershipX, candidate.ownershipY);
-        if (owner.cellX !== ownershipCellX || owner.cellY !== ownershipCellY) continue;
-        unique.set(candidate.id, candidate);
+        )) {
+          diagnostics.outcome = 'residual-protected-conflict';
+          diagnostics.candidateId = candidate.id;
+          const protectedCells = new Set(reservation.reservedCells);
+          for (const cell of candidate.reservedCells) {
+            if (protectedCells.has(cell)) diagnostics.residualProtectedConflictCells.add(cell);
+          }
+          const candidateGroups = new Set(candidate.visualGroups);
+          diagnostics.residualProtectedVisualGroups = reservation.visualGroups.filter((entry) => (
+            entry.ownerSiteX === candidate.ownerSiteX &&
+            entry.ownerSiteY === candidate.ownerSiteY &&
+            candidateGroups.has(entry.visualGroup)
+          ));
+        } else if (candidate) {
+          unique.set(candidate.id, candidate);
+        }
+        fitDiagnostics.push(this.finalizeAmbientStreetPairFitDiagnostics(
+          diagnostics,
+          reservation,
+        ));
       }
     }
     const stable = Object.freeze([...unique.values()].sort((a, b) => (
       a.id === b.id ? 0 : a.id < b.id ? -1 : 1
     )));
+    this.cacheAmbientStreetPairProtectedFitDiagnostics(
+      cacheKey,
+      Object.freeze(fitDiagnostics.sort((a, b) => (
+        a.ownerSiteY - b.ownerSiteY || a.ownerSiteX - b.ownerSiteX ||
+        a.ownershipY - b.ownershipY || a.ownershipX - b.ownershipX
+      ))),
+    );
     return this.cacheAmbientStreetPairProtectedFitCandidates(cacheKey, stable);
+  }
+
+  /** @internal Explain every route-owned protected-refit attempt without
+   * relaxing the immutable reservation or changing candidate selection. */
+  getAmbientStreetPairProtectedFitDiagnostics(
+    ownershipCellX: number,
+    ownershipCellY: number,
+  ): readonly AmbientStreetPairProtectedFitDiagnostics[] {
+    const cacheKey = `${this.ambientPlaceFabricProfile}:${this.ambientPlaceAccessProfile}:` +
+      `${ownershipCellX},${ownershipCellY}`;
+    const cached = this.ambientStreetPairProtectedFitDiagnosticCache.get(cacheKey);
+    if (cached) {
+      this.ambientStreetPairProtectedFitDiagnosticCache.delete(cacheKey);
+      this.ambientStreetPairProtectedFitDiagnosticCache.set(cacheKey, cached);
+      return cached;
+    }
+    // Candidate and diagnostic LRUs are intentionally independent. If a test
+    // or long-lived worker retained only the candidate entry, rebuild both
+    // from the same immutable reservation instead of returning a false empty
+    // explanation.
+    this.ambientStreetPairProtectedFitCandidateCache.delete(cacheKey);
+    this.getAmbientStreetPairProtectedFitCandidates(ownershipCellX, ownershipCellY);
+    return this.ambientStreetPairProtectedFitDiagnosticCache.get(cacheKey) ?? Object.freeze([]);
+  }
+
+  private finalizeAmbientStreetPairFitDiagnostics(
+    diagnostics: MutableAmbientStreetPairFitDiagnostics,
+    reservation: AmbientStreetPairProtectedReservation,
+  ): AmbientStreetPairProtectedFitDiagnostics {
+    const conflictingCells = new Set(diagnostics.sides.flatMap((side) => (
+      [...side.protectedConflictCells]
+    )));
+    for (const cell of diagnostics.residualProtectedConflictCells) conflictingCells.add(cell);
+    const protectedConflictSources = reservation.sourceReservations.flatMap((source) => {
+      const cells = source.reservedCells.filter((cell) => conflictingCells.has(cell));
+      return cells.length === 0 ? [] : [Object.freeze({
+        sourceId: source.sourceId,
+        kind: source.kind,
+        conflictingCells: Object.freeze(cells),
+      })];
+    });
+    return Object.freeze({
+      ownerSiteX: diagnostics.ownerSiteX,
+      ownerSiteY: diagnostics.ownerSiteY,
+      ownershipX: diagnostics.ownershipX,
+      ownershipY: diagnostics.ownershipY,
+      routeStartX: diagnostics.routeStartX,
+      routeStartY: diagnostics.routeStartY,
+      axis: diagnostics.axis,
+      vocabularyKeys: Object.freeze([...diagnostics.vocabularyKeys]),
+      excludedVisualGroups: Object.freeze([...diagnostics.excludedVisualGroups]),
+      outcome: diagnostics.outcome,
+      failedSide: diagnostics.failedSide,
+      sides: Object.freeze(diagnostics.sides.map((side) => Object.freeze({
+        side: side.side,
+        eligibleAssetIds: Object.freeze([...side.eligibleAssetIds]),
+        protectedVisualGroupAssetIds: Object.freeze([
+          ...side.protectedVisualGroupAssetIds,
+        ]),
+        pairVisualGroupAssetIds: Object.freeze([...side.pairVisualGroupAssetIds]),
+        terrainOrRouteRejectedAttempts: side.terrainOrRouteRejectedAttempts,
+        protectedReservationRejectedAttempts:
+          side.protectedReservationRejectedAttempts,
+        pairFootprintRejectedAttempts: side.pairFootprintRejectedAttempts,
+        missingEntranceAttempts: side.missingEntranceAttempts,
+        distantEntranceAttempts: side.distantEntranceAttempts,
+        protectedConflictCells: Object.freeze([...side.protectedConflictCells].sort()),
+        selectedAssetId: side.selectedAssetId,
+      }))),
+      protectedConflictSources: Object.freeze(protectedConflictSources),
+      residualProtectedConflictCells: Object.freeze([
+        ...diagnostics.residualProtectedConflictCells,
+      ].sort()),
+      residualProtectedVisualGroups: Object.freeze(
+        diagnostics.residualProtectedVisualGroups.map((entry) => Object.freeze({ ...entry })),
+      ),
+      candidateId: diagnostics.candidateId,
+    });
   }
 
   private cacheAmbientStreetPairProtectedFitCandidates(
@@ -4931,6 +5193,20 @@ export class RegionalWorldTileProvider extends TileProvider {
       this.ambientStreetPairProtectedFitCandidateCache.delete(oldest);
     }
     return candidates;
+  }
+
+  private cacheAmbientStreetPairProtectedFitDiagnostics(
+    key: string,
+    diagnostics: readonly AmbientStreetPairProtectedFitDiagnostics[],
+  ): readonly AmbientStreetPairProtectedFitDiagnostics[] {
+    this.ambientStreetPairProtectedFitDiagnosticCache.set(key, diagnostics);
+    while (this.ambientStreetPairProtectedFitDiagnosticCache.size > this.maxCachedBlocks * 16) {
+      const oldest = this.ambientStreetPairProtectedFitDiagnosticCache.keys().next().value as
+        string | undefined;
+      if (oldest === undefined) break;
+      this.ambientStreetPairProtectedFitDiagnosticCache.delete(oldest);
+    }
+    return diagnostics;
   }
 
   /** @internal Select fixed-cell winners from the complete proved neighbour
@@ -5005,6 +5281,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     reserved: ReadonlySet<string>,
     excludedVisualGroups: ReadonlySet<string> = new Set(),
     includeCanonicalAlternatives = false,
+    diagnostics?: MutableAmbientStreetPairFitDiagnostics,
   ): AmbientStreetPairCandidate | null {
     if (!program.fabric || !program.accessPath) return null;
     const root = program.root;
@@ -5013,9 +5290,37 @@ export class RegionalWorldTileProvider extends TileProvider {
     const routeX = Math.floor(routeStart.x);
     const routeY = Math.floor(routeStart.y);
     const route = this.routes.sample(routeX, routeY);
-    if (this.field.sample(routeX, routeY).isWater || !route.routeKind) return null;
     const axis: RegionalRouteContactAxis = Math.abs(route.directionX) >
       Math.abs(route.directionY) ? 'east-west' : 'north-south';
+    if (diagnostics) {
+      diagnostics.ownershipX = routeX;
+      diagnostics.ownershipY = routeY;
+      diagnostics.routeStartX = routeStart.x;
+      diagnostics.routeStartY = routeStart.y;
+      diagnostics.axis = axis;
+      const sidesByFamily = new Map<string, Set<-1 | 1>>();
+      for (const asset of this.parcelComponents) {
+        if (!isFocalCompositionAsset(asset) || asset.frontageAxis !== axis ||
+            asset.compositionSide === undefined || asset.frontageStations === undefined ||
+            (asset.programs && asset.programs.length > 0) ||
+            (!includeCanonicalAlternatives &&
+              asset.streetPairRole === 'canonical-alternative')) continue;
+        for (const family of asset.families) {
+          if (!root.asset.families.includes(family)) continue;
+          const sides = sidesByFamily.get(family) ?? new Set<-1 | 1>();
+          sides.add(asset.compositionSide);
+          sidesByFamily.set(family, sides);
+        }
+      }
+      diagnostics.vocabularyKeys = [...sidesByFamily]
+        .filter(([, sides]) => sides.has(-1) && sides.has(1))
+        .map(([family]) => `${family}:${axis}`)
+        .sort();
+    }
+    if (this.field.sample(routeX, routeY).isWater || !route.routeKind) {
+      if (diagnostics) diagnostics.outcome = 'invalid-route-contact';
+      return null;
+    }
     const tangentX = axis === 'east-west' ? 1 : 0;
     const tangentY = axis === 'east-west' ? 0 : 1;
     const localReserved = new Set(reserved);
@@ -5027,12 +5332,33 @@ export class RegionalWorldTileProvider extends TileProvider {
     const selectedGroups = new Set<string>();
     const placements: Placement[] = [];
     for (const side of [-1, 1] as const) {
-      const candidates = this.parcelComponents.filter((asset) => (
+      const compatible = this.parcelComponents.filter((asset) => (
         isFocalCompositionAsset(asset) && asset.frontageAxis === axis &&
         asset.compositionSide === side && asset.frontageStations !== undefined &&
         (!asset.programs || asset.programs.length === 0) &&
         (includeCanonicalAlternatives || asset.streetPairRole !== 'canonical-alternative') &&
-        asset.families.some((family) => root.asset.families.includes(family)) &&
+        asset.families.some((family) => root.asset.families.includes(family))
+      ));
+      const sideDiagnostics: MutableAmbientStreetPairFitSideDiagnostics | undefined =
+        diagnostics ? {
+          side,
+          eligibleAssetIds: [],
+          protectedVisualGroupAssetIds: compatible.filter((asset) => (
+            excludedVisualGroups.has(assetVisualGroup(asset))
+          )).map((asset) => asset.id).sort(),
+          pairVisualGroupAssetIds: compatible.filter((asset) => (
+            !excludedVisualGroups.has(assetVisualGroup(asset)) &&
+            selectedGroups.has(assetVisualGroup(asset))
+          )).map((asset) => asset.id).sort(),
+          terrainOrRouteRejectedAttempts: 0,
+          protectedReservationRejectedAttempts: 0,
+          pairFootprintRejectedAttempts: 0,
+          missingEntranceAttempts: 0,
+          distantEntranceAttempts: 0,
+          protectedConflictCells: new Set<string>(),
+        } : undefined;
+      if (sideDiagnostics) diagnostics!.sides.push(sideDiagnostics);
+      const candidates = compatible.filter((asset) => (
         !excludedVisualGroups.has(assetVisualGroup(asset)) &&
         !selectedGroups.has(assetVisualGroup(asset))
       )).map((asset) => ({
@@ -5045,6 +5371,13 @@ export class RegionalWorldTileProvider extends TileProvider {
           stringHash(asset.id) ^ 0x62d1,
         ) * 0.12,
       })).sort((a, b) => b.score - a.score || a.asset.id.localeCompare(b.asset.id));
+      if (sideDiagnostics) {
+        sideDiagnostics.eligibleAssetIds = candidates.map(({ asset }) => asset.id).sort();
+      }
+      if (candidates.length === 0 && diagnostics) {
+        diagnostics.outcome = 'no-semantic-alternative';
+        diagnostics.failedSide = side;
+      }
       let selected: Placement | null = null;
       for (const { asset } of candidates) {
         for (let extraSetback = 0;
@@ -5067,8 +5400,34 @@ export class RegionalWorldTileProvider extends TileProvider {
               extraSetback,
               nudgeIndex,
             });
-            if (!this.assetFits(anchor.anchorX, anchor.anchorY, asset) ||
-                visibleFootprintIntersects(asset, anchor.anchorX, anchor.anchorY, localReserved)) {
+            if (!this.assetFits(anchor.anchorX, anchor.anchorY, asset)) {
+              if (sideDiagnostics) sideDiagnostics.terrainOrRouteRejectedAttempts++;
+              continue;
+            }
+            if (visibleFootprintIntersects(
+              asset,
+              anchor.anchorX,
+              anchor.anchorY,
+              localReserved,
+            )) {
+              if (sideDiagnostics) {
+                const conflictingCells = visibleFootprintConflictCells(
+                  asset,
+                  anchor.anchorX,
+                  anchor.anchorY,
+                  localReserved,
+                );
+                const protectedConflicts = conflictingCells.filter((cell) => reserved.has(cell));
+                if (protectedConflicts.length > 0) {
+                  sideDiagnostics.protectedReservationRejectedAttempts++;
+                  for (const cell of protectedConflicts) {
+                    sideDiagnostics.protectedConflictCells.add(cell);
+                  }
+                }
+                if (conflictingCells.some((cell) => !reserved.has(cell))) {
+                  sideDiagnostics.pairFootprintRejectedAttempts++;
+                }
+              }
               continue;
             }
             const placement: Placement = {
@@ -5087,15 +5446,29 @@ export class RegionalWorldTileProvider extends TileProvider {
             const entrances = ambientPlaceEntrances(placement as Placement & {
               asset: RegionalParcelComponentAsset;
             });
-            if (entrances.length === 0 || Math.min(...entrances.map((entrance) => (
+            if (entrances.length === 0) {
+              if (sideDiagnostics) sideDiagnostics.missingEntranceAttempts++;
+              continue;
+            }
+            if (Math.min(...entrances.map((entrance) => (
               this.routes.sample(Math.floor(entrance.x), Math.floor(entrance.y)).distance
-            ))) > 2.8) continue;
+            ))) > 2.8) {
+              if (sideDiagnostics) sideDiagnostics.distantEntranceAttempts++;
+              continue;
+            }
             selected = placement;
           }
         }
         if (selected) break;
       }
-      if (!selected) return null;
+      if (!selected) {
+        if (diagnostics && diagnostics.outcome !== 'no-semantic-alternative') {
+          diagnostics.outcome = 'bounded-fit-exhausted';
+          diagnostics.failedSide = side;
+        }
+        return null;
+      }
+      if (sideDiagnostics) sideDiagnostics.selectedAssetId = selected.asset.id;
       placements.push(selected);
       selectedGroups.add(assetVisualGroup(selected.asset));
       reserveVisibleFootprint(selected, localReserved, REGIONAL_STREET_PAIR_VISIBLE_HALO);
@@ -5111,7 +5484,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     for (const placement of pair) {
       reserveVisibleFootprint(placement, footprint, REGIONAL_STREET_PAIR_VISIBLE_HALO);
     }
-    return Object.freeze({
+    const candidate = Object.freeze({
       id,
       ownerSiteX: root.siteX,
       ownerSiteY: root.siteY,
@@ -5125,6 +5498,11 @@ export class RegionalWorldTileProvider extends TileProvider {
       visualGroups: Object.freeze([...selectedGroups].sort()),
       placements: pair,
     });
+    if (diagnostics) {
+      diagnostics.outcome = 'accepted';
+      diagnostics.candidateId = candidate.id;
+    }
+    return candidate;
   }
 
   /** Ensure a route-connected place has one manifest-declared doorway even
@@ -7030,6 +7408,25 @@ function visibleFootprintIntersects(
     }
   }
   return false;
+}
+
+function visibleFootprintConflictCells(
+  asset: RegionalVisualAsset,
+  anchorX: number,
+  anchorY: number,
+  reserved: ReadonlySet<string>,
+): string[] {
+  const conflicts = new Set<string>();
+  const [offsetX, offsetY] = getSpriteAnchor(asset);
+  for (let tileY = 0; tileY < asset.sprite.height; tileY++) {
+    for (let tileX = 0; tileX < asset.sprite.width; tileX++) {
+      const tile = asset.sprite.tiles[tileY]?.[tileX];
+      if (!tile || !hasVisiblePixels(tile)) continue;
+      const key = positionKey(anchorX + tileX - offsetX, anchorY + tileY - offsetY);
+      if (reserved.has(key)) conflicts.add(key);
+    }
+  }
+  return [...conflicts].sort();
 }
 
 function visibleFootprintIntersectsLandmarkFabric(
