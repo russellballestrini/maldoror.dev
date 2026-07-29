@@ -15,7 +15,7 @@ const OUTPUT = path.join(
   'assets/biomes/parcel-components/canal-town-workshop-row-meso-frontage-v1.png',
 );
 const SOURCE_SHA256 = '94595ef00923b7f6571ce47177f29a24c4ca14d265daf944ee7d8cf11ba85502';
-const OUTPUT_SHA256 = '7238259274589e82e224c61b6c50b13f7617922a554c1b72f0fb61c5d3f3ccee';
+const OUTPUT_SHA256 = 'af497a1041e20db92f1ba8e97ca0137f47f284d682b8f0fa77085418f8251fba';
 const CHROMA_HELPER_SHA256 =
   '3f7b9b14ad5c90f37618bc1c16a039a2076abca12ddc41b3ae470e2b1cad6c0e';
 const CHROMA_HELPER = process.env.MALDOROR_CHROMA_HELPER ?? path.join(
@@ -34,11 +34,12 @@ for (const [label, file, expected] of [
 
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'maldoror-meso-frontage-'));
 try {
+  const keyed = path.join(temporary, 'canal-town-workshop-row-keyed.png');
   const candidate = path.join(temporary, 'canal-town-workshop-row.png');
   execFileSync('python3', [
     CHROMA_HELPER,
     '--input', SOURCE,
-    '--out', candidate,
+    '--out', keyed,
     '--auto-key', 'border',
     '--soft-matte',
     '--transparent-threshold', '12',
@@ -46,16 +47,24 @@ try {
     '--despill',
     '--force',
   ], { stdio: 'pipe' });
+  execFileSync('convert', [
+    keyed,
+    '-trim', '+repage',
+    '-bordercolor', 'none', '-border', '2x2',
+    '-channel', 'RGB', '-gamma', '1.32', '+channel',
+    '-strip',
+    candidate,
+  ], { stdio: 'pipe' });
 
   const actualOutputHash = sha256File(candidate);
   if (actualOutputHash !== OUTPUT_SHA256) {
     throw new Error(`Derived output hash changed: ${actualOutputHash}`);
   }
   const validation = await validateAlpha(candidate);
-  if (validation.width !== 1402 || validation.height !== 1122 ||
+  if (validation.width !== 1284 || validation.height !== 899 ||
       validation.edgeNonzero !== 0 || validation.magentaLike !== 0 ||
-      validation.coverage < 0.42 || validation.coverage > 0.44 ||
-      validation.strongAlphaCoverage < 0.41) {
+      validation.coverage < 0.57 || validation.coverage > 0.59 ||
+      validation.strongAlphaCoverage < 0.57) {
     throw new Error(`Invalid meso-frontage alpha: ${JSON.stringify(validation)}`);
   }
   fs.copyFileSync(candidate, OUTPUT);
@@ -67,6 +76,7 @@ try {
     output: path.relative(ROOT, OUTPUT),
     outputSha256: OUTPUT_SHA256,
     chromaHelperSha256: CHROMA_HELPER_SHA256,
+    colourGrade: 'transparent trim plus two-pixel border and RGB gamma 1.32',
     validation,
     runtimeManifest: false,
   }, null, 2));

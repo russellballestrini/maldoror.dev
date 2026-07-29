@@ -1881,12 +1881,19 @@ describe('RegionalWorldTileProvider', () => {
       focal('parcel:canal-town:alternative-negative', -1, true),
       focal('parcel:canal-town:alternative-positive', 1, true),
     ];
+    const corridorFrontage: RegionalParcelComponentAsset = {
+      ...focal('parcel:canal-town:corridor-frontage', -1, true),
+      visualGroup: 'corridor-frontage',
+      placeDetailRole: 'corridor-frontage',
+      circulationOffsets: [[1, 0]],
+    };
     const components = [
       focal('parcel:canal-town:ordinary-negative-a', -1),
       focal('parcel:canal-town:ordinary-negative-b', -1),
       focal('parcel:canal-town:ordinary-positive-a', 1),
       focal('parcel:canal-town:ordinary-positive-b', 1),
       ...alternatives,
+      corridorFrontage,
     ];
     const makeCandidate = (
       blockSize: number,
@@ -1918,6 +1925,9 @@ describe('RegionalWorldTileProvider', () => {
     const street = placements.filter(isStreet);
     expect(street.length).toBeGreaterThan(0);
     expect(street.some((placement) => alternativeIds.has(placement.assetId))).toBe(true);
+    expect(placements.some((placement) => (
+      placement.assetId === corridorFrontage.id
+    ))).toBe(false);
     const streetBySite = new Map<string, typeof street>();
     for (const placement of street) {
       const site = `${placement.siteX},${placement.siteY}`;

@@ -2963,8 +2963,42 @@ Completed foundations:
   `runtimeManifest: false`; the asset is not present in the parcel manifest,
   runtime pack, placement policy, or active pixels. Exact code/source/output
   hashes and the non-promotion gate live in
-  `track-4-world-composition/canal-meso-derivation-v219/FINDINGS.md`. A research-
-  only semantic manifest and one faithful corridor fixture remain required.
+  `track-4-world-composition/canal-meso-derivation-v219/FINDINGS.md`.
+  V220 corrects that derivation for real runtime anchoring and compactness
+  without relaxing fidelity. The selected deterministic output trims the
+  transparent generation canvas, restores a two-pixel transparent resampling
+  apron, applies alpha-preserving RGB gamma 1.32, strips incidental metadata,
+  and fail-closes on exact source/helper/output hashes and alpha properties.
+  The resulting 1284x899 candidate has 0.581322 visible coverage, 0.577530
+  strong-alpha coverage, zero occupied border pixels, and zero surviving key
+  colour. Walking and district comparisons select the grade because it
+  preserves shadowed shop, roof, wall, laundry, and arch divisions; both raw
+  and graded naive regional reductions are rejected as dense rectangular
+  blobs. Exact previews, luma distributions, hashes, and decision live in
+  `track-4-world-composition/canal-runtime-derivation-v220/FINDINGS.md`. The
+  script continues to report `runtimeManifest: false`, so this is not an active
+  visual change or a performance claim.
+  V221 then selects the research-only semantic representation while withholding
+  placement. A typed descriptor declares one atomic 20x14 canal corridor
+  frontage, row-wide visual identity, frontage axis/side/station, bounded
+  authored collision, and five explicit collision-free offsets through the
+  central arch. The production parser accepts this separately loaded candidate
+  through the same path/cache/sprite reconstruction boundary, rejects missing
+  semantics or collision/circulation overlap, and permits larger place-detail
+  bounds only for this explicit role. Every current ordinary, alternative,
+  diagnostic, common, and entourage selector excludes place details, and the
+  production parcel manifest remains unchanged. Two focused files pass four
+  selected tests, including 20x14 reconstruction, arch semantics, deliberate
+  overlap rejection, manifest absence, and selector non-leakage; world build
+  and SSH-world typecheck pass. Evidence lives in
+  `track-4-world-composition/canal-corridor-semantics-v221/FINDINGS.md`. No
+  provider consumes the candidate, no runtime pack contains it, and no active
+  pixel changes. The next bounded visual proof is an opt-in post-parent
+  corridor placement with exact parent/program/route/collision identity parity,
+  connected arch circulation, and faithful ANSI walking/district comparison;
+  it must also measure incremental preparation, memory, frame, and transport
+  cost without weakening pixels, world coverage, or simulation. A designed
+  regional LOD remains mandatory before regional admission.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, admit or reject V210 and V212 under exact whole-process A/B/A,
   repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission

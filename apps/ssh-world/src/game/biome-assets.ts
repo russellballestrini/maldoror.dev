@@ -12,6 +12,7 @@ import {
   type RegionalLandmarkAsset,
   type RegionalParcelComponentAsset,
   type RegionalParcelProgram,
+  type RegionalPlaceDetailRole,
   type RegionalQuayDetailAsset,
   type RegionalQuayDetailActivity,
   type RegionalQuayDetailAxis,
@@ -194,9 +195,11 @@ interface ParcelComponentEntry {
   visualGroup?: string;
   compositionRole?: 'focal';
   streetPairRole?: 'canonical-alternative';
+  placeDetailRole?: RegionalPlaceDetailRole;
   frontageAxis?: RegionalRouteContactAxis;
   compositionSide?: -1 | 1;
   frontageStations?: number[];
+  circulationOffsets?: Array<[number, number]>;
   scale: number;
   spriteTiles: [number, number];
   collision: Array<[number, number]>;
@@ -221,6 +224,7 @@ interface EnvironmentContactEntry {
 }
 
 const ROUTE_KINDS: readonly RegionalRouteKind[] = ['trail', 'local-road', 'arterial'];
+const PLACE_DETAIL_ROLES: readonly RegionalPlaceDetailRole[] = ['corridor-frontage'];
 const CROSSING_KINDS: readonly RegionalCrossingKind[] = ['ford', 'bridge', 'ferry'];
 const LANDMARK_KINDS: readonly RegionalLandmarkKind[] = ['arrival', 'settlement', 'ruin', 'waystation'];
 const ROUTE_CONTACT_AXES: readonly RegionalRouteContactAxis[] = ['north-south', 'east-west'];
@@ -688,29 +692,11 @@ export async function loadRegionalParcelComponentKit(
   }
   const assets: RegionalParcelComponentAsset[] = [];
   for (const entry of entries) {
-    assets.push({
-      id: entry.id,
-      families: [entry.family],
-      role: entry.role,
-      visualGroup: entry.visualGroup,
-      compositionRole: entry.compositionRole,
-      streetPairRole: entry.streetPairRole,
-      frontageAxis: entry.frontageAxis,
-      compositionSide: entry.compositionSide,
-      frontageStations: entry.frontageStations,
-      programs: entry.programs,
-      waterfrontFunction: entry.waterfrontFunction,
-      quayBankSide: entry.quayBankSide,
-      quayAccessOffset: entry.quayAccessOffset,
-      collision: entry.collision,
-      emitsLight: entry.emitsLight,
-      sprite: await loadRegionalSprite(
-        resolveAssetPath(manifestDirectory, entry.file),
-        sourceTileSize,
-        entry.scale,
-        entry.spriteTiles,
-      ),
-    });
+    assets.push(await loadRegionalParcelComponentEntry(
+      manifestDirectory,
+      sourceTileSize,
+      entry,
+    ));
   }
   return {
     manifestPath: absoluteManifest,
@@ -719,6 +705,57 @@ export async function loadRegionalParcelComponentKit(
     maximumLayers,
     layerSpacing,
     assets,
+  };
+}
+
+/** Load one separately described research candidate through the same parser,
+ * path boundary, raster cache, and sprite reconstruction used by the complete
+ * production kit. The caller supplies the asset root explicitly; this does not
+ * append the candidate to any runtime manifest. */
+export async function loadRegionalParcelComponentCandidate(
+  assetRoot: string,
+  sourceTileSize: number,
+  value: unknown,
+): Promise<RegionalParcelComponentAsset> {
+  if (!Number.isInteger(sourceTileSize) || sourceTileSize < 16 || sourceTileSize > 192) {
+    throw new Error(`Invalid regional parcel candidate source tile size: ${sourceTileSize}`);
+  }
+  return loadRegionalParcelComponentEntry(
+    path.resolve(assetRoot),
+    sourceTileSize,
+    parseParcelComponentEntry(value, 0),
+  );
+}
+
+async function loadRegionalParcelComponentEntry(
+  assetRoot: string,
+  sourceTileSize: number,
+  entry: ParcelComponentEntry,
+): Promise<RegionalParcelComponentAsset> {
+  return {
+    id: entry.id,
+    families: [entry.family],
+    role: entry.role,
+    visualGroup: entry.visualGroup,
+    compositionRole: entry.compositionRole,
+    streetPairRole: entry.streetPairRole,
+    placeDetailRole: entry.placeDetailRole,
+    frontageAxis: entry.frontageAxis,
+    compositionSide: entry.compositionSide,
+    frontageStations: entry.frontageStations,
+    circulationOffsets: entry.circulationOffsets,
+    programs: entry.programs,
+    waterfrontFunction: entry.waterfrontFunction,
+    quayBankSide: entry.quayBankSide,
+    quayAccessOffset: entry.quayAccessOffset,
+    collision: entry.collision,
+    emitsLight: entry.emitsLight,
+    sprite: await loadRegionalSprite(
+      resolveAssetPath(assetRoot, entry.file),
+      sourceTileSize,
+      entry.scale,
+      entry.spriteTiles,
+    ),
   };
 }
 
@@ -988,6 +1025,8 @@ function parseParcelComponentEntry(value: unknown, index: number): ParcelCompone
       (value.compositionRole !== undefined && value.compositionRole !== 'focal') ||
       (value.streetPairRole !== undefined && value.streetPairRole !== 'canonical-alternative') ||
       (value.streetPairRole !== undefined && value.compositionRole !== 'focal') ||
+      (value.placeDetailRole !== undefined &&
+        !PLACE_DETAIL_ROLES.includes(value.placeDetailRole as RegionalPlaceDetailRole)) ||
       (value.frontageAxis !== undefined &&
         !ROUTE_CONTACT_AXES.includes(value.frontageAxis as RegionalRouteContactAxis)) ||
       (value.compositionSide !== undefined && value.compositionSide !== -1 &&
@@ -997,6 +1036,18 @@ function parseParcelComponentEntry(value: unknown, index: number): ParcelCompone
         !value.frontageStations.every((station) => (
           typeof station === 'number' && Number.isFinite(station) && station >= -0.85 && station <= 0.85
         )))) ||
+      (value.circulationOffsets !== undefined && (!Array.isArray(value.circulationOffsets) ||
+        value.circulationOffsets.length === 0 || value.circulationOffsets.length > 16 ||
+        !value.circulationOffsets.every(isPlaceDetailOffset))) ||
+      (value.placeDetailRole === 'corridor-frontage' && (
+        value.compositionRole !== 'focal' ||
+        value.streetPairRole !== 'canonical-alternative' ||
+        value.frontageAxis === undefined ||
+        value.compositionSide === undefined ||
+        value.frontageStations === undefined ||
+        value.circulationOffsets === undefined
+      )) ||
+      (value.placeDetailRole === undefined && value.circulationOffsets !== undefined) ||
       (value.compositionRole === 'focal' && (
         value.frontageAxis === undefined || value.compositionSide === undefined ||
         value.frontageStations === undefined
@@ -1005,9 +1056,18 @@ function parseParcelComponentEntry(value: unknown, index: number): ParcelCompone
         value.compositionSide !== undefined || value.frontageStations !== undefined ||
         (value.frontageAxis !== undefined && value.quayBankSide === undefined)
       )) ||
-      !isTileDimensions(value.spriteTiles) ||
+      !(value.placeDetailRole === 'corridor-frontage'
+        ? isPlaceDetailTileDimensions(value.spriteTiles)
+        : isTileDimensions(value.spriteTiles)) ||
       !Array.isArray(value.collision) || value.collision.length === 0 ||
-      !value.collision.every(isCollisionOffset) ||
+      !value.collision.every(value.placeDetailRole === 'corridor-frontage'
+        ? isPlaceDetailOffset
+        : isCollisionOffset) ||
+      (Array.isArray(value.circulationOffsets) && value.circulationOffsets.some((opening) => (
+        Array.isArray(opening) && Array.isArray(value.collision) && value.collision.some((offset) => (
+          Array.isArray(offset) && offset[0] === opening[0] && offset[1] === opening[1]
+        ))
+      ))) ||
       (value.programs !== undefined && (!Array.isArray(value.programs) ||
         value.programs.length === 0 ||
         !value.programs.every((program) => PARCEL_PROGRAMS.includes(program as RegionalParcelProgram)))) ||
@@ -1042,9 +1102,11 @@ function parseParcelComponentEntry(value: unknown, index: number): ParcelCompone
     visualGroup: value.visualGroup as string | undefined,
     compositionRole: value.compositionRole as 'focal' | undefined,
     streetPairRole: value.streetPairRole as 'canonical-alternative' | undefined,
+    placeDetailRole: value.placeDetailRole as RegionalPlaceDetailRole | undefined,
     frontageAxis: value.frontageAxis as RegionalRouteContactAxis | undefined,
     compositionSide: value.compositionSide as -1 | 1 | undefined,
     frontageStations: value.frontageStations as number[] | undefined,
+    circulationOffsets: value.circulationOffsets as Array<[number, number]> | undefined,
     scale: value.scale,
     spriteTiles: value.spriteTiles as [number, number],
     collision: value.collision as Array<[number, number]>,
@@ -1278,9 +1340,19 @@ function isCollisionOffset(value: unknown): value is [number, number] {
     value.every((part) => Number.isInteger(part) && Number(part) >= -8 && Number(part) <= 8);
 }
 
+function isPlaceDetailOffset(value: unknown): value is [number, number] {
+  return Array.isArray(value) && value.length === 2 &&
+    value.every((part) => Number.isInteger(part) && Number(part) >= -12 && Number(part) <= 12);
+}
+
 function isTileDimensions(value: unknown): value is [number, number] {
   return Array.isArray(value) && value.length === 2 &&
     value.every((part) => Number.isInteger(part) && Number(part) >= 1 && Number(part) <= 16);
+}
+
+function isPlaceDetailTileDimensions(value: unknown): value is [number, number] {
+  return Array.isArray(value) && value.length === 2 &&
+    value.every((part) => Number.isInteger(part) && Number(part) >= 1 && Number(part) <= 24);
 }
 
 function isRouteDistance(value: unknown): value is [number, number] {

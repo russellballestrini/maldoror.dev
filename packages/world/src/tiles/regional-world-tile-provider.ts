@@ -159,6 +159,7 @@ export interface RegionalRouteContactAsset extends RegionalVisualAsset {
 /** Authored silhouette module placed inside a procedural parcel envelope.
  * Threshold art and ground surfaces remain separate semantic layers. */
 export type RegionalParcelProgram = 'waterfront';
+export type RegionalPlaceDetailRole = 'corridor-frontage';
 export type RegionalWaterfrontFunction =
   | 'boat-repair'
   | 'boat-shed'
@@ -183,12 +184,20 @@ export interface RegionalParcelComponentAsset extends RegionalVisualAsset {
    * to footprint proofs and the canonical candidate factory, but cannot enter
    * the active sequential parent/overlay path before selector admission. */
   streetPairRole?: 'canonical-alternative';
+  /** A large optional place detail admitted only after the authoritative meso
+   * program set is frozen. Corridor frontages may yield, but may never resize,
+   * reorder, or evict a parent composition. */
+  placeDetailRole?: RegionalPlaceDetailRole;
   /** Screen-space route axis this unrotated frontage was authored to face. */
   frontageAxis?: RegionalRouteContactAxis;
   /** Side of the route occupied by this focal's building mass. */
   compositionSide?: -1 | 1;
   /** Normalized authored access stations along the visible frontage. */
   frontageStations?: readonly number[];
+  /** Explicit collision-free world-tile offsets through an authored opening.
+   * These are manifest semantics, not transparency- or colour-inferred
+   * walkability. */
+  circulationOffsets?: readonly (readonly [number, number])[];
   /** Optional district programs supported by this mass. Generic parcels may
    * still reuse it; specialized programs never infer function from its ID. */
   programs?: readonly RegionalParcelProgram[];
@@ -4428,7 +4437,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       }),
       ...this.parcelComponents.filter((asset) => (
         (!asset.programs || asset.programs.length === 0) &&
-        asset.streetPairRole !== 'canonical-alternative'
+        asset.streetPairRole !== 'canonical-alternative' && asset.placeDetailRole === undefined
       )),
     ];
     let selected: RegionalVisualAsset | null = null;
@@ -5545,6 +5554,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     const eligibleAssets = this.parcelComponents.filter((asset) => (
       isFocalCompositionAsset(asset) && asset.frontageAxis !== undefined &&
       asset.compositionSide !== undefined && asset.frontageStations !== undefined &&
+      asset.placeDetailRole === undefined &&
       (!asset.programs || asset.programs.length === 0)
     ));
     const vocabularySides = new Map<string, Set<-1 | 1>>();
@@ -5929,6 +5939,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     for (const asset of this.parcelComponents) {
       if (!isFocalCompositionAsset(asset) || asset.frontageAxis !== axis ||
           asset.compositionSide === undefined || asset.frontageStations === undefined ||
+          asset.placeDetailRole !== undefined ||
           (asset.programs && asset.programs.length > 0) ||
           (!includeCanonicalAlternatives &&
             asset.streetPairRole === 'canonical-alternative') ||
@@ -5992,6 +6003,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       for (const asset of this.parcelComponents) {
         if (!isFocalCompositionAsset(asset) || asset.frontageAxis !== axis ||
             asset.compositionSide === undefined || asset.frontageStations === undefined ||
+            asset.placeDetailRole !== undefined ||
             (asset.programs && asset.programs.length > 0) ||
             (!includeCanonicalAlternatives &&
               asset.streetPairRole === 'canonical-alternative')) continue;
@@ -6025,6 +6037,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       const compatible = this.parcelComponents.filter((asset) => (
         isFocalCompositionAsset(asset) && asset.frontageAxis === axis &&
         asset.compositionSide === side && asset.frontageStations !== undefined &&
+        asset.placeDetailRole === undefined &&
         (!asset.programs || asset.programs.length === 0) &&
         (includeCanonicalAlternatives || asset.streetPairRole !== 'canonical-alternative') &&
         (!eligibleAssetIds || eligibleAssetIds.has(asset.id)) &&
@@ -6234,6 +6247,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     const candidates = this.parcelComponents.filter((asset) => (
       isFocalCompositionAsset(asset) && asset.frontageAxis === axis &&
       asset.compositionSide !== undefined && asset.frontageStations !== undefined &&
+      asset.placeDetailRole === undefined &&
       asset.streetPairRole !== 'canonical-alternative' &&
       !excludedVisualGroups.has(assetVisualGroup(asset))
     )).map((asset) => {
@@ -6469,6 +6483,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     const candidates = this.parcelComponents.filter((asset) => (
       isFocalCompositionAsset(asset) && asset.frontageAxis === axis &&
       asset.compositionSide === oppositeSide && asset.frontageStations !== undefined &&
+      asset.placeDetailRole === undefined &&
       asset.streetPairRole !== 'canonical-alternative' &&
       (!asset.programs || asset.programs.length === 0) &&
       assetVisualGroup(asset) !== targetVisualGroup

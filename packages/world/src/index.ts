@@ -193,6 +193,7 @@ export {
   type RegionalParcelConnectorCell,
   type RegionalParcelComponentAsset,
   type RegionalParcelProgram,
+  type RegionalPlaceDetailRole,
   type RegionalQuayDetailAsset,
   type RegionalQuayDetailActivity,
   type RegionalQuayDetailAxis,
