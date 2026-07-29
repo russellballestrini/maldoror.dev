@@ -2571,8 +2571,24 @@ Completed foundations:
   `e248f6fb8682c995b69544585ace86480e6a0a7514aba3de52a9b67c44271d4b`;
   evidence lives in
   `track-4-world-composition/regional-route-family-opportunity-v193/FINDINGS.md`.
-  Next, profile provider/prewarm time and allocation by stage and remove the
-  largest architectural costs with exact frame/audit parity; in parallel test
+  V194 profiles that exposed downstream build and selects the first strict
+  no-sacrifice correction: viewport export no longer fills and then overruns a
+  bounded compositor LRU before consuming the same rectangle. All six decoded
+  viewport payloads remain byte-identical across schema, identity, dynamic
+  placements, terrain RGBA/material/walkability, overlay coordinates/RGBA, and
+  collision. Full build wall time falls 4:47.19 to 3:21.23 (-29.93%), summed
+  generation 252,674.730 to 170,845.977 ms (-32.39%), and peak RSS 1,802,020 to
+  1,387,752 KiB (-22.99%), with zero swaps. This is a selected build-path
+  milestone, not Gate D; a more aggressive overlapping packed-viewport reuse
+  candidate remains unselected until a shared-host pressure-qualified full
+  build and parity run can be completed. Parity SHA
+  `589ab2f79ba76dd588c3bf446742638f2150b83bbfe0183dd59ec7ed3e806f80`;
+  evidence lives in
+  `track-7-performance/regional-prewarm-v194/FINDINGS.md`.
+  Next, finish or reject the packed-overlap candidate under an admissible host
+  window, then profile the selected prewarm and runtime render/input paths and
+  remove the largest architectural costs with exact frame/audit parity; in
+  parallel test
   compact bank-aware geometry for the two unresolved origin north/south coast
   sites without relaxing dry-core, threshold, slope, collision, civic, or
   ownership gates;

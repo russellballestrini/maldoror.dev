@@ -1,5 +1,5 @@
 import type { BuildingSprite, RGB, Tile, WorldLifeState } from '@maldoror/protocol';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   BIOME_FAMILIES,
   type BiomeFamily,
@@ -2561,6 +2561,45 @@ describe('RegionalWorldTileProvider', () => {
     expect(result.providerBlocksPrimed).toBeGreaterThan(0);
     expect(world.getRegionalStats().cachedBlocks).toBeGreaterThan(0);
     expect(world.getTileAtResolution(0, 0, 4).pixels).toHaveLength(4);
+  });
+
+  it('exports each prepared terrain coordinate without a redundant compositor pre-pass', () => {
+    const world = makeWorld(32, 32);
+    const compositor = (world as unknown as {
+      compositor: RegionalMaterialCompositor;
+    }).compositor;
+    const baseTile = vi.spyOn(compositor, 'getTileAtResolution');
+
+    const prepared = world.prepareViewport(-4, -3, 4, 3, 4);
+    const sampledCoordinates = new Set(baseTile.mock.calls.map(([x, y, resolution]) => (
+      `${x},${y}@${resolution}`
+    )));
+
+    expect(prepared.terrain).toHaveLength(63);
+    expect(baseTile).toHaveBeenCalledTimes(63);
+    expect(sampledCoordinates.size).toBe(63);
+  });
+
+  it('reuses exact imported terrain across overlapping prepared rectangles', () => {
+    const world = makeWorld(32, 32);
+    world.importPreparedViewport(world.prepareViewport(-4, -3, 4, 3, 4));
+    const compositor = (world as unknown as {
+      compositor: RegionalMaterialCompositor;
+    }).compositor;
+    const baseTile = vi.spyOn(compositor, 'getTileAtResolution');
+
+    const prepared = world.prepareViewport(0, -3, 8, 3, 4);
+    const sampledCoordinates = new Set(baseTile.mock.calls.map(([x, y, resolution]) => (
+      `${x},${y}@${resolution}`
+    )));
+
+    expect(prepared.terrain).toHaveLength(63);
+    expect(baseTile).toHaveBeenCalledTimes(28);
+    expect(sampledCoordinates.size).toBe(28);
+    expect([...sampledCoordinates].every((key) => {
+      const x = Number(key.slice(0, key.indexOf(',')));
+      return x >= 5 && x <= 8;
+    })).toBe(true);
   });
 
   it('exports and imports exact bounded viewport results without cold fallback', () => {

@@ -1301,6 +1301,35 @@ export class RegionalWorldTileProvider extends TileProvider {
     const tileMaxX = Math.floor(Math.max(minX, maxX));
     const tileMinY = Math.floor(Math.min(minY, maxY));
     const tileMaxY = Math.floor(Math.max(minY, maxY));
+    const spatial = this.prewarmSpatialCaches(tileMinX, tileMinY, tileMaxX, tileMaxY);
+
+    let terrainTilesPrimed = 0;
+    for (let tileY = tileMinY; tileY <= tileMaxY; tileY++) {
+      for (let tileX = tileMinX; tileX <= tileMaxX; tileX++) {
+        const prepared = this.findPreparedViewport(tileX, tileY, Math.round(resolution));
+        if (!prepared || prepared.resolution !== Math.round(resolution)) {
+          this.compositor.getTileAtResolution(tileX, tileY, resolution);
+        }
+        terrainTilesPrimed++;
+      }
+    }
+    return {
+      ...spatial,
+      terrainTilesPrimed,
+      resolution,
+    };
+  }
+
+  /** Prime only the coordinate-owned fields and derived blocks required to
+   * resolve a viewport. Exporters consume each final terrain tile immediately,
+   * so asking the bounded compositor LRU to materialize the rectangle first
+   * would evict and recompute tiles before they can be packed. */
+  private prewarmSpatialCaches(
+    tileMinX: number,
+    tileMinY: number,
+    tileMaxX: number,
+    tileMaxY: number,
+  ): Omit<RegionalPrewarmResult, 'terrainTilesPrimed' | 'resolution'> {
     this.field.prewarm?.(tileMinX - 1, tileMinY - 1, tileMaxX + 1, tileMaxY + 1);
     this.routes.prewarm?.(tileMinX - 12, tileMinY - 12, tileMaxX + 12, tileMaxY + 12);
 
@@ -1315,23 +1344,10 @@ export class RegionalWorldTileProvider extends TileProvider {
         providerBlocksPrimed++;
       }
     }
-
-    let terrainTilesPrimed = 0;
-    for (let tileY = tileMinY; tileY <= tileMaxY; tileY++) {
-      for (let tileX = tileMinX; tileX <= tileMaxX; tileX++) {
-        const prepared = this.findPreparedViewport(tileX, tileY, Math.round(resolution));
-        if (!prepared || prepared.resolution !== Math.round(resolution)) {
-          this.compositor.getTileAtResolution(tileX, tileY, resolution);
-        }
-        terrainTilesPrimed++;
-      }
-    }
     return {
       biomeBoundsPrimed: this.field.prewarm !== undefined,
       routeBoundsPrimed: this.routes.prewarm !== undefined,
-      terrainTilesPrimed,
       providerBlocksPrimed,
-      resolution,
     };
   }
 
@@ -1348,12 +1364,11 @@ export class RegionalWorldTileProvider extends TileProvider {
     const bounds = normalizedPreparedBounds(minX, minY, maxX, maxY);
     validatePreparedArea(bounds);
     const normalizedResolution = Math.max(1, Math.round(resolution));
-    this.prewarm(
+    this.prewarmSpatialCaches(
       bounds.minX,
       bounds.minY,
       bounds.maxX,
       bounds.maxY,
-      normalizedResolution,
     );
     const terrain: RegionalPreparedTerrainTile[] = [];
     const overlays: RegionalPreparedOverlayTile[] = [];
