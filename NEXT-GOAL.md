@@ -2795,6 +2795,21 @@ Completed foundations:
   `track-7-performance/alpha-caller-bypass-v208/FINDINGS.md`. These are
   retained failures, not deployment or Gate D; the post-V208 I/O-full PSI was
   12.58%/60s.
+  V209 tests an algebraically exact rolling 32-bit precipitation row hash,
+  replacing the exhaustive scan's repeated x multiply while retaining the
+  original sparse point predicate and every weather/color rule. It is also
+  rejected: against the intervening original control, candidate user CPU
+  rises 5.37% and 14.22%, wall rises 9.57% and 21.16%, and the targeted
+  `applyPrecipitation` leaf itself rises 2.00% and 2.49%. All three legs retain
+  exact final pixel hash
+  `43e268d450634356e365b1adb92d5b19321f18bda2553c7a876eba7866fa51bb`
+  and identical codec/payload distributions; the original expression is
+  restored. Evidence lives in
+  `track-7-performance/precipitation-row-hash-v209/FINDINGS.md`. This is a
+  retained failed experiment, not deployment or Gate D. Post-run I/O-full PSI
+  is 28.67%/60s, and `/mnt/donto-data` is 96% full with 41 GiB available, so
+  further large benchmarks and V194 admission remain suspended until storage
+  pressure and the fixed host contract recover.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission
   contract, then remove larger exact composition traversals, share prepared
