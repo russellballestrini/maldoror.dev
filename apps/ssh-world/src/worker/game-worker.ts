@@ -34,8 +34,12 @@ import {
 import { RegionalPrewarmService } from '../game/regional-prewarm-service.js';
 import { REGIONAL_ORIGIN_PREWARM } from '../game/regional-runtime-config.js';
 import { coalesceNPCNavigationBounds } from '../game/npc-navigation-bounds.js';
-import { getHeapStatistics } from 'node:v8';
 import { monitorEventLoopDelay, performance } from 'node:perf_hooks';
+import {
+  sampleWorkerRuntimeResources,
+  type WorkerMemorySnapshot,
+  type WorkerResourceUsageSnapshot,
+} from './worker-runtime-metrics.js';
 import {
   IpcSendTelemetry,
   RollingLatencyWindow,
@@ -343,14 +347,8 @@ export interface WorkerRuntimeSnapshot {
   npc_collision_authority: ReturnType<GameServer['getNPCCollisionAuthority']>;
   regional_asset_source: 'runtime-pack' | 'png-manifests' | 'legacy';
   regional_origin_source: 'runtime-prewarm' | 'generator' | 'legacy';
-  memory: {
-    rss_mib: number;
-    heap_used_mib: number;
-    heap_total_mib: number;
-    heap_limit_mib: number;
-    external_mib: number;
-    array_buffers_mib: number;
-  };
+  memory: WorkerMemorySnapshot;
+  resources: WorkerResourceUsageSnapshot;
   event_loop: {
     utilization: number;
     delay_p50_ms: number;
@@ -889,12 +887,10 @@ process.on('message', async (msg: MainToWorkerMessage) => {
       }
 
       case 'get_worker_runtime': {
-        const memory = process.memoryUsage();
-        const heap = getHeapStatistics();
+        const resourceSnapshot = sampleWorkerRuntimeResources();
         const eventLoopUtilization = performance.eventLoopUtilization(
           lastWorkerEventLoopUtilization,
         );
-        const mib = 1024 * 1024;
         send({
           type: 'worker_runtime',
           requestId: msg.requestId,
@@ -905,14 +901,8 @@ process.on('message', async (msg: MainToWorkerMessage) => {
             npc_collision_authority: gameServer?.getNPCCollisionAuthority() ?? 'legacy',
             regional_asset_source: regionalAssetSource,
             regional_origin_source: regionalOriginSource,
-            memory: {
-              rss_mib: Number((memory.rss / mib).toFixed(3)),
-              heap_used_mib: Number((memory.heapUsed / mib).toFixed(3)),
-              heap_total_mib: Number((memory.heapTotal / mib).toFixed(3)),
-              heap_limit_mib: Number((heap.heap_size_limit / mib).toFixed(3)),
-              external_mib: Number((memory.external / mib).toFixed(3)),
-              array_buffers_mib: Number((memory.arrayBuffers / mib).toFixed(3)),
-            },
+            memory: resourceSnapshot.memory,
+            resources: resourceSnapshot.resources,
             event_loop: {
               utilization: runtimeMetric(eventLoopUtilization.utilization),
               delay_p50_ms: delayMilliseconds(workerEventLoopDelay.percentile(50)),
