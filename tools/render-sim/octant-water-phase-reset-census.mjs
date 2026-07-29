@@ -76,6 +76,25 @@ try {
     frame.brightnessGrid,
     frame.materialGrid,
   );
+  const sharedStatic = {
+    buffer: frame.buffer,
+    materialGrid: frame.materialGrid,
+    dirtyCellOffsets: [],
+  };
+  renderOctantPackedGridCells(
+    frame.buffer,
+    undefined,
+    frame.materialGrid,
+    undefined,
+    sharedStatic,
+  );
+  const cachedNoDirty = renderOctantPackedGridCells(
+    frame.buffer,
+    undefined,
+    frame.materialGrid,
+    undefined,
+    sharedStatic,
+  );
   const census = countWaterPhaseCells(frame.materialGrid, frame.buffer.length,
     frame.buffer[0]?.length ?? 0);
 
@@ -105,10 +124,19 @@ try {
       requiredPerCellResetWrites: packed.codepoints.length * 2,
       selectedAvoidedWrites: packed.codepoints.length * 2,
     },
+    waterHighlightColorGate: countWaterHighlightGate(packed),
+    cachedNoDirtySharedFrame: {
+      phases: PHASES,
+      packedCellKernelCalls: 0,
+      eagerPhaseCounterAllocationsPerCall: 1,
+      lazyPhaseCounterAllocationsPerCall: 0,
+      avoidedPhaseCounterAllocationsPerCall: 1,
+    },
     exactOracle: {
       pixelGridSha256: hashPixelGrid(frame.buffer),
       materialGridSha256: hashRows(frame.materialGrid),
       terminalPlanesSha256: hashTerminalPlanes(packed),
+      cachedNoDirtyTerminalPlanesSha256: hashTerminalPlanes(cachedNoDirty),
       terminalPlaneSha256: {
         codepoints: hashView(packed.codepoints),
         foreground: hashView(packed.foreground),
@@ -169,6 +197,39 @@ function countWaterPhaseCells(materialGrid, pixelHeight, pixelWidth) {
     avoidedCounterResetWrites: eagerCounterResetWrites - lazyCounterResetWrites,
     avoidedCounterResetPercent: round(
       (1 - lazyCounterResetWrites / eagerCounterResetWrites) * 100,
+    ),
+  };
+}
+
+function countWaterHighlightGate(frame) {
+  let eligibleCells = 0;
+  for (let offset = 0; offset < frame.codepoints.length; offset++) {
+    const foreground = frame.foreground[offset];
+    const background = frame.background[offset];
+    const foregroundLuminance = ((foreground >>> 16) & 0xff) * 0.2126
+      + ((foreground >>> 8) & 0xff) * 0.7152
+      + (foreground & 0xff) * 0.0722;
+    const backgroundLuminance = ((background >>> 16) & 0xff) * 0.2126
+      + ((background >>> 8) & 0xff) * 0.7152
+      + (background & 0xff) * 0.0722;
+    const contrast = Math.abs(foregroundLuminance - backgroundLuminance);
+    if (Math.max(foregroundLuminance, backgroundLuminance) >= 178 && contrast >= 12) {
+      eligibleCells++;
+    }
+  }
+  const materialSamplesPerCell = 8;
+  const eagerMaterialSampleReads = frame.codepoints.length * materialSamplesPerCell;
+  const gatedMaterialSampleReads = eligibleCells * materialSamplesPerCell;
+  return {
+    materialSamplesPerCell,
+    terminalCells: frame.codepoints.length,
+    eligibleCells,
+    ineligibleCells: frame.codepoints.length - eligibleCells,
+    eagerMaterialSampleReads,
+    gatedMaterialSampleReads,
+    avoidedMaterialSampleReads: eagerMaterialSampleReads - gatedMaterialSampleReads,
+    avoidedMaterialSamplePercent: round(
+      (1 - gatedMaterialSampleReads / eagerMaterialSampleReads) * 100,
     ),
   };
 }

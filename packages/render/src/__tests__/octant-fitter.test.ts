@@ -138,6 +138,30 @@ describe('octant perceptual fitting', () => {
     expect([...reused.foregroundIndex, ...reused.backgroundIndex]).toEqual([-1, -1, -1, -1]);
   });
 
+  it('reuses a cached no-dirty static plane exactly', () => {
+    const ground = { r: 42, g: 91, b: 67 };
+    const grid = Array.from({ length: 8 }, () =>
+      Array.from({ length: 4 }, () => ground));
+    const materials = Array.from({ length: 8 }, () => new Uint8Array(4));
+    const expected = renderOctantPackedGridCells(grid, undefined, materials);
+    const sharedStatic = { buffer: grid, materialGrid: materials, dirtyCellOffsets: [] };
+
+    renderOctantPackedGridCells(grid, undefined, materials, undefined, sharedStatic);
+    const cached = renderOctantPackedGridCells(
+      grid,
+      undefined,
+      materials,
+      undefined,
+      sharedStatic,
+    );
+
+    expect([...cached.codepoints]).toEqual([...expected.codepoints]);
+    expect([...cached.foreground]).toEqual([...expected.foreground]);
+    expect([...cached.background]).toEqual([...expected.background]);
+    expect([...cached.foregroundIndex]).toEqual([...expected.foregroundIndex]);
+    expect([...cached.backgroundIndex]).toEqual([...expected.backgroundIndex]);
+  });
+
   it('reconstructs actor-dirty cells exactly over a shared static cell plane', () => {
     const ground = { r: 42, g: 91, b: 67 };
     const actor = { r: 221, g: 83, b: 56 };

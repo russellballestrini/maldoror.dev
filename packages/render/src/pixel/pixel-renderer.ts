@@ -1097,7 +1097,7 @@ export function renderOctantPackedGridCells(
   const result = reusable?.width === width && reusable.height === height
     ? reusable
     : createPackedCellGrid(width, height);
-  const phaseCounts = materialGrid ? new Uint8Array(PHASES) : null;
+  let phaseCounts: Uint8Array | null = null;
   const canReuseStatic = sharedStatic !== undefined
     && brightnessGrid === undefined
     && sharedStatic.buffer.length === grid.length
@@ -1121,6 +1121,7 @@ export function renderOctantPackedGridCells(
         if (parentDirtyCellOffsets.length === 0) {
           staticCells = parentCells;
         } else {
+          if (sharedStatic.materialGrid) phaseCounts = new Uint8Array(PHASES);
           staticCells = createPackedCellGrid(width, height);
           staticCells.codepoints.set(parentCells.codepoints);
           staticCells.foreground.set(parentCells.foreground);
@@ -1158,6 +1159,9 @@ export function renderOctantPackedGridCells(
     result.backgroundIndex.set(staticCells.backgroundIndex);
 
     if (sharedStatic.dirtyCellOffsets) {
+      if (materialGrid && sharedStatic.dirtyCellOffsets.length > 0) {
+        phaseCounts ??= new Uint8Array(PHASES);
+      }
       for (const offset of sharedStatic.dirtyCellOffsets) {
         const cellY = Math.floor(offset / width);
         const cellX = offset - cellY * width;
@@ -1194,6 +1198,7 @@ export function renderOctantPackedGridCells(
           }
         }
         if (!dirty) continue;
+        if (materialGrid) phaseCounts ??= new Uint8Array(PHASES);
         renderOctantPackedCell(
           result,
           cellY * width + cellX,
@@ -1209,6 +1214,7 @@ export function renderOctantPackedGridCells(
     return result;
   }
 
+  if (materialGrid) phaseCounts = new Uint8Array(PHASES);
   for (let cellY = 0, y = 0; cellY < height; cellY++, y += 4) {
     for (let cellX = 0, x = 0; cellX < width; cellX++, x += 2) {
       const offset = cellY * width + cellX;

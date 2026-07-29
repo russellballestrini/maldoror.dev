@@ -3258,6 +3258,28 @@ Completed foundations:
   CPU PSI 74.59%, memory-full PSI 56.75%, I/O-full PSI 2.56%, and disks
   93%/97%, this too is an operation-count result only. Full evidence lives in
   `track-7-performance/lazy-packed-index-reset-v264/FINDINGS.md`.
+  V265 preserves rather than selects an apparently large water-scan candidate.
+  In the same frozen frame, 1,931 cells have at least six water samples but
+  zero fitted cells pass the existing luminance/contrast gate, so moving that
+  gate ahead of material counting would avoid 56,320 probes. It would also add
+  luminance arithmetic to dry cells that currently stop early; an inadmissible
+  host cannot adjudicate that work exchange. No renderer source changed. The
+  zero indexed-water result is retained as a bounded visual diagnostic needing
+  a multi-coordinate/time/weather census and faithful Ghostty review, not as a
+  global dormant-feature claim. Evidence and the open A/B/A gate live in
+  `track-7-performance/pre-gated-water-material-scan-v265/FINDINGS.md`.
+  V266 instead selects a pure packed-octant allocation removal. The eight-entry
+  water counter is now created only before a branch that can invoke a
+  material-aware cell kernel: once for full conversion, once for nonempty
+  declared dirt, or at the first discovered dirty cell. A cached no-dirty
+  shared frame invokes zero kernels and now allocates zero counters rather than
+  one. Its dedicated plane hash and the ordinary full-frame hash remain exact
+  at `f0b6be19...34e2`; complete baseline/candidate JSON is byte-exact after
+  timestamp removal at `d25bbe3a...c6d3`. Direct typecheck/build, 11/11 focused
+  tests, and 84/84 complete render tests pass. With load1 15.85, CPU PSI
+  68.61%, memory-full PSI 56.50%, I/O-full PSI 3.34%, and disks 93%/97%, this
+  is allocation-count evidence only. Full proof lives in
+  `track-7-performance/lazy-shared-phase-counter-v266/FINDINGS.md`.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, admit or reject V210 and V212 under exact whole-process A/B/A,
   repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission
