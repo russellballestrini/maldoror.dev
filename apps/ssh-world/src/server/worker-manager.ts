@@ -23,6 +23,10 @@ import type {
 } from '../worker/game-worker.js';
 import type { NPCCreateData } from '../utils/npc-storage.js';
 import { RollingLatencyWindow } from '../worker/ipc-telemetry.js';
+import {
+  sampleWorkerKernelRuntime,
+  type WorkerKernelRuntimeSnapshot,
+} from './worker-kernel-metrics.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -571,18 +575,24 @@ export class WorkerManager {
     );
   }
 
-  async getWorkerRuntime(): Promise<WorkerRuntimeSnapshot | null> {
+  async getWorkerRuntime(timeoutMs = 5000): Promise<WorkerRuntimeSnapshot | null> {
     if (!this.workerReady || !this.worker?.connected) return null;
     const requestId = this.nextRequestId();
     const runtime = await this.sendRequest<WorkerRuntimeSnapshot>(
       { type: 'get_worker_runtime', requestId },
       requestId,
       'worker_runtime',
+      timeoutMs,
     );
     runtime.ipc.worker_to_main_receive_ms = this.workerOutputReceiveLatency.snapshot();
     runtime.ipc.worker_to_main_immediate_receive_ms =
       this.workerImmediateOutputReceiveLatency.snapshot();
     return runtime;
+  }
+
+  async getWorkerKernelRuntime(): Promise<WorkerKernelRuntimeSnapshot | null> {
+    const pid = this.worker?.pid;
+    return pid === undefined ? null : sampleWorkerKernelRuntime(pid);
   }
 
   async getNPCSprite(npcId: string): Promise<Sprite | null> {
@@ -1057,13 +1067,14 @@ export class WorkerManager {
   private sendRequest<T>(
     msg: MainToWorkerMessage,
     requestId: string,
-    _responseType: string
+    _responseType: string,
+    timeoutMs = 5000,
   ): Promise<T> {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(requestId);
         reject(new Error(`Request ${requestId} timed out`));
-      }, 5000);
+      }, timeoutMs);
 
       this.pendingRequests.set(requestId, {
         resolve,

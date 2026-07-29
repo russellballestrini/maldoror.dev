@@ -2900,6 +2900,24 @@ Completed foundations:
   `track-5-motion-transport/login-origin-current-audit-v215/FINDINGS.md`. This
   is source/test proof, not a new deployed adversarial login or physical
   Ghostty acceptance; the post-test host still failed every sustained gate.
+  V216 removes a circular observability failure without adding render-path
+  work. The `/runtime` endpoint previously depended entirely on the overloaded
+  worker servicing a normal five-second IPC request, so the live endpoint could
+  return no bytes precisely when its memory evidence mattered. The selected
+  source keeps that detailed V8/IPC/session sample when healthy, but bounds the
+  endpoint probe at 250 ms and independently reads the worker's Linux procfs
+  status. A missed IPC response now preserves PID/state, RSS split into
+  anonymous/file/shared memory, swap, virtual size, threads, and context
+  switches plus an explicit probe error. Thirty-two reads against the live
+  worker under severe contention cost 1.115/7.274/8.726 ms p50/p95/max. Three
+  focused files pass 9/9 tests and the SSH-world typecheck exits zero; the
+  latter's roughly three-minute disk-waiting duration is retained as host
+  pressure, not a performance result. Evidence lives in
+  `track-7-performance/fail-soft-runtime-probe-v216/FINDINGS.md`. This is not
+  deployed: a controlled restart, deliberate worker-stall response proof, and
+  healthy detailed-sample parity remain open. At the evidence sample CPU-some
+  PSI was 35.12%/10s, memory-full 5.58%/10s, I/O-full 10.52%/10s, and
+  load-per-CPU 4.10, so no Gate-D claim is made.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, admit or reject V210 and V212 under exact whole-process A/B/A,
   repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission

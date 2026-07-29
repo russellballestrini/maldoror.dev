@@ -1668,6 +1668,8 @@ export class StatsServer {
     };
     transport?: WorldStats['transport'];
     worker: Awaited<ReturnType<WorkerManager['getWorkerRuntime']>>;
+    worker_kernel: Awaited<ReturnType<WorkerManager['getWorkerKernelRuntime']>>;
+    worker_probe_error?: string;
   }> {
     const now = performance.now();
     const intervalMs = Math.max(0.001, now - this.lastRuntimeSampleAt);
@@ -1675,7 +1677,16 @@ export class StatsServer {
     const utilization = performance.eventLoopUtilization(this.lastEventLoopUtilization);
     const memory = process.memoryUsage();
     const transport = this.getTransportStats().transport;
-    const worker = await this.config.workerManager.getWorkerRuntime();
+    const [workerKernel, workerProbe] = await Promise.all([
+      this.config.workerManager.getWorkerKernelRuntime(),
+      this.config.workerManager.getWorkerRuntime(250).then(
+        (worker) => ({ worker }),
+        (error: unknown) => ({
+          worker: null,
+          error: error instanceof Error ? error.message : 'Worker runtime probe failed',
+        }),
+      ),
+    ]);
     const result = {
       sampled_at: new Date().toISOString(),
       interval_ms: roundRuntimeMetric(intervalMs),
@@ -1701,7 +1712,9 @@ export class StatsServer {
         delay_max_ms: nanosecondsToMilliseconds(this.eventLoopDelay.max),
       },
       ...(transport ? { transport } : {}),
-      worker,
+      worker: workerProbe.worker,
+      worker_kernel: workerKernel,
+      ...('error' in workerProbe ? { worker_probe_error: workerProbe.error } : {}),
     };
     this.lastRuntimeSampleAt = now;
     this.lastCpuUsage = process.cpuUsage();
