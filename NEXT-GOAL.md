@@ -3227,6 +3227,23 @@ Completed foundations:
   duration or memory claim follows. Exact work counts, parity, raw hashes, and
   the preserved timeout live in
   `track-7-performance/corridor-frontage-attempt-preparation-v262/FINDINGS.md`.
+  V263 removes an independent exact cost from both object and packed octant
+  conversion. The shared eight-phase water counter now clears immediately
+  before a cell's first valid water sample instead of unconditionally before
+  every terminal cell. A frozen 320x176 origin frame with twenty players has
+  7,040 terminal cells, of which 4,915 contain no water phase; the selected
+  path therefore removes exactly 39,320 of 56,320 reset writes (69.815%) from
+  that conversion without changing any increment or rendering work. An
+  adversarial water/dry/different-water regression proves no stale phase can
+  cross the skipped reset. Baseline and rebuilt-candidate pixel, material, and
+  all five terminal planes are byte-exact; their timestamp-free report hash is
+  `0a539d12...27a5` and combined terminal-plane hash is
+  `f0b6be19...34e2`. Direct render typecheck/build, 9/9 focused tests, and the
+  complete 82/82 render tests pass. With load1 15.13, CPU PSI 74.65%,
+  memory-full PSI 54.21%, I/O-full PSI 4.08%, and disks 93%/97%, this is an
+  operation-count selection only, not a host timing result. Oracle, census,
+  raw reports, hashes, and limitations live in
+  `track-7-performance/lazy-water-phase-reset-v263/FINDINGS.md`.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, admit or reject V210 and V212 under exact whole-process A/B/A,
   repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission

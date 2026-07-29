@@ -1024,7 +1024,6 @@ export function renderOctantGridCells(
       const cellBrightness = brightnessGrid?.[cellY]?.[cellX] ?? 1.0;
       const { char, fg, bg } = renderOctantGridChar(grid, x, y, cellBrightness);
       let waterSamples = 0;
-      phaseCounts?.fill(0);
       if (materialGrid && phaseCounts) {
         for (let dy = 0; dy < 4; dy++) {
           for (let dx = 0; dx < 2; dx++) {
@@ -1033,6 +1032,7 @@ export function renderOctantGridCells(
             // foliage/actor semantics for the atmosphere pass and must never
             // be recoloured as canal highlights.
             if (encodedPhase >= 1 && encodedPhase <= PHASES) {
+              if (waterSamples === 0) phaseCounts.fill(0);
               waterSamples++;
               const phaseIndex = encodedPhase - 1;
               phaseCounts[phaseIndex] = (phaseCounts[phaseIndex] ?? 0) + 1;
@@ -1251,12 +1251,12 @@ function renderOctantPackedCell(
   result.backgroundIndex[offset] = -1;
 
   let waterSamples = 0;
-  phaseCounts?.fill(0);
   if (materialGrid && phaseCounts) {
     for (let dy = 0; dy < 4; dy++) {
       for (let dx = 0; dx < 2; dx++) {
         const encodedPhase = materialGrid[y + dy]?.[x + dx] ?? 0;
         if (encodedPhase >= 1 && encodedPhase <= PHASES) {
+          if (waterSamples === 0) phaseCounts.fill(0);
           waterSamples++;
           const phaseIndex = encodedPhase - 1;
           phaseCounts[phaseIndex] = (phaseCounts[phaseIndex] ?? 0) + 1;

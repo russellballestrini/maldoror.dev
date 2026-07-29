@@ -7,6 +7,7 @@ import {
   renderOctantGridCells,
   renderOctantPackedGridCells,
 } from '../pixel/pixel-renderer.js';
+import { PALETTE } from '../pixel/palette-cycle.js';
 
 describe('octant perceptual fitting', () => {
   it('keeps byte-table and general-value Oklab conversion exact', () => {
@@ -87,6 +88,34 @@ describe('octant perceptual fitting', () => {
     expect(packed.background[0]).toBe(packedRgb(expected.bgColor!));
   });
 
+  it('resets water phase counts lazily without leaking them across dry cells', () => {
+    const deep = { r: 18, g: 49, b: 68 };
+    const glint = { r: 235, g: 248, b: 241 };
+    const pixels = Array.from({ length: 4 }, () => [
+      deep, glint,
+      deep, glint,
+      deep, glint,
+    ]);
+    const materials = [
+      new Uint8Array([3, 3, 255, 255, 6, 6]),
+      new Uint8Array([3, 3, 255, 255, 6, 6]),
+      new Uint8Array([3, 3, 255, 255, 6, 6]),
+      new Uint8Array([3, 3, 255, 255, 255, 255]),
+    ];
+
+    const object = renderOctantGridCells(pixels, undefined, materials)[0]!;
+    const packed = renderOctantPackedGridCells(pixels, undefined, materials);
+
+    expect([...packed.codepoints]).toEqual(object.map((cell) => cell.char.codePointAt(0)!));
+    expect([...packed.foreground]).toEqual(object.map((cell) => packedRgb(cell.fgColor!)));
+    expect([...packed.background]).toEqual(object.map((cell) => packedRgb(cell.bgColor!)));
+    expect([...packed.foregroundIndex]).toEqual(object.map((cell) => cell.fgIndex ?? -1));
+    expect([...packed.backgroundIndex]).toEqual(object.map((cell) => cell.bgIndex ?? -1));
+    expect(indexedChannel(object[0]!)).toBe(PALETTE.WATER + 2);
+    expect(indexedChannel(object[1]!)).toBeNull();
+    expect(indexedChannel(object[2]!)).toBe(PALETTE.WATER + 5);
+  });
+
   it('reconstructs actor-dirty cells exactly over a shared static cell plane', () => {
     const ground = { r: 42, g: 91, b: 67 };
     const actor = { r: 221, g: 83, b: 56 };
@@ -147,6 +176,13 @@ describe('octant perceptual fitting', () => {
     expect([...optimized.backgroundIndex]).toEqual([...expected.backgroundIndex]);
   });
 });
+
+function indexedChannel(cell: {
+  fgIndex?: number | null;
+  bgIndex?: number | null;
+}): number | null {
+  return cell.fgIndex ?? cell.bgIndex ?? null;
+}
 
 function referenceRgbToOklab(color: { r: number; g: number; b: number }): {
   l: number;
