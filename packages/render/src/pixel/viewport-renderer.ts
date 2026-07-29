@@ -2128,7 +2128,19 @@ function alphaOverLinear(beneath: RGB | null, above: RGB): RGB {
   return blended;
 }
 
+// Byte channels have only 256 inputs. Store the result of the exact production
+// transfer function once; non-byte callers retain the formula fallback below.
+const SRGB_BYTE_TO_LINEAR = Float64Array.from({ length: 256 }, (_, value) => {
+  const channel = value / 255;
+  return channel <= 0.04045
+    ? channel / 12.92
+    : Math.pow((channel + 0.055) / 1.055, 2.4);
+});
+
 function srgbByteToLinear(value: number): number {
+  if (Number.isInteger(value) && value >= 0 && value <= 255) {
+    return SRGB_BYTE_TO_LINEAR[value]!;
+  }
   const channel = Math.max(0, Math.min(255, value)) / 255;
   return channel <= 0.04045 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4);
 }

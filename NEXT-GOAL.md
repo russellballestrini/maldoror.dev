@@ -2747,8 +2747,24 @@ Completed foundations:
   The original Map is restored; evidence lives in
   `track-7-performance/sgr-set-cache-v204/FINDINGS.md`. This is a retained
   failure, not Gate D: post-run I/O-full PSI was 34.73%/60s.
+  V205 moves above the rejected pair-cache variants into linear-light
+  composition. It precomputes the exact IEC sRGB transfer result for all 256
+  byte inputs once, while retaining the original formula for every non-byte
+  input. No interpolation, quantization, alpha, or color-space rule changes.
+  In the exact candidate/control/candidate bracket, user CPU falls 8.73% and
+  11.51%, wall falls 8.70% and 16.02%, peak RSS falls 2.67% and 2.90%, and the
+  atmosphere/blend/weather/light/GC self group falls 26.41% and 36.67%.
+  `srgbByteToLinear` self time falls 89.85% and 96.82%. All legs retain 73,125
+  application bytes, 20,809 deflated bytes, and exact final pixel hash
+  `43e268d450634356e365b1adb92d5b19321f18bda2553c7a876eba7866fa51bb`;
+  11 render files / 77 tests pass. Repeat benchmark SHA
+  `593f7208b8d6c060da16fde9e7cf27ff89e10a7ec03bc3772b54200a5943b9c7`;
+  evidence lives in
+  `track-7-performance/srgb-linear-lut-v205/FINDINGS.md`. This is selected
+  exact source evidence, not deployment or Gate D: post-run I/O-full PSI was
+  54.36%/60s and memory-full PSI was 13.93%/60s.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
-  host window, repeat the V196/V197/V199/V201/V202 stack under the same admission
+  host window, repeat the V196/V197/V199/V201/V202/V205 stack under the same admission
   contract, then move above the pair-cache boundary into redundant color-state,
   composition, and atmosphere work, or move
   emission off the input-critical path with the semantic oracle, alternating
