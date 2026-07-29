@@ -3117,6 +3117,45 @@ Completed foundations:
   cardinality and parity evidence only: memory, I/O, and load still fail host
   admission, so elapsed values do not count. Evidence lives in
   `track-7-performance/place-detail-census-detail-only-v241/FINDINGS.md`.
+  V242-V254 then replace the rejected post-parent fit with an exact,
+  research-only integrated parent budget and finally put one generated modular
+  frontage into a real faithful world frame. The opt-in
+  `integrated-corridor-frontage` profile fails closed unless route-frontage
+  access and terrain-only fabric are active. It makes the immutable module its
+  route-facing access target before optional supports are committed, uses
+  declared circulation and geometry-complete research path identities, carries
+  indispensable root/gateway parents, reserves the complete connector during
+  peer competition, and removes the whole program if that connector loses.
+  Terrain, water, circulation, visible-footprint, collision, ownership, and
+  determinism gates are retained; collision may touch only an unprotected
+  connector feather and never a protected cell that opens runtime solidity.
+  The retained V242-V248 failures expose and correct parent-budget ordering,
+  reach, declared-circulation targeting, stale path-raster cache identity,
+  finalized target identity, and protected-path semantics rather than hiding
+  them. V249 admits the real 6x7 workshop at site `(157,-180)`, anchor
+  `(176,-183)`, on its first bounded attempt; V250 proves adjacent-block
+  materialization; and V251 passes the complete geometry audit with one
+  candidate detail, zero control details, 32/47-cell detail, parent, and
+  connector replay equality, integrated parent membership, dry circulation,
+  and zero protected collision overlap. The full provider file passes 44/44
+  tests, including disabled isolation and the new integrated contract; direct
+  world typecheck and lab syntax checks pass.
+  V252 preserves a post-render lab-auditor registry failure; V253 corrects that
+  provenance registry and supplies the selected faithful 320x176 walking frame
+  plus octant reconstruction, while V254 supplies the exact disabled control.
+  All 41 visible workshop cells are owned and materialized with no missing or
+  unattributed overlay cell. The control is an empty blurred clearing; the
+  candidate is a legible warm multi-storey workshop whose awning, planted
+  edge, dark interior, and doorway meet the trail and survive terminal
+  reconstruction. This is the first honest visual gain from the generated
+  modular kit, but the profile remains default-off and absent from the
+  production manifest. The host still fails CPU, memory, I/O, load, and disk
+  admission, so no elapsed value is a performance result. Exact whole-process
+  admissible-host A/B/A, incremental CPU/allocation/RSS/cache/frame/SSH-byte
+  accounting, authored district/regional LODs, multi-site/time/weather atlas,
+  live SSH sustained concurrency, and physical Ghostty acceptance remain
+  mandatory. Consolidated evidence lives in
+  `track-4-world-composition/canal-modular-frontages-v251-full-integrated-proof/FINDINGS.md`.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, admit or reject V210 and V212 under exact whole-process A/B/A,
   repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission

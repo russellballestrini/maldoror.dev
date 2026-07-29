@@ -143,8 +143,24 @@ if (![
 if (!['isolated', 'route-frontage'].includes(AMBIENT_PLACE_ACCESS_PROFILE)) {
   throw new Error(`Unknown ambient place-access profile: ${AMBIENT_PLACE_ACCESS_PROFILE}`);
 }
-if (!['disabled', 'corridor-frontage'].includes(AMBIENT_PLACE_DETAIL_PROFILE)) {
+if (![
+  'disabled',
+  'corridor-frontage',
+  'integrated-corridor-frontage',
+].includes(AMBIENT_PLACE_DETAIL_PROFILE)) {
   throw new Error(`Unknown ambient place-detail profile: ${AMBIENT_PLACE_DETAIL_PROFILE}`);
+}
+if (AMBIENT_PLACE_DETAIL_PROFILE === 'integrated-corridor-frontage' && (
+  AMBIENT_PLACE_ACCESS_PROFILE !== 'route-frontage' ||
+  AMBIENT_PLACE_FABRIC_PROFILE !== 'terrain-only'
+)) {
+  throw new Error(
+    'Integrated corridor frontage requires route-frontage access and terrain-only fabric',
+  );
+}
+if (AMBIENT_PLACE_DETAIL_PROFILE === 'integrated-corridor-frontage' &&
+    PLACE_DETAIL_CENSUS_DETAIL_ONLY) {
+  throw new Error('Integrated corridor frontage cannot use the post-parent detail-only census');
 }
 if (![
   'uniform-blue-noise',
@@ -3087,30 +3103,40 @@ function auditPlaceDetailCensus(radius, centre) {
   const candidateParents = candidatePlacements.filter((placement) => !isDetail(placement));
   const controlParents = controlPlacements.filter((placement) => !isDetail(placement));
 
-  const parentAuditCentre = candidateDetails[0]?.anchor ?? centre;
+  const integratedProfile = AMBIENT_PLACE_DETAIL_PROFILE ===
+    'integrated-corridor-frontage';
+  const parentAuditCentres = integratedProfile && candidateDetails.length > 0
+    ? candidateDetails.map((placement) => placement.anchor)
+    : [candidateDetails[0]?.anchor ?? centre];
   const parentProgramsFor = (targetWorld, blockSize, detailDiagnostics) => {
     const programs = new Map();
-    const originX = Math.floor(parentAuditCentre[0] / blockSize) * blockSize;
-    const originY = Math.floor(parentAuditCentre[1] / blockSize) * blockSize;
-    const composition = targetWorld.buildAmbientPlacements(
-      originX,
-      originY,
-      [],
-      detailDiagnostics,
-    );
-    for (const program of composition.placePrograms) {
-      const key = `${program.root.siteX},${program.root.siteY}`;
-      programs.set(key, {
-        site: [program.root.siteX, program.root.siteY],
-        root: program.root.asset.id,
-        placements: program.placements.map((placement) => (
-          `${placement.asset.id}@${placement.anchorX},${placement.anchorY}`
-        )),
-        accessPath: program.accessPath?.id ?? null,
-        accessRouteKind: program.accessRouteKind ?? null,
-        accessTargetKey: program.accessTargetKey ?? null,
-        fabric: program.fabric?.layout.id ?? null,
-      });
+    const scannedOrigins = new Set();
+    for (const auditCentre of parentAuditCentres) {
+      const originX = Math.floor(auditCentre[0] / blockSize) * blockSize;
+      const originY = Math.floor(auditCentre[1] / blockSize) * blockSize;
+      const originKey = `${originX},${originY}`;
+      if (scannedOrigins.has(originKey)) continue;
+      scannedOrigins.add(originKey);
+      const composition = targetWorld.buildAmbientPlacements(
+        originX,
+        originY,
+        [],
+        detailDiagnostics,
+      );
+      for (const program of composition.placePrograms) {
+        const key = `${program.root.siteX},${program.root.siteY}`;
+        programs.set(key, {
+          site: [program.root.siteX, program.root.siteY],
+          root: program.root.asset.id,
+          placements: program.placements.map((placement) => (
+            `${placement.asset.id}@${placement.anchorX},${placement.anchorY}`
+          )),
+          accessPath: program.accessPath?.id ?? null,
+          accessRouteKind: program.accessRouteKind ?? null,
+          accessTargetKey: program.accessTargetKey ?? null,
+          fabric: program.fabric?.layout.id ?? null,
+        });
+      }
     }
     return [...programs.entries()].sort(([left], [right]) => left.localeCompare(right));
   };
@@ -3121,13 +3147,19 @@ function auditPlaceDetailCensus(radius, centre) {
     placeDetailAdmissionDiagnostics,
   );
   const controlParentPrograms = parentProgramsFor(control, landmarkKit.blockSize);
+  const replayParentPrograms = parentProgramsFor(replay, 47);
   const candidateConnectors = proofScanSkipped
     ? []
     : world.getParcelConnectorCellsInBounds(...bounds);
   const controlConnectors = proofScanSkipped
     ? []
     : control.getParcelConnectorCellsInBounds(...bounds);
+  const replayConnectors = proofScanSkipped
+    ? []
+    : replay.getParcelConnectorCellsInBounds(...bounds);
   const connectorKeys = new Set(candidateConnectors.map((cell) => `${cell.x},${cell.y}`));
+  const protectedConnectorKeys = new Set(candidateConnectors.filter((cell) => cell.protected)
+    .map((cell) => `${cell.x},${cell.y}`));
   const detailAudits = candidateDetails.map((placement) => {
     const candidate = placeDetailById.get(placement.assetId);
     if (!candidate) throw new Error(`Missing place-detail candidate: ${placement.assetId}`);
@@ -3148,6 +3180,9 @@ function auditPlaceDetailCensus(radius, centre) {
       collisionConnectorOverlapCount: collisionCells.filter((cell) => (
         connectorKeys.has(cell)
       )).length,
+      collisionProtectedConnectorOverlapCount: collisionCells.filter((cell) => (
+        protectedConnectorKeys.has(cell)
+      )).length,
       circulationWaterCellCount: circulationCells.filter((cell) => {
         const [x, y] = cell.split(',').map(Number);
         return field.sample(x, y).isWater;
@@ -3155,15 +3190,34 @@ function auditPlaceDetailCensus(radius, centre) {
     };
   });
   const parentProgramsEqual = hash(candidateParentPrograms) === hash(controlParentPrograms);
+  const detailSites = new Set(candidateDetails.map((placement) => placement.site.join(',')));
+  const candidateDetailPrograms = candidateParentPrograms.filter(([site]) => (
+    detailSites.has(site)
+  ));
+  const replayDetailPrograms = replayParentPrograms.filter(([site]) => detailSites.has(site));
+  const parentReplayEqual = hash(candidateDetailPrograms) === hash(replayDetailPrograms);
+  const integratedParentMembership = !integratedProfile || candidateDetails.every((placement) => {
+    const parent = candidateDetailPrograms.find(([site]) => site === placement.site.join(','));
+    return parent?.[1].placements.includes(
+      `${placement.assetId}@${placement.anchor[0]},${placement.anchor[1]}`,
+    ) ?? false;
+  });
   const connectorsEqual = proofScanSkipped
     ? null
     : hash(candidateConnectors) === hash(controlConnectors);
+  const connectorReplayEqual = proofScanSkipped
+    ? null
+    : hash(candidateConnectors) === hash(replayConnectors);
   const replayEqual = proofScanSkipped ? null : hash(candidateDetails) === hash(replayDetails);
-  const valid = !proofScanSkipped && controlDetails.length === 0 &&
-    parentProgramsEqual && connectorsEqual && replayEqual && detailAudits.every((detail) => (
-      detail.circulationConnectorOverlapCount > 0 &&
-      detail.collisionConnectorOverlapCount === 0 && detail.circulationWaterCellCount === 0
-    ));
+  const detailGeometryValid = detailAudits.every((detail) => (
+    detail.circulationConnectorOverlapCount > 0 &&
+    detail.collisionProtectedConnectorOverlapCount === 0 &&
+    detail.circulationWaterCellCount === 0
+  ));
+  const valid = !proofScanSkipped && controlDetails.length === 0 && replayEqual &&
+    detailGeometryValid && (integratedProfile
+      ? integratedParentMembership && parentReplayEqual && connectorReplayEqual
+      : parentProgramsEqual && connectorsEqual);
   const result = {
     mode: 'geometry-only-no-render-no-timing-claim',
     centre,
@@ -3198,9 +3252,13 @@ function auditPlaceDetailCensus(radius, centre) {
     replayDetailCount: replayDetails.length,
     candidateParentProgramCount: candidateParentPrograms.length,
     controlParentProgramCount: controlParentPrograms.length,
-    parentProgramAuditScope: 'candidate-or-census-centre-containing-source-block',
-    parentProgramAuditCentre: parentAuditCentre,
+    parentProgramAuditScope: integratedProfile
+      ? 'all-candidate-detail-containing-source-blocks'
+      : 'candidate-or-census-centre-containing-source-block',
+    parentProgramAuditCentre: parentAuditCentres[0],
+    parentProgramAuditCentres: parentAuditCentres,
     parentPrograms: candidateParentPrograms,
+    replayParentPrograms,
     placeDetailAdmissionDiagnostics,
     runtimePlaceDetailAdmissionDiagnostics: [...new Map(runtimePlaceDetailDiagnostics
       .filter((diagnostic) => (
@@ -3213,12 +3271,16 @@ function auditPlaceDetailCensus(radius, centre) {
     controlParentProgramSha256: hash(controlParentPrograms),
     connectorSha256: proofScanSkipped ? null : hash(candidateConnectors),
     controlConnectorSha256: proofScanSkipped ? null : hash(controlConnectors),
+    replayConnectorSha256: proofScanSkipped ? null : hash(replayConnectors),
     candidateDetailSha256: hash(candidateDetails),
     replayDetailSha256: hash(replayDetails),
     candidateNonDetailPlacementSha256: proofScanSkipped ? null : hash(candidateParents),
     controlNonDetailPlacementSha256: proofScanSkipped ? null : hash(controlParents),
     parentProgramsEqual,
+    parentReplayEqual,
+    integratedParentMembership,
     connectorsEqual,
+    connectorReplayEqual,
     replayEqual,
     detailAudits,
     valid,
@@ -3688,6 +3750,7 @@ function auditLandmarkCompositions(placements, targetWorld, connectorCells, visi
     ...quayDetailKit.assets,
     ...routeContactKit.assets,
     ...parcelKit.assets,
+    ...placeDetailCandidates,
     ...environmentKit.assets,
   ].map((asset) => [asset.id, asset]));
   const focalIds = new Set(parcelKit.assets

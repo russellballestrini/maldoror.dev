@@ -185,9 +185,10 @@ export interface RegionalParcelComponentAsset extends RegionalVisualAsset {
    * to footprint proofs and the canonical candidate factory, but cannot enter
    * the active sequential parent/overlay path before selector admission. */
   streetPairRole?: 'canonical-alternative';
-  /** A large optional place detail admitted only after the authoritative meso
-   * program set is frozen. Corridor frontages may yield, but may never resize,
-   * reorder, or evict a parent composition. */
+  /** A large optional place detail admitted either after the authoritative
+   * meso program is frozen or, under an explicit research profile, while that
+   * program first budgets its frontage. It may never resize or weaken terrain,
+   * circulation, collision, or access-path admission. */
   placeDetailRole?: RegionalPlaceDetailRole;
   /** Screen-space route axis this unrotated frontage was authored to face. */
   frontageAxis?: RegionalRouteContactAxis;
@@ -412,9 +413,14 @@ export type RegionalAmbientPlaceFabricProfile =
  * that connection. This is independent of paving around the focal itself. */
 export type RegionalAmbientPlaceAccessProfile = 'isolated' | 'route-frontage';
 
-/** Optional detail assembled only after the complete meso program set has
- * been admitted. Disabled is the production/default contract. */
-export type RegionalAmbientPlaceDetailProfile = 'disabled' | 'corridor-frontage';
+/** Optional authored frontage. The legacy corridor mode fits only after the
+ * complete meso program set is admitted; the integrated research mode budgets
+ * the same immutable asset before ordinary supports consume its frontage.
+ * Disabled remains the production/default contract. */
+export type RegionalAmbientPlaceDetailProfile =
+  | 'disabled'
+  | 'corridor-frontage'
+  | 'integrated-corridor-frontage';
 
 export interface RegionalWorldTileProviderConfig extends TileProviderConfig {
   field: RegionalWorldBiomeSampler;
@@ -585,6 +591,18 @@ interface AmbientPlaceProgram {
   accessTargetKey?: string;
   publicFocalKeys?: readonly string[];
   fabric?: LandmarkFabricSurface;
+}
+
+interface AmbientPlaceAccess {
+  path: RegionalParcelPath;
+  routeKind: RegionalRouteKind;
+  targetKey: string;
+}
+
+interface AmbientIntegratedCorridorFrontage {
+  placement: Placement;
+  access: AmbientPlaceAccess;
+  requiredPlacements: readonly Placement[];
 }
 
 interface AmbientSharedCommonDiagnostics {
@@ -1050,6 +1068,14 @@ export class RegionalWorldTileProvider extends TileProvider {
     this.ambientPlaceAccessProfile = config.ambientPlaceAccessProfile ?? 'isolated';
     this.ambientPlaceDetailProfile = config.ambientPlaceDetailProfile ?? 'disabled';
     this.ambientPlaceDetailDiagnostics = config.ambientPlaceDetailDiagnostics;
+    if (this.ambientPlaceDetailProfile === 'integrated-corridor-frontage' && (
+      this.ambientPlaceAccessProfile !== 'route-frontage' ||
+      this.ambientPlaceFabricProfile !== 'terrain-only'
+    )) {
+      throw new Error(
+        'Integrated corridor frontage requires route-frontage access and terrain-only fabric',
+      );
+    }
     this.ambientLandmarkClearance = Math.max(4, config.ambientLandmarkClearance ?? 9);
     this.civicDetailCellSize = Math.max(1, Math.min(12, config.civicDetailCellSize ?? 1));
     this.civicDetailDensity = Math.max(0, Math.min(1, config.civicDetailDensity ?? 0.92));
@@ -1176,8 +1202,10 @@ export class RegionalWorldTileProvider extends TileProvider {
       }
     }
     const placementParcelComponents = this.parcelComponents.filter((asset) => (
-      asset.placeDetailRole === undefined ||
-      asset.placeDetailRole === this.ambientPlaceDetailProfile
+      asset.placeDetailRole === undefined || (
+        asset.placeDetailRole === 'corridor-frontage' &&
+        this.ambientPlaceDetailProfile !== 'disabled'
+      )
     ));
     const placementAssets: readonly RegionalVisualAsset[] = [
       ...this.landmarks,
@@ -4735,6 +4763,15 @@ export class RegionalWorldTileProvider extends TileProvider {
       const siteKey = positionKey(program.root.siteX, program.root.siteY);
       const reserved = new Set<string>();
       for (const placement of accepted) reserveVisibleFootprint(placement, reserved, 1);
+      // Integrated frontage and the complete connector are one parent budget.
+      // Reserve every path cell before peer-program competition so a module
+      // can neither sever a neighbour's shoulder nor survive as a disconnected
+      // building after that neighbour wins an unrelated block-local tie.
+      if (this.ambientPlaceDetailProfile === 'integrated-corridor-frontage') {
+        for (const cell of selectedProgram.accessPath
+          ? rasterizeRegionalParcelPath(selectedProgram.accessPath)
+          : []) reserved.add(positionKey(cell.x, cell.y));
+      }
       // Whole-footprint admission belongs to the district successor. Preserve
       // the legacy terrain-only/internal-spine acceptance contract exactly:
       // their access path used to be connector geometry, not program mass.
@@ -4794,6 +4831,19 @@ export class RegionalWorldTileProvider extends TileProvider {
       [...uniquePrograms.values()],
       placeDetailDiagnostics,
     );
+    if (this.ambientPlaceDetailProfile === 'integrated-corridor-frontage') {
+      const connectedSites = new Set(connectorPrograms.map(({ program }) => (
+        positionKey(program.root.siteX, program.root.siteY)
+      )));
+      for (const siteKey of uniquePrograms.keys()) {
+        if (!connectedSites.has(siteKey)) uniquePrograms.delete(siteKey);
+      }
+      programReserved.clear();
+      for (const [siteKey, candidate] of candidatePrograms) {
+        if (!uniquePrograms.has(siteKey)) continue;
+        for (const key of candidate.reserved) programReserved.add(key);
+      }
+    }
     const connectors = this.buildAmbientPlaceConnectors(
       originX,
       originY,
@@ -4873,7 +4923,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       const admittedLegacyStreetOverlay =
         this.ambientPlaceFabricProfile === 'shared-common-street-overlay' &&
         placement.parcelPathId?.endsWith(':street-overlay');
-      const admittedPostParentDetail = this.ambientPlaceDetailProfile !== 'disabled' &&
+      const admittedPostParentDetail = this.ambientPlaceDetailProfile === 'corridor-frontage' &&
         placement.parcelPathId?.endsWith(':corridor-frontage');
       if (belongsToPlace && !admittedProgramMember && !admittedLegacyStreetOverlay &&
           !admittedPostParentDetail) continue;
@@ -4987,7 +5037,7 @@ export class RegionalWorldTileProvider extends TileProvider {
 
   private getAmbientPlaceProgram(cellX: number, cellY: number): AmbientPlaceProgram | null {
     const cacheKey = `${this.ambientPlaceFabricProfile}:${this.ambientPlaceAccessProfile}:` +
-      `${cellX},${cellY}`;
+      `${this.ambientPlaceDetailProfile}:${cellX},${cellY}`;
     if (this.ambientPlaceProgramCache.has(cacheKey)) {
       const cached = this.ambientPlaceProgramCache.get(cacheKey) ?? null;
       this.ambientPlaceProgramCache.delete(cacheKey);
@@ -5092,36 +5142,112 @@ export class RegionalWorldTileProvider extends TileProvider {
         ? 'east-west'
         : 'north-south'
       : null;
+    const defaultSupports = [...supports];
     if (this.ambientPlaceAccessProfile === 'route-frontage' && connectedAxis &&
-        !supports.some((placement) => (
+        !defaultSupports.some((placement) => (
           isFocalCompositionAsset(placement.asset) && placement.asset.frontageAxis === connectedAxis &&
           Math.hypot(
             placement.anchorX - sourceRoot.siteX,
             placement.anchorY - sourceRoot.siteY,
           ) <= AMBIENT_CONNECTED_PLACE_FOCAL_REACH
         ))) {
-      const usedFocalGroups = new Set(supports.filter((placement) => (
+      const usedFocalGroups = new Set(defaultSupports.filter((placement) => (
         isFocalCompositionAsset(placement.asset)
       )).map((placement) => assetVisualGroup(placement.asset)));
       const gateway = this.buildAmbientPlaceGateway(
         sourceRoot,
-        [root, ...supports],
+        [root, ...defaultSupports],
         connectedAxis,
         usedFocalGroups,
       );
-      if (gateway) supports.push(gateway);
+      if (gateway) defaultSupports.push(gateway);
     }
-    const basePlacements = [root, ...supports];
-    const access = this.ambientPlaceAccessProfile === 'route-frontage'
-      ? this.buildAmbientPlaceAccess(basePlacements, connectedRoutes.slice(0, 32))
+    const defaultBasePlacements = [root, ...defaultSupports];
+    const defaultAccess = this.ambientPlaceAccessProfile === 'route-frontage'
+      ? this.buildAmbientPlaceAccess(defaultBasePlacements, connectedRoutes.slice(0, 32))
       : null;
-    if (this.ambientPlaceAccessProfile === 'route-frontage' && !access) {
+    if (this.ambientPlaceAccessProfile === 'route-frontage' && !defaultAccess) {
       return this.cacheAmbientPlaceProgram(cacheKey, null);
     }
+    let access = defaultAccess;
+    let programBasePlacements = defaultBasePlacements;
+    if (this.ambientPlaceDetailProfile === 'integrated-corridor-frontage') {
+      let integrated = this.buildAmbientIntegratedCorridorFrontage(
+        root,
+        connectedRoutes.slice(0, 32),
+        this.ambientPlaceDetailDiagnostics,
+      );
+      if (!integrated && connectedAxis) {
+        const gateway = this.buildAmbientPlaceGateway(
+          sourceRoot,
+          [root],
+          connectedAxis,
+          new Set(),
+        );
+        const essentialPlacements = gateway ? [root, gateway] : [root];
+        const corridorAccess = this.buildAmbientPlaceAccess(
+          essentialPlacements,
+          connectedRoutes.slice(0, 32),
+        );
+        const corridorPlacement = corridorAccess
+          ? this.buildAmbientCorridorFrontage(
+              {
+                root,
+                placements: essentialPlacements,
+                accessPath: corridorAccess.path,
+                accessRouteKind: corridorAccess.routeKind,
+                accessTargetKey: corridorAccess.targetKey,
+              },
+              new Set(rasterizeRegionalParcelPath(corridorAccess.path).filter((cell) => (
+                cell.protected
+              )).map((cell) => positionKey(cell.x, cell.y))),
+              this.ambientPlacementStructuralReservation(essentialPlacements),
+              this.ambientPlaceDetailDiagnostics,
+            )
+          : null;
+        if (corridorPlacement && corridorAccess) {
+          integrated = {
+            placement: corridorPlacement,
+            access: corridorAccess,
+            requiredPlacements: essentialPlacements,
+          };
+        }
+      }
+      if (integrated) {
+        const budgetedPlacements = [
+          ...integrated.requiredPlacements,
+          integrated.placement,
+        ];
+        const reserved = this.ambientPlacementStructuralReservation(budgetedPlacements);
+        const acceptedIdentities = new Set(budgetedPlacements.map(placementIdentity));
+        const retainedSupports: Placement[] = [];
+        for (const placement of supports) {
+          if (acceptedIdentities.has(placementIdentity(placement)) ||
+              visibleFootprintIntersects(
+                placement.asset,
+                placement.anchorX,
+                placement.anchorY,
+                reserved,
+              ) || placement.asset.collision.some(([offsetX, offsetY]) => reserved.has(
+                positionKey(placement.anchorX + offsetX, placement.anchorY + offsetY),
+              ))) continue;
+          retainedSupports.push(placement);
+          reserveVisibleFootprint(placement, reserved, 0);
+          for (const [offsetX, offsetY] of placement.asset.collision) {
+            reserved.add(positionKey(
+              placement.anchorX + offsetX,
+              placement.anchorY + offsetY,
+            ));
+          }
+        }
+        access = integrated.access;
+        programBasePlacements = [...budgetedPlacements, ...retainedSupports];
+      }
+    }
     const fallbackFrontage = access
-      ? this.buildAmbientPlaceFrontage(root, basePlacements, access.path, access.routeKind)
+      ? this.buildAmbientPlaceFrontage(root, programBasePlacements, access.path, access.routeKind)
       : [];
-    const fallbackStable = Object.freeze([...basePlacements, ...fallbackFrontage]
+    const fallbackStable = Object.freeze([...programBasePlacements, ...fallbackFrontage]
       .map((placement) => Object.freeze({ ...placement })));
     const exactComposition = usesExactCompositionFabric(this.ambientPlaceFabricProfile);
     const accessIntersectsCivic = access
@@ -5150,7 +5276,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       !accessIntersectsCivic
       ? this.buildAmbientSharedCommon(
         root,
-        basePlacements,
+        programBasePlacements,
         access.path,
         access.targetKey,
         sharedCommonDiagnostics,
@@ -5159,10 +5285,10 @@ export class RegionalWorldTileProvider extends TileProvider {
     const sharedParentByIdentity = new Map((sharedCommon?.parents ?? []).map((placement) => (
       [placementIdentity(placement), placement]
     )));
-    const basePlacementKeys = new Set(basePlacements.map(placementIdentity));
+    const basePlacementKeys = new Set(programBasePlacements.map(placementIdentity));
     const publicParentKeys = new Set(sharedCommon?.parents.map(placementIdentity) ?? []);
     const sharedCorePlacements = sharedCommon ? [
-      ...basePlacements.map((placement) => (
+      ...programBasePlacements.map((placement) => (
         sharedParentByIdentity.get(placementIdentity(placement)) ?? placement
       )).filter((placement) => (
         placement === root || publicParentKeys.has(placementIdentity(placement)) ||
@@ -5175,7 +5301,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       ...sharedCommon.parents.filter((placement) => (
         !basePlacementKeys.has(placementIdentity(placement))
       )),
-    ] : basePlacements;
+    ] : programBasePlacements;
     const commonFrontage = sharedCommon
       ? this.buildAmbientSharedCommonFrontage(
         root,
@@ -5394,6 +5520,22 @@ export class RegionalWorldTileProvider extends TileProvider {
       ? 2 - Math.min(1, (program.fabric.compositionCost ?? 0) / 100) +
         this.hashUnit(program.root.siteX, program.root.siteY, 0x3f71) * 0.0001
       : this.hashUnit(program.root.siteX, program.root.siteY, 0x3f71);
+  }
+
+  private ambientPlacementStructuralReservation(
+    placements: readonly Placement[],
+  ): Set<string> {
+    const reserved = new Set<string>();
+    for (const placement of placements) {
+      reserveVisibleFootprint(placement, reserved, 0);
+      for (const [offsetX, offsetY] of placement.asset.collision) {
+        reserved.add(positionKey(
+          placement.anchorX + offsetX,
+          placement.anchorY + offsetY,
+        ));
+      }
+    }
+    return reserved;
   }
 
   private ambientPlaceProgramReservation(program: AmbientPlaceProgram): Set<string> {
@@ -6036,8 +6178,8 @@ export class RegionalWorldTileProvider extends TileProvider {
     parentStructuralReserved: ReadonlySet<string>,
     diagnostics?: RegionalAmbientPlaceDetailAdmissionDiagnostics[],
   ): Placement[] {
-    if (this.ambientPlaceDetailProfile === 'disabled') {
-      if (diagnostics) {
+    if (this.ambientPlaceDetailProfile !== 'corridor-frontage') {
+      if (diagnostics && this.ambientPlaceDetailProfile === 'disabled') {
         diagnostics.push(...programs.map((program) => ({
           site: [program.root.siteX, program.root.siteY] as const,
           rootAssetId: program.root.asset.id,
@@ -6078,6 +6220,266 @@ export class RegionalWorldTileProvider extends TileProvider {
       }
     }
     return placements;
+  }
+
+  /** Let the authored frontage become the route-facing access target before
+   * optional entourage is admitted. Each bounded route-relative anchor first
+   * proves terrain and parent separation, then authors an exact access curve
+   * to its manifest entrance; collision and circulation are checked against
+   * that finished curve before the module can enter the parent budget. */
+  private buildAmbientIntegratedCorridorFrontage(
+    root: Placement,
+    preferredRoutes: readonly RegionalWalkableRouteCandidate[],
+    diagnostics?: RegionalAmbientPlaceDetailAdmissionDiagnostics[],
+  ): AmbientIntegratedCorridorFrontage | null {
+    const audit: RegionalAmbientPlaceDetailAdmissionDiagnostics | null = diagnostics
+      ? {
+          site: [root.siteX, root.siteY],
+          rootAssetId: root.asset.id,
+          routeStart: null,
+          axis: null,
+          pathCells: null,
+          candidateAssetIds: [],
+          anchorAttemptCount: 0,
+          rejectionCounts: {},
+          candidateRejectionCounts: {},
+          attempts: [],
+          outcome: 'missing-access',
+        }
+      : null;
+    let activeCandidateId: string | null = null;
+    let activeAttempt: Omit<
+      RegionalAmbientPlaceDetailAdmissionDiagnostics['attempts'][number],
+      'rejection'
+    > | null = null;
+    const reject = (reason: string): void => {
+      if (!audit) return;
+      audit.rejectionCounts[reason] = (audit.rejectionCounts[reason] ?? 0) + 1;
+      if (activeCandidateId) {
+        const candidateRejections = audit.candidateRejectionCounts[activeCandidateId] ??= {};
+        candidateRejections[reason] = (candidateRejections[reason] ?? 0) + 1;
+      }
+      if (activeAttempt) audit.attempts.push({ ...activeAttempt, rejection: reason });
+    };
+    const finish = (
+      outcome: RegionalAmbientPlaceDetailAdmissionDiagnostics['outcome'],
+      result: AmbientIntegratedCorridorFrontage | null = null,
+    ): AmbientIntegratedCorridorFrontage | null => {
+      if (audit) {
+        audit.outcome = outcome;
+        if (result) {
+          audit.selected = {
+            assetId: result.placement.asset.id,
+            anchor: [result.placement.anchorX, result.placement.anchorY],
+          };
+        }
+        diagnostics!.push(audit);
+      }
+      return result;
+    };
+    if (preferredRoutes.length === 0) return finish('missing-access');
+    const parentStructural = this.ambientPlacementStructuralReservation([root]);
+    const seenAnchors = new Set<string>();
+    let sawValidRoute = false;
+    let sawSemanticCandidate = false;
+    for (const preferredRoute of preferredRoutes) {
+      const routeX = Math.floor(preferredRoute.x);
+      const routeY = Math.floor(preferredRoute.y);
+      const route = this.routes.sample(routeX, routeY);
+      if (!route.routeKind || this.field.sample(routeX, routeY).isWater) continue;
+      sawValidRoute = true;
+      const axis: RegionalRouteContactAxis = Math.abs(preferredRoute.directionX) >
+        Math.abs(preferredRoute.directionY) ? 'east-west' : 'north-south';
+      if (audit && audit.axis === null) {
+        audit.axis = axis;
+        audit.routeStart = [preferredRoute.x, preferredRoute.y];
+      }
+      const localBiome = this.field.sample(routeX, routeY);
+      const candidates = this.parcelComponents.filter((asset) => (
+        asset.placeDetailRole === 'corridor-frontage' &&
+        asset.frontageAxis === axis && asset.compositionSide !== undefined &&
+        asset.frontageStations !== undefined && asset.circulationOffsets !== undefined &&
+        (!asset.programs || asset.programs.length === 0) &&
+        asset.families.some((family) => root.asset.families.includes(family)) &&
+        regionalOffsetsFormConnectedPath(asset.circulationOffsets)
+      )).map((asset) => ({
+        asset,
+        score: Math.max(...asset.families.map((family) => (
+          localBiome.weights[BIOME_FAMILIES.indexOf(family)] ?? 0
+        ))) * 0.88 + this.hashUnit(
+          root.siteX,
+          root.siteY,
+          stringHash(asset.id) ^ 0x6f31,
+        ) * 0.12,
+      })).sort((left, right) => (
+        right.score - left.score || left.asset.id.localeCompare(right.asset.id)
+      ));
+      if (candidates.length === 0) continue;
+      sawSemanticCandidate = true;
+      if (audit) {
+        for (const { asset } of candidates) {
+          if (!audit.candidateAssetIds.includes(asset.id)) audit.candidateAssetIds.push(asset.id);
+        }
+      }
+      for (const { asset } of candidates) {
+        activeCandidateId = asset.id;
+        const [spriteAnchorX, spriteAnchorY] = getSpriteAnchor(asset);
+        for (let extraSetback = 0;
+          extraSetback <= REGIONAL_STREET_PAIR_MAX_EXTRA_SETBACK; extraSetback++) {
+          for (let nudgeIndex = 0;
+            nudgeIndex < REGIONAL_STREET_PAIR_SEARCH_NUDGE_COUNT; nudgeIndex++) {
+            const anchor = regionalStreetPairAnchor({
+              axis,
+              side: asset.compositionSide!,
+              routeStartX: preferredRoute.x,
+              routeStartY: preferredRoute.y,
+              routeHalfWidth: route.halfWidth,
+              spriteWidth: asset.sprite.width,
+              spriteHeight: asset.sprite.height,
+              spriteAnchorX,
+              spriteAnchorY,
+              extraSetback,
+              nudgeIndex,
+            });
+            const anchorKey = `${asset.id}:${positionKey(anchor.anchorX, anchor.anchorY)}`;
+            if (seenAnchors.has(anchorKey)) continue;
+            seenAnchors.add(anchorKey);
+            activeAttempt = audit ? {
+              assetId: asset.id,
+              strategy: 'route-start',
+              extraSetback,
+              nudgeIndex,
+              pathStationIndex: null,
+              circulationOffsetIndex: null,
+              anchor: [anchor.anchorX, anchor.anchorY],
+            } : null;
+            if (audit) audit.anchorAttemptCount++;
+            const fitRejection = this.assetFitRejection(anchor.anchorX, anchor.anchorY, asset);
+            if (fitRejection) {
+              reject(fitRejection);
+              continue;
+            }
+            if (visibleFootprintIntersects(
+              asset,
+              anchor.anchorX,
+              anchor.anchorY,
+              parentStructural,
+            )) {
+              reject('parent-structural-footprint');
+              continue;
+            }
+            const provisional: Placement = {
+              asset,
+              kind: 'ambient',
+              siteX: root.siteX,
+              siteY: root.siteY,
+              ...anchor,
+              parcelId: `place:${root.siteX}:${root.siteY}`,
+              routeKind: preferredRoute.routeKind,
+            };
+            if (this.ambientPlacementIntersectsRouteParcelConnector(provisional, false)) {
+              reject('collision-hits-route-parcel-connector');
+              continue;
+            }
+            const access = this.buildAmbientPlaceAccess(
+              [root, provisional],
+              preferredRoutes,
+              AMBIENT_PLACE_PROGRAM_REACH,
+              true,
+            );
+            if (!access || access.targetKey !== placementIdentity(provisional)) {
+              reject('missing-access');
+              continue;
+            }
+            const accessCells = this.getAmbientPlaceAccessCells(access.path);
+            const pathCells = new Set(accessCells.map((cell) => positionKey(cell.x, cell.y)));
+            const protectedPath = new Set(accessCells.filter((cell) => cell.protected)
+              .map((cell) => positionKey(cell.x, cell.y)));
+            const circulation = new Set(asset.circulationOffsets!.map(([offsetX, offsetY]) => (
+              positionKey(anchor.anchorX + offsetX, anchor.anchorY + offsetY)
+            )));
+            if (![...circulation].some((key) => pathCells.has(key))) {
+              const accessEnd = access.path.points.at(-1);
+              const accessEndKey = accessEnd
+                ? positionKey(Math.floor(accessEnd.x), Math.floor(accessEnd.y))
+                : null;
+              reject(accessEndKey && circulation.has(accessEndKey)
+                ? 'path-raster-misses-access-end'
+                : 'access-end-misses-declared-circulation');
+              continue;
+            }
+            if ([...circulation].some((key) => parentStructural.has(key))) {
+              reject('circulation-hits-parent-structure');
+              continue;
+            }
+            const collision = asset.collision.map(([offsetX, offsetY]) => (
+              positionKey(anchor.anchorX + offsetX, anchor.anchorY + offsetY)
+            ));
+            if (collision.some((key) => protectedPath.has(key))) {
+              reject('collision-hits-protected-place-path');
+              continue;
+            }
+            const visibleConflicts = visibleFootprintConflictCells(
+              asset,
+              anchor.anchorX,
+              anchor.anchorY,
+              protectedPath,
+            ).filter((key) => !circulation.has(key) || !pathCells.has(key));
+            if (visibleConflicts.length > 0) {
+              reject('visible-footprint-conflict');
+              continue;
+            }
+            if (asset.circulationOffsets!.some(([offsetX, offsetY]) => this.field.sample(
+              anchor.anchorX + offsetX,
+              anchor.anchorY + offsetY,
+            ).isWater)) {
+              reject('circulation-water');
+              continue;
+            }
+            const routeStart = access.path.points[0];
+            if (!routeStart) {
+              reject('missing-access');
+              continue;
+            }
+            const accessRoute = this.routes.sample(
+              Math.floor(routeStart.x),
+              Math.floor(routeStart.y),
+            );
+            const accessAxis: RegionalRouteContactAxis = Math.abs(accessRoute.directionX) >
+              Math.abs(accessRoute.directionY) ? 'east-west' : 'north-south';
+            const placement: Placement = {
+              ...provisional,
+              routeKind: access.routeKind,
+              parcelPathId: `${access.path.id}:corridor-frontage`,
+              parcelStation: access.path.arcLength,
+              pathTangentX: accessAxis === 'east-west' ? 1 : 0,
+              pathTangentY: accessAxis === 'east-west' ? 0 : 1,
+            };
+            const finalizedAccess: AmbientPlaceAccess = {
+              ...access,
+              targetKey: placementIdentity(placement),
+            };
+            if (audit) {
+              audit.routeStart = [routeStart.x, routeStart.y];
+              audit.axis = accessAxis;
+              audit.pathCells = accessCells.map((cell) => [cell.x, cell.y] as const)
+                .sort((left, right) => left[1] - right[1] || left[0] - right[0]);
+              if (activeAttempt) {
+                audit.attempts.push({ ...activeAttempt, rejection: 'accepted' });
+              }
+            }
+            return finish('accepted', {
+              placement,
+              access: finalizedAccess,
+              requiredPlacements: [root],
+            });
+          }
+        }
+      }
+    }
+    if (!sawValidRoute) return finish('invalid-route');
+    if (!sawSemanticCandidate) return finish('no-semantic-candidate');
+    return finish('bounded-fit-exhausted');
   }
 
   private buildAmbientCorridorFrontage(
@@ -6131,7 +6533,9 @@ export class RegionalWorldTileProvider extends TileProvider {
       }
       return placement;
     };
-    if (this.ambientPlaceDetailProfile !== 'corridor-frontage' ||
+    if (!['corridor-frontage', 'integrated-corridor-frontage'].includes(
+      this.ambientPlaceDetailProfile,
+    ) ||
         !program.accessPath || !program.accessRouteKind) return finish('missing-access');
     const accessPath = program.accessPath;
     const routeStart = accessPath.points[0];
@@ -6763,7 +7167,9 @@ export class RegionalWorldTileProvider extends TileProvider {
   private buildAmbientPlaceAccess(
     placements: readonly Placement[],
     preferredRoutes: readonly RegionalWalkableRouteCandidate[] = [],
-  ): { path: RegionalParcelPath; routeKind: RegionalRouteKind; targetKey: string } | null {
+    maximumFocalReach = AMBIENT_CONNECTED_PLACE_FOCAL_REACH,
+    preferDeclaredCirculation = false,
+  ): AmbientPlaceAccess | null {
     const focals = placements.filter((placement): placement is Placement & {
       asset: RegionalParcelComponentAsset;
     } => (
@@ -6771,7 +7177,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       Math.hypot(
         placement.anchorX - placements[0]!.siteX,
         placement.anchorY - placements[0]!.siteY,
-      ) <= AMBIENT_CONNECTED_PLACE_FOCAL_REACH &&
+      ) <= maximumFocalReach &&
       placement.asset.frontageAxis !== undefined &&
       placement.asset.compositionSide !== undefined &&
       placement.asset.frontageStations !== undefined
@@ -6785,7 +7191,13 @@ export class RegionalWorldTileProvider extends TileProvider {
       ))
     )));
     for (const focal of focals) {
-      for (const entrance of ambientPlaceEntrances(focal)) {
+      const entrances = preferDeclaredCirculation && focal.asset.circulationOffsets?.length
+        ? focal.asset.circulationOffsets.map(([offsetX, offsetY]) => ({
+            x: focal.anchorX + offsetX + 0.5,
+            y: focal.anchorY + offsetY + 0.5,
+          }))
+        : ambientPlaceEntrances(focal);
+      for (const entrance of entrances) {
         const routes: Array<{
           x: number;
           y: number;
@@ -6857,13 +7269,20 @@ export class RegionalWorldTileProvider extends TileProvider {
             0x31d7,
           ) < 0.5 ? -1 : 1;
           for (const bend of [0, bendSign, -bendSign, bendSign * 2, bendSign * -2]) {
+            const appliedBend = bend * bendMagnitude;
             const points = ambientAccessCurvePoints(
               { x: route.x + 0.5, y: route.y + 0.5 },
               entrance,
-              bend * bendMagnitude,
+              appliedBend,
             );
+            const pathId = preferDeclaredCirculation
+              ? `place-access:${focal.siteX}:${focal.siteY}:${focal.asset.id}:` +
+                `${focal.anchorX},${focal.anchorY}:` +
+                `${Math.round(entrance.x * 2)},${Math.round(entrance.y * 2)}:` +
+                `${route.x},${route.y}:${Math.round(appliedBend * 1_000_000)}`
+              : `place-access:${focal.siteX}:${focal.siteY}:${focal.asset.id}`;
             const path = buildRegionalPolylinePath({
-              id: `place-access:${focal.siteX}:${focal.siteY}:${focal.asset.id}`,
+              id: pathId,
               points,
               radius: 0.52,
               feather: 0.22,
