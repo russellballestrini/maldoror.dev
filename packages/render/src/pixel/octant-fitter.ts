@@ -25,6 +25,10 @@ const labL = new Float64Array(COUNT);
 const labA = new Float64Array(COUNT);
 const labB = new Float64Array(COUNT);
 const assignments = new Uint8Array(COUNT);
+// OCTANT inputs are RGB bytes. Store the exact production transfer result for
+// each byte once; the helper retains the original formula for general values.
+const SRGB_BYTE_TO_LINEAR = Float64Array.from({ length: 256 }, (_, value) =>
+  srgbToLinear(value / 255));
 
 /**
  * Fit eight source subpixels to the terminal's two-colour octant model.
@@ -46,18 +50,18 @@ export function fitOctant(
 }
 
 export function rgbToOklab(color: RGB): Lab {
-  const r = srgbToLinear(color.r / 255);
-  const g = srgbToLinear(color.g / 255);
-  const b = srgbToLinear(color.b / 255);
+  const r = srgbByteToLinear(color.r);
+  const g = srgbByteToLinear(color.g);
+  const b = srgbByteToLinear(color.b);
   return linearRgbToOklab(r, g, b);
 }
 
 function prepare(pixels: ReadonlyArray<Pixel>, defaultBackground: RGB): void {
   for (let index = 0; index < COUNT; index++) {
     const pixel = pixels[index] ?? defaultBackground;
-    const r = srgbToLinear(pixel.r / 255);
-    const g = srgbToLinear(pixel.g / 255);
-    const b = srgbToLinear(pixel.b / 255);
+    const r = srgbByteToLinear(pixel.r);
+    const g = srgbByteToLinear(pixel.g);
+    const b = srgbByteToLinear(pixel.b);
     const lab = linearRgbToOklab(r, g, b);
     linearR[index] = r;
     linearG[index] = g;
@@ -287,6 +291,13 @@ function linearRgbToOklab(r: number, g: number, b: number): Lab {
 
 function srgbToLinear(value: number): number {
   return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+}
+
+function srgbByteToLinear(value: number): number {
+  if (Number.isInteger(value) && value >= 0 && value <= 255) {
+    return SRGB_BYTE_TO_LINEAR[value]!;
+  }
+  return srgbToLinear(value / 255);
 }
 
 function linearToByte(value: number): number {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Pixel } from '@maldoror/protocol';
-import { fitOctant } from '../pixel/octant-fitter.js';
+import { fitOctant, rgbToOklab } from '../pixel/octant-fitter.js';
 import { OCTANT_CHARS } from '../pixel/octant-chars.js';
 import {
   packedRgb,
@@ -9,6 +9,15 @@ import {
 } from '../pixel/pixel-renderer.js';
 
 describe('octant perceptual fitting', () => {
+  it('keeps byte-table and general-value Oklab conversion exact', () => {
+    for (let value = 0; value <= 255; value++) {
+      const color = { r: value, g: 255 - value, b: (value * 73) & 0xff };
+      expect(rgbToOklab(color)).toEqual(referenceRgbToOklab(color));
+    }
+    const fractional = { r: 12.5, g: -2.25, b: 270.75 };
+    expect(rgbToOklab(fractional)).toEqual(referenceRgbToOklab(fractional));
+  });
+
   it('preserves chromatic structure that the luminance split collapses', () => {
     const red = { r: 255, g: 0, b: 0 };
     const equalLuminanceGreen = { r: 0, g: 130, b: 0 };
@@ -138,3 +147,25 @@ describe('octant perceptual fitting', () => {
     expect([...optimized.backgroundIndex]).toEqual([...expected.backgroundIndex]);
   });
 });
+
+function referenceRgbToOklab(color: { r: number; g: number; b: number }): {
+  l: number;
+  a: number;
+  b: number;
+} {
+  const transfer = (byte: number): number => {
+    const value = byte / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  };
+  const red = transfer(color.r);
+  const green = transfer(color.g);
+  const blue = transfer(color.b);
+  const l = Math.cbrt(0.4122214708 * red + 0.5363325363 * green + 0.0514459929 * blue);
+  const m = Math.cbrt(0.2119034982 * red + 0.6806995451 * green + 0.1073969566 * blue);
+  const s = Math.cbrt(0.0883024619 * red + 0.2817188376 * green + 0.6299787005 * blue);
+  return {
+    l: 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    a: 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    b: 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+  };
+}
