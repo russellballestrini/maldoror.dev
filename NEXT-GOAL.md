@@ -2735,10 +2735,22 @@ Completed foundations:
   The 65,536 cap is restored and all counters are removed; evidence lives in
   `track-7-performance/sgr-cache-cap-v203/FINDINGS.md`. This is a retained
   failure, not Gate D: post-run I/O-full PSI was 47.03%/60s.
+  V204 then tests a fixed-memory, two-way set-associative SGR cache at the
+  original 65,536-entry capacity, validating both exact color keys on every
+  hit and replacing one collision without Map nodes or whole-cache clears.
+  Although helper-inclusive SGR/cache self time falls 48.90% and 46.45%, the
+  exact candidate/control/candidate bracket rejects the system result: user
+  CPU rises 2.13% and 13.93%, peak RSS rises 6.22% and 6.77%, and the complete
+  packed-emitter/SGR/GC self group rises 22.25% and 31.12%. All legs retain
+  73,125 application bytes, 20,809 deflated bytes, and exact final pixel hash
+  `43e268d450634356e365b1adb92d5b19321f18bda2553c7a876eba7866fa51bb`.
+  The original Map is restored; evidence lives in
+  `track-7-performance/sgr-set-cache-v204/FINDINGS.md`. This is a retained
+  failure, not Gate D: post-run I/O-full PSI was 34.73%/60s.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, repeat the V196/V197/V199/V201/V202 stack under the same admission
-  contract, then attack SGR lookup/eviction architecture (not capacity), the
-  remaining composition path, or move
+  contract, then move above the pair-cache boundary into redundant color-state,
+  composition, and atmosphere work, or move
   emission off the input-critical path with the semantic oracle, alternating
   same-workload profiles, exact decoded-frame parity, and real SSH proof. In
   parallel, treat any further shoreline recovery as a full
