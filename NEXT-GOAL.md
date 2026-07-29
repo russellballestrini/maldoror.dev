@@ -2937,6 +2937,21 @@ Completed foundations:
   frozen; and prove faithful ANSI gain with exact parent/program/circulation/
   collision parity before deriving the other five. This is source research,
   not an in-world visual improvement or Gate A.
+  V218 selects the first structure-only successor source without promoting it.
+  A built-in ChatGPT/Codex edit removes V217's boat, canal, quay slab, paving
+  field, curb, water stairs, and broad ground ownership while retaining a
+  three-mass workshop row, four occupied openings, the central arch, laundry
+  bridge, roof hierarchy, planters, and facade work clutter. The clean
+  1402x1122 alpha source has zero nontransparent border pixels and no surviving
+  magenta-like key pixels; exact prompt, source/alpha hashes, visual review, and
+  the independent-provenance ruling live in
+  `track-4-world-composition/canal-structure-plane-v218/FINDINGS.md`. The edit
+  is a newly authored source rather than a pixel-preserving mask. It still
+  requires a deterministic manifest derivation with atomic row identity,
+  arch-preserving collision and entrance semantics, threshold/frontage
+  metadata, contact-shadow-only influence, designed semantic LODs, and a
+  post-parent corridor role before one faithful experimental placement. No
+  provider consumes it, no active pixel changes, and Gate A remains open.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, admit or reject V210 and V212 under exact whole-process A/B/A,
   repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission
