@@ -411,6 +411,10 @@ export type RegionalAmbientPlaceFabricProfile =
  * that connection. This is independent of paving around the focal itself. */
 export type RegionalAmbientPlaceAccessProfile = 'isolated' | 'route-frontage';
 
+/** Optional detail assembled only after the complete meso program set has
+ * been admitted. Disabled is the production/default contract. */
+export type RegionalAmbientPlaceDetailProfile = 'disabled' | 'corridor-frontage';
+
 export interface RegionalWorldTileProviderConfig extends TileProviderConfig {
   field: RegionalWorldBiomeSampler;
   routes: RegionalWorldRouteSampler;
@@ -433,6 +437,7 @@ export interface RegionalWorldTileProviderConfig extends TileProviderConfig {
   ambientCompositionProfile?: RegionalAmbientCompositionProfile;
   ambientPlaceFabricProfile?: RegionalAmbientPlaceFabricProfile;
   ambientPlaceAccessProfile?: RegionalAmbientPlaceAccessProfile;
+  ambientPlaceDetailProfile?: RegionalAmbientPlaceDetailProfile;
   ambientLandmarkClearance?: number;
   civicDetailCellSize?: number;
   civicDetailDensity?: number;
@@ -614,6 +619,13 @@ interface AmbientBlockComposition {
   placements: Placement[];
   placePrograms: AmbientPlaceProgram[];
   connectors: Map<string, ParcelConnector>;
+}
+
+interface AmbientPlaceConnectorProgram {
+  program: AmbientPlaceProgram;
+  path: RegionalParcelPath;
+  routeKind: RegionalRouteKind;
+  cells: readonly RegionalParcelPathCell[];
 }
 
 interface AmbientStreetPairCandidate extends RegionalStreetPairCandidate {
@@ -903,6 +915,7 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly ambientCompositionProfile: RegionalAmbientCompositionProfile;
   private readonly ambientPlaceFabricProfile: RegionalAmbientPlaceFabricProfile;
   private readonly ambientPlaceAccessProfile: RegionalAmbientPlaceAccessProfile;
+  private readonly ambientPlaceDetailProfile: RegionalAmbientPlaceDetailProfile;
   private readonly ambientLandmarkClearance: number;
   private readonly civicDetailCellSize: number;
   private readonly civicDetailDensity: number;
@@ -999,6 +1012,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     this.ambientCompositionProfile = config.ambientCompositionProfile ?? 'single';
     this.ambientPlaceFabricProfile = config.ambientPlaceFabricProfile ?? 'terrain-only';
     this.ambientPlaceAccessProfile = config.ambientPlaceAccessProfile ?? 'isolated';
+    this.ambientPlaceDetailProfile = config.ambientPlaceDetailProfile ?? 'disabled';
     this.ambientLandmarkClearance = Math.max(4, config.ambientLandmarkClearance ?? 9);
     this.civicDetailCellSize = Math.max(1, Math.min(12, config.civicDetailCellSize ?? 1));
     this.civicDetailDensity = Math.max(0, Math.min(1, config.civicDetailDensity ?? 0.92));
@@ -1124,13 +1138,17 @@ export class RegionalWorldTileProvider extends TileProvider {
         throw new Error(`Regional environment contact has invalid semantics: ${asset.id}`);
       }
     }
+    const placementParcelComponents = this.parcelComponents.filter((asset) => (
+      asset.placeDetailRole === undefined ||
+      asset.placeDetailRole === this.ambientPlaceDetailProfile
+    ));
     const placementAssets: readonly RegionalVisualAsset[] = [
       ...this.landmarks,
       ...this.ambient,
       ...this.civicDetails,
       ...this.quayDetails,
       ...this.routeContacts,
-      ...this.parcelComponents,
+      ...placementParcelComponents,
       ...this.environmentContacts,
     ];
     const extentX = placementAssets.flatMap((asset) => {
@@ -1163,7 +1181,10 @@ export class RegionalWorldTileProvider extends TileProvider {
         ]),
       ];
     });
-    const parcelAssetReach = Math.max(0, ...this.parcelComponents.flatMap((asset) => {
+    const parcelGroupComponents = this.parcelComponents.filter((asset) => (
+      asset.placeDetailRole === undefined
+    ));
+    const parcelAssetReach = Math.max(0, ...parcelGroupComponents.flatMap((asset) => {
       const [anchorX, anchorY] = getSpriteAnchor(asset);
       return [
         Math.hypot(anchorX, anchorY),
@@ -1175,7 +1196,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     }));
     const maximumPathLength = 3 + this.parcelMaximumLayers * this.parcelLayerSpacing + 1;
     const maximumPathLateral = Math.min(14, maximumPathLength * 0.72);
-    this.parcelGeometryReach = this.parcelComponents.length === 0 ? 0 : Math.ceil(
+    this.parcelGeometryReach = parcelGroupComponents.length === 0 ? 0 : Math.ceil(
       Math.hypot(maximumPathLength, maximumPathLateral) + PARCEL_SIDE_OFFSET +
       parcelAssetReach + 2,
     );
@@ -2132,6 +2153,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     ambientCompositionProfile: RegionalAmbientCompositionProfile;
     ambientPlaceFabricProfile: RegionalAmbientPlaceFabricProfile;
     ambientPlaceAccessProfile: RegionalAmbientPlaceAccessProfile;
+    ambientPlaceDetailProfile: RegionalAmbientPlaceDetailProfile;
     civicDetailAssets: number;
     quayDetailAssets: number;
     environmentContactAssets: number;
@@ -2190,6 +2212,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       ambientCompositionProfile: this.ambientCompositionProfile,
       ambientPlaceFabricProfile: this.ambientPlaceFabricProfile,
       ambientPlaceAccessProfile: this.ambientPlaceAccessProfile,
+      ambientPlaceDetailProfile: this.ambientPlaceDetailProfile,
       civicDetailAssets: this.civicDetails.length,
       quayDetailAssets: this.quayDetails.length,
       environmentContactAssets: this.environmentContacts.length,
@@ -4473,8 +4496,11 @@ export class RegionalWorldTileProvider extends TileProvider {
    * never on whichever runtime block happens to request it. Query the exact
    * declared collision bounds against deterministic route-parcel connectors
    * and cache that coordinate-stable answer across neighbouring blocks. */
-  private ambientPlacementIntersectsRouteParcelConnector(placement: Placement): boolean {
-    const cacheKey = placementIdentity(placement);
+  private ambientPlacementIntersectsRouteParcelConnector(
+    placement: Placement,
+    protectedOnly = true,
+  ): boolean {
+    const cacheKey = `${protectedOnly ? 'protected' : 'all'}:${placementIdentity(placement)}`;
     const cached = this.ambientRouteParcelCollisionCache.get(cacheKey);
     if (cached !== undefined) {
       this.ambientRouteParcelCollisionCache.delete(cacheKey);
@@ -4496,7 +4522,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       const collisionKeys = new Set(collisionCells.map((cell) => positionKey(cell.x, cell.y)));
       intersects = this.getParcelGroupsInBounds(bounds).some((group) => (
         [...group.connectors].some(([key, connector]) => (
-          connector.protected && collisionKeys.has(key)
+          (!protectedOnly || connector.protected) && collisionKeys.has(key)
         ))
       ));
     }
@@ -4713,12 +4739,41 @@ export class RegionalWorldTileProvider extends TileProvider {
       uniquePrograms.set(siteKey, candidate.program);
       for (const key of candidate.reserved) programReserved.add(key);
     }
+    const connectorPrograms = this.resolveAmbientPlaceConnectorPrograms(
+      [...uniquePrograms.values()],
+    );
     const connectors = this.buildAmbientPlaceConnectors(
       originX,
       originY,
-      [...uniquePrograms.values()],
+      connectorPrograms,
     );
-    const connectorReserved = new Set(connectors.keys());
+    const connectorReserved = new Set(connectorPrograms.flatMap(({ cells }) => (
+      cells.map((cell) => positionKey(cell.x, cell.y))
+    )));
+    const parentStructuralReserved = new Set(establishedReserved);
+    for (const program of uniquePrograms.values()) {
+      for (const placement of program.placements) {
+        reserveVisibleFootprint(placement, parentStructuralReserved, 0);
+        for (const [offsetX, offsetY] of placement.asset.collision) {
+          parentStructuralReserved.add(positionKey(
+            placement.anchorX + offsetX,
+            placement.anchorY + offsetY,
+          ));
+        }
+      }
+    }
+    const placeDetails = this.buildAmbientPostParentPlaceDetails(
+      connectorPrograms.map(({ program }) => program),
+      new Set([...programReserved, ...connectorReserved]),
+      parentStructuralReserved,
+    );
+    for (const placement of placeDetails) {
+      reserveVisibleFootprint(placement, programReserved, 1);
+      if (placement.anchorX >= originX && placement.anchorX < originX + this.blockSize &&
+          placement.anchorY >= originY && placement.anchorY < originY + this.blockSize) {
+        placements.push(placement);
+      }
+    }
     if (this.ambientPlaceFabricProfile === 'shared-common-street-overlay') {
       const detailReserved = new Set([
         ...establishedReserved,
@@ -4764,7 +4819,10 @@ export class RegionalWorldTileProvider extends TileProvider {
       const admittedLegacyStreetOverlay =
         this.ambientPlaceFabricProfile === 'shared-common-street-overlay' &&
         placement.parcelPathId?.endsWith(':street-overlay');
-      if (belongsToPlace && !admittedProgramMember && !admittedLegacyStreetOverlay) continue;
+      const admittedPostParentDetail = this.ambientPlaceDetailProfile !== 'disabled' &&
+        placement.parcelPathId?.endsWith(':corridor-frontage');
+      if (belongsToPlace && !admittedProgramMember && !admittedLegacyStreetOverlay &&
+          !admittedPostParentDetail) continue;
       if (sourcePlaceSites.has(siteKey) && !belongsToPlace && !(
         usesSharedCommonFabric(this.ambientPlaceFabricProfile) &&
         placement.parcelPathId === undefined
@@ -5915,6 +5973,154 @@ export class RegionalWorldTileProvider extends TileProvider {
     )?.placements.slice() ?? [];
   }
 
+  /** Add optional occupied frontage only after the complete place set and its
+   * connectors are frozen. Details share one immutable reservation and may
+   * suppress fine props, but they cannot alter or evict parent geometry. */
+  private buildAmbientPostParentPlaceDetails(
+    programs: readonly AmbientPlaceProgram[],
+    protectedReserved: ReadonlySet<string>,
+    parentStructuralReserved: ReadonlySet<string>,
+  ): Placement[] {
+    if (this.ambientPlaceDetailProfile === 'disabled') return [];
+    const occupied = new Set(protectedReserved);
+    const structural = new Set(parentStructuralReserved);
+    const placements: Placement[] = [];
+    for (const program of [...programs].sort((left, right) => (
+      left.root.siteY - right.root.siteY || left.root.siteX - right.root.siteX ||
+      left.root.asset.id.localeCompare(right.root.asset.id)
+    ))) {
+      const placement = this.buildAmbientCorridorFrontage(
+        program,
+        occupied,
+        structural,
+      );
+      if (!placement) continue;
+      placements.push(placement);
+      reserveVisibleFootprint(placement, occupied, 1);
+      reserveVisibleFootprint(placement, structural, 0);
+      for (const [offsetX, offsetY] of placement.asset.collision) {
+        const key = positionKey(placement.anchorX + offsetX, placement.anchorY + offsetY);
+        occupied.add(key);
+        structural.add(key);
+      }
+    }
+    return placements;
+  }
+
+  private buildAmbientCorridorFrontage(
+    program: AmbientPlaceProgram,
+    protectedReserved: ReadonlySet<string>,
+    parentStructuralReserved: ReadonlySet<string>,
+  ): Placement | null {
+    if (this.ambientPlaceDetailProfile !== 'corridor-frontage' ||
+        !program.accessPath || !program.accessRouteKind) return null;
+    const routeStart = program.accessPath.points[0];
+    if (!routeStart) return null;
+    const routeX = Math.floor(routeStart.x);
+    const routeY = Math.floor(routeStart.y);
+    const route = this.routes.sample(routeX, routeY);
+    if (!route.routeKind || this.field.sample(routeX, routeY).isWater) return null;
+    const axis: RegionalRouteContactAxis = Math.abs(route.directionX) >
+      Math.abs(route.directionY) ? 'east-west' : 'north-south';
+    const tangentX = axis === 'east-west' ? 1 : 0;
+    const tangentY = axis === 'east-west' ? 0 : 1;
+    const localBiome = this.field.sample(routeX, routeY);
+    const pathCells = new Set(this.getAmbientPlaceAccessCells(program.accessPath).map((cell) => (
+      positionKey(cell.x, cell.y)
+    )));
+    const candidates = this.parcelComponents.filter((asset) => (
+      asset.placeDetailRole === 'corridor-frontage' &&
+      asset.frontageAxis === axis && asset.compositionSide !== undefined &&
+      asset.frontageStations !== undefined && asset.circulationOffsets !== undefined &&
+      (!asset.programs || asset.programs.length === 0) &&
+      asset.families.some((family) => program.root.asset.families.includes(family)) &&
+      regionalOffsetsFormConnectedPath(asset.circulationOffsets)
+    )).map((asset) => ({
+      asset,
+      score: Math.max(...asset.families.map((family) => (
+        localBiome.weights[BIOME_FAMILIES.indexOf(family)] ?? 0
+      ))) * 0.88 + this.hashUnit(
+        program.root.siteX,
+        program.root.siteY,
+        stringHash(asset.id) ^ 0x6f31,
+      ) * 0.12,
+    })).sort((left, right) => (
+      right.score - left.score || left.asset.id.localeCompare(right.asset.id)
+    ));
+    for (const { asset } of candidates) {
+      for (let extraSetback = 0;
+        extraSetback <= REGIONAL_STREET_PAIR_MAX_EXTRA_SETBACK; extraSetback++) {
+        for (let nudgeIndex = 0;
+          nudgeIndex < REGIONAL_STREET_PAIR_SEARCH_NUDGE_COUNT; nudgeIndex++) {
+          const [spriteAnchorX, spriteAnchorY] = getSpriteAnchor(asset);
+          const anchor = regionalStreetPairAnchor({
+            axis,
+            side: asset.compositionSide!,
+            routeStartX: routeStart.x,
+            routeStartY: routeStart.y,
+            routeHalfWidth: route.halfWidth,
+            spriteWidth: asset.sprite.width,
+            spriteHeight: asset.sprite.height,
+            spriteAnchorX,
+            spriteAnchorY,
+            extraSetback,
+            nudgeIndex,
+          });
+          if (!this.assetFits(anchor.anchorX, anchor.anchorY, asset) ||
+              visibleFootprintIntersects(
+                asset,
+                anchor.anchorX,
+                anchor.anchorY,
+                parentStructuralReserved,
+              )) continue;
+          const circulation = new Set(asset.circulationOffsets!.map(([offsetX, offsetY]) => (
+            positionKey(anchor.anchorX + offsetX, anchor.anchorY + offsetY)
+          )));
+          if (![...circulation].some((key) => pathCells.has(key)) ||
+              [...circulation].some((key) => parentStructuralReserved.has(key))) continue;
+          const collision = asset.collision.map(([offsetX, offsetY]) => (
+            positionKey(anchor.anchorX + offsetX, anchor.anchorY + offsetY)
+          ));
+          if (collision.some((key) => protectedReserved.has(key) || pathCells.has(key))) continue;
+          const unprotectedConflicts = visibleFootprintConflictCells(
+            asset,
+            anchor.anchorX,
+            anchor.anchorY,
+            protectedReserved,
+          ).filter((key) => !circulation.has(key) || !pathCells.has(key));
+          if (unprotectedConflicts.length > 0 || asset.circulationOffsets!.some(
+            ([offsetX, offsetY]) => this.field.sample(
+              anchor.anchorX + offsetX,
+              anchor.anchorY + offsetY,
+            ).isWater,
+          )) continue;
+          const placement: Placement = {
+            asset,
+            kind: 'ambient',
+            siteX: program.root.siteX,
+            siteY: program.root.siteY,
+            ...anchor,
+            parcelId: `place:${program.root.siteX}:${program.root.siteY}`,
+            routeKind: program.accessRouteKind,
+            parcelPathId: `${program.accessPath.id}:corridor-frontage`,
+            parcelStation: 0,
+            pathTangentX: tangentX,
+            pathTangentY: tangentY,
+          };
+          if (this.ambientPlacementIntersectsRouteParcelConnector(placement, false)) continue;
+          const entrances = ambientPlaceEntrances(placement as Placement & {
+            asset: RegionalParcelComponentAsset;
+          });
+          if (entrances.length === 0 || Math.min(...entrances.map((entrance) => (
+            this.routes.sample(Math.floor(entrance.x), Math.floor(entrance.y)).distance
+          ))) > 2.8) continue;
+          return placement;
+        }
+      }
+    }
+    return null;
+  }
+
   /** Enumerate every geometrically valid two-sided vocabulary combination
    * through the authoritative fitter. This is diagnostic input for a future
    * district budget: it preserves occupied frontage options instead of
@@ -6839,9 +7045,34 @@ export class RegionalWorldTileProvider extends TileProvider {
   private buildAmbientPlaceConnectors(
     originX: number,
     originY: number,
-    programs: readonly AmbientPlaceProgram[],
+    programs: readonly AmbientPlaceConnectorProgram[],
   ): Map<string, ParcelConnector> {
     const connectors = new Map<string, ParcelConnector>();
+    for (const { program, path, routeKind, cells } of programs) {
+      for (const cell of cells) {
+        if (cell.x < originX || cell.x >= originX + this.blockSize ||
+            cell.y < originY || cell.y >= originY + this.blockSize) continue;
+        const key = positionKey(cell.x, cell.y);
+        if (connectors.has(key)) continue;
+        connectors.set(key, {
+          routeKind,
+          parcelId: `place:${positionKey(program.root.siteX, program.root.siteY)}`,
+          path,
+          core: cell.core,
+          protected: cell.protected,
+        });
+      }
+    }
+    return connectors;
+  }
+
+  /** Validate connector ownership once in complete world coordinates. Block
+   * caches only slice these immutable programs; they never decide whether a
+   * path exists or which of its cells a post-parent detail must preserve. */
+  private resolveAmbientPlaceConnectorPrograms(
+    programs: readonly AmbientPlaceProgram[],
+  ): AmbientPlaceConnectorProgram[] {
+    const resolved: AmbientPlaceConnectorProgram[] = [];
     const programReserved = new Map<string, Set<string>>();
     for (const program of programs) {
       const siteKey = positionKey(program.root.siteX, program.root.siteY);
@@ -6871,21 +7102,14 @@ export class RegionalWorldTileProvider extends TileProvider {
         return false;
       }));
       if (intersectsOtherComposition) continue;
-      for (const cell of cells) {
-        if (cell.x < originX || cell.x >= originX + this.blockSize ||
-            cell.y < originY || cell.y >= originY + this.blockSize) continue;
-        const key = positionKey(cell.x, cell.y);
-        if (connectors.has(key)) continue;
-        connectors.set(key, {
-          routeKind: program.accessRouteKind,
-          parcelId: `place:${siteKey}`,
-          path: program.accessPath,
-          core: cell.core,
-          protected: cell.protected,
-        });
-      }
+      resolved.push({
+        program,
+        path: program.accessPath,
+        routeKind: program.accessRouteKind,
+        cells,
+      });
     }
-    return connectors;
+    return resolved;
   }
 
   /** A shared public destination is not admissible when the protected part of
@@ -8258,6 +8482,29 @@ function reserveVisibleFootprint(
 
 function positionKey(x: number, y: number): string {
   return `${x},${y}`;
+}
+
+export function regionalOffsetsFormConnectedPath(
+  offsets: readonly (readonly [number, number])[],
+): boolean {
+  if (offsets.length === 0) return false;
+  const cells = new Set(offsets.map(([x, y]) => positionKey(x, y)));
+  if (cells.size !== offsets.length) return false;
+  const pending = [offsets[0]!];
+  const visited = new Set<string>();
+  while (pending.length > 0) {
+    const [x, y] = pending.pop()!;
+    const key = positionKey(x, y);
+    if (visited.has(key)) continue;
+    visited.add(key);
+    for (const [nextX, nextY] of [
+      [x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1],
+    ] as const) {
+      const nextKey = positionKey(nextX, nextY);
+      if (cells.has(nextKey) && !visited.has(nextKey)) pending.push([nextX, nextY]);
+    }
+  }
+  return visited.size === cells.size;
 }
 
 function isFocalCompositionAsset(asset: RegionalVisualAsset): asset is RegionalParcelComponentAsset {

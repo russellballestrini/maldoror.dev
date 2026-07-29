@@ -88,6 +88,18 @@ describe('research-only meso frontage candidate', () => {
     )).rejects.toThrow('Invalid regional parcel component entry');
   });
 
+  it('fails closed when declared circulation is disconnected', async () => {
+    const fixture = readFixture();
+    await expect(loadRegionalParcelComponentCandidate(
+      path.join(ROOT, 'assets/biomes'),
+      fixture.sourceTileSize,
+      {
+        ...fixture.asset,
+        circulationOffsets: [[2, 0], [2, -2]],
+      },
+    )).rejects.toThrow('Invalid regional parcel component entry');
+  });
+
   it('is absent from the production parcel manifest', () => {
     const manifest = JSON.parse(fs.readFileSync(
       path.join(ROOT, 'assets/biomes/parcel-components-manifest.json'),

@@ -9,6 +9,7 @@ import {
   loadRegionalCivicDetailKit,
   loadRegionalEnvironmentContactKit,
   loadRegionalLandmarkKit,
+  loadRegionalParcelComponentCandidate,
   loadRegionalParcelComponentKit,
   loadRegionalQuayDetailKit,
   loadRegionalRouteMaterialKit,
@@ -67,6 +68,12 @@ const AMBIENT_PLACE_FABRIC_PROFILE =
 const AMBIENT_PLACE_ACCESS_PROFILE =
   process.env.MALDOROR_AMBIENT_PLACE_ACCESS_PROFILE ??
   REGIONAL_AMBIENT_PLACE_ACCESS_PROFILE;
+const AMBIENT_PLACE_DETAIL_PROFILE =
+  process.env.MALDOROR_AMBIENT_PLACE_DETAIL_PROFILE ?? 'disabled';
+const PLACE_DETAIL_DESCRIPTOR = path.resolve(
+  process.env.MALDOROR_AMBIENT_PLACE_DETAIL_DESCRIPTOR ??
+    path.join(ROOT, 'tools/render-sim/fixtures/canal-town-meso-frontage-v1.json'),
+);
 const RUN_AMBIENT_DISTRIBUTION_AUDIT =
   process.env.MALDOROR_AMBIENT_DISTRIBUTION_AUDIT !== 'disabled';
 const RUN_FOCAL_ELIGIBILITY_AUDIT =
@@ -111,6 +118,9 @@ if (![
 }
 if (!['isolated', 'route-frontage'].includes(AMBIENT_PLACE_ACCESS_PROFILE)) {
   throw new Error(`Unknown ambient place-access profile: ${AMBIENT_PLACE_ACCESS_PROFILE}`);
+}
+if (!['disabled', 'corridor-frontage'].includes(AMBIENT_PLACE_DETAIL_PROFILE)) {
+  throw new Error(`Unknown ambient place-detail profile: ${AMBIENT_PLACE_DETAIL_PROFILE}`);
 }
 if (![
   'uniform-blue-noise',
@@ -342,6 +352,16 @@ if (CENTRE_OVERRIDE) {
 }
 
 fs.mkdirSync(OUTPUT, { recursive: true });
+const placeDetailFixture = AMBIENT_PLACE_DETAIL_PROFILE === 'disabled'
+  ? null
+  : JSON.parse(fs.readFileSync(PLACE_DETAIL_DESCRIPTOR, 'utf8'));
+if (placeDetailFixture && (
+  placeDetailFixture.runtimeManifest !== false ||
+  !Number.isInteger(placeDetailFixture.sourceTileSize) ||
+  typeof placeDetailFixture.asset !== 'object' || placeDetailFixture.asset === null
+)) {
+  throw new Error(`Invalid research-only place-detail descriptor: ${PLACE_DETAIL_DESCRIPTOR}`);
+}
 const field = new BiomeWorldField(WORLD_SEED, {
   blockSize: 16,
   maxCachedBlocks: 32,
@@ -362,6 +382,7 @@ const [
   quayDetailKit,
   routeContactKit,
   parcelKit,
+  placeDetailCandidate,
   environmentKit,
 ] = await Promise.all([
   loadRegionalBiomeMaterialKit(BIOME_MANIFEST),
@@ -372,6 +393,13 @@ const [
   loadRegionalQuayDetailKit(path.join(ROOT, 'assets/biomes/quay-details-manifest.json')),
   loadRegionalRouteContactKit(path.join(ROOT, 'assets/biomes/route-contacts-manifest.json')),
   loadRegionalParcelComponentKit(path.join(ROOT, 'assets/biomes/parcel-components-manifest.json')),
+  placeDetailFixture
+    ? loadRegionalParcelComponentCandidate(
+        path.join(ROOT, 'assets/biomes'),
+        placeDetailFixture.sourceTileSize,
+        placeDetailFixture.asset,
+      )
+    : Promise.resolve(null),
   loadRegionalEnvironmentContactKit(path.join(ROOT, 'assets/biomes/environment-contacts-manifest.json')),
 ]);
 if (new Set([
@@ -410,7 +438,9 @@ const regionalWorldProviderConfig = {
   civicDetails: CIVIC_DETAIL_PROFILE.enabled ? civicDetailKit.assets : [],
   quayDetails: QUAY_DETAIL_PROFILE.enabled ? quayDetailKit.assets : [],
   routeContacts: routeContactKit.assets,
-  parcelComponents: parcelKit.assets,
+  parcelComponents: placeDetailCandidate
+    ? [...parcelKit.assets, placeDetailCandidate]
+    : parcelKit.assets,
   environmentContacts: environmentKit.assets,
   ambientCellSize: ambientKit.cellSize,
   ambientDensity: ambientKit.density,
@@ -418,6 +448,7 @@ const regionalWorldProviderConfig = {
   ambientCompositionProfile: AMBIENT_COMPOSITION_PROFILE,
   ambientPlaceFabricProfile: AMBIENT_PLACE_FABRIC_PROFILE,
   ambientPlaceAccessProfile: AMBIENT_PLACE_ACCESS_PROFILE,
+  ambientPlaceDetailProfile: AMBIENT_PLACE_DETAIL_PROFILE,
   ambientLandmarkClearance: ambientKit.landmarkClearance,
   civicDetailCellSize: civicDetailKit.cellSize,
   civicDetailDensity: CIVIC_DETAIL_PROFILE.enabled ? civicDetailKit.density : 0,
@@ -2839,6 +2870,11 @@ const metrics = {
   ambientCompositionProfile: AMBIENT_COMPOSITION_PROFILE,
   ambientPlaceFabricProfile: AMBIENT_PLACE_FABRIC_PROFILE,
   ambientPlaceAccessProfile: AMBIENT_PLACE_ACCESS_PROFILE,
+  ambientPlaceDetailProfile: AMBIENT_PLACE_DETAIL_PROFILE,
+  placeDetailDescriptor: placeDetailCandidate
+    ? path.relative(ROOT, PLACE_DETAIL_DESCRIPTOR)
+    : null,
+  placeDetailAssetId: placeDetailCandidate?.id ?? null,
   streetOverlayCoverage,
   canonicalScratchAtlas,
   compositionExactAtlas,

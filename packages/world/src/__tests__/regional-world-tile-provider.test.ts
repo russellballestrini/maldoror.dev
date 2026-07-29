@@ -1,4 +1,4 @@
-import type { BuildingSprite, RGB, Tile, WorldLifeState } from '@maldoror/protocol';
+import type { BuildingSprite, BuildingTile, RGB, Tile, WorldLifeState } from '@maldoror/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import {
   BIOME_FAMILIES,
@@ -28,6 +28,7 @@ import {
   type RegionalAmbientCompositionProfile,
   type RegionalAmbientDistributionProfile,
   type RegionalAmbientPlaceAccessProfile,
+  type RegionalAmbientPlaceDetailProfile,
   type RegionalAmbientPlaceFabricProfile,
   type RegionalAmbientAsset,
   type RegionalCivicDetailAsset,
@@ -195,6 +196,7 @@ function makeWorld(
   ambientPlaceFabricProfile: RegionalAmbientPlaceFabricProfile = 'terrain-only',
   ambientPlaceAccessProfile: RegionalAmbientPlaceAccessProfile = 'isolated',
   includeLandmarkSites = true,
+  ambientPlaceDetailProfile: RegionalAmbientPlaceDetailProfile = 'disabled',
 ): RegionalWorldTileProvider {
   const quayDescriptor = {
     id: 'test-canal',
@@ -425,6 +427,7 @@ function makeWorld(
     ambientCompositionProfile,
     ambientPlaceFabricProfile,
     ambientPlaceAccessProfile,
+    ambientPlaceDetailProfile,
     ambientLandmarkClearance: 4,
     civicDetailCellSize: 1,
     civicDetailDensity: 1,
@@ -1938,6 +1941,113 @@ describe('RegionalWorldTileProvider', () => {
     ))).toBe(true);
     expect(candidate.getRegionalStats()).toMatchObject({
       ambientPlaceFabricProfile: 'shared-common-street-overlay-exact-alternatives',
+    });
+  });
+
+  it('admits corridor frontage after frozen parents without closing its path', () => {
+    const continuousRoute = (x: number, y: number): RegionalRouteSample => ({
+      ...routeSample(x, y),
+      directionX: 1,
+      directionY: 0,
+    });
+    const emptyTile: BuildingTile = { pixels: [], resolutions: {} };
+    const visibleTile = sprite({ r: 244, g: 173, b: 76 }).tiles[0]![0]!;
+    const detail: RegionalParcelComponentAsset = {
+      id: 'parcel:canal-town:post-parent-corridor-frontage',
+      families: ['canal-town'],
+      role: 'mass',
+      visualGroup: 'post-parent-corridor-frontage',
+      compositionRole: 'focal',
+      streetPairRole: 'canonical-alternative',
+      placeDetailRole: 'corridor-frontage',
+      frontageAxis: 'east-west',
+      compositionSide: -1,
+      frontageStations: [0],
+      circulationOffsets: [[0, 0]],
+      sprite: {
+        width: 3,
+        height: 2,
+        tiles: [
+          [emptyTile, emptyTile, emptyTile],
+          [emptyTile, visibleTile, emptyTile],
+        ],
+      },
+      collision: [[-1, -1]],
+    };
+    const makeCandidate = (
+      blockSize: number,
+      profile: RegionalAmbientPlaceDetailProfile,
+    ) => makeWorld(
+      blockSize, 64, continuousRoute, () => biomeSample('canal-town'),
+      false, undefined, false, false, false, 'east-west', [detail], [],
+      'cluster-field-blue-noise', 'hierarchical-place-field',
+      'shared-common', 'route-frontage', false, profile,
+    );
+    const control = makeCandidate(32, 'disabled');
+    const candidate = makeCandidate(32, 'corridor-frontage');
+    const replay = makeCandidate(47, 'corridor-frontage');
+    const bounds = [-96, -72, 128, 72] as const;
+    const details = candidate.getAmbientPlacementsInBounds(...bounds).filter((placement) => (
+      placement.assetId === detail.id
+    ));
+    expect(details.length).toBeGreaterThan(0);
+    expect(details).toEqual(replay.getAmbientPlacementsInBounds(...bounds).filter((placement) => (
+      placement.assetId === detail.id
+    )));
+    expect(control.getAmbientPlacementsInBounds(...bounds).some((placement) => (
+      placement.assetId === detail.id
+    ))).toBe(false);
+
+    type ParentProgram = {
+      root: { asset: { id: string }; siteX: number; siteY: number };
+      placements: readonly { asset: { id: string }; anchorX: number; anchorY: number }[];
+      accessPath?: { id: string };
+      fabric?: { layout: { id: string } };
+    };
+    const parents = (world: RegionalWorldTileProvider) => {
+      const inspect = world as unknown as {
+        buildAmbientPlacements(originX: number, originY: number): {
+          placePrograms: readonly ParentProgram[];
+        };
+      };
+      const programs = new Map<string, unknown>();
+      for (const originY of [-64, -32, 0, 32, 64]) {
+        for (const originX of [-64, -32, 0, 32, 64]) {
+          for (const program of inspect.buildAmbientPlacements(originX, originY).placePrograms) {
+            const site = `${program.root.siteX},${program.root.siteY}`;
+            programs.set(site, {
+              root: program.root.asset.id,
+              placements: program.placements.map((placement) => (
+                `${placement.asset.id}@${placement.anchorX},${placement.anchorY}`
+              )),
+              accessPath: program.accessPath?.id,
+              fabric: program.fabric?.layout.id,
+            });
+          }
+        }
+      }
+      return [...programs.entries()].sort(([left], [right]) => left.localeCompare(right));
+    };
+    expect(parents(candidate)).toEqual(parents(control));
+
+    const connectors = candidate.getParcelConnectorCellsInBounds(...bounds);
+    expect(connectors).toEqual(control.getParcelConnectorCellsInBounds(...bounds));
+    const connectorKeys = new Set(connectors.map((cell) => `${cell.x},${cell.y}`));
+    expect(details.every((placement) => connectorKeys.has(
+      `${placement.anchorX},${placement.anchorY}`,
+    ))).toBe(true);
+    expect(details.every((placement) => !connectorKeys.has(
+      `${placement.anchorX - 1},${placement.anchorY - 1}`,
+    )), JSON.stringify(details.filter((placement) => connectorKeys.has(
+      `${placement.anchorX - 1},${placement.anchorY - 1}`,
+    )).map((placement) => ({
+      placement,
+      connectors: connectors.filter((cell) => (
+        cell.x === placement.anchorX - 1 && cell.y === placement.anchorY - 1
+      )),
+    })))).toBe(true);
+    expect(candidate.getRegionalStats()).toMatchObject({
+      ambientPlaceDetailProfile: 'corridor-frontage',
     });
   });
 

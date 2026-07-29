@@ -3014,6 +3014,30 @@ Completed foundations:
   source-selected immutable-asset reduction, not deployed whole-process RSS,
   latency, or Gate-D proof; it changes no manifest, placement, collision,
   sampling, pixel, or active-frame contract.
+  V223 selects the isolated post-parent admission seam while withholding visual
+  acceptance. A new profile defaults to `disabled`; its opt-in
+  `corridor-frontage` pass runs only after the complete meso program and
+  connector set is frozen. It reuses route-relative anchoring, requires a
+  connected authored circulation path, permits visible path overlap only at
+  that opening, rejects every parent structural conflict, all ambient-path
+  collision, all protected and unprotected route-parcel connector collision,
+  water, terrain, and distant entrances, and lets the optional detail yield
+  without feeding any result back into parent admission. The first focused run
+  retained and corrected a cache-edge failure by resolving complete connector
+  programs in world coordinates before blocks consume slices. Control and
+  candidate now preserve identical parent programs and connector exports;
+  32- and 47-tile cache blocks produce identical details; the opening lands on
+  the path; collision remains outside every connector; and disabled emits
+  nothing. Place-detail bounds affect general placement reach only while
+  enabled and never inflate route-parcel reach. The full provider file passes
+  42/42 tests, the real descriptor passes 4/4 fail-closed loader tests, world
+  typecheck/build and SSH-world typecheck pass, and the faithful regional lab
+  has an explicit descriptor/profile input with default-off metrics. Evidence
+  lives in `track-4-world-composition/canal-post-parent-admission-v223/FINDINGS.md`.
+  This changes no production manifest or active pixel. A real V220 faithful
+  walking/district control-candidate render, exact incremental preparation/
+  residency/frame/byte measurement, designed regional LOD, and physical SSH
+  proof remain mandatory under an admitted host.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, admit or reject V210 and V212 under exact whole-process A/B/A,
   repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission

@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { BuildingSprite, BuildingTile, PackedPixelGrid, Tile } from '@maldoror/protocol';
 import {
   BIOME_FAMILIES,
+  regionalOffsetsFormConnectedPath,
   type BiomeFamily,
   type RegionalAmbientAsset,
   type RegionalCivicDetailAsset,
@@ -1038,7 +1039,10 @@ function parseParcelComponentEntry(value: unknown, index: number): ParcelCompone
         )))) ||
       (value.circulationOffsets !== undefined && (!Array.isArray(value.circulationOffsets) ||
         value.circulationOffsets.length === 0 || value.circulationOffsets.length > 16 ||
-        !value.circulationOffsets.every(isPlaceDetailOffset))) ||
+        !value.circulationOffsets.every(isPlaceDetailOffset) ||
+        !regionalOffsetsFormConnectedPath(
+          value.circulationOffsets as Array<[number, number]>,
+        ))) ||
       (value.placeDetailRole === 'corridor-frontage' && (
         value.compositionRole !== 'focal' ||
         value.streetPairRole !== 'canonical-alternative' ||
