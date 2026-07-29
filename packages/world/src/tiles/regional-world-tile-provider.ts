@@ -5191,8 +5191,11 @@ export class RegionalWorldTileProvider extends TileProvider {
       if (gateway) defaultSupports.push(gateway);
     }
     const defaultBasePlacements = [root, ...defaultSupports];
+    const preferredRoutes = connectedRoutes.length > 32
+      ? connectedRoutes.slice(0, 32)
+      : connectedRoutes;
     const defaultAccess = this.ambientPlaceAccessProfile === 'route-frontage'
-      ? this.buildAmbientPlaceAccess(defaultBasePlacements, connectedRoutes.slice(0, 32))
+      ? this.buildAmbientPlaceAccess(defaultBasePlacements, preferredRoutes)
       : null;
     if (this.ambientPlaceAccessProfile === 'route-frontage' && !defaultAccess) {
       return this.cacheAmbientPlaceProgram(cacheKey, null);
@@ -5202,7 +5205,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     if (this.ambientPlaceDetailProfile === 'integrated-corridor-frontage') {
       let integrated = this.buildAmbientIntegratedCorridorFrontage(
         root,
-        connectedRoutes.slice(0, 32),
+        preferredRoutes,
         this.ambientPlaceDetailDiagnostics,
       );
       if (!integrated && connectedAxis) {
@@ -5215,7 +5218,7 @@ export class RegionalWorldTileProvider extends TileProvider {
         const essentialPlacements = gateway ? [root, gateway] : [root];
         const corridorAccess = this.buildAmbientPlaceAccess(
           essentialPlacements,
-          connectedRoutes.slice(0, 32),
+          preferredRoutes,
         );
         const corridorPlacement = corridorAccess
           ? this.buildAmbientCorridorFrontage(
@@ -6314,7 +6317,8 @@ export class RegionalWorldTileProvider extends TileProvider {
       const routeX = Math.floor(preferredRoute.x);
       const routeY = Math.floor(preferredRoute.y);
       const route = this.routes.sample(routeX, routeY);
-      if (!route.routeKind || this.field.sample(routeX, routeY).isWater) continue;
+      const localBiome = this.field.sample(routeX, routeY);
+      if (!route.routeKind || localBiome.isWater) continue;
       sawValidRoute = true;
       const axis: RegionalRouteContactAxis = Math.abs(preferredRoute.directionX) >
         Math.abs(preferredRoute.directionY) ? 'east-west' : 'north-south';
@@ -6322,7 +6326,6 @@ export class RegionalWorldTileProvider extends TileProvider {
         audit.axis = axis;
         audit.routeStart = [preferredRoute.x, preferredRoute.y];
       }
-      const localBiome = this.field.sample(routeX, routeY);
       const candidates = this.corridorFrontageCandidates.filter((asset) => (
         asset.frontageAxis === axis &&
         asset.families.some((family) => root.asset.families.includes(family))
@@ -6570,7 +6573,8 @@ export class RegionalWorldTileProvider extends TileProvider {
     const routeX = Math.floor(routeStart.x);
     const routeY = Math.floor(routeStart.y);
     const route = this.routes.sample(routeX, routeY);
-    if (!route.routeKind || this.field.sample(routeX, routeY).isWater) {
+    const localBiome = this.field.sample(routeX, routeY);
+    if (!route.routeKind || localBiome.isWater) {
       return finish('invalid-route');
     }
     const axis: RegionalRouteContactAxis = Math.abs(route.directionX) >
@@ -6578,7 +6582,6 @@ export class RegionalWorldTileProvider extends TileProvider {
     if (audit) audit.axis = axis;
     const tangentX = axis === 'east-west' ? 1 : 0;
     const tangentY = axis === 'east-west' ? 0 : 1;
-    const localBiome = this.field.sample(routeX, routeY);
     const accessCells = this.getAmbientPlaceAccessCells(accessPath);
     const pathCells = new Set(accessCells.map((cell) => (
       positionKey(cell.x, cell.y)

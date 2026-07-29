@@ -3171,6 +3171,16 @@ Completed foundations:
   both disks at 93%/97% still forbid timing, RSS, or Gate-D claims. Evidence
   lives in
   `track-7-performance/corridor-frontage-candidate-index-v255/FINDINGS.md`.
+  V256 removes two more provably redundant corridor operations. One bounded
+  immutable route view is now shared by default access, integrated route-first
+  admission, and minimal-gateway fallback: short lists allocate no slice and
+  long lists allocate one rather than as many as three. Both corridor fitters
+  also reuse one biome sample for the water gate and candidate scoring instead
+  of sampling the same coordinate twice. The focused post-parent/integrated
+  tests and world build pass, and the complete V256 geometry metrics are
+  byte-for-byte identical to V255 at SHA `a50b0d6e...76d`. This again selects
+  exact redundant-work removal, not a host timing claim. Evidence lives in
+  `track-7-performance/corridor-frontage-route-view-v256/FINDINGS.md`.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, admit or reject V210 and V212 under exact whole-process A/B/A,
   repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission
