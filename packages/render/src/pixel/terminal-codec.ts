@@ -10,6 +10,7 @@ import { OCTANT_CHARS } from './octant-chars.js';
 const ESC = '\x1b';
 const SAVE_CURSOR = `${ESC}7`;
 const RESTORE_CURSOR = `${ESC}8`;
+const CURSOR_FORWARD_CACHE: string[] = [];
 
 const DEFAULT_COLOR = { r: 20, g: 20, b: 25 } as const;
 const DEFAULT_COLOR_PACKED = (20 << 16) | (20 << 8) | 25;
@@ -388,7 +389,7 @@ export class TerminalCodec {
         // a relative CUF is both exact and materially shorter than repeating
         // the absolute row and column. Other rows retain the fail-safe CUP.
         if (cellWidth === 1 && cursorRow === y && startColumn > cursorColumn) {
-          chunks.push(`${ESC}[${startColumn - cursorColumn}C`);
+          chunks.push(cursorForward(startColumn - cursorColumn));
         } else {
           chunks.push(`${ESC}[${top + y};${startColumn}H`);
         }
@@ -620,4 +621,8 @@ function sameColor(a: TerminalCell['fgColor'], b: TerminalCell['fgColor']): bool
 function isKnownSingleColumnCodepoint(codepoint: number): boolean {
   return (codepoint >= 0x20 && codepoint <= 0x7e)
     || SINGLE_COLUMN_OCTANT_CODEPOINTS.has(codepoint);
+}
+
+function cursorForward(columns: number): string {
+  return CURSOR_FORWARD_CACHE[columns] ??= `${ESC}[${columns}C`;
 }

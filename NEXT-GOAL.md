@@ -2707,8 +2707,23 @@ Completed foundations:
   source/protocol evidence, not deployment, sustained Gate D, real SSH, or
   physical Ghostty acceptance: post-run I/O-full PSI was 6.07%/60s against the
   fixed 1% host gate.
+  V202 then reuses the exact relative CUF packet for each previously observed
+  cursor-forward distance in a lazy integer-indexed array. The selected cache
+  changes zero bytes, commands, changed cells, or pixels. A candidate/control/
+  candidate bracket over identical 400-frame-per-lane production workloads
+  reduces user CPU by 1.91% and 2.90%, wall time by 5.26% and 4.37%, and the
+  combined packed-emitter/SGR/GC self group by 3.86% and 7.26% versus the
+  intervening uncached control. Both candidates retain 73,125 application
+  bytes, 20,809 deflated bytes, and exact final world-pixel hash
+  `43e268d450634356e365b1adb92d5b19321f18bda2553c7a876eba7866fa51bb`;
+  11 render files / 77 tests pass. Repeat benchmark SHA
+  `4085500affc5dc9a341666814a40900fa305dd46f87963bdef35481cd44f3c5a`;
+  evidence lives in
+  `track-7-performance/cursor-forward-cache-v202/FINDINGS.md`. This is selected
+  exact source/allocation evidence, not deployment or Gate D: post-run
+  I/O-full PSI was 5.56%/60s against the fixed 1% host gate.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
-  host window, repeat the V196/V197/V199/V201 stack under the same admission
+  host window, repeat the V196/V197/V199/V201/V202 stack under the same admission
   contract, then attack the remaining SGR/composition architecture or move
   emission off the input-critical path with the semantic oracle, alternating
   same-workload profiles, exact decoded-frame parity, and real SSH proof. In
