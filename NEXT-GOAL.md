@@ -2722,9 +2722,23 @@ Completed foundations:
   `track-7-performance/cursor-forward-cache-v202/FINDINGS.md`. This is selected
   exact source/allocation evidence, not deployment or Gate D: post-run
   I/O-full PSI was 5.56%/60s against the fixed 1% host gate.
+  V203 measures the packed-SGR pair cache before changing it. Temporary
+  diagnostics show the 65,536-entry cache hits only 67.60% and clears seven
+  times over the exact 400-frame-per-lane workload; retaining the full
+  166,421-pair working set raises hits to 91.35%. Capacity is nevertheless
+  rejected: a clean 262,144-entry candidate/control/candidate bracket moves
+  user CPU +9.11% and -1.81%, while the targeted packed-emitter/SGR/GC self
+  group regresses in both candidates by 48.34% and 17.56%. Every candidate and
+  control retains 73,125 application bytes, 20,809 deflated bytes, and exact
+  final pixel hash
+  `43e268d450634356e365b1adb92d5b19321f18bda2553c7a876eba7866fa51bb`.
+  The 65,536 cap is restored and all counters are removed; evidence lives in
+  `track-7-performance/sgr-cache-cap-v203/FINDINGS.md`. This is a retained
+  failure, not Gate D: post-run I/O-full PSI was 47.03%/60s.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, repeat the V196/V197/V199/V201/V202 stack under the same admission
-  contract, then attack the remaining SGR/composition architecture or move
+  contract, then attack SGR lookup/eviction architecture (not capacity), the
+  remaining composition path, or move
   emission off the input-critical path with the semantic oracle, alternating
   same-workload profiles, exact decoded-frame parity, and real SSH proof. In
   parallel, treat any further shoreline recovery as a full
