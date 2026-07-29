@@ -2853,8 +2853,23 @@ Completed foundations:
   deployment, or Gate D. At its final source check, CPU-some PSI was
   25.29%/10s, memory-full PSI 1.10%/10s, I/O-full PSI 13.46%/10s, and
   load-per-CPU 3.411, so three host thresholds still failed.
+  V212 then measures the packed-colour object graph before changing it. The
+  canonical six-viewport prewarm contains 6,082,699 opaque samples but only
+  253,746 unique RGB values (23.972x reuse). A hard-bounded 65,536-entry exact
+  first-seen dictionary would record 4,042,309 hits in bundle traversal order,
+  avoiding 66.456% of opaque RGB allocations; an isolated forced-GC sample
+  prices the retained table at 4.755 MiB used heap. The source candidate
+  interns only fully opaque values, leaving transparent `null` and
+  partial-alpha weak-cache lifetimes unchanged; it quantizes nothing and uses
+  exact 24-bit keys. The complete render suite passes 12 files / 81 tests and
+  the render build passes. This remains an uncommitted, undeployed candidate,
+  not a selected memory or latency win: CPU-some PSI was 32.65%/10s,
+  memory-full PSI 5.34%/10s, I/O-full PSI 4.14%/10s, load-per-CPU 2.521, and
+  swap-out 17,836 KiB/s. Evidence lives in
+  `track-7-performance/opaque-packed-rgb-interner-v212/FINDINGS.md`.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
-  host window, repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission
+  host window, admit or reject V210 and V212 under exact whole-process A/B/A,
+  repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission
   contract, then remove larger exact composition traversals, share prepared
   overlay planes, operate on dirty regions, or move
   emission off the input-critical path with the semantic oracle, alternating
