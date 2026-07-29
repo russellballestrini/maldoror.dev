@@ -2331,6 +2331,29 @@ Completed foundations:
   footprints after shared-parent substitution and excludes the assembled
   place's dynamic visual groups from optional street pairs; prove lost
   coverage and the exact failing sites before any active-pixel change;
+- V187 selects an opt-in exact whole-place composition profile as a proof
+  instrument but rejects candidate A for active materialization. The profile
+  pins roots, route-access targets, and shared public parents, then admits an
+  optional mass only when its complete visible footprint is disjoint and its
+  manifest visual group is new; it assembles complete street pairs before
+  cross-program arbitration and removes both sides if either later fails.
+  The fail-closed 33-frame atlas reproduces every V186 legacy hash, both real
+  footprint failures, and all 13 repeated-group frames. The exact candidate
+  passes all four composition invariants in 33/33 frames, with 25 changed
+  frames, but the visible ambient union falls from 263 to 239 and all 16
+  legacy street placements at eight sites fall to zero because every ordinary
+  focal pair repeats a group already used by its parent. Visual inspection
+  confirms structurally clean but visibly thinner walking/district places.
+  The earlier block-local implementation's 32/47 disagreement and two atlas
+  harness failures are retained; the corrected coordinate-owned program,
+  focused 39/39 tests, typecheck/build, downstream SSH typecheck, seven lint
+  tasks, lab syntax, baseline parity, and source-diff checks pass. Active V170,
+  production, and physical Ghostty remain untouched. Evidence lives in
+  `track-4-world-composition/regional-composition-exact-v187/FINDINGS.md`.
+  Next, inventory alternate focal eligibility dynamically, select distinct
+  silhouettes under a district repetition budget, expand the five zero-route-
+  opportunity family/axis vocabularies, and build multi-building frontage
+  before rerunning the same exact atlas;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without

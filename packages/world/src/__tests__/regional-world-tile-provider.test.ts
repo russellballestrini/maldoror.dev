@@ -1543,6 +1543,105 @@ describe('RegionalWorldTileProvider', () => {
     });
   });
 
+  it('reconciles exact place compositions independently of provider block size', () => {
+    const continuousRoute = (x: number, y: number): RegionalRouteSample => ({
+      ...routeSample(x, y),
+      directionX: 1,
+      directionY: 0,
+    });
+    const focal = (
+      id: string,
+      side: -1 | 1,
+    ): RegionalParcelComponentAsset => ({
+      id,
+      families: ['canal-town'],
+      role: 'mass',
+      visualGroup: `focal:${id}`,
+      compositionRole: 'focal',
+      frontageAxis: 'east-west',
+      compositionSide: side,
+      frontageStations: [0],
+      sprite: sprite(COLOURS['canal-town']),
+      collision: [[0, 0]],
+    });
+    const extraFocals = [
+      focal('parcel:canal-town:street-negative-a', -1),
+      focal('parcel:canal-town:street-negative-b', -1),
+      focal('parcel:canal-town:street-positive-a', 1),
+      focal('parcel:canal-town:street-positive-b', 1),
+    ];
+    const makeExactWorld = (blockSize: number) => makeWorld(
+      blockSize, 64, continuousRoute, () => biomeSample('canal-town'),
+      false, undefined, false, false, false, 'east-west', extraFocals, [],
+      'cluster-field-blue-noise', 'hierarchical-place-field',
+      'shared-common-street-overlay-exact', 'route-frontage', false,
+    );
+    const exact = makeExactWorld(32);
+    const exactReplay = makeExactWorld(47);
+    const bounds = [-96, -72, 128, 72] as const;
+    expect(exact.getAmbientPlacementsInBounds(...bounds)).toEqual(
+      exactReplay.getAmbientPlacementsInBounds(...bounds),
+    );
+
+    type ExactPlacement = {
+      asset: {
+        id: string;
+        visualGroup?: string;
+        sprite: {
+          width: number;
+          height: number;
+          tiles: readonly (readonly unknown[])[];
+        };
+        spriteAnchor?: readonly [number, number];
+      };
+      siteX: number;
+      siteY: number;
+      anchorX: number;
+      anchorY: number;
+    };
+    const inspectExact = exact as unknown as {
+      buildAmbientPlacements(originX: number, originY: number): {
+        placements: readonly ExactPlacement[];
+      };
+    };
+    const exactBySite = new Map<string, Map<string, ExactPlacement>>();
+    for (const originY of [-64, -32, 0, 32, 64]) {
+      for (const originX of [-64, -32, 0, 32, 64]) {
+        for (const placement of inspectExact.buildAmbientPlacements(originX, originY).placements) {
+          const site = `${placement.siteX},${placement.siteY}`;
+          const identity = `${placement.asset.id}@${placement.anchorX},${placement.anchorY}`;
+          const sitePlacements = exactBySite.get(site) ?? new Map<string, ExactPlacement>();
+          sitePlacements.set(identity, placement);
+          exactBySite.set(site, sitePlacements);
+        }
+      }
+    }
+    expect(exactBySite.size).toBeGreaterThan(0);
+    for (const sitePlacements of exactBySite.values()) {
+      const composition = [...sitePlacements.values()];
+      const groups = composition.map((placement) => (
+        placement.asset.visualGroup ?? `asset:${placement.asset.id}`
+      ));
+      expect(new Set(groups).size).toBe(groups.length);
+      const visibleCells = composition.flatMap((placement) => {
+        const [spriteAnchorX, spriteAnchorY] = placement.asset.spriteAnchor ?? [
+          Math.floor(placement.asset.sprite.width / 2),
+          placement.asset.sprite.height - 1,
+        ];
+        return placement.asset.sprite.tiles.flatMap((row, tileY) => (
+          row.flatMap((tile, tileX) => tile ? [
+            `${placement.anchorX + tileX - spriteAnchorX},` +
+              `${placement.anchorY + tileY - spriteAnchorY}`,
+          ] : [])
+        ));
+      });
+      expect(new Set(visibleCells).size).toBe(visibleCells.length);
+    }
+    expect(exact.getRegionalStats()).toMatchObject({
+      ambientPlaceFabricProfile: 'shared-common-street-overlay-exact',
+    });
+  });
+
   it('places deterministic civic details only on route-safe landmark shoulders', () => {
     const civicRoute = (x: number, y: number): RegionalRouteSample => {
       const base = routeSample(x, y);

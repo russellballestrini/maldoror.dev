@@ -71,6 +71,12 @@ const RUN_AMBIENT_DISTRIBUTION_AUDIT =
   process.env.MALDOROR_AMBIENT_DISTRIBUTION_AUDIT !== 'disabled';
 const CANONICAL_SCRATCH_SOURCE =
   process.env.MALDOROR_REGIONAL_CANONICAL_SCRATCH_SOURCE;
+const COMPOSITION_EXACT_SOURCE =
+  process.env.MALDOROR_REGIONAL_COMPOSITION_EXACT_SOURCE;
+const STREET_OVERLAY_FABRIC_PROFILES = new Set([
+  'shared-common-street-overlay',
+  'shared-common-street-overlay-exact',
+]);
 if (!['single', 'bounded-ensemble', 'hierarchical-place-field'].includes(AMBIENT_COMPOSITION_PROFILE)) {
   throw new Error(`Unknown ambient composition profile: ${AMBIENT_COMPOSITION_PROFILE}`);
 }
@@ -79,6 +85,7 @@ if (![
   'internal-spine',
   'shared-common',
   'shared-common-street-overlay',
+  'shared-common-street-overlay-exact',
 ].includes(AMBIENT_PLACE_FABRIC_PROFILE)) {
   throw new Error(`Unknown ambient place-fabric profile: ${AMBIENT_PLACE_FABRIC_PROFILE}`);
 }
@@ -282,7 +289,11 @@ let FRAMES = [
   { name: 'arrival-landmark-district', centre: [0, 0], displayTileSize: 8 },
   { name: 'arrival-landmark-regional', centre: [0, 0], displayTileSize: 4 },
 ].filter((frame) => !FRAME_FILTER || frame.name === FRAME_FILTER);
-if (FRAMES.length === 0) throw new Error(`Unknown landmark frame: ${FRAME_FILTER}`);
+const LATE_BOUND_FRAME_MODE = process.env.MALDOROR_REGIONAL_CANONICAL_SCRATCH_ATLAS === '1' ||
+  process.env.MALDOROR_REGIONAL_COMPOSITION_EXACT_ATLAS === '1';
+if (FRAMES.length === 0 && !LATE_BOUND_FRAME_MODE) {
+  throw new Error(`Unknown landmark frame: ${FRAME_FILTER}`);
+}
 const CENTRE_OVERRIDE = process.env.MALDOROR_REGIONAL_LANDMARK_CENTRE;
 if (CENTRE_OVERRIDE) {
   const centre = CENTRE_OVERRIDE.split(',').map(Number);
@@ -402,6 +413,7 @@ const world = new RegionalWorldTileProvider({
   blockSize: landmarkKit.blockSize,
   maxCachedBlocks: 64,
 });
+let compositionBaselineWorld = null;
 const environmentProgramLayouts = new Map();
 
 function resolveEnvironmentProgramLayout(placement) {
@@ -456,6 +468,7 @@ const ATLAS_MODES = [
   process.env.MALDOROR_REGIONAL_AMBIENT_ATLAS,
   process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS,
   process.env.MALDOROR_REGIONAL_CANONICAL_SCRATCH_ATLAS,
+  process.env.MALDOROR_REGIONAL_COMPOSITION_EXACT_ATLAS,
   process.env.MALDOROR_REGIONAL_CONTACT_ATLAS,
   process.env.MALDOROR_REGIONAL_ENVIRONMENT_ATLAS,
 ].filter((value) => value === '1').length;
@@ -464,6 +477,7 @@ if (ATLAS_MODES > 1) {
 }
 let streetOverlayCoverage = null;
 let canonicalScratchAtlas = null;
+let compositionExactAtlas = null;
 const canonicalScratchCandidates = new Map();
 const canonicalScratchWorlds = new Map();
 
@@ -515,8 +529,8 @@ if (process.env.MALDOROR_REGIONAL_AMBIENT_ATLAS === '1') {
 }
 
 if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
-  if (AMBIENT_PLACE_FABRIC_PROFILE !== 'shared-common-street-overlay') {
-    throw new Error('Street-overlay atlas requires shared-common-street-overlay');
+  if (!STREET_OVERLAY_FABRIC_PROFILES.has(AMBIENT_PLACE_FABRIC_PROFILE)) {
+    throw new Error('Street-overlay atlas requires a shared-common-street-overlay profile');
   }
   const parcelAssetById = new Map(parcelKit.assets.map((asset) => [asset.id, asset]));
   const vocabularySides = new Map();
@@ -1282,7 +1296,7 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
 }
 
 if (process.env.MALDOROR_REGIONAL_CANONICAL_SCRATCH_ATLAS === '1') {
-  if (AMBIENT_PLACE_FABRIC_PROFILE !== 'shared-common-street-overlay' ||
+  if (!STREET_OVERLAY_FABRIC_PROFILES.has(AMBIENT_PLACE_FABRIC_PROFILE) ||
       AMBIENT_PLACE_ACCESS_PROFILE !== 'route-frontage') {
     throw new Error(
       'Canonical scratch atlas requires shared-common-street-overlay and route-frontage',
@@ -1376,6 +1390,59 @@ if (process.env.MALDOROR_REGIONAL_CANONICAL_SCRATCH_ATLAS === '1') {
     canonicalScratchFamily: candidate.family,
     canonicalScratchAxis: candidate.axis,
   })));
+}
+
+if (process.env.MALDOROR_REGIONAL_COMPOSITION_EXACT_ATLAS === '1') {
+  if (AMBIENT_PLACE_FABRIC_PROFILE !== 'shared-common-street-overlay-exact' ||
+      AMBIENT_PLACE_ACCESS_PROFILE !== 'route-frontage') {
+    throw new Error(
+      'Composition-exact atlas requires shared-common-street-overlay-exact and route-frontage',
+    );
+  }
+  if (!COMPOSITION_EXACT_SOURCE) {
+    throw new Error('Composition-exact atlas requires MALDOROR_REGIONAL_COMPOSITION_EXACT_SOURCE');
+  }
+  const sourcePath = path.resolve(COMPOSITION_EXACT_SOURCE);
+  const sourceBuffer = fs.readFileSync(sourcePath);
+  const source = JSON.parse(sourceBuffer.toString('utf8'));
+  if (source.worldSeed !== String(WORLD_SEED) ||
+      source.ambientDistributionProfile !== AMBIENT_DISTRIBUTION_PROFILE ||
+      source.ambientCompositionProfile !== AMBIENT_COMPOSITION_PROFILE ||
+      source.ambientPlaceFabricProfile !== 'shared-common-street-overlay' ||
+      source.ambientPlaceAccessProfile !== AMBIENT_PLACE_ACCESS_PROFILE ||
+      !Array.isArray(source.frames) || source.frames.length === 0 ||
+      source.frames.some((frame) => !frame.baseSha256)) {
+    throw new Error('Composition-exact source is not a complete faithful legacy baseline');
+  }
+  compositionBaselineWorld = new RegionalWorldTileProvider({
+    ...regionalWorldProviderConfig,
+    ambientPlaceFabricProfile: 'shared-common-street-overlay',
+    blockSize: landmarkKit.blockSize,
+    maxCachedBlocks: 64,
+  });
+  compositionExactAtlas = {
+    source: path.relative(ROOT, sourcePath),
+    sourceSha256: crypto.createHash('sha256').update(sourceBuffer).digest('hex'),
+    sourceFrameCount: source.frames.length,
+    sourceProfile: source.ambientPlaceFabricProfile,
+    candidateProfile: AMBIENT_PLACE_FABRIC_PROFILE,
+    contactSheets: [],
+  };
+  FRAMES = source.frames.map((frame) => ({
+    name: `exact-${frame.name}`,
+    scale: frame.scale,
+    displayTileSize: frame.displayTileSize,
+    centre: frame.centre,
+    compositionExactComparison: true,
+    compositionExactSourceFrame: frame.name,
+    expectedBaseSha256: frame.baseSha256,
+  }));
+  if (FRAME_FILTER) {
+    FRAMES = FRAMES.filter((frame) => frame.name === FRAME_FILTER);
+    if (FRAMES.length === 0) {
+      throw new Error(`Unknown composition-exact frame: ${FRAME_FILTER}`);
+    }
+  }
 }
 
 if (process.env.MALDOROR_REGIONAL_CONTACT_ATLAS === '1') {
@@ -2254,6 +2321,7 @@ const metrics = {
   ambientPlaceAccessProfile: AMBIENT_PLACE_ACCESS_PROFILE,
   streetOverlayCoverage,
   canonicalScratchAtlas,
+  compositionExactAtlas,
   ambientDistributionAudit: RUN_AMBIENT_DISTRIBUTION_AUDIT
     ? auditAmbientDistribution(FRAMES[0].centre)
     : null,
@@ -2298,7 +2366,10 @@ for (const frame of FRAMES) {
   if (frame.canonicalScratchCandidateId && !scratchCandidate) {
     throw new Error(`Unknown canonical scratch frame candidate: ${frame.canonicalScratchCandidateId}`);
   }
-  const baseGrid = scratchCandidate ? renderFrame(frame, world) : null;
+  const baseWorld = scratchCandidate
+    ? world
+    : frame.compositionExactComparison ? compositionBaselineWorld : null;
+  const baseGrid = baseWorld ? renderFrame(frame, baseWorld) : null;
   const grid = renderFrame(
     frame,
     scratchCandidate ? canonicalScratchWorld(scratchCandidate) : world,
@@ -2312,6 +2383,8 @@ for (const frame of FRAMES) {
     throw new Error(`Canonical scratch candidate is not visible: ${scratchCandidate.id}`);
   }
   if (baseGrid) {
+    await writeSource(path.join(OUTPUT, `${frame.name}-base-source.png`), baseGrid);
+    await writeOctant(path.join(OUTPUT, `${frame.name}-base-octant-160x44.png`), baseGrid);
     await writeScratchComparison(
       path.join(OUTPUT, `${frame.name}-compare-base-left-scratch-right.png`),
       baseGrid,
@@ -2327,6 +2400,18 @@ for (const frame of FRAMES) {
     frame.centre[1] + halfHeight,
   ];
   const visibleAmbient = world.getAmbientPlacementsInBounds(...visibleBounds);
+  const baseVisibleAmbient = baseWorld
+    ? baseWorld.getAmbientPlacementsInBounds(...visibleBounds)
+    : null;
+  const baseSha256 = baseGrid
+    ? crypto.createHash('sha256').update(gridColours(baseGrid)).digest('hex')
+    : null;
+  if (frame.expectedBaseSha256 && baseSha256 !== frame.expectedBaseSha256) {
+    throw new Error(
+      `Composition-exact legacy baseline drift: ${frame.name}:` +
+      `${baseSha256}!=${frame.expectedBaseSha256}`,
+    );
+  }
   const visibleLandmarkFabrics = world.getLandmarkFabricLayoutsInBounds(...visibleBounds);
   const visiblePlaceConnectors = world.getParcelConnectorCellsInBounds(...visibleBounds)
     .filter((cell) => cell.parcelId.startsWith('place:'));
@@ -2334,9 +2419,7 @@ for (const frame of FRAMES) {
     ...frame,
     elapsedMs: Number((performance.now() - startedAt).toFixed(2)),
     sha256: crypto.createHash('sha256').update(colours).digest('hex'),
-    baseSha256: baseGrid
-      ? crypto.createHash('sha256').update(gridColours(baseGrid)).digest('hex')
-      : null,
+    baseSha256,
     scratchDelta,
     canonicalScratchAudit: scratchCandidate ? {
       id: scratchCandidate.id,
@@ -2363,6 +2446,9 @@ for (const frame of FRAMES) {
     visiblePlaceConnectorCells: visiblePlaceConnectors.length,
     visiblePlaceConnectorPrograms: [...new Set(visiblePlaceConnectors.map((cell) => cell.parcelId))],
     landmarkCompositionAudit: auditLandmarkCompositions(visibleAmbient),
+    baseLandmarkCompositionAudit: baseVisibleAmbient
+      ? auditLandmarkCompositions(baseVisibleAmbient)
+      : null,
     streetOverlayAudit: auditStreetOverlay(frame, visibleAmbient),
     visibleLandmarkFabrics: visibleLandmarkFabrics.map((layout) => ({
       id: layout.id,
@@ -2394,6 +2480,7 @@ if (canonicalScratchAtlas) {
   const scaleOrder = ['walking', 'district', 'regional'];
   for (const scale of scaleOrder) {
     const frames = metrics.frames.filter((frame) => frame.scale === scale);
+    if (frames.length === 0) continue;
     for (const presentation of [
       { kind: 'source', width: WIDTH, height: HEIGHT, suffix: 'source.png' },
       { kind: 'terminal', width: WIDTH, height: HEIGHT, suffix: 'octant-160x44.png' },
@@ -2405,6 +2492,32 @@ if (canonicalScratchAtlas) {
         path.join(OUTPUT, filename),
       );
       canonicalScratchAtlas.contactSheets.push(filename);
+    }
+  }
+}
+if (compositionExactAtlas) {
+  const scaleOrder = ['walking', 'district', 'regional'];
+  for (const scale of scaleOrder) {
+    const frames = metrics.frames.filter((frame) => frame.scale === scale);
+    if (frames.length === 0) continue;
+    for (const presentation of [
+      { kind: 'exact-terminal', width: WIDTH, height: HEIGHT, suffix: 'octant-160x44.png' },
+      {
+        kind: 'base-terminal',
+        width: WIDTH,
+        height: HEIGHT,
+        suffix: 'base-octant-160x44.png',
+      },
+      {
+        kind: 'comparison',
+        width: WIDTH * 2 + 2,
+        height: HEIGHT,
+        suffix: 'compare-base-left-scratch-right.png',
+      },
+    ]) {
+      const filename = `composition-exact-${scale}-${presentation.kind}-contact-sheet.png`;
+      await writeScratchContactSheet(frames, presentation, path.join(OUTPUT, filename));
+      compositionExactAtlas.contactSheets.push(filename);
     }
   }
 }
@@ -2427,8 +2540,10 @@ async function writeScratchContactSheet(frames, presentation, filename) {
       presentation.height,
       { fit: 'contain', background },
     ).png().toBuffer();
-    const label = `${String(frame.canonicalScratchCandidateIndex + 1).padStart(2, '0')} ` +
-      `${frame.canonicalScratchFamily} ${frame.canonicalScratchAxis}`;
+    const label = frame.compositionExactSourceFrame ?? (
+      `${String(frame.canonicalScratchCandidateIndex + 1).padStart(2, '0')} ` +
+      `${frame.canonicalScratchFamily} ${frame.canonicalScratchAxis}`
+    );
     const escaped = label.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
     const labelSvg = Buffer.from(
       `<svg width="${presentation.width}" height="24" xmlns="http://www.w3.org/2000/svg">` +

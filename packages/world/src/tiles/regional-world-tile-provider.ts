@@ -368,7 +368,8 @@ export type RegionalAmbientPlaceFabricProfile =
   | 'terrain-only'
   | 'internal-spine'
   | 'shared-common'
-  | 'shared-common-street-overlay';
+  | 'shared-common-street-overlay'
+  | 'shared-common-street-overlay-exact';
 
 /** Whether a meso place remains an isolated wilderness composition or proves
  * a walkable connection to the regional route graph and authors frontage along
@@ -524,6 +525,7 @@ interface AmbientPlaceProgram {
   root: Placement;
   placements: readonly Placement[];
   fallbackPlacements?: readonly Placement[];
+  streetPairKeys?: readonly [string, string];
   accessPath?: RegionalParcelPath;
   accessRouteKind?: RegionalRouteKind;
   accessTargetKey?: string;
@@ -4184,7 +4186,10 @@ export class RegionalWorldTileProvider extends TileProvider {
         return result;
       };
       let selectedProgram = program;
-      let accepted = acceptAgainstEstablished(program.placements);
+      let accepted = this.retainCompleteAmbientStreetPair(
+        program,
+        acceptAgainstEstablished(program.placements),
+      );
       const publicParentsSurvive = !program.publicFocalKeys ||
         program.publicFocalKeys.every((identity) => (
           accepted.some((placement) => placementIdentity(placement) === identity)
@@ -4204,6 +4209,9 @@ export class RegionalWorldTileProvider extends TileProvider {
       if (selectedProgram.publicFocalKeys && !selectedProgram.publicFocalKeys.every((identity) => (
         accepted.some((placement) => placementIdentity(placement) === identity)
       ))) continue;
+      const acceptedStreetPairKeys = selectedProgram.streetPairKeys?.every((identity) => (
+        accepted.some((placement) => placementIdentity(placement) === identity)
+      )) ? selectedProgram.streetPairKeys : undefined;
       const acceptedProgram = {
         root: selectedProgram.root,
         placements: accepted,
@@ -4211,6 +4219,7 @@ export class RegionalWorldTileProvider extends TileProvider {
         accessRouteKind: selectedProgram.accessRouteKind,
         accessTargetKey: selectedProgram.accessTargetKey,
         publicFocalKeys: selectedProgram.publicFocalKeys,
+        streetPairKeys: acceptedStreetPairKeys,
         fabric: selectedProgram.fabric,
       } satisfies AmbientPlaceProgram;
       const siteKey = positionKey(program.root.siteX, program.root.siteY);
@@ -4238,6 +4247,7 @@ export class RegionalWorldTileProvider extends TileProvider {
           accepted = fallbackAccepted;
           acceptedProgram.placements = fallbackAccepted;
           acceptedProgram.publicFocalKeys = undefined;
+          acceptedProgram.streetPairKeys = undefined;
           acceptedProgram.fabric = undefined;
           reserved.clear();
           for (const placement of fallbackAccepted) reserveVisibleFootprint(placement, reserved, 1);
@@ -4609,10 +4619,85 @@ export class RegionalWorldTileProvider extends TileProvider {
       : [];
     const stable = Object.freeze([...districtPlacements, ...frontage]
       .map((placement) => Object.freeze({ ...placement })));
+    const exactComposition = this.ambientPlaceFabricProfile ===
+      'shared-common-street-overlay-exact';
+    const fallbackRequired = new Set([
+      placementIdentity(root),
+      ...(access?.targetKey ? [access.targetKey] : []),
+    ]);
+    const selectedFallbackStable = exactComposition
+      ? this.reconcileAmbientPlaceComposition(fallbackStable, fallbackRequired)
+      : fallbackStable;
+    const stableRequired = new Set([
+      ...fallbackRequired,
+      ...(sharedCommon?.parents.map(placementIdentity) ?? []),
+    ]);
+    const selectedStable = exactComposition
+      ? this.reconcileAmbientPlaceComposition(stable, stableRequired)
+      : stable;
+    if (!selectedStable) {
+      if (!selectedFallbackStable) return this.cacheAmbientPlaceProgram(cacheKey, null);
+      return this.cacheAmbientPlaceProgram(cacheKey, Object.freeze({
+        root: selectedFallbackStable.find((placement) => (
+          placementIdentity(placement) === placementIdentity(root)
+        ))!,
+        placements: selectedFallbackStable,
+        accessPath: access?.path,
+        accessRouteKind: access?.routeKind,
+        accessTargetKey: access?.targetKey,
+      }));
+    }
+    let finalStable = selectedStable;
+    let streetPairKeys: readonly [string, string] | undefined;
+    if (exactComposition && sharedCommon && access) {
+      const provisional = {
+        root: selectedStable.find((placement) => (
+          placementIdentity(placement) === placementIdentity(root)
+        ))!,
+        placements: selectedStable,
+        accessPath: access.path,
+        accessRouteKind: access.routeKind,
+        accessTargetKey: access.targetKey,
+        publicFocalKeys: sharedCommon.parents.map(placementIdentity),
+        fabric: sharedCommon.fabric,
+      } satisfies AmbientPlaceProgram;
+      const excludedVisualGroups = new Set(selectedStable.map((placement) => (
+        assetVisualGroup(placement.asset)
+      )));
+      const pair = this.buildAmbientSharedStreetPairCandidate(
+        provisional,
+        this.ambientPlaceProgramReservation(provisional),
+        excludedVisualGroups,
+      );
+      if (pair) {
+        const pairPlacements = Object.freeze([
+          Object.freeze({ ...pair.placements[0] }),
+          Object.freeze({ ...pair.placements[1] }),
+        ]) satisfies readonly [Placement, Placement];
+        const pairRequired = new Set([
+          ...stableRequired,
+          ...pairPlacements.map(placementIdentity),
+        ]);
+        const reconciled = this.reconcileAmbientPlaceComposition(
+          [...selectedStable, ...pairPlacements],
+          pairRequired,
+        );
+        if (reconciled) {
+          finalStable = reconciled;
+          streetPairKeys = Object.freeze([
+            placementIdentity(pairPlacements[0]),
+            placementIdentity(pairPlacements[1]),
+          ]);
+        }
+      }
+    }
     const sharedProgram = Object.freeze({
-      root: stable[0]!,
-      placements: stable,
-      fallbackPlacements: sharedCommon ? fallbackStable : undefined,
+      root: selectedStable.find((placement) => (
+        placementIdentity(placement) === placementIdentity(root)
+      ))!,
+      placements: finalStable,
+      fallbackPlacements: sharedCommon ? selectedFallbackStable ?? undefined : undefined,
+      streetPairKeys,
       accessPath: access?.path,
       accessRouteKind: access?.routeKind,
       accessTargetKey: access?.targetKey,
@@ -4623,15 +4708,79 @@ export class RegionalWorldTileProvider extends TileProvider {
       this.ambientPlaceProgramReservation(sharedProgram),
       this.ambientAccessCivicReserved(sharedProgram.accessPath),
     )) {
+      if (exactComposition && !selectedFallbackStable) {
+        return this.cacheAmbientPlaceProgram(cacheKey, null);
+      }
       return this.cacheAmbientPlaceProgram(cacheKey, Object.freeze({
-        root: fallbackStable[0]!,
-        placements: fallbackStable,
+        root: selectedFallbackStable?.find((placement) => (
+          placementIdentity(placement) === placementIdentity(root)
+        )) ?? fallbackStable[0]!,
+        placements: selectedFallbackStable ?? fallbackStable,
         accessPath: access?.path,
         accessRouteKind: access?.routeKind,
         accessTargetKey: access?.targetKey,
       }));
     }
     return this.cacheAmbientPlaceProgram(cacheKey, sharedProgram);
+  }
+
+  /** A street pair is one semantic placement. If external civic reservation
+   * removes either member during block admission, remove both instead of
+   * emitting a one-sided remnant. */
+  private retainCompleteAmbientStreetPair(
+    program: AmbientPlaceProgram,
+    placements: readonly Placement[],
+  ): Placement[] {
+    if (!program.streetPairKeys) return [...placements];
+    const pair = new Set(program.streetPairKeys);
+    const surviving = placements.filter((placement) => pair.has(placementIdentity(placement)));
+    return surviving.length === program.streetPairKeys.length
+      ? [...placements]
+      : placements.filter((placement) => !pair.has(placementIdentity(placement)));
+  }
+
+  /** Reconcile a complete place only after its public geometry has been
+   * assembled. Required roots and access/public parents win first; every
+   * optional mass must then contribute both a new manifest visual group and a
+   * disjoint visible footprint. Output order remains the authored assembly
+   * order, so the proof policy cannot silently change compositing precedence. */
+  private reconcileAmbientPlaceComposition(
+    placements: readonly Placement[],
+    requiredIdentities: ReadonlySet<string>,
+  ): readonly Placement[] | null {
+    const identities = placements.map(placementIdentity);
+    if (new Set(identities).size !== identities.length) return null;
+    const placementByIdentity = new Map(placements.map((placement) => (
+      [placementIdentity(placement), placement]
+    )));
+    if ([...requiredIdentities].some((identity) => !placementByIdentity.has(identity))) return null;
+    const reserved = new Set<string>();
+    const visualGroups = new Set<string>();
+    const accepted = new Set<string>();
+    const admit = (placement: Placement): boolean => {
+      const identity = placementIdentity(placement);
+      const visualGroup = assetVisualGroup(placement.asset);
+      if (visualGroups.has(visualGroup) || visibleFootprintIntersects(
+        placement.asset,
+        placement.anchorX,
+        placement.anchorY,
+        reserved,
+      )) return false;
+      accepted.add(identity);
+      visualGroups.add(visualGroup);
+      reserveVisibleFootprint(placement, reserved, 0);
+      return true;
+    };
+    for (const placement of placements) {
+      if (requiredIdentities.has(placementIdentity(placement)) && !admit(placement)) return null;
+    }
+    for (const placement of placements) {
+      const identity = placementIdentity(placement);
+      if (!requiredIdentities.has(identity)) admit(placement);
+    }
+    return Object.freeze(placements.filter((placement) => accepted.has(
+      placementIdentity(placement),
+    )));
   }
 
   private cacheAmbientPlaceProgram(
@@ -4690,7 +4839,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       this.ambientStreetPairCandidateCache.set(cacheKey, cached);
       return cached;
     }
-    if (this.ambientPlaceFabricProfile !== 'shared-common-street-overlay' ||
+    if (!usesStreetOverlayFabric(this.ambientPlaceFabricProfile) ||
         this.ambientPlaceAccessProfile !== 'route-frontage') {
       return this.cacheAmbientStreetPairCandidates(cacheKey, Object.freeze([]));
     }
@@ -4770,7 +4919,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       return cached;
     }
     const manifestMaximumAxisReach = this.ambientStreetPairManifestMaximumAxisReach();
-    if (this.ambientPlaceFabricProfile !== 'shared-common-street-overlay' ||
+    if (!usesStreetOverlayFabric(this.ambientPlaceFabricProfile) ||
         this.ambientPlaceAccessProfile !== 'route-frontage') {
       return this.cacheAmbientStreetPairProtectedReservation(cacheKey, Object.freeze({
         ownershipCellX,
@@ -4992,7 +5141,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       this.ambientStreetPairProtectedFitCandidateCache.set(cacheKey, cached);
       return cached;
     }
-    if (this.ambientPlaceFabricProfile !== 'shared-common-street-overlay' ||
+    if (!usesStreetOverlayFabric(this.ambientPlaceFabricProfile) ||
         this.ambientPlaceAccessProfile !== 'route-frontage') {
       this.cacheAmbientStreetPairProtectedFitDiagnostics(cacheKey, Object.freeze([]));
       return this.cacheAmbientStreetPairProtectedFitCandidates(cacheKey, Object.freeze([]));
@@ -5274,7 +5423,15 @@ export class RegionalWorldTileProvider extends TileProvider {
     program: AmbientPlaceProgram,
     reserved: ReadonlySet<string>,
   ): Placement[] {
-    return this.buildAmbientSharedStreetPairCandidate(program, reserved)?.placements.slice() ?? [];
+    const excludedVisualGroups = this.ambientPlaceFabricProfile ===
+      'shared-common-street-overlay-exact'
+      ? new Set(program.placements.map((placement) => assetVisualGroup(placement.asset)))
+      : new Set<string>();
+    return this.buildAmbientSharedStreetPairCandidate(
+      program,
+      reserved,
+      excludedVisualGroups,
+    )?.placements.slice() ?? [];
   }
 
   /** Preserve both street sides as one addressable candidate. This factory is
@@ -7639,7 +7796,12 @@ function setsIntersect(first: ReadonlySet<string>, second: ReadonlySet<string>):
 }
 
 function usesSharedCommonFabric(profile: RegionalAmbientPlaceFabricProfile): boolean {
-  return profile === 'shared-common' || profile === 'shared-common-street-overlay';
+  return profile === 'shared-common' || usesStreetOverlayFabric(profile);
+}
+
+function usesStreetOverlayFabric(profile: RegionalAmbientPlaceFabricProfile): boolean {
+  return profile === 'shared-common-street-overlay' ||
+    profile === 'shared-common-street-overlay-exact';
 }
 
 /** Large unrotated blocks use their authored screen-space frontage rather than
