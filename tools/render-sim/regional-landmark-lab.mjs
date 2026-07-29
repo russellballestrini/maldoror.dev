@@ -2620,7 +2620,15 @@ function auditLandmarkFabrics(layouts) {
 }
 
 function auditLandmarkCompositions(placements) {
-  const assetById = new Map(parcelKit.assets.map((asset) => [asset.id, asset]));
+  const assetById = new Map([
+    ...landmarkKit.assets,
+    ...ambientKit.assets,
+    ...civicDetailKit.assets,
+    ...quayDetailKit.assets,
+    ...routeContactKit.assets,
+    ...parcelKit.assets,
+    ...environmentKit.assets,
+  ].map((asset) => [asset.id, asset]));
   const focalIds = new Set(parcelKit.assets
     .filter((asset) => asset.compositionRole === 'focal')
     .map((asset) => asset.id));
@@ -2631,10 +2639,26 @@ function auditLandmarkCompositions(placements) {
     const members = placements.filter((placement) => (
       `${placement.siteX},${placement.siteY}` === site
     ));
-    const groups = members.map((placement) => {
+    const memberAudits = members.map((placement) => {
       const asset = assetById.get(placement.assetId);
-      return asset?.visualGroup ?? `asset:${placement.assetId}`;
+      if (!asset) throw new Error(`Unknown composed parcel asset: ${placement.assetId}`);
+      return {
+        identity: `${placement.assetId}@${placement.anchorX},${placement.anchorY}`,
+        assetId: placement.assetId,
+        visualGroup: asset.visualGroup ?? `asset:${placement.assetId}`,
+        anchor: [placement.anchorX, placement.anchorY],
+        visibleCells: visibleAssetCells(asset, placement.anchorX, placement.anchorY),
+      };
     });
+    const identityCounts = countValues(memberAudits.map((member) => member.identity));
+    const duplicateQueryIdentities = Object.entries(identityCounts)
+      .filter(([, count]) => count > 1)
+      .map(([identity]) => identity);
+    const physicalMembers = [...new Map(memberAudits.map((member) => [
+      member.identity,
+      member,
+    ])).values()];
+    const groups = physicalMembers.map((member) => member.visualGroup);
     const counts = Object.fromEntries([...new Set(groups)].sort().map((group) => [
       group,
       groups.filter((candidate) => candidate === group).length,
@@ -2642,20 +2666,79 @@ function auditLandmarkCompositions(placements) {
     const duplicateVisualGroups = Object.entries(counts)
       .filter(([, count]) => count > 1)
       .map(([group]) => group);
+    const anchorCounts = countValues(physicalMembers.map((member) => member.anchor.join(',')));
+    const duplicatePhysicalAnchors = Object.entries(anchorCounts)
+      .filter(([, count]) => count > 1)
+      .map(([anchor]) => anchor);
+    const visibleCellMembers = new Map();
+    for (const member of physicalMembers) {
+      for (const cell of member.visibleCells) {
+        const occupants = visibleCellMembers.get(cell) ?? [];
+        occupants.push(member.identity);
+        visibleCellMembers.set(cell, occupants);
+      }
+    }
+    const overlappingVisibleCells = [...visibleCellMembers.entries()]
+      .filter(([, identities]) => new Set(identities).size > 1)
+      .map(([cell, identities]) => ({ cell, identities: [...new Set(identities)].sort() }));
     return {
       site,
       memberCount: members.length,
-      assetIds: members.map((placement) => placement.assetId).sort(),
+      physicalPlacementCount: physicalMembers.length,
+      renderedVisibleCellCount: visibleCellMembers.size,
+      assetIds: physicalMembers.map((member) => member.assetId).sort(),
+      members: physicalMembers.map((member) => ({
+        identity: member.identity,
+        assetId: member.assetId,
+        visualGroup: member.visualGroup,
+        anchor: member.anchor,
+        visibleCellCount: member.visibleCells.length,
+      })).sort((a, b) => a.identity.localeCompare(b.identity)),
+      duplicateQueryIdentities,
+      duplicatePhysicalAnchors,
+      overlappingVisibleCells,
       visualGroups: counts,
       duplicateVisualGroups,
-      valid: duplicateVisualGroups.length === 0,
+      queryIdentitiesUnique: duplicateQueryIdentities.length === 0,
+      physicalAnchorsUnique: duplicatePhysicalAnchors.length === 0,
+      visibleFootprintsDisjoint: overlappingVisibleCells.length === 0,
+      valid: duplicateQueryIdentities.length === 0 && duplicatePhysicalAnchors.length === 0 &&
+        overlappingVisibleCells.length === 0 && duplicateVisualGroups.length === 0,
     };
   });
   return {
     compositionCount: compositions.length,
-    allVisualGroupsUnique: compositions.every((composition) => composition.valid),
+    allQueryIdentitiesUnique: compositions.every((composition) => (
+      composition.queryIdentitiesUnique
+    )),
+    allPhysicalAnchorsUnique: compositions.every((composition) => (
+      composition.physicalAnchorsUnique
+    )),
+    allVisibleFootprintsDisjoint: compositions.every((composition) => (
+      composition.visibleFootprintsDisjoint
+    )),
+    allVisualGroupsUnique: compositions.every((composition) => (
+      composition.duplicateVisualGroups.length === 0
+    )),
+    allValid: compositions.every((composition) => composition.valid),
     compositions,
   };
+}
+
+function visibleAssetCells(asset, anchorX, anchorY) {
+  const [spriteAnchorX, spriteAnchorY] = asset.spriteAnchor ?? [
+    Math.floor(asset.sprite.width / 2),
+    asset.sprite.height - 1,
+  ];
+  const cells = [];
+  for (let tileY = 0; tileY < asset.sprite.height; tileY++) {
+    for (let tileX = 0; tileX < asset.sprite.width; tileX++) {
+      const tile = asset.sprite.tiles[tileY]?.[tileX];
+      if (!tile || !tileHasVisiblePixels(tile)) continue;
+      cells.push(`${anchorX + tileX - spriteAnchorX},${anchorY + tileY - spriteAnchorY}`);
+    }
+  }
+  return cells.sort();
 }
 
 function auditStreetOverlay(frame, placements) {

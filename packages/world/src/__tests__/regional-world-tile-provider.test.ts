@@ -937,6 +937,7 @@ describe('RegionalWorldTileProvider', () => {
     const parents = first.getAmbientPlacementsInBounds(...bounds).filter((placement) => (
       placement.parcelPathId?.endsWith(':common')
     ));
+    const allPlacements = first.getAmbientPlacementsInBounds(...bounds);
     const replayParents = replay.getAmbientPlacementsInBounds(...bounds).filter((placement) => (
       placement.parcelPathId?.endsWith(':common')
     ));
@@ -944,6 +945,9 @@ describe('RegionalWorldTileProvider', () => {
       layout.connectionMode === 'shared-common'
     ));
     expect(parents).toEqual(replayParents);
+    expect(new Set(allPlacements.map((placement) => (
+      `${placement.assetId}@${placement.anchorX},${placement.anchorY}`
+    ))).size).toBe(allPlacements.length);
     const inspectPrograms = first as unknown as {
       getAmbientPlaceProgram(cellX: number, cellY: number): {
         placements: readonly {

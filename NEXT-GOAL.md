@@ -2310,6 +2310,27 @@ Completed foundations:
   separately; improve family/axis route opportunity and multi-building
   occupied-frontage grammar; then rerun this scratch atlas before any active
   materialization;
+- V186 selects an exact composition-identity audit and rejects V185's
+  provisional bounds-query duplication hypothesis. The faithful 33-frame run
+  separates canonical `asset@anchor` query identity, physical anchor identity,
+  visible sprite cells, and manifest visual groups across 50 visible
+  composition observations at 31 owner sites. Query identities and physical
+  anchors are unique in 33/33 frames. The actual defects are deeper: 13 frames
+  at 10 sites contain 19 unique site/group silhouette repetitions, while two
+  forest compositions each interpenetrate on eight exact visible cells.
+  Axis-specific and parcel/place asset IDs therefore were masking real visual
+  reuse, and two distinct-anchor placement pairs were genuinely composited
+  through each other. Failed parcel-only and ambient-plus-parcel audit models
+  are retained; candidate C correctly resolves the complete provider visual
+  vocabulary. Focused 38/38 tests, world typecheck, seven lint tasks, lab
+  syntax, and source diff checks pass. Only diagnostics and a canonical-query
+  fixture assertion change; active V170 and production remain untouched.
+  Evidence lives in
+  `track-4-world-composition/regional-composition-identity-v186/FINDINGS.md`.
+  Next, build a scratch placement-policy successor that reconciles complete
+  footprints after shared-parent substitution and excludes the assembled
+  place's dynamic visual groups from optional street pairs; prove lost
+  coverage and the exact failing sites before any active-pixel change;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
