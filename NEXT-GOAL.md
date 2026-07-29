@@ -2780,10 +2780,25 @@ Completed foundations:
   `track-7-performance/octant-srgb-lut-v206/FINDINGS.md`. This is selected
   exact source/CPU evidence, not deployment or Gate D: post-run I/O-full PSI
   was 20.41%/60s against the fixed 1% ceiling.
+  V207 then measures the remaining alpha compositor rather than guessing:
+  across 400 frames/lane it receives 2,343,200 calls, including 1,320,000
+  implicit-opaque calls (56.33%) and 1,023,200 partial calls over 165 alpha
+  values. The partial identity cache is already healthy at 87.26% hits. An
+  exact internal opaque early return improves the alpha/transfer/GC group by
+  19.52% and 10.18%, but is rejected because total user CPU is flat then 2.93%
+  worse and RSS rises twice. V208 moves the same exact bypass to the three
+  callers, eliminating the opaque call boundary; it too is rejected because
+  user CPU rises 1.69% and 2.17% and wall rises 3.05% and 3.88%, despite a
+  smaller target group. Original compositor and call sites are restored and
+  all counters are removed. Evidence lives in
+  `track-7-performance/alpha-implicit-opaque-v207/FINDINGS.md` and
+  `track-7-performance/alpha-caller-bypass-v208/FINDINGS.md`. These are
+  retained failures, not deployment or Gate D; the post-V208 I/O-full PSI was
+  12.58%/60s.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission
-  contract, then move above the pair-cache boundary into redundant color-state,
-  composition, and atmosphere work, or move
+  contract, then remove larger exact composition traversals, share prepared
+  overlay planes, operate on dirty regions, or move
   emission off the input-critical path with the semantic oracle, alternating
   same-workload profiles, exact decoded-frame parity, and real SSH proof. In
   parallel, treat any further shoreline recovery as a full
