@@ -2999,6 +2999,21 @@ Completed foundations:
   it must also measure incremental preparation, memory, frame, and transport
   cost without weakening pixels, world coverage, or simulation. A designed
   regional LOD remains mandatory before regional admission.
+  V222 selects an exact asset-residency improvement discovered at that new
+  scale. Regional sprite reconstruction previously allocated a full zero-filled
+  48x48 RGBA plane before learning that a logical sprite tile was completely
+  transparent. Allocation now begins only at the first retained alpha sample;
+  a wholly transparent tile uses the existing empty-pixels/no-packed-plane
+  representation. The V220 20x14 candidate keeps all 207 visible or partial-
+  alpha planes byte-for-byte while omitting 73 provably empty planes: packed
+  storage falls from 2,580,480 to 1,907,712 bytes, an exact 672,768-byte
+  (26.07%) reduction. All ten regional biome-loader tests and all three meso
+  candidate tests pass, every allocated plane is proved non-empty, and the
+  SSH-world typecheck passes. Evidence lives in
+  `track-7-performance/sparse-transparent-sprite-v222/FINDINGS.md`. This is a
+  source-selected immutable-asset reduction, not deployed whole-process RSS,
+  latency, or Gate-D proof; it changes no manifest, placement, collision,
+  sampling, pixel, or active-frame contract.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, admit or reject V210 and V212 under exact whole-process A/B/A,
   repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission

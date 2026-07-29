@@ -422,8 +422,8 @@ function spriteAlphaValues(sprite: {
 }): number[] {
   return sprite.tiles.flatMap((row) => row.flatMap((tile) => {
     expect(tile.pixels).toEqual([]);
-    expect(tile.packedPixels).toBeDefined();
-    const data = tile.packedPixels!.data;
+    const data = tile.packedPixels?.data;
+    if (!data) return [0];
     const alpha: number[] = [];
     for (let index = 3; index < data.length; index += 4) alpha.push(data[index]!);
     return alpha;

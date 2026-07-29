@@ -1290,11 +1290,10 @@ async function loadRegionalSpriteUncached(
   for (let tileY = 0; tileY < tilesHigh; tileY++) {
     const row: BuildingTile[] = [];
     for (let tileX = 0; tileX < tilesWide; tileX++) {
-      const packedPixels: PackedPixelGrid = {
-        width: tileSize,
-        height: tileSize,
-        data: new Uint8Array(tileSize * tileSize * 4),
-      };
+      // An absent packed plane is the existing exact representation of a
+      // transparent building tile. Allocate RGBA only after the first retained
+      // alpha sample so empty sprite cells do not each hold tileSize² zeroes.
+      let packedPixels: PackedPixelGrid | undefined;
       for (let y = 0; y < tileSize; y++) {
         for (let x = 0; x < tileSize; x++) {
           const sourceX = tileX * tileSize + x - offsetX;
@@ -1303,6 +1302,11 @@ async function loadRegionalSpriteUncached(
           const sourceIndex = (sourceY * info.width + sourceX) * info.channels;
           const alpha = data[sourceIndex + 3] ?? 0;
           if (alpha < 4) continue;
+          packedPixels ??= {
+            width: tileSize,
+            height: tileSize,
+            data: new Uint8Array(tileSize * tileSize * 4),
+          };
           const targetIndex = (y * tileSize + x) * 4;
           packedPixels.data[targetIndex] = data[sourceIndex]!;
           packedPixels.data[targetIndex + 1] = data[sourceIndex + 1]!;
@@ -1310,7 +1314,9 @@ async function loadRegionalSpriteUncached(
           packedPixels.data[targetIndex + 3] = alpha;
         }
       }
-      row.push({ pixels: [], resolutions: {}, packedPixels });
+      row.push(packedPixels
+        ? { pixels: [], resolutions: {}, packedPixels }
+        : { pixels: [], resolutions: {} });
     }
     tiles.push(row);
   }

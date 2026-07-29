@@ -44,6 +44,19 @@ describe('research-only meso frontage candidate', () => {
       [2, 0], [2, -1], [2, -2], [2, -3], [2, -4],
     ]);
 
+    const tiles = asset.sprite.tiles.flat();
+    const sparseTiles = tiles.filter((tile) => tile.packedPixels === undefined);
+    const packedBytes = tiles.reduce((total, tile) => (
+      total + (tile.packedPixels?.data.byteLength ?? 0)
+    ), 0);
+    expect(sparseTiles).toHaveLength(73);
+    expect(packedBytes).toBe(1_907_712);
+    expect(tiles.every((tile) => (
+      tile.packedPixels === undefined || tile.packedPixels.data.some((_, index) => (
+        index % 4 === 3 && tile.packedPixels!.data[index]! >= 4
+      ))
+    ))).toBe(true);
+
     const collision = new Set(asset.collision.map(([x, y]) => `${x},${y}`));
     for (const [x, y] of asset.circulationOffsets ?? []) {
       expect(collision.has(`${x},${y}`)).toBe(false);
