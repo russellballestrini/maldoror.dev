@@ -2825,6 +2825,21 @@ Completed foundations:
   After the census/checks, I/O-full PSI is 60.39%/10s and 51.34%/60s,
   memory-full PSI is 9.98%/10s and 5.24%/60s, `/mnt/donto-data` remains 96%
   full, and `/` is 91% full. No latency or Gate D claim is admissible.
+  V210's no-sacrifice boundary now also has exact cached/uncached output proof
+  at zoom 80 (full-buffer quantization) and with a generated brightness grid;
+  both unsafe-to-defer paths retain original materialization. A subsequent
+  read-only live audit is explicit negative evidence: one active session used
+  1,199.688 MiB worker RSS and 762.759 MiB heap, then two `/runtime` requests
+  timed out at ten seconds and `/health` timed out at three seconds. Latest
+  `smaps_rollup` reached 1,251,192 KiB RSS plus 237,808 KiB swap. The window
+  simultaneously failed CPU, memory, I/O, and load admission, so it neither
+  selects nor rejects V210; it proves current production-like memory and
+  responsiveness are nowhere near the final gate. Exact evidence is retained
+  in `track-7-performance/dirty-atmosphere-materialization-v210/live-runtime-audit.json`.
+  Four stale read-only research scans launched by this execution were resolved
+  by exact PID and terminated; I/O-full avg10 fell from 64.33% to 23.58%, but
+  unrelated long-running work and the service remained far outside admission.
+  No database, corpus job, service, or other agent process was interrupted.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission
   contract, then remove larger exact composition traversals, share prepared
