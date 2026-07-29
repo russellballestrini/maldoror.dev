@@ -2432,6 +2432,38 @@ Completed foundations:
   deterministic district repetition budget, but require genuinely new
   family/axis vocabulary wherever a budget would otherwise create empty
   frontage;
+- V191 selects a broader exact-pair vocabulary and repetition-budget
+  **foundation, not an active render policy**. Two new built-in
+  Codex/ChatGPT-subscription boards add 12 genuinely different workplace/civic
+  silhouettes and 22 canonical-alternative aliases; no metered image API was
+  used. The manifest now has 67 focal aliases (23 active, 44 alternatives) and
+  24 alternative visual groups. A radius-160 authoritative census raises
+  valid pair signatures from four to 12 and valid sites from 18 to 20 while
+  identifying five remaining zero-route topology samples. The lab-only
+  radius-96 budget keeps all 20 sites occupied, raises effective pair entropy
+  10.4410→11.1904, and reduces near repeated-pair edges 3→0 without
+  suppressing frontage. It is not materialized as a coordinate-owned world
+  program yet. The faithful unbudgeted atlas matches all 33 immutable V186
+  base hashes, materializes 5,143/5,143 broad visible cells with 60/60 safe
+  connector overlaps, passes all 47 exact composition observations, changes
+  29/33 frames, and doubles its visible pair vocabulary from three to six.
+  Original-resolution V190/V191 comparisons show readable sawpit, apiary,
+  ore-stamp, and threshing silhouettes but still reject promotion: the world
+  remains sparse, two signatures still repeat, five family/axis samples lack
+  route opportunities, and endpoint buildings are not continuous street
+  fabric. A reproduction audit additionally found volatile PNG timestamps;
+  derivation now strips metadata, pins the matte-helper hash, reproduces all 24
+  V1/V2 assets byte-for-byte, and reconciles source/derived hashes in tests.
+  Ten asset/provenance tests, 46 provider/street-pair tests, both TypeScript
+  builds, and the 150-source runtime-pack plus six-viewport origin-prewarm
+  build pass. Production, active V170, and physical Ghostty remain untouched.
+  Metrics SHA
+  `61c66ed0928aae5f033deec3d30b71402bd65ec85501414b71d781d229e7fad4`;
+  evidence lives in
+  `track-4-world-composition/regional-district-repetition-v191/FINDINGS.md`.
+  Next, materialize the selected budget through one coordinate-owned decision
+  that is block-size independent, then solve the zero-route and east/west fit
+  gaps without relaxing collision, reservation, or V190 ownership gates;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without

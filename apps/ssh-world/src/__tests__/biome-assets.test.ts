@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BIOME_FAMILIES } from '@maldoror/world';
@@ -14,6 +16,38 @@ import {
 } from '../game/biome-assets.js';
 
 describe('regional biome material manifest', () => {
+  it('reconciles generated parcel sources and derivatives against byte-stable provenance', async () => {
+    const manifestPath = path.resolve('assets/biomes/parcel-components-manifest.json');
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as {
+      provenance?: {
+        supplementalSources?: Array<{
+          source: string[];
+          sourceSha256: string[];
+          derived: string[];
+          derivedSha256: string[];
+          chromaHelperSha256?: string;
+        }>;
+      };
+    };
+    const sources = (manifest.provenance?.supplementalSources ?? []).filter((source) => (
+      source.chromaHelperSha256 !== undefined
+    ));
+    expect(sources).toHaveLength(2);
+    for (const source of sources) {
+      expect(source.chromaHelperSha256).toMatch(/^[a-f0-9]{64}$/);
+      expect(source.source).toHaveLength(source.sourceSha256.length);
+      expect(source.derived).toHaveLength(source.derivedSha256.length);
+      for (const [index, relativePath] of source.source.entries()) {
+        const bytes = await readFile(path.resolve('assets/biomes', relativePath));
+        expect(createHash('sha256').update(bytes).digest('hex')).toBe(source.sourceSha256[index]);
+      }
+      for (const [index, relativePath] of source.derived.entries()) {
+        const bytes = await readFile(path.resolve('assets/biomes', relativePath));
+        expect(createHash('sha256').update(bytes).digest('hex')).toBe(source.derivedSha256[index]);
+      }
+    }
+  });
+
   it('loads all six authored families into shared bounded source tiles', async () => {
     const kit = await loadRegionalBiomeMaterialKit(path.resolve('assets/biomes/manifest.json'));
     expect(kit.sourceTileSize).toBe(96);
@@ -220,24 +254,24 @@ describe('regional biome material manifest', () => {
     expect(kit.minimumLayers).toBe(2);
     expect(kit.maximumLayers).toBe(3);
     expect(kit.layerSpacing).toBe(5);
-    expect(kit.assets).toHaveLength(87);
+    expect(kit.assets).toHaveLength(109);
     for (const family of BIOME_FAMILIES) {
       expect(kit.assets.filter((asset) => asset.families.includes(family))).toHaveLength(
-        family === 'canal-town' ? 17 :
+        family === 'canal-town' ? 19 :
           family === 'forest' || family === 'coast' || family === 'rural' ||
-          family === 'mountain' || family === 'ruins' ? 14 : 6,
+          family === 'mountain' || family === 'ruins' ? 18 : 6,
       );
     }
     for (const asset of kit.assets) {
       expect(asset.role).toBe('mass');
-      expect(asset.sprite.width).toBeGreaterThanOrEqual(5);
+      expect(asset.sprite.width).toBeGreaterThanOrEqual(4);
       expect(asset.sprite.width).toBeLessThanOrEqual(16);
-      expect(asset.sprite.height).toBeGreaterThanOrEqual(4);
+      expect(asset.sprite.height).toBeGreaterThanOrEqual(3);
       expect(asset.sprite.height).toBeLessThanOrEqual(14);
       expect(asset.collision.length).toBeGreaterThan(0);
     }
     const focal = kit.assets.filter((asset) => asset.compositionRole === 'focal');
-    expect(focal).toHaveLength(45);
+    expect(focal).toHaveLength(67);
     expect(new Set(focal.map((asset) => asset.frontageAxis)))
       .toEqual(new Set(['east-west', 'north-south']));
     const activeFocal = focal.filter((asset) => asset.streetPairRole === undefined);
@@ -245,12 +279,14 @@ describe('regional biome material manifest', () => {
       asset.streetPairRole === 'canonical-alternative'
     ));
     expect(activeFocal).toHaveLength(23);
-    expect(canonicalAlternatives).toHaveLength(22);
-    expect(new Set(canonicalAlternatives.map((asset) => asset.visualGroup)).size).toBe(12);
+    expect(canonicalAlternatives).toHaveLength(44);
+    expect(new Set(canonicalAlternatives.map((asset) => asset.visualGroup)).size).toBe(24);
     expect(canonicalAlternatives.every((asset) => (
-      asset.sprite.width === 5 && asset.sprite.height === 4 &&
       asset.frontageStations?.length === 1
     ))).toBe(true);
+    expect(new Set(canonicalAlternatives.map((asset) => (
+      `${asset.sprite.width}x${asset.sprite.height}`
+    )))).toEqual(new Set(['4x5', '5x4', '6x3', '6x4']));
     const alternativeVocabularies = new Map<string, Set<number>>();
     for (const asset of canonicalAlternatives) {
       const key = `${asset.families[0]}:${asset.frontageAxis}`;

@@ -14,39 +14,77 @@ const TRANSPARENT_DISTANCE = 8;
 const OPAQUE_DISTANCE = 32;
 const MINIMUM_WEIGHTED_ALPHA_COVERAGE = 0.12;
 const MINIMUM_STRONG_ALPHA_COVERAGE = 0.08;
+const EXPECTED_CHROMA_HELPER_SHA256 =
+  '3f7b9b14ad5c90f37618bc1c16a039a2076abca12ddc41b3ae470e2b1cad6c0e';
 const CHROMA_HELPER = process.env.MALDOROR_CHROMA_HELPER ?? path.join(
   process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex'),
   'skills/.system/imagegen/scripts/remove_chroma_key.py',
 );
-const BOARDS = [
-  {
-    id: 'a',
-    file: 'assets/biomes/generated/regional-paired-focal-alternatives-a-v1-source.png',
-    cells: [
-      ['canal-town', 'coopers-loading-house'],
-      ['forest', 'charcoal-kiln'],
-      ['coast', 'boatwright-skiff-shed'],
-      ['rural', 'blacksmith-forge'],
-      ['mountain', 'assay-house'],
-      ['ruins', 'cloister-arcade'],
-    ],
-  },
-  {
-    id: 'b',
-    file: 'assets/biomes/generated/regional-paired-focal-alternatives-b-v1-source.png',
-    cells: [
-      ['canal-town', 'dyers-shophouse'],
-      ['forest', 'resin-distillery'],
-      ['coast', 'salt-smokehouse'],
-      ['rural', 'dovecote-mill-cottage'],
-      ['mountain', 'mule-stable'],
-      ['ruins', 'sunken-bathhouse'],
-    ],
-  },
-];
+const BOARD_VERSIONS = {
+  v1: [
+    {
+      id: 'a',
+      file: 'assets/biomes/generated/regional-paired-focal-alternatives-a-v1-source.png',
+      cells: [
+        ['canal-town', 'coopers-loading-house'],
+        ['forest', 'charcoal-kiln'],
+        ['coast', 'boatwright-skiff-shed'],
+        ['rural', 'blacksmith-forge'],
+        ['mountain', 'assay-house'],
+        ['ruins', 'cloister-arcade'],
+      ],
+    },
+    {
+      id: 'b',
+      file: 'assets/biomes/generated/regional-paired-focal-alternatives-b-v1-source.png',
+      cells: [
+        ['canal-town', 'dyers-shophouse'],
+        ['forest', 'resin-distillery'],
+        ['coast', 'salt-smokehouse'],
+        ['rural', 'dovecote-mill-cottage'],
+        ['mountain', 'mule-stable'],
+        ['ruins', 'sunken-bathhouse'],
+      ],
+    },
+  ],
+  v2: [
+    {
+      id: 'a',
+      file: 'assets/biomes/generated/regional-paired-focal-alternatives-a-v2-source.png',
+      cells: [
+        ['canal-town', 'ropemakers-walk'],
+        ['forest', 'coppice-sawpit-works'],
+        ['coast', 'sailmaker-net-loft'],
+        ['rural', 'cider-press-house'],
+        ['mountain', 'ore-stamp-mill'],
+        ['ruins', 'ossuary-gatehouse'],
+      ],
+    },
+    {
+      id: 'b',
+      file: 'assets/biomes/generated/regional-paired-focal-alternatives-b-v2-source.png',
+      cells: [
+        ['canal-town', 'lantern-chandlery-watch-house'],
+        ['forest', 'woodland-apiary-honey-house'],
+        ['coast', 'tide-observatory-signal-house'],
+        ['rural', 'threshing-barn-winnow-tower'],
+        ['mountain', 'cable-hoist-station'],
+        ['ruins', 'collapsed-amphitheatre-shrine'],
+      ],
+    },
+  ],
+};
+const BOARDS = BOARD_VERSIONS[VERSION];
+if (!BOARDS) throw new Error(`Unknown paired focal source version: ${VERSION}`);
 
 if (!fs.existsSync(CHROMA_HELPER)) {
   throw new Error(`Chroma-key helper is missing: ${CHROMA_HELPER}; set MALDOROR_CHROMA_HELPER`);
+}
+const chromaHelperSha256 = createHash('sha256').update(fs.readFileSync(CHROMA_HELPER)).digest('hex');
+if (chromaHelperSha256 !== EXPECTED_CHROMA_HELPER_SHA256) {
+  throw new Error(
+    `Chroma-key helper drifted: expected ${EXPECTED_CHROMA_HELPER_SHA256}, got ${chromaHelperSha256}`,
+  );
 }
 fs.mkdirSync(OUTPUT, { recursive: true });
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'maldoror-paired-focals-'));
@@ -84,6 +122,7 @@ try {
         '-trim', '+repage',
         '-bordercolor', 'none', '-border', '2x2',
         '-channel', 'RGB', '-gamma', '1.32', '+channel',
+        '-strip',
         outputPath,
       ], { stdio: 'pipe' });
 
@@ -145,8 +184,10 @@ try {
 console.log(JSON.stringify({
   version: VERSION,
   generation: 'built-in Codex/ChatGPT image generation subscription; no metered API',
-  segmentation: `fixed 3x2 cells plus dark-key matte ${TRANSPARENT_DISTANCE}..${OPAQUE_DISTANCE}`,
+  segmentation: `fixed 3x2 cells plus border-key matte ${TRANSPARENT_DISTANCE}..${OPAQUE_DISTANCE}`,
   colourGrade: 'RGB gamma 1.32 for terminal-scale shadow legibility',
+  chromaHelperSha256,
+  pngMetadata: 'stripped for byte-stable derivation',
   sourceSha256: Object.fromEntries(await Promise.all(BOARDS.map(async (board) => [
     board.id,
     createHash('sha256').update(await fs.promises.readFile(path.join(ROOT, board.file))).digest('hex'),

@@ -2543,6 +2543,12 @@ function auditFocalEligibility(radius) {
         true,
         expandedDiagnostics,
       );
+      const expandedOptions = world.buildAmbientSharedStreetPairCandidates(
+        baseProgram,
+        reserved,
+        excludedVisualGroups,
+        true,
+      );
       attempts.push({
         key,
         site: [program.root.siteX, program.root.siteY],
@@ -2560,6 +2566,7 @@ function auditFocalEligibility(radius) {
           failedSide: expandedDiagnostics.failedSide ?? null,
           rejections: fitRejections(expandedDiagnostics),
           pair: pairSignature(expanded),
+          candidateOptions: expandedOptions.map(pairSignature),
         },
       });
     }
@@ -2611,6 +2618,118 @@ function auditFocalEligibility(radius) {
   const assetPairCounts = countValues(accepted.map((attempt) => (
     [...attempt.withAlternatives.pair.assetIds].sort().join('|')
   )));
+  const districtRadius = 96;
+  const pairKey = (pair) => [...pair.visualGroups].sort().join('|');
+  const stableUnit = (value) => Number.parseInt(
+    crypto.createHash('sha256').update(`${WORLD_SEED}:${value}`).digest('hex').slice(0, 13),
+    16,
+  ) / 0x1fffffffffffff;
+  const eligibleBudgetSites = attempts.filter((attempt) => (
+    attempt.withAlternatives.candidateOptions.length > 0
+  ));
+  const selectedBudgetSites = [];
+  for (const attempt of [...eligibleBudgetSites].sort((left, right) => (
+    stableUnit(`site:${right.site.join(',')}`) - stableUnit(`site:${left.site.join(',')}`) ||
+    left.site[1] - right.site[1] || left.site[0] - right.site[0]
+  ))) {
+    const neighbours = selectedBudgetSites.filter((selected) => Math.hypot(
+      selected.routeStart[0] - attempt.routeStart[0],
+      selected.routeStart[1] - attempt.routeStart[1],
+    ) <= districtRadius);
+    const ranked = attempt.withAlternatives.candidateOptions.map((pair) => {
+      const signature = pairKey(pair);
+      const groups = new Set(pair.visualGroups);
+      const pairReuse = neighbours.filter((selected) => (
+        pairKey(selected.pair) === signature
+      )).length;
+      const groupReuse = neighbours.reduce((total, selected) => (
+        total + selected.pair.visualGroups.filter((group) => groups.has(group)).length
+      ), 0);
+      return {
+        pair,
+        pairReuse,
+        groupReuse,
+        variation: stableUnit(`option:${attempt.site.join(',')}:${pair.id}`),
+      };
+    }).sort((left, right) => (
+      left.pairReuse - right.pairReuse || left.groupReuse - right.groupReuse ||
+      right.variation - left.variation || left.pair.id.localeCompare(right.pair.id)
+    ));
+    const selected = ranked[0];
+    if (!selected) continue;
+    selectedBudgetSites.push({
+      key: attempt.key,
+      site: attempt.site,
+      routeStart: attempt.routeStart,
+      pair: selected.pair,
+      pairReuseAtAdmission: selected.pairReuse,
+      groupReuseAtAdmission: selected.groupReuse,
+      candidateOptionCount: attempt.withAlternatives.candidateOptions.length,
+    });
+  }
+  const summarizeSelection = (selection) => {
+    const signatureCounts = countValues(selection.map((entry) => pairKey(entry.pair)));
+    let nearPairRepeatEdges = 0;
+    let nearGroupReuseEdges = 0;
+    let minimumRepeatedPairDistance = null;
+    for (let first = 0; first < selection.length; first++) {
+      for (let second = first + 1; second < selection.length; second++) {
+        const left = selection[first];
+        const right = selection[second];
+        const distance = Math.hypot(
+          left.routeStart[0] - right.routeStart[0],
+          left.routeStart[1] - right.routeStart[1],
+        );
+        if (distance > districtRadius) continue;
+        if (pairKey(left.pair) === pairKey(right.pair)) {
+          nearPairRepeatEdges++;
+          minimumRepeatedPairDistance = minimumRepeatedPairDistance === null
+            ? distance
+            : Math.min(minimumRepeatedPairDistance, distance);
+        }
+        const rightGroups = new Set(right.pair.visualGroups);
+        if (left.pair.visualGroups.some((group) => rightGroups.has(group))) {
+          nearGroupReuseEdges++;
+        }
+      }
+    }
+    const total = selection.length;
+    const entropy = Object.values(signatureCounts).reduce((sum, count) => {
+      const probability = count / Math.max(1, total);
+      return sum - probability * Math.log(probability);
+    }, 0);
+    return {
+      occupiedSiteCount: total,
+      uniquePairSignatureCount: Object.keys(signatureCounts).length,
+      effectivePairSignatureCount: Number(Math.exp(entropy).toFixed(4)),
+      pairSignatureCounts: signatureCounts,
+      nearPairRepeatEdges,
+      nearGroupReuseEdges,
+      minimumRepeatedPairDistance: minimumRepeatedPairDistance === null
+        ? null
+        : Number(minimumRepeatedPairDistance.toFixed(3)),
+    };
+  };
+  const unbudgetedBudgetSites = eligibleBudgetSites.map((attempt) => ({
+    key: attempt.key,
+    site: attempt.site,
+    routeStart: attempt.routeStart,
+    pair: attempt.withAlternatives.pair,
+  })).filter((entry) => entry.pair);
+  const districtRepetitionBudgetAudit = {
+    status: 'diagnostic-only',
+    radius: districtRadius,
+    ordering: 'world-seed plus owner-site SHA-256 priority',
+    objective: 'occupied sites first, then pair reuse, group reuse, stable variation',
+    candidateSiteCount: eligibleBudgetSites.length,
+    candidateOptionCount: eligibleBudgetSites.reduce((total, attempt) => (
+      total + attempt.withAlternatives.candidateOptions.length
+    ), 0),
+    emptyFrontageSiteCount: eligibleBudgetSites.length - selectedBudgetSites.length,
+    unbudgeted: summarizeSelection(unbudgetedBudgetSites),
+    budgeted: summarizeSelection(selectedBudgetSites),
+    selectedSites: selectedBudgetSites,
+  };
   return {
     radius,
     expandedRadius,
@@ -2639,6 +2758,7 @@ function auditFocalEligibility(radius) {
     uniqueExpandedVisualGroupPairCount: Object.keys(groupPairCounts).length,
     expandedAssetPairCounts: assetPairCounts,
     expandedVisualGroupPairCounts: groupPairCounts,
+    districtRepetitionBudgetAudit,
     byVocabulary,
     attempts,
   };

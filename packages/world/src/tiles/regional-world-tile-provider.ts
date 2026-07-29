@@ -5694,6 +5694,58 @@ export class RegionalWorldTileProvider extends TileProvider {
     )?.placements.slice() ?? [];
   }
 
+  /** Enumerate every geometrically valid two-sided vocabulary combination
+   * through the authoritative fitter. This is diagnostic input for a future
+   * district budget: it preserves occupied frontage options instead of
+   * pretending that suppressing a repeated winner created variety. */
+  buildAmbientSharedStreetPairCandidates(
+    program: AmbientPlaceProgram,
+    reserved: ReadonlySet<string>,
+    excludedVisualGroups: ReadonlySet<string> = new Set(),
+    includeCanonicalAlternatives = false,
+    protectedReservationHalo = 0,
+  ): readonly AmbientStreetPairCandidate[] {
+    if (!program.fabric || !program.accessPath) return Object.freeze([]);
+    const routeStart = program.accessPath.points[0];
+    if (!routeStart) return Object.freeze([]);
+    const route = this.routes.sample(Math.floor(routeStart.x), Math.floor(routeStart.y));
+    const axis: RegionalRouteContactAxis = Math.abs(route.directionX) >
+      Math.abs(route.directionY) ? 'east-west' : 'north-south';
+    const bySide = new Map<-1 | 1, RegionalParcelComponentAsset[]>([
+      [-1, []],
+      [1, []],
+    ]);
+    for (const asset of this.parcelComponents) {
+      if (!isFocalCompositionAsset(asset) || asset.frontageAxis !== axis ||
+          asset.compositionSide === undefined || asset.frontageStations === undefined ||
+          (asset.programs && asset.programs.length > 0) ||
+          (!includeCanonicalAlternatives &&
+            asset.streetPairRole === 'canonical-alternative') ||
+          !asset.families.some((family) => program.root.asset.families.includes(family)) ||
+          excludedVisualGroups.has(assetVisualGroup(asset))) continue;
+      bySide.get(asset.compositionSide)!.push(asset);
+    }
+    const unique = new Map<string, AmbientStreetPairCandidate>();
+    for (const first of bySide.get(-1)!.sort((left, right) => left.id.localeCompare(right.id))) {
+      for (const second of bySide.get(1)!.sort((left, right) => left.id.localeCompare(right.id))) {
+        if (assetVisualGroup(first) === assetVisualGroup(second)) continue;
+        const candidate = this.buildAmbientSharedStreetPairCandidate(
+          program,
+          reserved,
+          excludedVisualGroups,
+          includeCanonicalAlternatives,
+          undefined,
+          protectedReservationHalo,
+          new Set([first.id, second.id]),
+        );
+        if (candidate) unique.set(candidate.id, candidate);
+      }
+    }
+    return Object.freeze([...unique.values()].sort((left, right) => (
+      left.id === right.id ? 0 : left.id < right.id ? -1 : 1
+    )));
+  }
+
   /** Preserve both street sides as one addressable candidate. This factory is
    * still called through the accepted V170 sequential fitter; V176 records the
    * complete identity without yet enabling canonical cross-candidate admission. */
@@ -5704,6 +5756,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     includeCanonicalAlternatives = false,
     diagnostics?: MutableAmbientStreetPairFitDiagnostics,
     protectedReservationHalo = 0,
+    eligibleAssetIds?: ReadonlySet<string>,
   ): AmbientStreetPairCandidate | null {
     if (!Number.isInteger(protectedReservationHalo) || protectedReservationHalo < 0 ||
         protectedReservationHalo > REGIONAL_STREET_PAIR_VISIBLE_HALO) {
@@ -5763,6 +5816,7 @@ export class RegionalWorldTileProvider extends TileProvider {
         asset.compositionSide === side && asset.frontageStations !== undefined &&
         (!asset.programs || asset.programs.length === 0) &&
         (includeCanonicalAlternatives || asset.streetPairRole !== 'canonical-alternative') &&
+        (!eligibleAssetIds || eligibleAssetIds.has(asset.id)) &&
         asset.families.some((family) => root.asset.families.includes(family))
       ));
       const sideDiagnostics: MutableAmbientStreetPairFitSideDiagnostics | undefined =

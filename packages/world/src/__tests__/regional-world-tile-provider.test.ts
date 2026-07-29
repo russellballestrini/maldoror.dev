@@ -1282,6 +1282,11 @@ describe('RegionalWorldTileProvider', () => {
         reserved: ReadonlySet<string>,
         excludedVisualGroups?: ReadonlySet<string>,
       ): InspectedStreetPairCandidate | null;
+      buildAmbientSharedStreetPairCandidates(
+        program: unknown,
+        reserved: ReadonlySet<string>,
+        excludedVisualGroups?: ReadonlySet<string>,
+      ): readonly InspectedStreetPairCandidate[];
       getAmbientStreetPairCandidates(
         ownershipCellX: number,
         ownershipCellY: number,
@@ -1341,6 +1346,7 @@ describe('RegionalWorldTileProvider', () => {
     let intrinsicPair: InspectedStreetPairCandidate | null = null;
     let replayPair: InspectedStreetPairCandidate | null = null;
     let intrinsicProgram: unknown = null;
+    let replayProgramForPair: unknown = null;
     for (let cellY = -4; cellY <= 4 && !intrinsicPair; cellY++) {
       for (let cellX = -4; cellX <= 4 && !intrinsicPair; cellX++) {
         const program = inspectFirst.getAmbientPlaceProgram(cellX, cellY);
@@ -1357,6 +1363,7 @@ describe('RegionalWorldTileProvider', () => {
         intrinsicPair = candidate;
         replayPair = candidateReplay;
         intrinsicProgram = program;
+        replayProgramForPair = replayProgram;
       }
     }
     expect(intrinsicPair).not.toBeNull();
@@ -1380,6 +1387,26 @@ describe('RegionalWorldTileProvider', () => {
     expect(semanticAlternative).not.toBeNull();
     expect(semanticAlternative!.visualGroups.every((group) => (
       !intrinsicPair!.visualGroups.includes(group)
+    ))).toBe(true);
+    const enumeratedPairs = inspectFirst.buildAmbientSharedStreetPairCandidates(
+      intrinsicProgram,
+      new Set(),
+    );
+    const replayEnumeratedPairs = inspectReplay.buildAmbientSharedStreetPairCandidates(
+      replayProgramForPair,
+      new Set(),
+    );
+    expect(enumeratedPairs.length).toBeGreaterThan(1);
+    expect(new Set(enumeratedPairs.map((candidate) => candidate.id)).size)
+      .toBe(enumeratedPairs.length);
+    expect(enumeratedPairs.map(candidateSignature)).toEqual(
+      replayEnumeratedPairs.map(candidateSignature),
+    );
+    expect(enumeratedPairs.some((candidate) => (
+      candidate.visualGroups.every((group) => intrinsicPair!.visualGroups.includes(group))
+    ))).toBe(true);
+    expect(enumeratedPairs.some((candidate) => (
+      candidate.visualGroups.every((group) => semanticAlternative!.visualGroups.includes(group))
     ))).toBe(true);
 
     const ownershipCells = Array.from({ length: 5 }, (_, index) => ({
