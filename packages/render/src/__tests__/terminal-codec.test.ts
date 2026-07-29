@@ -159,5 +159,48 @@ describe('TerminalCodec', () => {
     objectTerminal.apply(objectMotion.output);
     packedTerminal.apply(packedMotion.output);
     expect(packedTerminal.visibleSnapshot()).toEqual(objectTerminal.visibleSnapshot());
+
+    const relativeObjectCodec = new TerminalCodec({ headerRows: 2, terminalCols: 6, terminalRows: 5 });
+    const relativePackedCodec = new TerminalCodec({ headerRows: 2, terminalCols: 6, terminalRows: 5 });
+    const relativeObjectTerminal = new TerminalEmulator(6, 5);
+    const relativePackedTerminal = new TerminalEmulator(6, 5);
+    const relativeFirst = coloredGrid(
+      ['██████', '██████', '██████'],
+      Array.from({ length: 3 }, (_, y) => Array.from({ length: 6 }, (_, x) => ({
+        r: 35 + x * 15,
+        g: 55 + y * 30,
+        b: 95 + x * 8,
+      }))),
+    );
+    const relativeSecond = coloredGrid(
+      ['██████', '██████', '██████'],
+      Array.from({ length: 3 }, (_, y) => Array.from({ length: 6 }, (_, x) => ({
+        r: 35 + x * 15 + (y === 1 && (x === 0 || x === 5) ? 7 : 0),
+        g: 55 + y * 30,
+        b: 95 + x * 8,
+      }))),
+    );
+    relativeObjectTerminal.apply(relativeObjectCodec.encode(relativeFirst, camera(0, 0)).output);
+    relativePackedTerminal.apply(relativePackedCodec.encodePacked(packed(relativeFirst), camera(0, 0)).output);
+    const objectDisjoint = relativeObjectCodec.encode(relativeSecond, camera(0, 0));
+    const packedDisjoint = relativePackedCodec.encodePacked(packed(relativeSecond), camera(0, 0));
+    expect(packedDisjoint.output).toContain('\x1b[4C');
+    relativeObjectTerminal.apply(objectDisjoint.output);
+    relativePackedTerminal.apply(packedDisjoint.output);
+    expect(relativePackedTerminal.visibleSnapshot()).toEqual(relativeObjectTerminal.visibleSnapshot());
+
+    const wideCodec = new TerminalCodec({ headerRows: 2, terminalCols: 6, terminalRows: 5 });
+    wideCodec.encodePacked(packed(relativeFirst), camera(0, 0));
+    const wideOverlay = coloredGrid(
+      ['██████', '界█████', '██████'],
+      Array.from({ length: 3 }, (_, y) => Array.from({ length: 6 }, (_, x) => ({
+        r: 35 + x * 15 + (y === 1 && x === 5 ? 7 : 0),
+        g: 55 + y * 30,
+        b: 95 + x * 8,
+      }))),
+    );
+    const widePatch = wideCodec.encodePacked(packed(wideOverlay), camera(0, 0));
+    expect(widePatch.output).not.toContain('\x1b[4C');
+    expect(widePatch.output.match(/\x1b\[[0-9;]*H/g)).toHaveLength(2);
   });
 });

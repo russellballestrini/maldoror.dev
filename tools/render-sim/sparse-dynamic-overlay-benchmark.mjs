@@ -320,12 +320,16 @@ function analyzeAnsiPayload(output) {
   const repetitions = [...output.matchAll(/\x1b\[(\d+)b/g)];
   const bytes = Buffer.byteLength(output, 'utf8');
   const deflatedBytes = deflateRawSync(Buffer.from(output)).byteLength;
+  const absoluteCursorCommands = (output.match(/\x1b\[[0-9;]*H/g) ?? []).length;
+  const relativeCursorCommands = (output.match(/\x1b\[[0-9;]*C/g) ?? []).length;
   return {
     bytes,
     deflatedBytes,
     deflateRatio: round(deflatedBytes / bytes),
     sgrCommands: (output.match(/\x1b\[[0-9;]*m/g) ?? []).length,
-    cursorCommands: (output.match(/\x1b\[[0-9;]*H/g) ?? []).length,
+    cursorCommands: absoluteCursorCommands + relativeCursorCommands,
+    absoluteCursorCommands,
+    relativeCursorCommands,
     repetitionCommands: repetitions.length,
     repetitionExtraCells: repetitions.reduce(
       (sum, match) => sum + Number.parseInt(match[1] ?? '0', 10),

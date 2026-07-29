@@ -2628,6 +2628,21 @@ Completed foundations:
   `track-7-performance/flat-octant-terminal-v196/FINDINGS.md`. This is selected
   source evidence, not deployed or sustained Gate D; pressured-host latency is
   retained only as directional evidence.
+  V197 then replaces only same-row follow-up absolute cursor addresses with
+  shorter relative moves. The optimization is width-safe: generated OCTANT
+  glyphs and printable ASCII may retain cursor position, while any arbitrary
+  Unicode overlay forces the next run back to absolute addressing. The
+  independent terminal oracle now proves CUF, disjoint runs, DCH camera motion,
+  and the unknown-width fallback. Two full repetitions preserve the exact
+  final world-pixel hash and representative 2,841 changed cells while replacing
+  612/656 absolute addresses. Application bytes fall another 90,187 to 87,711
+  (-2.75%) and delayed-SSH deflate falls 26,187 to 24,961 (-4.68%); cumulative
+  reductions from V195 are 13.96% and 10.42%. Selected benchmark SHA
+  `86238060c0082ed20fed8739673caffadb0e4a31b3ba997d2c079dc687e73e73`;
+  evidence lives in
+  `track-7-performance/relative-cursor-v197/FINDINGS.md`. This remains selected
+  source evidence, not an admissible-host latency claim, deployment, real-SSH
+  proof, physical Ghostty acceptance, or Gate D.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, repeat V196 under the same admission contract, then attack the
   remaining packed string-allocation/SGR architecture or move emission off the

@@ -117,6 +117,9 @@ export class TerminalEmulator {
         this.cursorY = this.clamp((params[0] || 1) - 1, 0, this.rows - 1);
         this.cursorX = this.clamp((params[1] || 1) - 1, 0, this.columns - 1);
         return;
+      case 'C':
+        this.cursorX = this.clamp(this.cursorX + (params[0] || 1), 0, this.columns - 1);
+        return;
       case 'r':
         this.top = this.clamp((params[0] || 1) - 1, 0, this.rows - 1);
         this.bottom = this.clamp((params[1] || this.rows) - 1, this.top, this.rows - 1);

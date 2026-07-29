@@ -5,6 +5,7 @@ import {
   type PackedCellGrid,
   type TerminalCell,
 } from './pixel-renderer.js';
+import { OCTANT_CHARS } from './octant-chars.js';
 
 const ESC = '\x1b';
 const SAVE_CURSOR = `${ESC}7`;
@@ -14,6 +15,9 @@ const DEFAULT_COLOR = { r: 20, g: 20, b: 25 } as const;
 const DEFAULT_COLOR_PACKED = (20 << 16) | (20 << 8) | 25;
 const SPACE_CODEPOINT = 0x20;
 const FULL_BLOCK_CODEPOINT = 0x2588;
+const SINGLE_COLUMN_OCTANT_CODEPOINTS = new Set(
+  OCTANT_CHARS.map((char) => char.codePointAt(0) ?? SPACE_CODEPOINT),
+);
 
 export interface TerminalCodecCamera {
   /** Camera centre in the renderer's world-pixel coordinate system. */
@@ -358,6 +362,8 @@ export class TerminalCodec {
     let changedCells = 0;
     let lastFg: number | null = null;
     let lastBg: number | null = null;
+    let cursorRow = -1;
+    let cursorColumn = -1;
     for (let y = 0; y < target.height; y++) {
       const rowStart = y * target.width;
       const rowEnd = rowStart + target.width;
@@ -377,11 +383,22 @@ export class TerminalCodec {
         }
         const end = lastChanged;
         changedCells += end - start;
-        chunks.push(`${ESC}[${top + y};${(start - rowStart) * cellWidth + 1}H`);
+        const startColumn = (start - rowStart) * cellWidth + 1;
+        // Runs are discovered left-to-right. Within one packed OCTANT row the
+        // terminal cursor already sits immediately after the previous run, so
+        // a relative CUF is both exact and materially shorter than repeating
+        // the absolute row and column. Other rows retain the fail-safe CUP.
+        if (cellWidth === 1 && cursorRow === y && startColumn > cursorColumn) {
+          chunks.push(`${ESC}[${startColumn - cursorColumn}C`);
+        } else {
+          chunks.push(`${ESC}[${top + y};${startColumn}H`);
+        }
         const emitted = this.emitPackedCells(target, start, end, cellWidth, lastFg, lastBg);
         chunks.push(emitted.output);
         lastFg = emitted.lastFg;
         lastBg = emitted.lastBg;
+        cursorRow = emitted.singleColumn ? y : -1;
+        cursorColumn = emitted.singleColumn ? startColumn + (end - start) : -1;
         offset = end;
       }
     }
@@ -395,10 +412,16 @@ export class TerminalCodec {
     cellWidth: number,
     initialFg: number | null,
     initialBg: number | null,
-  ): { output: string; lastFg: number | null; lastBg: number | null } {
+  ): {
+    output: string;
+    lastFg: number | null;
+    lastBg: number | null;
+    singleColumn: boolean;
+  } {
     const chunks: string[] = [];
     let lastFg = initialFg;
     let lastBg = initialBg;
+    let singleColumn = true;
     let offset = start;
     while (offset < end) {
       const fg = frame.foreground[offset] ?? DEFAULT_COLOR_PACKED;
@@ -444,15 +467,17 @@ export class TerminalCodec {
       if (cellWidth === 1) {
         while (offset + count < end && this.packedCellsEqual(frame, frame, offset, offset + count)) count++;
       }
-      const char = backgroundOnly
-        ? ' '
-        : String.fromCodePoint(frame.codepoints[offset] || SPACE_CODEPOINT);
+      const codepoint = backgroundOnly
+        ? SPACE_CODEPOINT
+        : (frame.codepoints[offset] || SPACE_CODEPOINT);
+      if (!isKnownSingleColumnCodepoint(codepoint)) singleColumn = false;
+      const char = String.fromCodePoint(codepoint);
       chunks.push(char);
       if (count >= 4) chunks.push(`${ESC}[${count - 1}b`);
       else for (let i = 1; i < count; i++) chunks.push(char);
       offset += count;
     }
-    return { output: chunks.join(''), lastFg, lastBg };
+    return { output: chunks.join(''), lastFg, lastBg, singleColumn };
   }
 
   private packedCellsEqual(
@@ -585,4 +610,9 @@ export class TerminalCodec {
 function sameColor(a: TerminalCell['fgColor'], b: TerminalCell['fgColor']): boolean {
   if (a === null || b === null) return a === b;
   return a.r === b.r && a.g === b.g && a.b === b.b;
+}
+
+function isKnownSingleColumnCodepoint(codepoint: number): boolean {
+  return (codepoint >= 0x20 && codepoint <= 0x7e)
+    || SINGLE_COLUMN_OCTANT_CODEPOINTS.has(codepoint);
 }
