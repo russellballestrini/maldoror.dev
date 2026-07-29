@@ -2285,6 +2285,31 @@ Completed foundations:
   render and compare the eleven proved winners with their meso parents,
   protected reservations, circulation, and halos at walking, district, and
   regional scales in scratch before choosing any materialization policy;
+- V185 selects a scratch-only canonical-winner atlas and rejects direct
+  materialization of the V184 candidate set. All 11 exact winners are parsed
+  back into authored semantics and rendered against their untouched baselines
+  at walking, district, and regional scales, producing 33 source PNGs, 33
+  faithful OCTANT reconstructions, 33 base-left/scratch-right comparisons, and
+  six corrected contact sheets. Every frame has a non-zero delta, all 33
+  scratch and baseline hashes are unique, and all fabric audits remain valid.
+  The visual result is nevertheless insufficient: eleven placements collapse
+  to four asset/visual-group pairs, including the identical forest pair six
+  times; all are north-south and confined to forest, mountain, and rural, so
+  they add zero coverage beyond active V170's 4/11 vocabulary. Mean changed
+  area falls from 6.0702% walking to 1.6469% district and 0.46294% regional.
+  The pairs remain isolated endpoint props on often-long access corridors and
+  do not transform their empty meso composition into occupied street fabric.
+  Thirteen frames also expose a separate repeated-placement enumeration audit
+  that is not yet proven to duplicate physical or rendered pixels. The first
+  overly strict parser failure and the corrected run are retained; focused
+  38/38 world tests, world typecheck, seven lint tasks, lab syntax, and source
+  diff checks pass. Active pixels and production remain untouched, and no
+  physical Ghostty acceptance is claimed. Evidence lives in
+  `track-4-world-composition/regional-canonical-scratch-v185/FINDINGS.md`.
+  Next, prove enumeration, physical-placement, and rendered-cell uniqueness
+  separately; improve family/axis route opportunity and multi-building
+  occupied-frontage grammar; then rerun this scratch atlas before any active
+  materialization;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without

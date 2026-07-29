@@ -69,6 +69,8 @@ const AMBIENT_PLACE_ACCESS_PROFILE =
   REGIONAL_AMBIENT_PLACE_ACCESS_PROFILE;
 const RUN_AMBIENT_DISTRIBUTION_AUDIT =
   process.env.MALDOROR_AMBIENT_DISTRIBUTION_AUDIT !== 'disabled';
+const CANONICAL_SCRATCH_SOURCE =
+  process.env.MALDOROR_REGIONAL_CANONICAL_SCRATCH_SOURCE;
 if (!['single', 'bounded-ensemble', 'hierarchical-place-field'].includes(AMBIENT_COMPOSITION_PROFILE)) {
   throw new Error(`Unknown ambient composition profile: ${AMBIENT_COMPOSITION_PROFILE}`);
 }
@@ -453,6 +455,7 @@ const ATLAS_MODES = [
   process.env.MALDOROR_REGIONAL_LANDMARK_ATLAS,
   process.env.MALDOROR_REGIONAL_AMBIENT_ATLAS,
   process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS,
+  process.env.MALDOROR_REGIONAL_CANONICAL_SCRATCH_ATLAS,
   process.env.MALDOROR_REGIONAL_CONTACT_ATLAS,
   process.env.MALDOROR_REGIONAL_ENVIRONMENT_ATLAS,
 ].filter((value) => value === '1').length;
@@ -460,6 +463,9 @@ if (ATLAS_MODES > 1) {
   throw new Error('Choose one regional atlas mode');
 }
 let streetOverlayCoverage = null;
+let canonicalScratchAtlas = null;
+const canonicalScratchCandidates = new Map();
+const canonicalScratchWorlds = new Map();
 
 if (process.env.MALDOROR_REGIONAL_LANDMARK_ATLAS === '1') {
   const found = locateLandmarkFamilies();
@@ -1275,6 +1281,103 @@ if (process.env.MALDOROR_REGIONAL_STREET_OVERLAY_ATLAS === '1') {
   });
 }
 
+if (process.env.MALDOROR_REGIONAL_CANONICAL_SCRATCH_ATLAS === '1') {
+  if (AMBIENT_PLACE_FABRIC_PROFILE !== 'shared-common-street-overlay' ||
+      AMBIENT_PLACE_ACCESS_PROFILE !== 'route-frontage') {
+    throw new Error(
+      'Canonical scratch atlas requires shared-common-street-overlay and route-frontage',
+    );
+  }
+  if (!CANONICAL_SCRATCH_SOURCE) {
+    throw new Error('Canonical scratch atlas requires MALDOROR_REGIONAL_CANONICAL_SCRATCH_SOURCE');
+  }
+  const sourcePath = path.resolve(CANONICAL_SCRATCH_SOURCE);
+  const sourceBuffer = fs.readFileSync(sourcePath);
+  const source = JSON.parse(sourceBuffer.toString('utf8'));
+  const sourceSelection = source.streetOverlayCoverage?.canonicalSelectionDiagnostics;
+  const sourceProtectedFit = source.streetOverlayCoverage?.canonicalProtectedFitDiagnostics;
+  if (source.worldSeed !== String(WORLD_SEED) ||
+      source.ambientDistributionProfile !== AMBIENT_DISTRIBUTION_PROFILE ||
+      source.ambientCompositionProfile !== AMBIENT_COMPOSITION_PROFILE ||
+      source.ambientPlaceFabricProfile !== AMBIENT_PLACE_FABRIC_PROFILE ||
+      source.ambientPlaceAccessProfile !== AMBIENT_PLACE_ACCESS_PROFILE) {
+    throw new Error('Canonical scratch source does not match the faithful provider profile');
+  }
+  if (!sourceSelection?.reverseTraversalExact || !sourceSelection.cachedReplayExact ||
+      sourceSelection.candidateCount !== sourceSelection.winnerCount ||
+      sourceSelection.winnerCount !== sourceProtectedFit?.candidateCount ||
+      JSON.stringify(sourceSelection.winnerIds) !== JSON.stringify(sourceProtectedFit.candidateIds)) {
+    throw new Error('Canonical scratch source is not a complete exact winner set');
+  }
+  const parcelAssetById = new Map(parcelKit.assets.map((asset) => [asset.id, asset]));
+  for (const [index, id] of sourceSelection.winnerIds.entries()) {
+    const candidate = parseCanonicalScratchCandidate(id, parcelAssetById, index);
+    canonicalScratchCandidates.set(candidate.id, candidate);
+  }
+  const candidateValues = [...canonicalScratchCandidates.values()];
+  const familyCounts = countValues(candidateValues.map((candidate) => candidate.family));
+  const assetPairCounts = countValues(candidateValues.map((candidate) => (
+    candidate.placements.map((placement) => placement.asset.id).sort().join('|')
+  )));
+  const visualGroupPairCounts = countValues(candidateValues.map((candidate) => (
+    candidate.placements.map((placement) => (
+      placement.asset.visualGroup ?? `asset:${placement.asset.id}`
+    )).sort().join('|')
+  )));
+  canonicalScratchAtlas = {
+    source: path.relative(ROOT, sourcePath),
+    sourceSha256: crypto.createHash('sha256').update(sourceBuffer).digest('hex'),
+    candidateCount: candidateValues.length,
+    familyCounts,
+    uniqueAssetPairCount: Object.keys(assetPairCounts).length,
+    assetPairCounts,
+    uniqueVisualGroupPairCount: Object.keys(visualGroupPairCounts).length,
+    visualGroupPairCounts,
+    candidates: candidateValues.map((candidate) => ({
+      index: candidate.index,
+      id: candidate.id,
+      family: candidate.family,
+      axis: candidate.axis,
+      ownerSite: candidate.ownerSite,
+      accessTarget: candidate.accessTarget,
+      accessTargetAnchor: candidate.accessTargetAnchor,
+      assets: candidate.placements.map((placement) => placement.asset.id),
+      visualGroups: candidate.placements.map((placement) => (
+        placement.asset.visualGroup ?? `asset:${placement.asset.id}`
+      )),
+      anchors: candidate.placements.map((placement) => placement.anchor),
+      visibleTileCount: candidate.overlayTiles.size,
+      reservedHaloCellCount: candidate.reservedHaloCells.size,
+    })),
+    contactSheets: [],
+  };
+  FRAMES = candidateValues.flatMap((candidate) => [
+    {
+      scale: 'walking',
+      displayTileSize: 16,
+      centre: candidate.pairCentre,
+    },
+    {
+      scale: 'district',
+      displayTileSize: 8,
+      centre: candidate.pairCentre,
+    },
+    {
+      scale: 'regional',
+      displayTileSize: 4,
+      centre: candidate.regionalCentre,
+    },
+  ].map((frame) => ({
+    name: `canonical-${String(candidate.index + 1).padStart(2, '0')}-` +
+      `${candidate.family}-${candidate.axis}-${frame.scale}`,
+    ...frame,
+    canonicalScratchCandidateId: candidate.id,
+    canonicalScratchCandidateIndex: candidate.index,
+    canonicalScratchFamily: candidate.family,
+    canonicalScratchAxis: candidate.axis,
+  })));
+}
+
 if (process.env.MALDOROR_REGIONAL_CONTACT_ATLAS === '1') {
   const contactAssetFilter = process.env.MALDOROR_REGIONAL_CONTACT_ASSET;
   const familyAtlas = process.env.MALDOROR_REGIONAL_CONTACT_FAMILY_ATLAS === '1';
@@ -1503,7 +1606,136 @@ if (process.env.MALDOROR_REGIONAL_ENVIRONMENT_ATLAS === '1') {
   });
 }
 
-function renderFrame(frame) {
+function countValues(values) {
+  return Object.fromEntries([...new Set(values)].sort().map((value) => [
+    value,
+    values.filter((candidate) => candidate === value).length,
+  ]));
+}
+
+function parsePlacementIdentity(value, assetById) {
+  const match = /^(.*)@(-?\d+),(-?\d+)$/.exec(value);
+  if (!match) throw new Error(`Invalid canonical placement identity: ${value}`);
+  const asset = assetById.get(match[1]);
+  if (!asset) throw new Error(`Unknown canonical placement asset: ${match[1]}`);
+  return {
+    asset,
+    anchor: [Number(match[2]), Number(match[3])],
+  };
+}
+
+function tileHasVisiblePixels(tile) {
+  if (tile.packedPixels) {
+    for (let index = 3; index < tile.packedPixels.data.length; index += 4) {
+      if (tile.packedPixels.data[index] !== 0) return true;
+    }
+    return false;
+  }
+  return tile.pixels.some((row) => row.some(Boolean));
+}
+
+function parseCanonicalScratchCandidate(id, assetById, index) {
+  const match = /^street-pair:(-?\d+),(-?\d+):(.+):(north-south|east-west):(.+)$/.exec(id);
+  if (!match) throw new Error(`Invalid canonical street-pair ID: ${id}`);
+  const ownerSite = [Number(match[1]), Number(match[2])];
+  const accessTarget = match[3];
+  const axis = match[4];
+  const placements = match[5].split('|').map((value) => parsePlacementIdentity(value, assetById));
+  if (placements.length !== 2 || placements.some(({ asset }) => (
+    asset.compositionRole !== 'focal' || asset.frontageAxis !== axis ||
+    asset.compositionSide === undefined || asset.frontageStations === undefined ||
+    (asset.programs && asset.programs.length > 0)
+  ))) {
+    throw new Error(`Canonical scratch candidate has invalid authored semantics: ${id}`);
+  }
+  if (!placements.some(({ asset }) => asset.streetPairRole === 'canonical-alternative')) {
+    throw new Error(`Canonical scratch candidate has no alternative vocabulary: ${id}`);
+  }
+  const sides = new Set(placements.map(({ asset }) => asset.compositionSide));
+  if (!sides.has(-1) || !sides.has(1)) {
+    throw new Error(`Canonical scratch candidate does not occupy opposite sides: ${id}`);
+  }
+  const commonFamilies = placements[0].asset.families.filter((family) => (
+    placements[1].asset.families.includes(family)
+  ));
+  if (commonFamilies.length !== 1) {
+    throw new Error(`Canonical scratch candidate does not have one exact family: ${id}`);
+  }
+  const target = parsePlacementIdentity(accessTarget, assetById);
+  const overlayTiles = new Map();
+  const reservedHaloCells = new Set();
+  for (const placement of placements) {
+    const [spriteAnchorX, spriteAnchorY] = placement.asset.spriteAnchor ?? [
+      Math.floor(placement.asset.sprite.width / 2),
+      placement.asset.sprite.height - 1,
+    ];
+    for (let tileY = 0; tileY < placement.asset.sprite.height; tileY++) {
+      for (let tileX = 0; tileX < placement.asset.sprite.width; tileX++) {
+        const tile = placement.asset.sprite.tiles[tileY]?.[tileX];
+        if (!tile || !tileHasVisiblePixels(tile)) continue;
+        const worldX = placement.anchor[0] + tileX - spriteAnchorX;
+        const worldY = placement.anchor[1] + tileY - spriteAnchorY;
+        const key = `${worldX},${worldY}`;
+        if (overlayTiles.has(key)) {
+          throw new Error(`Canonical scratch pair has overlapping visible tiles: ${id}:${key}`);
+        }
+        overlayTiles.set(key, tile);
+        for (let offsetY = -1; offsetY <= 1; offsetY++) {
+          for (let offsetX = -1; offsetX <= 1; offsetX++) {
+            reservedHaloCells.add(`${worldX + offsetX},${worldY + offsetY}`);
+          }
+        }
+      }
+    }
+  }
+  const pairCentre = [
+    Math.round((placements[0].anchor[0] + placements[1].anchor[0]) / 2),
+    Math.round((placements[0].anchor[1] + placements[1].anchor[1]) / 2),
+  ];
+  const allAnchors = [target.anchor, ...placements.map((placement) => placement.anchor)];
+  const regionalCentre = [
+    Math.round((Math.min(...allAnchors.map(([x]) => x)) +
+      Math.max(...allAnchors.map(([x]) => x))) / 2),
+    Math.round((Math.min(...allAnchors.map(([, y]) => y)) +
+      Math.max(...allAnchors.map(([, y]) => y))) / 2),
+  ];
+  return {
+    index,
+    id,
+    ownerSite,
+    accessTarget,
+    accessTargetAnchor: target.anchor,
+    axis,
+    family: commonFamilies[0],
+    placements,
+    overlayTiles,
+    reservedHaloCells,
+    pairCentre,
+    regionalCentre,
+  };
+}
+
+function canonicalScratchWorld(candidate) {
+  const cached = canonicalScratchWorlds.get(candidate.id);
+  if (cached) return cached;
+  const scratch = new Proxy(world, {
+    get(target, property) {
+      if (property === 'getDynamicOverlayTilesInBounds') return () => null;
+      if (property === 'getDynamicOverlayTileAt') {
+        return (worldX, worldY, direction = 'north') => (
+          candidate.overlayTiles.get(`${worldX},${worldY}`) ??
+          target.getDynamicOverlayTileAt(worldX, worldY, direction)
+        );
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+  canonicalScratchWorlds.set(candidate.id, scratch);
+  return scratch;
+}
+
+function renderFrame(frame, targetWorld = world) {
   const renderer = new ViewportRenderer({
     widthTiles: Math.ceil(WIDTH / frame.displayTileSize),
     heightTiles: Math.ceil(HEIGHT / frame.displayTileSize),
@@ -1512,10 +1744,10 @@ function renderFrame(frame) {
     tileRenderSize: frame.displayTileSize,
   });
   renderer.setCamera(frame.centre[0], frame.centre[1]);
-  return renderer.renderToBuffer(world, 0).buffer;
+  return renderer.renderToBuffer(targetWorld, 0).buffer;
 }
 
-async function writeSource(filename, grid) {
+function gridColours(grid) {
   const colours = Buffer.alloc(WIDTH * HEIGHT * 3);
   for (let y = 0; y < HEIGHT; y++) {
     for (let x = 0; x < WIDTH; x++) {
@@ -1526,8 +1758,72 @@ async function writeSource(filename, grid) {
       colours[offset + 2] = pixel.b;
     }
   }
+  return colours;
+}
+
+async function writeSource(filename, grid) {
+  const colours = gridColours(grid);
   await sharp(colours, { raw: { width: WIDTH, height: HEIGHT, channels: 3 } }).png().toFile(filename);
   return colours;
+}
+
+async function writeScratchComparison(filename, baseGrid, scratchGrid) {
+  const base = gridColours(baseGrid);
+  const scratch = gridColours(scratchGrid);
+  const width = WIDTH * 2 + 2;
+  const joined = Buffer.alloc(width * HEIGHT * 3, 10);
+  for (let y = 0; y < HEIGHT; y++) {
+    base.copy(joined, y * width * 3, y * WIDTH * 3, (y + 1) * WIDTH * 3);
+    for (let dividerX = WIDTH; dividerX < WIDTH + 2; dividerX++) {
+      const offset = (y * width + dividerX) * 3;
+      joined[offset] = 236;
+      joined[offset + 1] = 78;
+      joined[offset + 2] = 142;
+    }
+    scratch.copy(
+      joined,
+      (y * width + WIDTH + 2) * 3,
+      y * WIDTH * 3,
+      (y + 1) * WIDTH * 3,
+    );
+  }
+  await sharp(joined, { raw: { width, height: HEIGHT, channels: 3 } }).png().toFile(filename);
+}
+
+function pixelDelta(baseGrid, scratchGrid) {
+  let changedPixels = 0;
+  let absoluteChannelDelta = 0;
+  let minX = WIDTH;
+  let minY = HEIGHT;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < HEIGHT; y++) {
+    for (let x = 0; x < WIDTH; x++) {
+      const base = baseGrid[y]?.[x];
+      const scratch = scratchGrid[y]?.[x];
+      const baseR = base?.r ?? 0;
+      const baseG = base?.g ?? 0;
+      const baseB = base?.b ?? 0;
+      const scratchR = scratch?.r ?? 0;
+      const scratchG = scratch?.g ?? 0;
+      const scratchB = scratch?.b ?? 0;
+      const delta = Math.abs(baseR - scratchR) + Math.abs(baseG - scratchG) +
+        Math.abs(baseB - scratchB);
+      if (delta === 0) continue;
+      changedPixels++;
+      absoluteChannelDelta += delta;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+  }
+  return {
+    changedPixels,
+    changedPixelRate: changedPixels / (WIDTH * HEIGHT),
+    absoluteChannelDelta,
+    bounds: changedPixels > 0 ? [minX, minY, maxX, maxY] : null,
+  };
 }
 
 async function writeOctant(filename, grid) {
@@ -1957,6 +2253,7 @@ const metrics = {
   ambientPlaceFabricProfile: AMBIENT_PLACE_FABRIC_PROFILE,
   ambientPlaceAccessProfile: AMBIENT_PLACE_ACCESS_PROFILE,
   streetOverlayCoverage,
+  canonicalScratchAtlas,
   ambientDistributionAudit: RUN_AMBIENT_DISTRIBUTION_AUDIT
     ? auditAmbientDistribution(FRAMES[0].centre)
     : null,
@@ -1995,11 +2292,32 @@ const metrics = {
 };
 for (const frame of FRAMES) {
   const startedAt = performance.now();
-  const grid = renderFrame(frame);
+  const scratchCandidate = frame.canonicalScratchCandidateId
+    ? canonicalScratchCandidates.get(frame.canonicalScratchCandidateId)
+    : null;
+  if (frame.canonicalScratchCandidateId && !scratchCandidate) {
+    throw new Error(`Unknown canonical scratch frame candidate: ${frame.canonicalScratchCandidateId}`);
+  }
+  const baseGrid = scratchCandidate ? renderFrame(frame, world) : null;
+  const grid = renderFrame(
+    frame,
+    scratchCandidate ? canonicalScratchWorld(scratchCandidate) : world,
+  );
   const sourcePath = path.join(OUTPUT, `${frame.name}-source.png`);
   const octantPath = path.join(OUTPUT, `${frame.name}-octant-160x44.png`);
   const colours = await writeSource(sourcePath, grid);
   await writeOctant(octantPath, grid);
+  const scratchDelta = baseGrid ? pixelDelta(baseGrid, grid) : null;
+  if (scratchCandidate && scratchDelta.changedPixels === 0) {
+    throw new Error(`Canonical scratch candidate is not visible: ${scratchCandidate.id}`);
+  }
+  if (baseGrid) {
+    await writeScratchComparison(
+      path.join(OUTPUT, `${frame.name}-compare-base-left-scratch-right.png`),
+      baseGrid,
+      grid,
+    );
+  }
   const halfWidth = Math.ceil(WIDTH / frame.displayTileSize / 2);
   const halfHeight = Math.ceil(HEIGHT / frame.displayTileSize / 2);
   const visibleBounds = [
@@ -2016,6 +2334,27 @@ for (const frame of FRAMES) {
     ...frame,
     elapsedMs: Number((performance.now() - startedAt).toFixed(2)),
     sha256: crypto.createHash('sha256').update(colours).digest('hex'),
+    baseSha256: baseGrid
+      ? crypto.createHash('sha256').update(gridColours(baseGrid)).digest('hex')
+      : null,
+    scratchDelta,
+    canonicalScratchAudit: scratchCandidate ? {
+      id: scratchCandidate.id,
+      ownerSite: scratchCandidate.ownerSite,
+      accessTarget: scratchCandidate.accessTarget,
+      accessTargetAnchor: scratchCandidate.accessTargetAnchor,
+      family: scratchCandidate.family,
+      axis: scratchCandidate.axis,
+      assets: scratchCandidate.placements.map((placement) => placement.asset.id),
+      visualGroups: scratchCandidate.placements.map((placement) => (
+        placement.asset.visualGroup ?? `asset:${placement.asset.id}`
+      )),
+      anchors: scratchCandidate.placements.map((placement) => placement.anchor),
+      pairCentre: scratchCandidate.pairCentre,
+      regionalCentre: scratchCandidate.regionalCentre,
+      visibleTileCount: scratchCandidate.overlayTiles.size,
+      reservedHaloCellCount: scratchCandidate.reservedHaloCells.size,
+    } : null,
     fieldStats: field.getStats(),
     routeStats: routes.getStats(),
     compositorStats: compositor.getStats(),
@@ -2051,8 +2390,59 @@ for (const frame of FRAMES) {
     environmentProgramAudit: auditEnvironmentProgram(frame),
   });
 }
+if (canonicalScratchAtlas) {
+  const scaleOrder = ['walking', 'district', 'regional'];
+  for (const scale of scaleOrder) {
+    const frames = metrics.frames.filter((frame) => frame.scale === scale);
+    for (const presentation of [
+      { kind: 'source', width: WIDTH, height: HEIGHT, suffix: 'source.png' },
+      { kind: 'terminal', width: WIDTH, height: HEIGHT, suffix: 'octant-160x44.png' },
+    ]) {
+      const filename = `canonical-${scale}-${presentation.kind}-contact-sheet.png`;
+      await writeScratchContactSheet(
+        frames,
+        presentation,
+        path.join(OUTPUT, filename),
+      );
+      canonicalScratchAtlas.contactSheets.push(filename);
+    }
+  }
+}
 fs.writeFileSync(path.join(OUTPUT, 'metrics.json'), `${JSON.stringify(metrics, null, 2)}\n`);
 console.log(JSON.stringify({ output: OUTPUT, ...metrics }, null, 2));
+
+async function writeScratchContactSheet(frames, presentation, filename) {
+  const columns = 3;
+  const rows = Math.ceil(frames.length / columns);
+  const width = columns * presentation.width;
+  const height = rows * presentation.height;
+  const background = { r: 8, g: 8, b: 12, alpha: 1 };
+  const composites = [];
+  for (const [index, frame] of frames.entries()) {
+    const left = (index % columns) * presentation.width;
+    const top = Math.floor(index / columns) * presentation.height;
+    const inputPath = path.join(OUTPUT, `${frame.name}-${presentation.suffix}`);
+    const input = await sharp(inputPath).resize(
+      presentation.width,
+      presentation.height,
+      { fit: 'contain', background },
+    ).png().toBuffer();
+    const label = `${String(frame.canonicalScratchCandidateIndex + 1).padStart(2, '0')} ` +
+      `${frame.canonicalScratchFamily} ${frame.canonicalScratchAxis}`;
+    const escaped = label.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+    const labelSvg = Buffer.from(
+      `<svg width="${presentation.width}" height="24" xmlns="http://www.w3.org/2000/svg">` +
+      '<rect width="100%" height="24" fill="rgba(8,8,12,0.82)"/>' +
+      `<text x="7" y="17" fill="#f3d9aa" font-family="monospace" font-size="14">` +
+      `${escaped}</text></svg>`,
+    );
+    composites.push({ input, left, top }, { input: labelSvg, left, top });
+  }
+  await sharp({ create: { width, height, channels: 4, background } })
+    .composite(composites)
+    .png()
+    .toFile(filename);
+}
 
 function auditAmbientDistribution(centre) {
   const macroCellSize = 48;
