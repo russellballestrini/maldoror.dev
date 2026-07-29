@@ -12,6 +12,10 @@ const MODULAR_FIXTURE = path.join(
   ROOT,
   'tools/render-sim/fixtures/canal-town-modular-frontages-v1.json',
 );
+const COMPACT_MODULAR_FIXTURE = path.join(
+  ROOT,
+  'tools/render-sim/fixtures/canal-town-modular-frontages-v2-compact.json',
+);
 
 interface CandidateFixture {
   runtimeManifest: boolean;
@@ -185,14 +189,51 @@ describe('research-only modular frontage candidates', () => {
   });
 
   it('keeps every modular experiment out of the production parcel manifest', () => {
-    const fixture = JSON.parse(
-      fs.readFileSync(MODULAR_FIXTURE, 'utf8'),
-    ) as ModularCandidateFixture;
+    const fixtures = [MODULAR_FIXTURE, COMPACT_MODULAR_FIXTURE].map((fixturePath) => (
+      JSON.parse(fs.readFileSync(fixturePath, 'utf8')) as ModularCandidateFixture
+    ));
     const manifest = JSON.parse(fs.readFileSync(
       path.join(ROOT, 'assets/biomes/parcel-components-manifest.json'),
       'utf8',
     )) as { assets: Array<{ id: string }> };
     const productionIds = new Set(manifest.assets.map(({ id }) => id));
-    expect(fixture.assets.every(({ id }) => !productionIds.has(id))).toBe(true);
+    expect(fixtures.flatMap(({ assets }) => assets).every(({ id }) => (
+      !productionIds.has(id)
+    ))).toBe(true);
+  });
+
+  it('retains the rejected 5x6 reconstruction with exact bounded planes', async () => {
+    const fixture = JSON.parse(
+      fs.readFileSync(COMPACT_MODULAR_FIXTURE, 'utf8'),
+    ) as ModularCandidateFixture;
+    const assets = await Promise.all(fixture.assets.map((entry) => (
+      loadRegionalParcelComponentCandidate(
+        path.join(ROOT, 'assets/biomes'),
+        fixture.sourceTileSize,
+        entry,
+      )
+    )));
+    const expectedPacked = new Map([
+      ['canal-town-modular-shops-frontage-v2-compact', { sparse: 3, bytes: 248_832 }],
+      ['canal-town-modular-arch-frontage-v2-compact', { sparse: 4, bytes: 239_616 }],
+      ['canal-town-modular-workshop-frontage-v2-compact', { sparse: 1, bytes: 267_264 }],
+    ]);
+
+    expect(fixture.runtimeManifest).toBe(false);
+    expect(assets).toHaveLength(3);
+    for (const asset of assets) {
+      const tiles = asset.sprite.tiles.flat();
+      const expected = expectedPacked.get(asset.id)!;
+      const collision = new Set(asset.collision.map(([x, y]) => `${x},${y}`));
+      expect(asset.sprite).toMatchObject({ width: 5, height: 6 });
+      expect(tiles.filter((tile) => tile.packedPixels === undefined)).toHaveLength(
+        expected.sparse,
+      );
+      expect(tiles.reduce((total, tile) => (
+        total + (tile.packedPixels?.data.byteLength ?? 0)
+      ), 0)).toBe(expected.bytes);
+      expect(asset.circulationOffsets?.every(([x, y]) => !collision.has(`${x},${y}`)))
+        .toBe(true);
+    }
   });
 });

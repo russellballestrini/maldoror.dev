@@ -3081,6 +3081,25 @@ Completed foundations:
   now emits opt-in JSON progress every eight blocks. The kit remains absent
   from the production manifest with zero real-world placement, no faithful
   ANSI gain, no designed regional LOD, no admitted-host A/B, and no deployment.
+  V238-V240 replace that opaque research unit with an exact resumable census.
+  Each bounded window records the complete centre-out block-order hash,
+  absolute position, next offset, exhaustion state, and stop reason. Two
+  windows at the known nine-block site concatenate to the old monolithic block
+  sequence exactly, share order hash `ada7e6bf...ad5`, contain nine unique
+  blocks, and reproduce the same empty-detail hash. Five low-priority
+  radius-256 windows then cover 64 unique blocks under order hash
+  `32735a84...76d3`, discovering new eligible canal programs at `(231,-62)` and
+  `(-38,206)` but admitting no module. Frozen parent structure dominates both
+  rejection sets and no exclusion is weakened. This is explicitly not an
+  exhaustive radius result: current-source offsets 16-59, 76-79, and 112-255
+  remain open. A retained 5x6 reconstruction reduces packed planes another
+  294,912 bytes (28.07%) but is rejected after authoritative source-block
+  probes still admit nothing and add protected/path conflicts; the visually
+  safer 6x7 kit remains selected. Exact segmentation proof, raw ranges, failure
+  distributions, and host truth live in
+  `track-4-world-composition/canal-modular-frontages-v238-v240-resumable-census/FINDINGS.md`.
+  The final sample still fails memory, I/O, load, and disk admission, so none of
+  these geometry runs supplies a runtime performance result.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, admit or reject V210 and V212 under exact whole-process A/B/A,
   repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission

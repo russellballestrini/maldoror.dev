@@ -87,6 +87,14 @@ const PLACE_DETAIL_CENSUS_PREFILTER =
   process.env.MALDOROR_REGIONAL_PLACE_DETAIL_CENSUS_PREFILTER === '1';
 const PLACE_DETAIL_CENSUS_PROGRESS =
   process.env.MALDOROR_REGIONAL_PLACE_DETAIL_CENSUS_PROGRESS === '1';
+const PLACE_DETAIL_CENSUS_BLOCK_OFFSET =
+  process.env.MALDOROR_REGIONAL_PLACE_DETAIL_CENSUS_BLOCK_OFFSET === undefined
+    ? 0
+    : Number(process.env.MALDOROR_REGIONAL_PLACE_DETAIL_CENSUS_BLOCK_OFFSET);
+const PLACE_DETAIL_CENSUS_BLOCK_LIMIT =
+  process.env.MALDOROR_REGIONAL_PLACE_DETAIL_CENSUS_BLOCK_LIMIT === undefined
+    ? null
+    : Number(process.env.MALDOROR_REGIONAL_PLACE_DETAIL_CENSUS_BLOCK_LIMIT);
 const PLACE_DETAIL_CENSUS_RADIUS = Number(
   process.env.MALDOROR_REGIONAL_PLACE_DETAIL_CENSUS_RADIUS ?? '64',
 );
@@ -153,9 +161,18 @@ if (RUN_FOCAL_ELIGIBILITY_AUDIT && (
 if (RUN_PLACE_DETAIL_CENSUS && (
   !Number.isInteger(PLACE_DETAIL_CENSUS_RADIUS) || PLACE_DETAIL_CENSUS_RADIUS < 32 ||
   PLACE_DETAIL_CENSUS_RADIUS > 640 || PLACE_DETAIL_CENSUS_CENTRE.length !== 2 ||
-  PLACE_DETAIL_CENSUS_CENTRE.some((value) => !Number.isInteger(value))
+  PLACE_DETAIL_CENSUS_CENTRE.some((value) => !Number.isInteger(value)) ||
+  !Number.isSafeInteger(PLACE_DETAIL_CENSUS_BLOCK_OFFSET) ||
+  PLACE_DETAIL_CENSUS_BLOCK_OFFSET < 0 ||
+  (PLACE_DETAIL_CENSUS_BLOCK_LIMIT !== null && (
+    !Number.isSafeInteger(PLACE_DETAIL_CENSUS_BLOCK_LIMIT) ||
+    PLACE_DETAIL_CENSUS_BLOCK_LIMIT < 1
+  ))
 )) {
-  throw new Error('Place-detail census requires an integer radius 32..640 and integer centre x,y');
+  throw new Error(
+    'Place-detail census requires radius 32..640, integer centre x,y, ' +
+    'a non-negative block offset, and an optional positive block limit',
+  );
 }
 if (PLACE_DETAIL_CENSUS_PREFILTER && !PLACE_DETAIL_CENSUS_DISCOVERY_ONLY) {
   throw new Error('Place-detail prefilter is discovery-only and cannot produce acceptance proof');
@@ -2964,9 +2981,19 @@ function auditPlaceDetailCensus(radius, centre) {
     }
     blocks.sort((left, right) => left.distance - right.distance ||
       left.blockY - right.blockY || left.blockX - right.blockX);
+    const blockOrderSha256 = hash(blocks.map(({ blockX, blockY }) => [blockX, blockY]));
+    const windowEnd = Math.min(
+      blocks.length,
+      PLACE_DETAIL_CENSUS_BLOCK_OFFSET +
+        (PLACE_DETAIL_CENSUS_BLOCK_LIMIT ?? blocks.length),
+    );
+    const windowBlocks = blocks.slice(PLACE_DETAIL_CENSUS_BLOCK_OFFSET, windowEnd);
     const placements = [];
     const scannedBlocks = [];
-    for (const block of blocks) {
+    let discoveredDetail = false;
+    for (let windowIndex = 0; windowIndex < windowBlocks.length; windowIndex++) {
+      const block = windowBlocks[windowIndex];
+      const absoluteBlockIndex = PLACE_DETAIL_CENSUS_BLOCK_OFFSET + windowIndex;
       const blockOriginX = block.blockX * blockSize;
       const blockOriginY = block.blockY * blockSize;
       const minBlockX = Math.max(bounds[0], blockOriginX);
@@ -2991,26 +3018,46 @@ function auditPlaceDetailCensus(radius, centre) {
         ).map(normalizePlacement);
       placements.push(...blockPlacements);
       scannedBlocks.push([block.blockX, block.blockY]);
-      const discoveredDetail = blockPlacements.some(isDetail);
+      discoveredDetail = blockPlacements.some(isDetail);
       if (PLACE_DETAIL_CENSUS_PROGRESS && (
-        scannedBlocks.length % 8 === 0 || discoveredDetail || scannedBlocks.length === blocks.length
+        scannedBlocks.length % 8 === 0 || discoveredDetail ||
+        scannedBlocks.length === windowBlocks.length
       )) {
         process.stderr.write(`${JSON.stringify({
           event: 'place-detail-census-progress',
-          scannedBlocks: scannedBlocks.length,
+          blockOrderSha256,
+          windowBlockOffset: PLACE_DETAIL_CENSUS_BLOCK_OFFSET,
+          windowScannedBlocks: scannedBlocks.length,
+          windowAvailableBlocks: windowBlocks.length,
+          absoluteBlockIndex,
           availableBlocks: blocks.length,
           latestBlock: [block.blockX, block.blockY],
           placementCount: placements.length,
           detailCount: placements.filter(isDetail).length,
+          nextBlockOffset: absoluteBlockIndex + 1,
         })}\n`);
       }
       if (discoveredDetail) break;
     }
+    const nextBlockOffset = Math.min(
+      blocks.length,
+      PLACE_DETAIL_CENSUS_BLOCK_OFFSET + scannedBlocks.length,
+    );
+    const searchExhausted = nextBlockOffset >= blocks.length;
     return {
       placements: placements.sort((left, right) => left.anchor[1] - right.anchor[1] ||
         left.anchor[0] - right.anchor[0] || left.assetId.localeCompare(right.assetId)),
       scannedBlocks,
       availableBlockCount: blocks.length,
+      blockOrderSha256,
+      windowBlockOffset: PLACE_DETAIL_CENSUS_BLOCK_OFFSET,
+      windowBlockLimit: PLACE_DETAIL_CENSUS_BLOCK_LIMIT,
+      windowAvailableBlockCount: windowBlocks.length,
+      nextBlockOffset,
+      searchExhausted,
+      stopReason: discoveredDetail
+        ? 'detail-found'
+        : searchExhausted ? 'search-exhausted' : 'window-exhausted',
     };
   };
   const candidateDiscovery = PLACE_DETAIL_CENSUS_DISCOVERY_ONLY
@@ -3113,6 +3160,14 @@ function auditPlaceDetailCensus(radius, centre) {
     discoveryScannedBlocks: candidateDiscovery?.scannedBlocks ?? null,
     discoveryScannedBlockCount: candidateDiscovery?.scannedBlocks.length ?? null,
     discoveryAvailableBlockCount: candidateDiscovery?.availableBlockCount ?? null,
+    discoveryBlockOrderSha256: candidateDiscovery?.blockOrderSha256 ?? null,
+    discoveryWindowBlockOffset: candidateDiscovery?.windowBlockOffset ?? null,
+    discoveryWindowBlockLimit: candidateDiscovery?.windowBlockLimit ?? null,
+    discoveryWindowAvailableBlockCount:
+      candidateDiscovery?.windowAvailableBlockCount ?? null,
+    discoveryNextBlockOffset: candidateDiscovery?.nextBlockOffset ?? null,
+    discoverySearchExhausted: candidateDiscovery?.searchExhausted ?? null,
+    discoveryStopReason: candidateDiscovery?.stopReason ?? null,
     discoveryAuthority: !candidateDiscovery ? null
       : PLACE_DETAIL_CENSUS_PREFILTER
         ? 'production-ambient-composition-without-established-block-composition-prefilter'
