@@ -2670,15 +2670,31 @@ Completed foundations:
   `track-7-performance/flat-packed-emission-v199/FINDINGS.md`. This is selected
   source evidence, not deployment, sustained Gate D, real-SSH proof, or
   physical Ghostty acceptance.
+  V200 then rejects compacting or translating the shared common as the remedy
+  for the two unresolved origin north/south coast sites. Five bounded,
+  coordinate-owned variants retained every dry-raster, five-point core,
+  threshold, slope, collision, civic, ownership, and determinism gate. The
+  strongest bank shift found 5/5 dry cores and 2/2 dry thresholds at both
+  sites, but only in fabrics that were 46.4% and 51.9% dry; the most compact
+  trial peaked at 64.567% dry with only 1/5 dry core, still below the fixed
+  two-thirds floor. Candidate code is removed. Selected exact diagnostics now
+  retain the actual best-dry and best-public centre, extents, dry rate, core
+  rate, and threshold rate instead of unrelated aggregate maxima. The clean
+  radius-64 census remains 16 access programs, 9 exact fabrics, 7 fallbacks,
+  and 6 terrain-clipped survivors. Metrics SHA
+  `ab68a5a35ae6c58876a413ce6ab956038f8389639af1aa5b5912e4204d12f17f`;
+  evidence lives in
+  `track-4-world-composition/bank-aware-common-v200/FINDINGS.md`. This is a
+  selected diagnostic and retained failure, not Gate A or a visual milestone.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, repeat the V196/V197/V199 stack under the same admission
   contract, then attack the remaining SGR/composition architecture or move
   emission off the input-critical path with the semantic oracle, alternating
-  same-workload profiles, exact decoded-frame parity, and real SSH proof; in
-  parallel test
-  compact bank-aware geometry for the two unresolved origin north/south coast
-  sites without relaxing dry-core, threshold, slope, collision, civic, or
-  ownership gates;
+  same-workload profiles, exact decoded-frame parity, and real SSH proof. In
+  parallel, treat any further shoreline recovery as a full
+  parent-threshold-approach-spine bank-following topology problem rather than a
+  smaller plaza, without relaxing dry-core, threshold, slope, collision,
+  civic, or ownership gates;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without

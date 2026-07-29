@@ -587,6 +587,18 @@ interface AmbientSharedCommonDiagnostics {
   maximumFabricThresholdDryRate: number;
   maximumPublicCoreEligibleDryCellRate: number;
   establishedCollisionRejectedCount: number;
+  bestFabricDryCandidate?: Readonly<AmbientSharedCommonFabricCandidateDiagnostics>;
+  bestFabricPublicCandidate?: Readonly<AmbientSharedCommonFabricCandidateDiagnostics>;
+}
+
+interface AmbientSharedCommonFabricCandidateDiagnostics {
+  centreX: number;
+  centreY: number;
+  halfAlong: number;
+  halfAcross: number;
+  dryCellRate: number;
+  coreDryRate: number;
+  thresholdDryRate: number;
 }
 
 interface AmbientBlockComposition {
@@ -4296,6 +4308,33 @@ export class RegionalWorldTileProvider extends TileProvider {
       const coreDryRate = dryPointRate(publicCore);
       const thresholdDryRate = dryPointRate(thresholds);
       if (diagnostics) {
+        const candidate = common ? Object.freeze({
+          centreX: common.centreX,
+          centreY: common.centreY,
+          halfAlong: common.halfAlong,
+          halfAcross: common.halfAcross,
+          dryCellRate,
+          coreDryRate,
+          thresholdDryRate,
+        }) : undefined;
+        if (candidate) {
+          const bestDry = diagnostics.bestFabricDryCandidate;
+          if (!bestDry || dryCellRate > bestDry.dryCellRate ||
+              (dryCellRate === bestDry.dryCellRate && coreDryRate > bestDry.coreDryRate) ||
+              (dryCellRate === bestDry.dryCellRate && coreDryRate === bestDry.coreDryRate &&
+                thresholdDryRate > bestDry.thresholdDryRate)) {
+            diagnostics.bestFabricDryCandidate = candidate;
+          }
+          const bestPublic = diagnostics.bestFabricPublicCandidate;
+          const publicRate = Math.min(coreDryRate, thresholdDryRate);
+          const bestPublicRate = bestPublic
+            ? Math.min(bestPublic.coreDryRate, bestPublic.thresholdDryRate)
+            : -1;
+          if (!bestPublic || publicRate > bestPublicRate ||
+              (publicRate === bestPublicRate && dryCellRate > bestPublic.dryCellRate)) {
+            diagnostics.bestFabricPublicCandidate = candidate;
+          }
+        }
         diagnostics.maximumFabricDryCellRate = Math.max(
           diagnostics.maximumFabricDryCellRate,
           dryCellRate,
