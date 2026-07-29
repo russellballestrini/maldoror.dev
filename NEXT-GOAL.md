@@ -2643,6 +2643,17 @@ Completed foundations:
   `track-7-performance/relative-cursor-v197/FINDINGS.md`. This remains selected
   source evidence, not an admissible-host latency claim, deployment, real-SSH
   proof, physical Ghostty acceptance, or Gate D.
+  V198 rejects a general exact dynamic truecolor palette before adding its
+  substantial state machinery. Across day clear, night clear, day rain, and
+  night storm, the representative 7,040-cell packed frame contains
+  7,893--10,738 exact truecolors across 10,995--13,267 semantic channel uses.
+  All 208 slots that remain after protecting base terminal and material bands
+  cover only 7.1--11.0% of those uses; text overlays would make the real
+  cardinality slightly worse. Quantization remains forbidden, and the selected
+  eight-phase water palette remains intact because its bounded material
+  vocabulary has the opposite shape. Evidence lives in
+  `track-7-performance/dynamic-palette-cardinality-v198/FINDINGS.md`. This is a
+  retained negative result, not a production change or Gate-D claim.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, repeat V196 under the same admission contract, then attack the
   remaining packed string-allocation/SGR architecture or move emission off the

@@ -14,6 +14,7 @@ import { performance } from 'node:perf_hooks';
 import { Duplex } from 'node:stream';
 import { deflateRawSync } from 'node:zlib';
 import { PixelGameRenderer } from '../../packages/render/dist/pixel/pixel-game-renderer.js';
+import { renderOctantPackedGridCells } from '../../packages/render/dist/pixel/pixel-renderer.js';
 import { ViewportRenderer } from '../../packages/render/dist/pixel/viewport-renderer.js';
 import { createPlaceholderSprite } from '../../packages/world/dist/index.js';
 import {
@@ -71,6 +72,11 @@ for (let frame = 0; frame < FRAMES; frame++) {
 }
 
 const sparseEntries = sparse.world.getDynamicOverlayTilesInBounds(-16, -10, 16, 10) ?? [];
+const representativePackedFrame = renderOctantPackedGridCells(
+  sparseFrame.buffer,
+  sparseFrame.brightnessGrid,
+  sparseFrame.materialGrid,
+);
 const gameControl = makeGameLane(false);
 const gameSparse = makeGameLane(true);
 for (let frame = 0; frame < 30; frame++) {
@@ -120,6 +126,7 @@ const report = {
   colocatedPlayers: 20,
   bakedViewports: viewports.length,
   sparseOverlayTilesInRepresentativeBounds: sparseEntries.length,
+  packedColorOpportunity: analyzePackedColorOpportunity(representativePackedFrame),
   viewportComposition: comparison(samples),
   productionRenderToString: comparison(gameSamples),
   terminalDelivery: {
@@ -335,6 +342,50 @@ function analyzeAnsiPayload(output) {
       (sum, match) => sum + Number.parseInt(match[1] ?? '0', 10),
       0,
     ),
+  };
+}
+
+function analyzePackedColorOpportunity(frame) {
+  const frequencies = new Map();
+  let truecolorChannelUses = 0;
+  let indexedChannelUses = 0;
+  let flatBackgroundCells = 0;
+  const retain = (color) => {
+    truecolorChannelUses++;
+    frequencies.set(color, (frequencies.get(color) ?? 0) + 1);
+  };
+  for (let offset = 0; offset < frame.codepoints.length; offset++) {
+    const foreground = frame.foreground[offset];
+    const background = frame.background[offset];
+    const foregroundIndex = frame.foregroundIndex[offset];
+    const backgroundIndex = frame.backgroundIndex[offset];
+    const flatBackground = frame.codepoints[offset] === 0x2588
+      && foregroundIndex < 0
+      && backgroundIndex < 0
+      && foreground === background;
+    if (flatBackground) flatBackgroundCells++;
+    if (foregroundIndex >= 0) indexedChannelUses++;
+    else if (!flatBackground) retain(foreground);
+    if (backgroundIndex >= 0) indexedChannelUses++;
+    else retain(background);
+  }
+  const ordered = [...frequencies.values()].sort((left, right) => right - left);
+  const coverage = (slots) => round(
+    ordered.slice(0, slots).reduce((sum, count) => sum + count, 0)
+      / Math.max(1, truecolorChannelUses),
+  );
+  return {
+    cells: frame.codepoints.length,
+    flatBackgroundCells,
+    truecolorChannelUses,
+    indexedChannelUses,
+    uniqueTruecolors: frequencies.size,
+    coverageByMostFrequentColors: {
+      32: coverage(32),
+      64: coverage(64),
+      128: coverage(128),
+      208: coverage(208),
+    },
   };
 }
 
