@@ -69,6 +69,11 @@ const AMBIENT_PLACE_ACCESS_PROFILE =
   REGIONAL_AMBIENT_PLACE_ACCESS_PROFILE;
 const RUN_AMBIENT_DISTRIBUTION_AUDIT =
   process.env.MALDOROR_AMBIENT_DISTRIBUTION_AUDIT !== 'disabled';
+const RUN_FOCAL_ELIGIBILITY_AUDIT =
+  process.env.MALDOROR_REGIONAL_FOCAL_ELIGIBILITY_AUDIT === '1';
+const FOCAL_ELIGIBILITY_RADIUS = Number(
+  process.env.MALDOROR_REGIONAL_FOCAL_ELIGIBILITY_RADIUS ?? '160',
+);
 const CANONICAL_SCRATCH_SOURCE =
   process.env.MALDOROR_REGIONAL_CANONICAL_SCRATCH_SOURCE;
 const COMPOSITION_EXACT_SOURCE =
@@ -99,6 +104,12 @@ if (![
   'cluster-field-blue-noise',
 ].includes(AMBIENT_DISTRIBUTION_PROFILE)) {
   throw new Error(`Unknown ambient distribution profile: ${AMBIENT_DISTRIBUTION_PROFILE}`);
+}
+if (RUN_FOCAL_ELIGIBILITY_AUDIT && (
+  !Number.isInteger(FOCAL_ELIGIBILITY_RADIUS) || FOCAL_ELIGIBILITY_RADIUS < 64 ||
+  FOCAL_ELIGIBILITY_RADIUS > 1024
+)) {
+  throw new Error(`Invalid focal-eligibility radius: ${FOCAL_ELIGIBILITY_RADIUS}`);
 }
 const INFRASTRUCTURE_PROFILE_NAME = process.env.MALDOROR_INFRASTRUCTURE_PROFILE ?? 'production';
 const WATER_PROFILE_NAME = process.env.MALDOROR_WATER_PROFILE ?? 'production';
@@ -2313,6 +2324,296 @@ function walkableCellsConnected(cells) {
   return visited.size === remaining.size;
 }
 
+/** Quantify whether exact whole-place admission is short of authored
+ * vocabulary or short of usable route contacts. Both the manifest census and
+ * the site probes derive their families, axes, sides, groups, and roles from
+ * data; no asset-name taxonomy participates. */
+function auditFocalEligibility(radius) {
+  const eligibleAssets = parcelKit.assets.filter((asset) => (
+    asset.compositionRole === 'focal' && asset.frontageAxis &&
+    asset.compositionSide !== undefined && asset.frontageStations !== undefined &&
+    (!asset.programs || asset.programs.length === 0)
+  ));
+  const visualGroup = (asset) => typeof asset.visualGroup === 'string'
+    ? `group:${asset.visualGroup}`
+    : `asset:${asset.id}`;
+  const vocabularySides = new Map();
+  for (const asset of eligibleAssets) {
+    for (const family of asset.families) {
+      const key = `${family}:${asset.frontageAxis}`;
+      const sides = vocabularySides.get(key) ?? new Set();
+      sides.add(asset.compositionSide);
+      vocabularySides.set(key, sides);
+    }
+  }
+  const expected = [...vocabularySides].filter(([, sides]) => (
+    sides.has(-1) && sides.has(1)
+  )).map(([key]) => key).sort();
+  const expectedSet = new Set(expected);
+  const assetRole = (asset) => asset.streetPairRole === 'canonical-alternative'
+    ? 'canonical-alternative'
+    : 'ordinary';
+  const manifest = expected.map((key) => {
+    const separator = key.lastIndexOf(':');
+    const family = key.slice(0, separator);
+    const axis = key.slice(separator + 1);
+    const assets = eligibleAssets.filter((asset) => (
+      asset.frontageAxis === axis && asset.families.includes(family)
+    ));
+    const sides = Object.fromEntries(([-1, 1]).map((side) => {
+      const sideAssets = assets.filter((asset) => asset.compositionSide === side);
+      return [side, {
+        assetCount: sideAssets.length,
+        visualGroupCount: new Set(sideAssets.map(visualGroup)).size,
+        ordinaryAssetCount: sideAssets.filter((asset) => assetRole(asset) === 'ordinary').length,
+        alternativeAssetCount: sideAssets.filter((asset) => (
+          assetRole(asset) === 'canonical-alternative'
+        )).length,
+        assets: sideAssets.map((asset) => ({
+          id: asset.id,
+          visualGroup: visualGroup(asset),
+          role: assetRole(asset),
+          sprite: [asset.sprite.width, asset.sprite.height],
+        })).sort((a, b) => a.id.localeCompare(b.id)),
+      }];
+    }));
+    const distinctGroupPairCount = (includeAlternatives) => {
+      const sideGroups = (side) => new Set(assets.filter((asset) => (
+        asset.compositionSide === side &&
+        (includeAlternatives || assetRole(asset) === 'ordinary')
+      )).map(visualGroup));
+      const negative = sideGroups(-1);
+      const positive = sideGroups(1);
+      return [...negative].reduce((total, group) => (
+        total + [...positive].filter((candidate) => candidate !== group).length
+      ), 0);
+    };
+    return {
+      key,
+      family,
+      axis,
+      sides,
+      ordinaryDistinctVisualGroupPairCount: distinctGroupPairCount(false),
+      allDistinctVisualGroupPairCount: distinctGroupPairCount(true),
+    };
+  });
+  const pairedAssetIds = new Set(manifest.flatMap((entry) => (
+    Object.values(entry.sides).flatMap((side) => side.assets.map((asset) => asset.id))
+  )));
+  const unpairedAssets = eligibleAssets.filter((asset) => !pairedAssetIds.has(asset.id))
+    .map((asset) => ({
+      id: asset.id,
+      families: [...asset.families],
+      axis: asset.frontageAxis,
+      side: asset.compositionSide,
+      visualGroup: visualGroup(asset),
+      role: assetRole(asset),
+    })).sort((a, b) => a.id.localeCompare(b.id));
+
+  const expandedRadius = radius + REGIONAL_AMBIENT_CONNECTED_PLACE_SOURCE_REACH;
+  const firstCell = Math.floor(-expandedRadius / REGIONAL_AMBIENT_CONNECTED_PLACE_CELL_SIZE);
+  const lastCell = Math.floor(expandedRadius / REGIONAL_AMBIENT_CONNECTED_PLACE_CELL_SIZE);
+  const routeOpportunityCounts = {};
+  const attempts = [];
+  let evaluatedPlaceCells = 0;
+  let exactProgramCount = 0;
+  const pairSignature = (candidate) => candidate ? {
+    id: candidate.id,
+    assetIds: candidate.placements.map((placement) => placement.asset.id),
+    visualGroups: candidate.placements.map((placement) => visualGroup(placement.asset)),
+    roles: candidate.placements.map((placement) => assetRole(placement.asset)),
+    anchors: candidate.placements.map((placement) => [placement.anchorX, placement.anchorY]),
+  } : null;
+  const makeDiagnostics = (program, routeStart, axis, excludedVisualGroups) => ({
+    ownerSiteX: program.root.siteX,
+    ownerSiteY: program.root.siteY,
+    ownershipX: Math.floor(routeStart.x),
+    ownershipY: Math.floor(routeStart.y),
+    routeStartX: routeStart.x,
+    routeStartY: routeStart.y,
+    axis,
+    vocabularyKeys: [],
+    excludedVisualGroups: [...excludedVisualGroups].sort(),
+    outcome: 'invalid-route-contact',
+    sides: [],
+    residualProtectedConflictCells: new Set(),
+    residualProtectedVisualGroups: [],
+  });
+  const fitRejections = (diagnostics) => diagnostics.sides.reduce((total, side) => ({
+    terrainOrRoute: total.terrainOrRoute + side.terrainOrRouteRejectedAttempts,
+    protectedReservation: total.protectedReservation +
+      side.protectedReservationRejectedAttempts,
+    pairFootprint: total.pairFootprint + side.pairFootprintRejectedAttempts,
+    missingEntrance: total.missingEntrance + side.missingEntranceAttempts,
+    distantEntrance: total.distantEntrance + side.distantEntranceAttempts,
+  }), {
+    terrainOrRoute: 0,
+    protectedReservation: 0,
+    pairFootprint: 0,
+    missingEntrance: 0,
+    distantEntrance: 0,
+  });
+  for (let cellY = firstCell; cellY <= lastCell; cellY++) {
+    for (let cellX = firstCell; cellX <= lastCell; cellX++) {
+      evaluatedPlaceCells++;
+      const program = world.getAmbientPlaceProgram(cellX, cellY);
+      const routeStart = program?.fabric && program.accessPath?.points[0];
+      if (!program?.fabric || !program.accessPath || !routeStart) continue;
+      exactProgramCount++;
+      if (Math.abs(routeStart.x) > radius + 16 || Math.abs(routeStart.y) > radius + 16) continue;
+      const routeX = Math.floor(routeStart.x);
+      const routeY = Math.floor(routeStart.y);
+      const route = routes.sample(routeX, routeY);
+      const axis = Math.abs(route.directionX) > Math.abs(route.directionY)
+        ? 'east-west'
+        : 'north-south';
+      const family = program.fabric.layout.materialFamily;
+      const key = `${family}:${axis}`;
+      routeOpportunityCounts[key] = (routeOpportunityCounts[key] ?? 0) + 1;
+      if (!expectedSet.has(key)) continue;
+      const pairKeys = new Set(program.streetPairKeys ?? []);
+      const baseProgram = {
+        ...program,
+        placements: program.placements.filter((placement) => !pairKeys.has(
+          `${placement.asset.id}@${placement.anchorX},${placement.anchorY}`,
+        )),
+        streetPairKeys: undefined,
+      };
+      const excludedVisualGroups = new Set(baseProgram.placements.map((placement) => (
+        visualGroup(placement.asset)
+      )));
+      const reserved = world.ambientPlaceProgramReservation(baseProgram);
+      const ordinaryDiagnostics = makeDiagnostics(
+        baseProgram,
+        routeStart,
+        axis,
+        excludedVisualGroups,
+      );
+      const ordinary = world.buildAmbientSharedStreetPairCandidate(
+        baseProgram,
+        reserved,
+        excludedVisualGroups,
+        false,
+        ordinaryDiagnostics,
+      );
+      const expandedDiagnostics = makeDiagnostics(
+        baseProgram,
+        routeStart,
+        axis,
+        excludedVisualGroups,
+      );
+      const expanded = world.buildAmbientSharedStreetPairCandidate(
+        baseProgram,
+        reserved,
+        excludedVisualGroups,
+        true,
+        expandedDiagnostics,
+      );
+      attempts.push({
+        key,
+        site: [program.root.siteX, program.root.siteY],
+        routeStart: [routeStart.x, routeStart.y],
+        routeValid: !field.sample(routeX, routeY).isWater && Boolean(route.routeKind),
+        excludedVisualGroups: [...excludedVisualGroups].sort(),
+        ordinary: {
+          outcome: ordinaryDiagnostics.outcome,
+          failedSide: ordinaryDiagnostics.failedSide ?? null,
+          rejections: fitRejections(ordinaryDiagnostics),
+          pair: pairSignature(ordinary),
+        },
+        withAlternatives: {
+          outcome: expandedDiagnostics.outcome,
+          failedSide: expandedDiagnostics.failedSide ?? null,
+          rejections: fitRejections(expandedDiagnostics),
+          pair: pairSignature(expanded),
+        },
+      });
+    }
+  }
+  const summarizeOutcomes = (entries, fieldName) => countValues(entries.map((entry) => (
+    entry[fieldName].outcome
+  )));
+  const summarizeRejections = (entries, fieldName) => entries.reduce((totals, entry) => {
+    for (const [kind, count] of Object.entries(entry[fieldName].rejections)) {
+      totals[kind] += count;
+    }
+    return totals;
+  }, {
+    terrainOrRoute: 0,
+    protectedReservation: 0,
+    pairFootprint: 0,
+    missingEntrance: 0,
+    distantEntrance: 0,
+  });
+  const byVocabulary = Object.fromEntries(expected.map((key) => {
+    const entries = attempts.filter((attempt) => attempt.key === key);
+    const ordinaryAccepted = entries.filter((entry) => entry.ordinary.pair);
+    const expandedAccepted = entries.filter((entry) => entry.withAlternatives.pair);
+    const recovered = entries.filter((entry) => (
+      !entry.ordinary.pair && entry.withAlternatives.pair
+    ));
+    return [key, {
+      routeOpportunityCount: routeOpportunityCounts[key] ?? 0,
+      probedSiteCount: entries.length,
+      ordinaryAcceptedCount: ordinaryAccepted.length,
+      withAlternativesAcceptedCount: expandedAccepted.length,
+      alternativeRecoveredCount: recovered.length,
+      ordinaryOutcomes: summarizeOutcomes(entries, 'ordinary'),
+      withAlternativesOutcomes: summarizeOutcomes(entries, 'withAlternatives'),
+      ordinaryRejections: summarizeRejections(entries, 'ordinary'),
+      withAlternativesRejections: summarizeRejections(entries, 'withAlternatives'),
+      uniqueExpandedAssetPairCount: new Set(expandedAccepted.map((entry) => (
+        [...entry.withAlternatives.pair.assetIds].sort().join('|')
+      ))).size,
+      uniqueExpandedVisualGroupPairCount: new Set(expandedAccepted.map((entry) => (
+        [...entry.withAlternatives.pair.visualGroups].sort().join('|')
+      ))).size,
+    }];
+  }));
+  const accepted = attempts.filter((attempt) => attempt.withAlternatives.pair);
+  const groupPairCounts = countValues(accepted.map((attempt) => (
+    [...attempt.withAlternatives.pair.visualGroups].sort().join('|')
+  )));
+  const assetPairCounts = countValues(accepted.map((attempt) => (
+    [...attempt.withAlternatives.pair.assetIds].sort().join('|')
+  )));
+  return {
+    radius,
+    expandedRadius,
+    evaluatedPlaceCells,
+    exactProgramCount,
+    eligibleAssetCount: eligibleAssets.length,
+    ordinaryAssetCount: eligibleAssets.filter((asset) => assetRole(asset) === 'ordinary').length,
+    alternativeAssetCount: eligibleAssets.filter((asset) => (
+      assetRole(asset) === 'canonical-alternative'
+    )).length,
+    pairedAssetCount: pairedAssetIds.size,
+    unpairedAssets,
+    expectedVocabularies: expected,
+    manifest,
+    routeOpportunityCounts: Object.fromEntries(Object.entries(routeOpportunityCounts).sort()),
+    zeroRouteOpportunityVocabularies: expected.filter((key) => !routeOpportunityCounts[key]),
+    probedSiteCount: attempts.length,
+    ordinaryAcceptedCount: attempts.filter((attempt) => attempt.ordinary.pair).length,
+    withAlternativesAcceptedCount: accepted.length,
+    alternativeRecoveredCount: attempts.filter((attempt) => (
+      !attempt.ordinary.pair && attempt.withAlternatives.pair
+    )).length,
+    ordinaryRejections: summarizeRejections(attempts, 'ordinary'),
+    withAlternativesRejections: summarizeRejections(attempts, 'withAlternatives'),
+    uniqueExpandedAssetPairCount: Object.keys(assetPairCounts).length,
+    uniqueExpandedVisualGroupPairCount: Object.keys(groupPairCounts).length,
+    expandedAssetPairCounts: assetPairCounts,
+    expandedVisualGroupPairCounts: groupPairCounts,
+    byVocabulary,
+    attempts,
+  };
+}
+
+const focalEligibilityAudit = RUN_FOCAL_ELIGIBILITY_AUDIT
+  ? auditFocalEligibility(FOCAL_ELIGIBILITY_RADIUS)
+  : null;
+
 const metrics = {
   worldSeed: String(WORLD_SEED),
   ambientDistributionProfile: AMBIENT_DISTRIBUTION_PROFILE,
@@ -2322,6 +2623,7 @@ const metrics = {
   streetOverlayCoverage,
   canonicalScratchAtlas,
   compositionExactAtlas,
+  focalEligibilityAudit,
   ambientDistributionAudit: RUN_AMBIENT_DISTRIBUTION_AUDIT
     ? auditAmbientDistribution(FRAMES[0].centre)
     : null,

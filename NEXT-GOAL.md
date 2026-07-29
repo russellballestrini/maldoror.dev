@@ -2354,6 +2354,31 @@ Completed foundations:
   silhouettes under a district repetition budget, expand the five zero-route-
   opportunity family/axis vocabularies, and build multi-building frontage
   before rerunning the same exact atlas;
+- V188 selects a data-derived exact focal-eligibility census. Across 400 meso
+  cells and 112 exact fabric programs at radius 160, 51 route-facing sites are
+  probed against the same complete program reservation with ordinary and then
+  complete alternative vocabulary. The manifest has 45 eligible focals (23
+  ordinary, 22 canonical alternatives): 44 form 11 paired family/axis
+  vocabularies, each with one ordinary and one alternative group per side;
+  canal-town retains one unpaired east-west negative-side ordinary frontage.
+  Ordinary vocabulary yields 0/51 exact pairs because its groups are already
+  used by the parent programs. Alternatives recover 18/51, all using two
+  genuinely distinct canonical alternatives, but collapse to four repeated
+  pairs: forest 10, mountain four, ruins two, rural two. The remaining 33 fits
+  exhaust bounded geometry with 528 terrain/route, 747 protected-reservation,
+  and 18 distant-doorway rejections; pair-self collision and missing-doorway
+  counts are zero. Five vocabularies have no route opportunity at all
+  (canal-town north-south, both coast axes, mountain east-west, ruins
+  east-west), while forest/rural east-west have seven opportunities but zero
+  fits. Candidate A is retained; B adds the unpaired and exact rejection
+  ledger. Lab syntax, faithful execution, and diff checks pass. Only research
+  instrumentation changes; active V170, V187 semantics, production, and
+  physical Ghostty remain untouched. Evidence lives in
+  `track-4-world-composition/regional-focal-eligibility-v188/FINDINGS.md`.
+  Next, render an opt-in exact-alternative profile unbudgeted against the same
+  33 frames, measure its four-pair stamping, then add a deterministic spatial
+  repetition budget only if it preserves occupied frontage and every exact
+  invariant;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
