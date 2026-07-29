@@ -2464,6 +2464,29 @@ Completed foundations:
   Next, materialize the selected budget through one coordinate-owned decision
   that is block-size independent, then solve the zero-route and east/west fit
   gaps without relaxing collision, reservation, or V190 ownership gates;
+- V192 **rejects every tested runtime materialization of the district budget**
+  while retaining a stronger diagnostic target. Three shifted radius-160
+  censuses at `[192,0]`, `[96,96]`, and `[-192,192]` extend the origin sample
+  to 92 occupied pair sites. A corrected ownership sweep caught and removed a
+  SHA/runtime-spatial-hash mismatch: 192×192 introduces boundary repeats, and
+  the only zero-repeat fixed seam tested across all four samples is 512×512 at
+  Y phase 256, requiring 729 cold place-cell evaluations. An exhaustive
+  coordinate-local search proves that constant-time hash and lattice policies
+  retain 3–8 near repeats. One higher-priority-neighbour pass at salt `0x3b67`
+  preserves all 92 sites, reaches zero near-pair repeats in every sample,
+  raises combined unique signatures to 60, and reduces combined nearby group
+  reuse to 33—but its materializers fail runtime acceptance. Against a
+  3:07.53 / 649,724-KiB unbudgeted three-frame control, fixed ownership costs
+  9:15.95 / 884,388 KiB, local selection costs 6:37.30 / 923,652 KiB, and
+  post-admission local selection costs 6:25.11 / 953,400 KiB. All three
+  candidates change exactly zero pixels at walking, district, and regional
+  scales. Their experimental provider profile, caches, tests, and exports were
+  removed; production and V191 behavior remain untouched. Evidence lives in
+  `track-4-world-composition/regional-district-budget-ownership-v192/FINDINGS.md`.
+  Next, enlarge valid per-site vocabulary and route opportunity first so a
+  constant-time policy can approach the zero-repeat target without neighbour
+  enumeration, then rerun the explicit 33-frame atlas and accept only visible
+  gain within the runtime envelope;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without

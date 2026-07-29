@@ -74,6 +74,14 @@ const RUN_FOCAL_ELIGIBILITY_AUDIT =
 const FOCAL_ELIGIBILITY_RADIUS = Number(
   process.env.MALDOROR_REGIONAL_FOCAL_ELIGIBILITY_RADIUS ?? '160',
 );
+const FOCAL_ELIGIBILITY_CENTRE = (
+  process.env.MALDOROR_REGIONAL_FOCAL_ELIGIBILITY_CENTRE ?? '0,0'
+).split(',').map(Number);
+if (FOCAL_ELIGIBILITY_CENTRE.length !== 2 || FOCAL_ELIGIBILITY_CENTRE.some((value) => (
+  !Number.isInteger(value)
+))) {
+  throw new Error('MALDOROR_REGIONAL_FOCAL_ELIGIBILITY_CENTRE must be integer x,y');
+}
 const CANONICAL_SCRATCH_SOURCE =
   process.env.MALDOROR_REGIONAL_CANONICAL_SCRATCH_SOURCE;
 const COMPOSITION_EXACT_SOURCE =
@@ -2362,7 +2370,8 @@ function walkableCellsConnected(cells) {
  * vocabulary or short of usable route contacts. Both the manifest census and
  * the site probes derive their families, axes, sides, groups, and roles from
  * data; no asset-name taxonomy participates. */
-function auditFocalEligibility(radius) {
+function auditFocalEligibility(radius, centre) {
+  const [centreX, centreY] = centre;
   const eligibleAssets = parcelKit.assets.filter((asset) => (
     asset.compositionRole === 'focal' && asset.frontageAxis &&
     asset.compositionSide !== undefined && asset.frontageStations !== undefined &&
@@ -2445,8 +2454,18 @@ function auditFocalEligibility(radius) {
     })).sort((a, b) => a.id.localeCompare(b.id));
 
   const expandedRadius = radius + REGIONAL_AMBIENT_CONNECTED_PLACE_SOURCE_REACH;
-  const firstCell = Math.floor(-expandedRadius / REGIONAL_AMBIENT_CONNECTED_PLACE_CELL_SIZE);
-  const lastCell = Math.floor(expandedRadius / REGIONAL_AMBIENT_CONNECTED_PLACE_CELL_SIZE);
+  const firstCellX = Math.floor(
+    (centreX - expandedRadius) / REGIONAL_AMBIENT_CONNECTED_PLACE_CELL_SIZE,
+  );
+  const lastCellX = Math.floor(
+    (centreX + expandedRadius) / REGIONAL_AMBIENT_CONNECTED_PLACE_CELL_SIZE,
+  );
+  const firstCellY = Math.floor(
+    (centreY - expandedRadius) / REGIONAL_AMBIENT_CONNECTED_PLACE_CELL_SIZE,
+  );
+  const lastCellY = Math.floor(
+    (centreY + expandedRadius) / REGIONAL_AMBIENT_CONNECTED_PLACE_CELL_SIZE,
+  );
   const routeOpportunityCounts = {};
   const attempts = [];
   let evaluatedPlaceCells = 0;
@@ -2487,14 +2506,15 @@ function auditFocalEligibility(radius) {
     missingEntrance: 0,
     distantEntrance: 0,
   });
-  for (let cellY = firstCell; cellY <= lastCell; cellY++) {
-    for (let cellX = firstCell; cellX <= lastCell; cellX++) {
+  for (let cellY = firstCellY; cellY <= lastCellY; cellY++) {
+    for (let cellX = firstCellX; cellX <= lastCellX; cellX++) {
       evaluatedPlaceCells++;
       const program = world.getAmbientPlaceProgram(cellX, cellY);
       const routeStart = program?.fabric && program.accessPath?.points[0];
       if (!program?.fabric || !program.accessPath || !routeStart) continue;
       exactProgramCount++;
-      if (Math.abs(routeStart.x) > radius + 16 || Math.abs(routeStart.y) > radius + 16) continue;
+      if (Math.abs(routeStart.x - centreX) > radius + 16 ||
+          Math.abs(routeStart.y - centreY) > radius + 16) continue;
       const routeX = Math.floor(routeStart.x);
       const routeY = Math.floor(routeStart.y);
       const route = routes.sample(routeX, routeY);
@@ -2731,6 +2751,7 @@ function auditFocalEligibility(radius) {
     selectedSites: selectedBudgetSites,
   };
   return {
+    centre: [centreX, centreY],
     radius,
     expandedRadius,
     evaluatedPlaceCells,
@@ -2765,7 +2786,7 @@ function auditFocalEligibility(radius) {
 }
 
 const focalEligibilityAudit = RUN_FOCAL_ELIGIBILITY_AUDIT
-  ? auditFocalEligibility(FOCAL_ELIGIBILITY_RADIUS)
+  ? auditFocalEligibility(FOCAL_ELIGIBILITY_RADIUS, FOCAL_ELIGIBILITY_CENTRE)
   : null;
 
 const metrics = {
