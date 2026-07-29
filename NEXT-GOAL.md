@@ -2867,6 +2867,17 @@ Completed foundations:
   memory-full PSI 5.34%/10s, I/O-full PSI 4.14%/10s, load-per-CPU 2.521, and
   swap-out 17,836 KiB/s. Evidence lives in
   `track-7-performance/opaque-packed-rgb-interner-v212/FINDINGS.md`.
+  V213 refuses a smaller speculative representation branch before it can
+  become maintenance debt. At the exact six-viewport imported-cache ceiling,
+  decoded tiles retain 922,880 pixel references in 7,680 outer grids plus
+  78,080 row arrays. A separate-process forced-GC comparison shows that one
+  flat reference plane per tile would save only 3.448 MiB used heap and 0.172
+  MiB RSS while requiring parallel exact-size terrain, authored-alpha overlay,
+  and resampling paths. It is rejected before source implementation; the
+  renderer remains on one path. Evidence lives in
+  `track-7-performance/flat-packed-grid-layout-v213/FINDINGS.md`. At the census,
+  CPU-some PSI was 15.80%/10s, memory-full PSI 1.21%/10s, I/O-full PSI
+  19.55%/10s, and load-per-CPU 2.123, so no timing or Gate D claim is made.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, admit or reject V210 and V212 under exact whole-process A/B/A,
   repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission
