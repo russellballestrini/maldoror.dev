@@ -3209,6 +3209,24 @@ Completed foundations:
   provenance, alpha proof, frames, comparisons, memory arithmetic, selection,
   and open runtime gate live in
   `track-2-alpha-scale-depth/canal-modular-semantic-lod-v257/FINDINGS.md`.
+  V262 then removes more exact work from both corridor fitters without changing
+  that selected world. One shared ranker eliminates the filter/map/family-map
+  candidate pipeline; deep integrated attempts eliminate six temporary arrays,
+  post-parent attempts eliminate three, sprite anchors are read once per asset
+  rather than inside the bounded 4x7 route-start loop, and lazy core-cell
+  fallback becomes one scan with no allocation when no core exists. Set
+  intersection preserves rejection order. After removing only V257's null
+  visual-descriptor metadata and empty substitution-audit field, the complete
+  V256/V262 geometry metrics are byte-exact at SHA `dcbd1014...11962`, covering
+  the same accepted workshop, 14 parent programs, candidate/replay connector
+  equality, every diagnostic, and `valid=true`. Direct world typecheck/build
+  and all three focused corridor/fallback tests pass. The first 44-test run is
+  honestly retained as 43 pass plus one unrelated 10-second host timeout; that
+  exact unchanged street-overlay test passes alone. With load1 18.18, CPU PSI
+  67.15%, memory-full PSI 54.81%, I/O-full PSI 2.96%, and disks 93%/97%, no
+  duration or memory claim follows. Exact work counts, parity, raw hashes, and
+  the preserved timeout live in
+  `track-7-performance/corridor-frontage-attempt-preparation-v262/FINDINGS.md`.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, admit or reject V210 and V212 under exact whole-process A/B/A,
   repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission

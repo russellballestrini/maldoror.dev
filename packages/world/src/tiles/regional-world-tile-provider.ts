@@ -941,6 +941,10 @@ type CorridorFrontageCandidate = RegionalParcelComponentAsset & {
   frontageStations: readonly number[];
   circulationOffsets: readonly (readonly [number, number])[];
 };
+type RankedCorridorFrontageCandidate = {
+  asset: CorridorFrontageCandidate;
+  score: number;
+};
 const NO_CORRIDOR_FRONTAGE_CANDIDATES: readonly CorridorFrontageCandidate[] =
   Object.freeze([]);
 
@@ -6326,21 +6330,13 @@ export class RegionalWorldTileProvider extends TileProvider {
         audit.axis = axis;
         audit.routeStart = [preferredRoute.x, preferredRoute.y];
       }
-      const candidates = this.corridorFrontageCandidates.filter((asset) => (
-        asset.frontageAxis === axis &&
-        asset.families.some((family) => root.asset.families.includes(family))
-      )).map((asset) => ({
-        asset,
-        score: Math.max(...asset.families.map((family) => (
-          localBiome.weights[BIOME_FAMILIES.indexOf(family)] ?? 0
-        ))) * 0.88 + this.hashUnit(
-          root.siteX,
-          root.siteY,
-          stringHash(asset.id) ^ 0x6f31,
-        ) * 0.12,
-      })).sort((left, right) => (
-        right.score - left.score || left.asset.id.localeCompare(right.asset.id)
-      ));
+      const candidates = this.rankAmbientCorridorFrontageCandidates(
+        root.asset.families,
+        root.siteX,
+        root.siteY,
+        axis,
+        localBiome,
+      );
       if (candidates.length === 0) continue;
       sawSemanticCandidate = true;
       if (audit) {
@@ -6419,13 +6415,17 @@ export class RegionalWorldTileProvider extends TileProvider {
               continue;
             }
             const accessCells = this.getAmbientPlaceAccessCells(access.path);
-            const pathCells = new Set(accessCells.map((cell) => positionKey(cell.x, cell.y)));
-            const protectedPath = new Set(accessCells.filter((cell) => cell.protected)
-              .map((cell) => positionKey(cell.x, cell.y)));
+            const pathCells = new Set<string>();
+            const protectedPath = new Set<string>();
+            for (const cell of accessCells) {
+              const key = positionKey(cell.x, cell.y);
+              pathCells.add(key);
+              if (cell.protected) protectedPath.add(key);
+            }
             const circulation = new Set(asset.circulationOffsets!.map(([offsetX, offsetY]) => (
               positionKey(anchor.anchorX + offsetX, anchor.anchorY + offsetY)
             )));
-            if (![...circulation].some((key) => pathCells.has(key))) {
+            if (!setsIntersect(circulation, pathCells)) {
               const accessEnd = access.path.points.at(-1);
               const accessEndKey = accessEnd
                 ? positionKey(Math.floor(accessEnd.x), Math.floor(accessEnd.y))
@@ -6435,7 +6435,7 @@ export class RegionalWorldTileProvider extends TileProvider {
                 : 'access-end-misses-declared-circulation');
               continue;
             }
-            if ([...circulation].some((key) => parentStructural.has(key))) {
+            if (setsIntersect(circulation, parentStructural)) {
               reject('circulation-hits-parent-structure');
               continue;
             }
@@ -6446,13 +6446,13 @@ export class RegionalWorldTileProvider extends TileProvider {
               reject('collision-hits-protected-place-path');
               continue;
             }
-            const visibleConflicts = visibleFootprintConflictCells(
+            const hasVisibleConflict = visibleFootprintConflictCells(
               asset,
               anchor.anchorX,
               anchor.anchorY,
               protectedPath,
-            ).filter((key) => !circulation.has(key) || !pathCells.has(key));
-            if (visibleConflicts.length > 0) {
+            ).some((key) => !circulation.has(key) || !pathCells.has(key));
+            if (hasVisibleConflict) {
               reject('visible-footprint-conflict');
               continue;
             }
@@ -6583,29 +6583,20 @@ export class RegionalWorldTileProvider extends TileProvider {
     const tangentX = axis === 'east-west' ? 1 : 0;
     const tangentY = axis === 'east-west' ? 0 : 1;
     const accessCells = this.getAmbientPlaceAccessCells(accessPath);
-    const pathCells = new Set(accessCells.map((cell) => (
-      positionKey(cell.x, cell.y)
-    )));
+    const pathCells = new Set<string>();
+    for (const cell of accessCells) pathCells.add(positionKey(cell.x, cell.y));
     if (audit) {
       audit.pathCells = accessCells.map((cell) => [cell.x, cell.y] as const).sort((left, right) => (
         left[1] - right[1] || left[0] - right[0]
       ));
     }
-    const candidates = this.corridorFrontageCandidates.filter((asset) => (
-      asset.frontageAxis === axis &&
-      asset.families.some((family) => program.root.asset.families.includes(family))
-    )).map((asset) => ({
-      asset,
-      score: Math.max(...asset.families.map((family) => (
-        localBiome.weights[BIOME_FAMILIES.indexOf(family)] ?? 0
-      ))) * 0.88 + this.hashUnit(
-        program.root.siteX,
-        program.root.siteY,
-        stringHash(asset.id) ^ 0x6f31,
-      ) * 0.12,
-    })).sort((left, right) => (
-      right.score - left.score || left.asset.id.localeCompare(right.asset.id)
-    ));
+    const candidates = this.rankAmbientCorridorFrontageCandidates(
+      program.root.asset.families,
+      program.root.siteX,
+      program.root.siteY,
+      axis,
+      localBiome,
+    );
     if (audit) audit.candidateAssetIds = candidates.map(({ asset }) => asset.id);
     if (candidates.length === 0) return finish('no-semantic-candidate');
     for (const { asset } of candidates) {
@@ -6620,12 +6611,12 @@ export class RegionalWorldTileProvider extends TileProvider {
         anchorY: number;
       };
       const seenAnchors = new Set<string>();
+      const [spriteAnchorX, spriteAnchorY] = getSpriteAnchor(asset);
       function* anchorAttemptSequence(): Generator<CorridorAnchorAttempt> {
         for (let extraSetback = 0;
           extraSetback <= REGIONAL_STREET_PAIR_MAX_EXTRA_SETBACK; extraSetback++) {
           for (let nudgeIndex = 0;
             nudgeIndex < REGIONAL_STREET_PAIR_SEARCH_NUDGE_COUNT; nudgeIndex++) {
-            const [spriteAnchorX, spriteAnchorY] = getSpriteAnchor(asset);
             const anchor = regionalStreetPairAnchor({
               axis,
               side: asset.compositionSide!,
@@ -6654,9 +6645,11 @@ export class RegionalWorldTileProvider extends TileProvider {
         }
         // This half of the generator is lazy: a route-start acceptance returns
         // before any path stations or fallback anchors are computed.
-        const eligiblePathCells = accessCells.some((cell) => cell.core)
-          ? accessCells.filter((cell) => cell.core)
-          : accessCells;
+        let corePathCells: RegionalParcelPathCell[] | null = null;
+        for (const cell of accessCells) {
+          if (cell.core) (corePathCells ??= []).push(cell);
+        }
+        const eligiblePathCells = corePathCells ?? accessCells;
         if (eligiblePathCells.length === 0) return;
         const pathStationCount = 9;
         for (let stationIndex = 0; stationIndex < pathStationCount; stationIndex++) {
@@ -6722,11 +6715,11 @@ export class RegionalWorldTileProvider extends TileProvider {
         const circulation = new Set(asset.circulationOffsets!.map(([offsetX, offsetY]) => (
           positionKey(anchor.anchorX + offsetX, anchor.anchorY + offsetY)
         )));
-        if (![...circulation].some((key) => pathCells.has(key))) {
+        if (!setsIntersect(circulation, pathCells)) {
           reject('circulation-misses-place-path');
           continue;
         }
-        if ([...circulation].some((key) => parentStructuralReserved.has(key))) {
+        if (setsIntersect(circulation, parentStructuralReserved)) {
           reject('circulation-hits-parent-structure');
           continue;
         }
@@ -6741,13 +6734,13 @@ export class RegionalWorldTileProvider extends TileProvider {
           reject('collision-hits-place-path');
           continue;
         }
-        const unprotectedConflicts = visibleFootprintConflictCells(
+        const hasUnprotectedConflict = visibleFootprintConflictCells(
           asset,
           anchor.anchorX,
           anchor.anchorY,
           protectedReserved,
-        ).filter((key) => !circulation.has(key) || !pathCells.has(key));
-        if (unprotectedConflicts.length > 0) {
+        ).some((key) => !circulation.has(key) || !pathCells.has(key));
+        if (hasUnprotectedConflict) {
           reject('visible-footprint-conflict');
           continue;
         }
@@ -6800,6 +6793,38 @@ export class RegionalWorldTileProvider extends TileProvider {
       }
     }
     return finish('bounded-fit-exhausted');
+  }
+
+  private rankAmbientCorridorFrontageCandidates(
+    rootFamilies: readonly BiomeFamily[],
+    siteX: number,
+    siteY: number,
+    axis: RegionalRouteContactAxis,
+    localBiome: BiomeWorldSample,
+  ): RankedCorridorFrontageCandidate[] {
+    const ranked: RankedCorridorFrontageCandidate[] = [];
+    for (const asset of this.corridorFrontageCandidates) {
+      if (asset.frontageAxis !== axis ||
+          !asset.families.some((family) => rootFamilies.includes(family))) continue;
+      let maximumFamilyWeight = Number.NEGATIVE_INFINITY;
+      for (const family of asset.families) {
+        maximumFamilyWeight = Math.max(
+          maximumFamilyWeight,
+          localBiome.weights[BIOME_FAMILIES.indexOf(family)] ?? 0,
+        );
+      }
+      ranked.push({
+        asset,
+        score: maximumFamilyWeight * 0.88 + this.hashUnit(
+          siteX,
+          siteY,
+          stringHash(asset.id) ^ 0x6f31,
+        ) * 0.12,
+      });
+    }
+    return ranked.sort((left, right) => (
+      right.score - left.score || left.asset.id.localeCompare(right.asset.id)
+    ));
   }
 
   /** Enumerate every geometrically valid two-sided vocabulary combination
