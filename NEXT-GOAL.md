@@ -3156,6 +3156,21 @@ Completed foundations:
   live SSH sustained concurrency, and physical Ghostty acceptance remain
   mandatory. Consolidated evidence lives in
   `track-4-world-composition/canal-modular-frontages-v251-full-integrated-proof/FINDINGS.md`.
+  V255 then removes costs that the new research branch must not impose on the
+  default path. Disabled production reuses its already-owned support array and
+  a shared empty detail index; it performs no defensive research copy and no
+  detail-index scan. Enabled corridor profiles validate their semantic detail
+  set once, reducing each repeated real route/program candidate traversal from
+  all 112 parcel components to the three eligible modules (109 fewer visits,
+  97.32%) and moving connected-circulation validation out of those loops. The
+  44/44 suite and direct typecheck/build pass. A rebuilt V251-equivalent full
+  geometry run differs only by an explicitly disabled unrelated distribution
+  audit; removing that field gives a zero diff and identical canonical SHA
+  `f11f0e9f...256`. This is exact source-cardinality and semantic-parity
+  evidence only: load1 25.95, memory-full PSI 57.40%, I/O-full PSI 18.42%, and
+  both disks at 93%/97% still forbid timing, RSS, or Gate-D claims. Evidence
+  lives in
+  `track-7-performance/corridor-frontage-candidate-index-v255/FINDINGS.md`.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, admit or reject V210 and V212 under exact whole-process A/B/A,
   repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission

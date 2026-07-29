@@ -934,6 +934,25 @@ export const REGIONAL_AMBIENT_CONNECTED_PLACE_SOURCE_REACH = 64;
 const PARCEL_SIDE_OFFSET = 3;
 export const REGIONAL_MAX_PREPARED_VIEWPORT_AREA = 8192;
 const ENVIRONMENT_PROGRAM_REACH = 40;
+type CorridorFrontageCandidate = RegionalParcelComponentAsset & {
+  placeDetailRole: 'corridor-frontage';
+  frontageAxis: RegionalRouteContactAxis;
+  compositionSide: -1 | 1;
+  frontageStations: readonly number[];
+  circulationOffsets: readonly (readonly [number, number])[];
+};
+const NO_CORRIDOR_FRONTAGE_CANDIDATES: readonly CorridorFrontageCandidate[] =
+  Object.freeze([]);
+
+function isCorridorFrontageCandidate(
+  asset: RegionalParcelComponentAsset,
+): asset is CorridorFrontageCandidate {
+  return asset.placeDetailRole === 'corridor-frontage' &&
+    asset.frontageAxis !== undefined && asset.compositionSide !== undefined &&
+    asset.frontageStations !== undefined && asset.circulationOffsets !== undefined &&
+    (!asset.programs || asset.programs.length === 0) &&
+    regionalOffsetsFormConnectedPath(asset.circulationOffsets);
+}
 
 /**
  * Regional production-provider seam.
@@ -957,6 +976,7 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly quayDetailsById: ReadonlyMap<string, RegionalQuayDetailAsset>;
   private readonly routeContacts: readonly RegionalRouteContactAsset[];
   private readonly parcelComponents: readonly RegionalParcelComponentAsset[];
+  private readonly corridorFrontageCandidates: readonly CorridorFrontageCandidate[];
   private readonly environmentContacts: readonly RegionalEnvironmentContactAsset[];
   private readonly quayLayouts: readonly RegionalQuayLayout[];
   private readonly blockSize: number;
@@ -1076,6 +1096,9 @@ export class RegionalWorldTileProvider extends TileProvider {
         'Integrated corridor frontage requires route-frontage access and terrain-only fabric',
       );
     }
+    this.corridorFrontageCandidates = this.ambientPlaceDetailProfile === 'disabled'
+      ? NO_CORRIDOR_FRONTAGE_CANDIDATES
+      : Object.freeze(this.parcelComponents.filter(isCorridorFrontageCandidate));
     this.ambientLandmarkClearance = Math.max(4, config.ambientLandmarkClearance ?? 9);
     this.civicDetailCellSize = Math.max(1, Math.min(12, config.civicDetailCellSize ?? 1));
     this.civicDetailDensity = Math.max(0, Math.min(1, config.civicDetailDensity ?? 0.92));
@@ -5142,7 +5165,12 @@ export class RegionalWorldTileProvider extends TileProvider {
         ? 'east-west'
         : 'north-south'
       : null;
-    const defaultSupports = [...supports];
+    // Preserve the original entourage only when the integrated research path
+    // may need to budget around it. The production/default path reuses its
+    // already-owned array and pays no defensive-copy allocation.
+    const defaultSupports = this.ambientPlaceDetailProfile === 'integrated-corridor-frontage'
+      ? [...supports]
+      : supports;
     if (this.ambientPlaceAccessProfile === 'route-frontage' && connectedAxis &&
         !defaultSupports.some((placement) => (
           isFocalCompositionAsset(placement.asset) && placement.asset.frontageAxis === connectedAxis &&
@@ -6295,13 +6323,9 @@ export class RegionalWorldTileProvider extends TileProvider {
         audit.routeStart = [preferredRoute.x, preferredRoute.y];
       }
       const localBiome = this.field.sample(routeX, routeY);
-      const candidates = this.parcelComponents.filter((asset) => (
-        asset.placeDetailRole === 'corridor-frontage' &&
-        asset.frontageAxis === axis && asset.compositionSide !== undefined &&
-        asset.frontageStations !== undefined && asset.circulationOffsets !== undefined &&
-        (!asset.programs || asset.programs.length === 0) &&
-        asset.families.some((family) => root.asset.families.includes(family)) &&
-        regionalOffsetsFormConnectedPath(asset.circulationOffsets)
+      const candidates = this.corridorFrontageCandidates.filter((asset) => (
+        asset.frontageAxis === axis &&
+        asset.families.some((family) => root.asset.families.includes(family))
       )).map((asset) => ({
         asset,
         score: Math.max(...asset.families.map((family) => (
@@ -6564,13 +6588,9 @@ export class RegionalWorldTileProvider extends TileProvider {
         left[1] - right[1] || left[0] - right[0]
       ));
     }
-    const candidates = this.parcelComponents.filter((asset) => (
-      asset.placeDetailRole === 'corridor-frontage' &&
-      asset.frontageAxis === axis && asset.compositionSide !== undefined &&
-      asset.frontageStations !== undefined && asset.circulationOffsets !== undefined &&
-      (!asset.programs || asset.programs.length === 0) &&
-      asset.families.some((family) => program.root.asset.families.includes(family)) &&
-      regionalOffsetsFormConnectedPath(asset.circulationOffsets)
+    const candidates = this.corridorFrontageCandidates.filter((asset) => (
+      asset.frontageAxis === axis &&
+      asset.families.some((family) => program.root.asset.families.includes(family))
     )).map((asset) => ({
       asset,
       score: Math.max(...asset.families.map((family) => (

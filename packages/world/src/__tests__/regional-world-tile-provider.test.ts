@@ -2202,8 +2202,16 @@ describe('RegionalWorldTileProvider', () => {
     const bounds = [-96, -72, 128, 72] as const;
     const placements = candidate.getAmbientPlacementsInBounds(...bounds);
     const details = placements.filter(({ assetId }) => assetId === detail.id);
+    const indexedDetails = (candidate as unknown as {
+      corridorFrontageCandidates: readonly RegionalParcelComponentAsset[];
+    }).corridorFrontageCandidates;
+    const disabledIndexedDetails = (control as unknown as {
+      corridorFrontageCandidates: readonly RegionalParcelComponentAsset[];
+    }).corridorFrontageCandidates;
 
     expect(details.length).toBeGreaterThan(0);
+    expect(indexedDetails.map(({ id }) => id)).toEqual([detail.id]);
+    expect(disabledIndexedDetails).toEqual([]);
     expect(details).toEqual(replay.getAmbientPlacementsInBounds(...bounds).filter(
       ({ assetId }) => assetId === detail.id,
     ));
