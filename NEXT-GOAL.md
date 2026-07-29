@@ -3244,6 +3244,20 @@ Completed foundations:
   operation-count selection only, not a host timing result. Oracle, census,
   raw reports, hashes, and limitations live in
   `track-7-performance/lazy-water-phase-reset-v263/FINDINGS.md`.
+  V264 removes two more provably redundant full-plane writes from packed
+  octant conversion. The exhaustive full-frame loop already resets both index
+  slots inside every packed-cell kernel before water selection, making the
+  preceding two `fill(-1)` passes unobservable. On the same 7,040-cell oracle,
+  the selected path removes exactly 14,080 duplicate writes while preserving
+  the 14,080 kernel resets. A stale-reuse regression seeds real water indices,
+  reuses those buffers for dry material, and proves exact equality to a newly
+  allocated dry frame with all slots reset. Baseline/candidate canonical JSON
+  is byte-exact at SHA `6602ee19...e0d9`; pixel, material, combined, and every
+  individual terminal-plane hash remain unchanged. Direct typecheck/build,
+  10/10 focused tests, and 83/83 complete render tests pass. With load1 16.72,
+  CPU PSI 74.59%, memory-full PSI 56.75%, I/O-full PSI 2.56%, and disks
+  93%/97%, this too is an operation-count result only. Full evidence lives in
+  `track-7-performance/lazy-packed-index-reset-v264/FINDINGS.md`.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, admit or reject V210 and V212 under exact whole-process A/B/A,
   repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission

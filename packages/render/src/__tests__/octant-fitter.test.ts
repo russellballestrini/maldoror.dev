@@ -116,6 +116,28 @@ describe('octant perceptual fitting', () => {
     expect(indexedChannel(object[2]!)).toBe(PALETTE.WATER + 5);
   });
 
+  it('fully overwrites reused index planes inside the packed cell kernel', () => {
+    const deep = { r: 18, g: 49, b: 68 };
+    const glint = { r: 235, g: 248, b: 241 };
+    const pixels = Array.from({ length: 4 }, () => [deep, glint, deep, glint]);
+    const water = Array.from({ length: 4 }, () => new Uint8Array([4, 4, 7, 7]));
+    const dry = Array.from({ length: 4 }, () => new Uint8Array([255, 255, 255, 255]));
+    const reusable = renderOctantPackedGridCells(pixels, undefined, water);
+    expect(
+      [...reusable.foregroundIndex, ...reusable.backgroundIndex].some((index) => index >= 0),
+    ).toBe(true);
+
+    const expected = renderOctantPackedGridCells(pixels, undefined, dry);
+    const reused = renderOctantPackedGridCells(pixels, undefined, dry, reusable);
+
+    expect([...reused.codepoints]).toEqual([...expected.codepoints]);
+    expect([...reused.foreground]).toEqual([...expected.foreground]);
+    expect([...reused.background]).toEqual([...expected.background]);
+    expect([...reused.foregroundIndex]).toEqual([...expected.foregroundIndex]);
+    expect([...reused.backgroundIndex]).toEqual([...expected.backgroundIndex]);
+    expect([...reused.foregroundIndex, ...reused.backgroundIndex]).toEqual([-1, -1, -1, -1]);
+  });
+
   it('reconstructs actor-dirty cells exactly over a shared static cell plane', () => {
     const ground = { r: 42, g: 91, b: 67 };
     const actor = { r: 221, g: 83, b: 56 };

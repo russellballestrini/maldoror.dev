@@ -98,6 +98,13 @@ try {
       bakedViewports: viewports.length,
     },
     waterPhaseCounterResets: census,
+    packedIndexPlaneInitialization: {
+      indexPlanes: 2,
+      terminalCells: packed.codepoints.length,
+      eagerWholePlaneWrites: packed.codepoints.length * 2,
+      requiredPerCellResetWrites: packed.codepoints.length * 2,
+      selectedAvoidedWrites: packed.codepoints.length * 2,
+    },
     exactOracle: {
       pixelGridSha256: hashPixelGrid(frame.buffer),
       materialGridSha256: hashRows(frame.materialGrid),

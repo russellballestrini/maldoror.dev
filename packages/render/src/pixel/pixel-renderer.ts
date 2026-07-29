@@ -1209,9 +1209,6 @@ export function renderOctantPackedGridCells(
     return result;
   }
 
-  result.foregroundIndex.fill(-1);
-  result.backgroundIndex.fill(-1);
-
   for (let cellY = 0, y = 0; cellY < height; cellY++, y += 4) {
     for (let cellX = 0, x = 0; cellX < width; cellX++, x += 2) {
       const offset = cellY * width + cellX;
