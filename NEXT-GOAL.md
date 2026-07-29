@@ -2890,6 +2890,16 @@ Completed foundations:
   sample had memory-full PSI 19.94%/10s, I/O-full PSI 51.11%/10s, and
   load-per-CPU 3.094; this is negative runtime truth, not V212 selection or
   Gate D.
+  V215 re-audits the exact-login contract on current source rather than relying
+  on the earlier milestone alone. One frozen `LOGIN_ORIGIN={x:0,y:0}` drives
+  production worker SSH, legacy SSH, and agent admission. Fresh and returning
+  sessions await the `player_state` reset before provider/game registration;
+  no nearest-walkable relocation follows it. Only an explicitly restored
+  already-running session preserves coordinates across hot reload. Four focused
+  admission/restoration files pass 10/10 tests. Evidence lives in
+  `track-5-motion-transport/login-origin-current-audit-v215/FINDINGS.md`. This
+  is source/test proof, not a new deployed adversarial login or physical
+  Ghostty acceptance; the post-test host still failed every sustained gate.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, admit or reject V210 and V212 under exact whole-process A/B/A,
   repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission
