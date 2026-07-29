@@ -9,14 +9,18 @@ implementation map.*
 
 Transform Maldoror from a repeating canal-town rendering prototype into an
 **infinite, painterly, freely zoomable, genuinely living shared world that feels
-impossible to be running as pure ANSI over SSH**. A player must be able to enter
-at the world's origin, travel for hours through coherent but surprising places,
+impossible to be running as pure ANSI over SSH—and make every layer of that
+world extremely high-performance without sacrificing anything that makes it
+beautiful, coherent, alive, safe, or exact**. A player must be able to enter at
+the world's origin, travel for hours through coherent but surprising places,
 meet inhabitants with continuing lives, encounter other people, watch the world
 change, and never see the machinery collapse into obvious tiles, repetition,
-empty filler, or transport jank.
+empty filler, transport jank, load stalls, memory pressure, or degraded fidelity
+under concurrency.
 
 The target is no longer “one block works.” The target is **a world worth
-inhabiting**.
+inhabiting that feels immediate at every scale and remains immediate under real
+load**.
 
 ## Governing truth
 
@@ -39,6 +43,33 @@ and a composition with no relationship to the target's organic hierarchy. This
 is a world-composition and raster-reconstruction problem before it is a content
 quantity problem. Adding more assets or biomes without replacing that visual
 grammar does not count as progress.
+
+## Extreme performance without sacrifice
+
+Performance is a co-equal product invariant, not a cleanup phase after visual
+acceptance. Profile and optimize the complete path: world-field sampling,
+constraint solving, material composition, alpha/LOD work, terminal
+reconstruction, animation, state simulation, persistence, cache admission and
+eviction, runtime-pack loading, worker scheduling, retained-frame diffing,
+encoding, SSH transport, recovery keyframes, and client-visible response.
+
+No performance result counts if it is obtained by rendering less world,
+reducing viewport or zoom coverage, weakening the glyph/material search,
+removing detail, lowering animation/weather/life cadence, reducing inhabitants,
+disabling a biome or transition, using stale or incorrect caches, relaxing
+determinism/collision/ownership/provenance, hiding keyframes, dropping work, or
+moving latency outside the measured interval. Lossless reuse, sparse exact
+updates, precomputation, compact representations, parallelism, vectorization,
+allocation removal, better algorithms, bounded prediction, and measured cache
+locality are the intended route.
+
+Every selected optimization requires a same-workload A/B proof. Retain raw
+profiles, CPU time, wall time, allocations, RSS, cache sizes/hit rates, I/O,
+bytes, frame hashes or perceptual-equivalence evidence, and p50/p95/p99 tails.
+The optimized side must pass every visual, semantic, collision, determinism,
+login, persistence, and living-world gate that the control passes. Prefer
+architectural and asymptotic gains over benchmark-specific special cases, and
+ratchet budgets downward as bottlenecks are removed.
 
 ## Mandatory Phase 0 — rendering and world-art research reset
 
@@ -299,21 +330,42 @@ interaction, memory continuity, environmental response, a persisted world
 change, disconnect/reconnect, and another player arriving at `(0,0)`. Empty AI
 responses or provider failure must degrade honestly and must not fabricate life.
 
-### Gate D — terminal feel and performance
+### Gate D — extreme end-to-end performance without fidelity loss
 
 On the production box and real SSH path, prove at 160×46 and one larger physical
 Ghostty viewport:
 
-- input-to-visible-response p95 below 100 ms under normal box load;
+- cached incremental render-to-queue work stays below 16.7 ms p95 and 33 ms
+  p99; unavoidable full keyframes stay below 50 ms p95 and 100 ms p99;
+- input-to-visible-response stays below 75 ms p95 and 125 ms p99 under normal
+  box load, with server, queue, network, terminal-write, and display portions
+  measured separately rather than conflated;
+- fresh-login time to the first correct interactive `(0,0)` frame stays below
+  750 ms p95 after assets are resident, and reconnect/hot-reload paths do not
+  introduce an unmeasured stall;
 - no retained-frame corruption, tearing, or dependency break during a
-  30-minute movement/zoom/weather run;
-- render cadence maintains its chosen interactive budget without long-tail
-  stalls; report p50/p95/p99 rather than averages alone;
+  60-minute mixed movement/zoom/weather/life run;
+- render and simulation cadence maintain their declared interactive budgets
+  without long-tail stalls; report p50/p95/p99/max, missed deadlines, queue
+  depth, allocation rate, and cache hit/eviction rates rather than averages
+  alone;
 - steady idle, continuous walking, zoom, and weather bandwidth are separately
-  measured and bounded; keyframes are identified rather than hidden in means;
-- memory and caches remain bounded inside the 1.6 GiB service envelope;
-- a 5-, 10-, and 20-presence load ladder reports CPU, RSS, event-loop delay,
-  frame latency, bytes/client, dropped deltas, and recovery keyframes.
+  measured and bounded at p50/p95/p99; keyframes and recovery bursts are
+  identified rather than hidden in means;
+- steady-state service RSS remains below 1.2 GiB and the existing 1.6 GiB hard
+  envelope is never crossed; caches remain bounded, the service causes zero
+  swap I/O, and memory returns to its expected band after traversal and churn;
+- a 5-, 10-, 20-, and 40-presence ladder reports CPU, RSS, event-loop delay,
+  simulation latency, frame latency, allocations, cache behavior,
+  bytes/client, dropped deltas, and recovery keyframes. The 20-presence rung
+  must meet the interactive budgets; the 40-presence rung proves graceful
+  headroom and recovery without correctness or fidelity loss;
+- runtime-pack decode, origin prewarm, provider cold start, first uncached
+  territory, zoom changes, and weather transitions each have explicit budgets
+  and flame/profile evidence, with no unprofiled multi-second phase;
+- the complete acceptance atlas, living-system checks, deterministic traversal,
+  and exact materialization/collision audits remain identical or improve under
+  the performance build. A faster partial frame is a failed result.
 
 Thresholds may become stricter as measurement improves. They may not be relaxed
 to make a failing build pass without explicit operator approval and a written
@@ -367,7 +419,9 @@ research area, linked from this file:
 5. the complete multi-coordinate/multi-zoom faithful acceptance atlas;
 6. living-world observation logs and persisted-state evidence;
 7. login-reset integration evidence;
-8. performance/load reports with raw measurements;
+8. same-workload performance A/B reports, profiles, tail distributions, and
+   5/10/20/40-presence load evidence proving extreme speed without fidelity,
+   correctness, density, or feature loss;
 9. production deployment commit and rollback procedure;
 10. explicit physical-Ghostty operator acceptance.
 
@@ -2487,6 +2541,41 @@ Completed foundations:
   constant-time policy can approach the zero-repeat target without neighbour
   enumeration, then rerun the explicit 33-frame atlas and accept only visible
   gain within the runtime envelope;
+- V193 selects terrain-clipped shoreline commons as an **experimental exact-
+  profile improvement, not an active production policy**, and revises this
+  governing goal so extreme end-to-end performance is co-equal with fidelity
+  and may never be won by rendering or simulating less. An exhaustive
+  `[-1024,1024]` route-field scout evaluates 263,169 samples and proves nonzero
+  route opportunities for all twelve family/axis combinations. Exact fallback
+  diagnostics then localize the bounded coast gap to common admission rather
+  than art or route topology. A shared common may now retain water beneath only
+  its peripheral material mask when at least two thirds of its raster is dry,
+  all five public-core probes and every threshold are dry, and the existing
+  slope gate passes; the compositor leaves water-owned pixels unpaved. The
+  origin radius-64 sample improves from 4/16 to 9/16 exact fabrics and recovers
+  east/west coast, while honestly retaining two north/south coast failures.
+  The complete atlas finds a valid north/south coast pair elsewhere at
+  `[182,89]`. Focused original-resolution walking inspection selects both coast
+  axes as coherent waterfront places. The full 33-frame V186 atlas preserves
+  every base hash, passes 48/48 exact composition observations, materializes
+  5,212/5,212 broad cells with zero false owners or connector clips, and keeps
+  all 365 public-core probes paved and walkable. Eight frame hashes change from
+  V191; the walking sheet is pixel-identical and sparse district/regional
+  differences add place objects without a terrain-wide shift. Forty-two
+  provider/fabric tests, fourteen asset/runtime-pack tests, both TypeScript
+  builds, the 150-source runtime pack plus six-viewport prewarm, and 7/7 lint
+  tasks pass. The complete atlas takes 16:52.99 at 2,652,980-KiB peak RSS with
+  zero swaps; the downstream pack/prewarm build takes 4:47.19 at
+  1,802,020-KiB peak, exposing the first explicit V194 performance target under
+  the new no-sacrifice A/B contract. Metrics SHA
+  `e248f6fb8682c995b69544585ace86480e6a0a7514aba3de52a9b67c44271d4b`;
+  evidence lives in
+  `track-4-world-composition/regional-route-family-opportunity-v193/FINDINGS.md`.
+  Next, profile provider/prewarm time and allocation by stage and remove the
+  largest architectural costs with exact frame/audit parity; in parallel test
+  compact bank-aware geometry for the two unresolved origin north/south coast
+  sites without relaxing dry-core, threshold, slope, collision, civic, or
+  ownership gates;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
@@ -2595,7 +2684,7 @@ This goal is complete only when it is truthful to say:
 
 > “Maldoror is an infinite, visually extraordinary, multi-biome living world—
 > not a repeated demo block—and the public production SSH experience, raw
-> evidence, sustained simulation, performance envelope, exact login origin, and
-> human Ghostty acceptance all prove it.”
+> evidence, sustained simulation, extreme no-sacrifice performance envelope,
+> exact login origin, and human Ghostty acceptance all prove it.”
 
 Until then: there is a long way to go.

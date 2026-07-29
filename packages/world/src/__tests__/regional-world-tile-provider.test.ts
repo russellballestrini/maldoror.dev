@@ -1095,6 +1095,117 @@ describe('RegionalWorldTileProvider', () => {
     });
   });
 
+  it('clips only peripheral shared-common water while preserving every public-core probe', () => {
+    const coastalBiome = (x: number) => ({
+      ...biomeSample('coast'),
+      isWater: x >= 3,
+      waterDistance: Math.max(0, 3 - x),
+    });
+    const world = makeWorld(
+      32, 64, routeSample, coastalBiome, false, undefined, false, false, false,
+      'east-west', [], [], 'cluster-field-blue-noise', 'hierarchical-place-field',
+      'shared-common-street-overlay-exact-alternatives', 'route-frontage', false,
+    );
+    const focal = (id: string, side: -1 | 1): RegionalParcelComponentAsset => ({
+      id,
+      families: ['coast'],
+      role: 'mass',
+      visualGroup: id,
+      compositionRole: 'focal',
+      frontageAxis: 'east-west',
+      compositionSide: side,
+      frontageStations: [0],
+      sprite: sprite(COLOURS.coast),
+      collision: [[0, 0]],
+    });
+    type TestPlacement = {
+      asset: RegionalLandmarkAsset | RegionalParcelComponentAsset;
+      kind: 'ambient';
+      landmarkKind?: RegionalLandmarkKind;
+      siteX: number;
+      siteY: number;
+      anchorX: number;
+      anchorY: number;
+    };
+    type TestFabric = {
+      layout: Parameters<typeof rasterizeRegionalLandmarkFabricLayout>[0];
+      terrainClipped?: boolean;
+      dryCellRate?: number;
+      clippedWaterCellCount?: number;
+    };
+    const inspect = world as unknown as {
+      createLandmarkFabricSurface(
+        landmark: TestPlacement,
+        entourage: readonly TestPlacement[],
+        connectionMode: 'shared-common',
+        siteOverride: { x: number; y: number },
+      ): TestFabric | null;
+    };
+    const root: TestPlacement = {
+      asset: {
+        id: 'landmark:coast:clipped-common-test',
+        families: ['coast'],
+        landmarkKinds: ['waystation'],
+        sprite: sprite(COLOURS.coast),
+        collision: [[0, 0]],
+      },
+      kind: 'ambient',
+      landmarkKind: 'waystation',
+      siteX: 0,
+      siteY: 0,
+      anchorX: 0,
+      anchorY: 0,
+    };
+    const parents: TestPlacement[] = [
+      {
+        asset: focal('coast:test:north', -1),
+        kind: 'ambient', siteX: 0, siteY: 0, anchorX: 0, anchorY: -5,
+      },
+      {
+        asset: focal('coast:test:south', 1),
+        kind: 'ambient', siteX: 0, siteY: 0, anchorX: 0, anchorY: 5,
+      },
+    ];
+    const clipped = inspect.createLandmarkFabricSurface(
+      root,
+      parents,
+      'shared-common',
+      { x: 0, y: 0 },
+    );
+    expect(clipped).toMatchObject({ terrainClipped: true });
+    expect(clipped?.dryCellRate).toBeGreaterThanOrEqual(2 / 3);
+    expect(clipped?.clippedWaterCellCount).toBeGreaterThan(0);
+    const common = clipped?.layout.aprons.find((apron) => apron.role === 'common');
+    expect(common).toBeDefined();
+    const publicCore = common ? [
+      [common.centreX, common.centreY],
+      [common.centreX + common.halfAlong * 0.45, common.centreY],
+      [common.centreX - common.halfAlong * 0.45, common.centreY],
+      [common.centreX, common.centreY + common.halfAcross * 0.45],
+      [common.centreX, common.centreY - common.halfAcross * 0.45],
+    ] : [];
+    expect(publicCore.every(([x]) => !coastalBiome(Math.floor(x!)).isWater)).toBe(true);
+    expect(rasterizeRegionalLandmarkFabricLayout(clipped!.layout).some((cell) => (
+      coastalBiome(cell.x).isWater
+    ))).toBe(true);
+
+    const coreFloodedWorld = makeWorld(
+      32, 64, routeSample, (x) => ({
+        ...biomeSample('coast'),
+        isWater: x >= 1,
+        waterDistance: Math.max(0, 1 - x),
+      }), false, undefined, false, false, false, 'east-west', [], [],
+      'cluster-field-blue-noise', 'hierarchical-place-field',
+      'shared-common-street-overlay-exact-alternatives', 'route-frontage', false,
+    ) as unknown as typeof inspect;
+    expect(coreFloodedWorld.createLandmarkFabricSurface(
+      root,
+      parents,
+      'shared-common',
+      { x: 0, y: 0 },
+    )).toBeNull();
+  });
+
   it('adds optional street overlays after freezing meso program admission', () => {
     const continuousRoute = (x: number, y: number): RegionalRouteSample => ({
       ...routeSample(x, y),

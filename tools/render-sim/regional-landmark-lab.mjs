@@ -71,6 +71,7 @@ const RUN_AMBIENT_DISTRIBUTION_AUDIT =
   process.env.MALDOROR_AMBIENT_DISTRIBUTION_AUDIT !== 'disabled';
 const RUN_FOCAL_ELIGIBILITY_AUDIT =
   process.env.MALDOROR_REGIONAL_FOCAL_ELIGIBILITY_AUDIT === '1';
+const RENDER_FRAMES = process.env.MALDOROR_REGIONAL_LANDMARK_RENDER_FRAMES !== '0';
 const FOCAL_ELIGIBILITY_RADIUS = Number(
   process.env.MALDOROR_REGIONAL_FOCAL_ELIGIBILITY_RADIUS ?? '160',
 );
@@ -2467,8 +2468,12 @@ function auditFocalEligibility(radius, centre) {
     (centreY + expandedRadius) / REGIONAL_AMBIENT_CONNECTED_PLACE_CELL_SIZE,
   );
   const routeOpportunityCounts = {};
+  const accessRouteOpportunityCounts = {};
+  const noFabricPrograms = [];
+  const terrainClippedPrograms = [];
   const attempts = [];
   let evaluatedPlaceCells = 0;
+  let accessProgramCount = 0;
   let exactProgramCount = 0;
   const pairSignature = (candidate) => candidate ? {
     id: candidate.id,
@@ -2510,19 +2515,50 @@ function auditFocalEligibility(radius, centre) {
     for (let cellX = firstCellX; cellX <= lastCellX; cellX++) {
       evaluatedPlaceCells++;
       const program = world.getAmbientPlaceProgram(cellX, cellY);
-      const routeStart = program?.fabric && program.accessPath?.points[0];
-      if (!program?.fabric || !program.accessPath || !routeStart) continue;
-      exactProgramCount++;
+      const routeStart = program?.accessPath?.points[0];
+      if (!program?.accessPath || !routeStart) continue;
       if (Math.abs(routeStart.x - centreX) > radius + 16 ||
           Math.abs(routeStart.y - centreY) > radius + 16) continue;
+      accessProgramCount++;
       const routeX = Math.floor(routeStart.x);
       const routeY = Math.floor(routeStart.y);
       const route = routes.sample(routeX, routeY);
       const axis = Math.abs(route.directionX) > Math.abs(route.directionY)
         ? 'east-west'
         : 'north-south';
-      const family = program.fabric.layout.materialFamily;
+      const family = program.root.asset.families[0];
       const key = `${family}:${axis}`;
+      accessRouteOpportunityCounts[key] = (accessRouteOpportunityCounts[key] ?? 0) + 1;
+      if (!program.fabric) {
+        noFabricPrograms.push({
+          key,
+          cell: [cellX, cellY],
+          site: [program.root.siteX, program.root.siteY],
+          routeStart: [routeStart.x, routeStart.y],
+          accessPathId: program.accessPath.id,
+          accessIntersectsCivic: world.ambientPlaceAccessIntersectsCivic(
+            program.accessPath,
+          ),
+          accessCivicReservedCellCount: world.ambientAccessCivicReserved(
+            program.accessPath,
+          ).size,
+          compositionFallbackReason: program.compositionFallbackReason ?? null,
+          compositionFallbackDiagnostics: program.compositionFallbackDiagnostics ?? null,
+          placementCount: program.placements.length,
+        });
+        continue;
+      }
+      exactProgramCount++;
+      if (program.fabric.terrainClipped) {
+        terrainClippedPrograms.push({
+          key,
+          cell: [cellX, cellY],
+          site: [program.root.siteX, program.root.siteY],
+          routeStart: [routeStart.x, routeStart.y],
+          dryCellRate: program.fabric.dryCellRate,
+          clippedWaterCellCount: program.fabric.clippedWaterCellCount,
+        });
+      }
       routeOpportunityCounts[key] = (routeOpportunityCounts[key] ?? 0) + 1;
       if (!expectedSet.has(key)) continue;
       const pairKeys = new Set(program.streetPairKeys ?? []);
@@ -2755,6 +2791,7 @@ function auditFocalEligibility(radius, centre) {
     radius,
     expandedRadius,
     evaluatedPlaceCells,
+    accessProgramCount,
     exactProgramCount,
     eligibleAssetCount: eligibleAssets.length,
     ordinaryAssetCount: eligibleAssets.filter((asset) => assetRole(asset) === 'ordinary').length,
@@ -2766,6 +2803,13 @@ function auditFocalEligibility(radius, centre) {
     expectedVocabularies: expected,
     manifest,
     routeOpportunityCounts: Object.fromEntries(Object.entries(routeOpportunityCounts).sort()),
+    accessRouteOpportunityCounts: Object.fromEntries(
+      Object.entries(accessRouteOpportunityCounts).sort(),
+    ),
+    noFabricProgramCount: noFabricPrograms.length,
+    noFabricPrograms,
+    terrainClippedProgramCount: terrainClippedPrograms.length,
+    terrainClippedPrograms,
     zeroRouteOpportunityVocabularies: expected.filter((key) => !routeOpportunityCounts[key]),
     probedSiteCount: attempts.length,
     ordinaryAcceptedCount: attempts.filter((attempt) => attempt.ordinary.pair).length,
@@ -2835,7 +2879,7 @@ const metrics = {
   })),
   frames: [],
 };
-for (const frame of FRAMES) {
+for (const frame of RENDER_FRAMES ? FRAMES : []) {
   const startedAt = performance.now();
   const scratchCandidate = frame.canonicalScratchCandidateId
     ? canonicalScratchCandidates.get(frame.canonicalScratchCandidateId)

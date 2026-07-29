@@ -516,6 +516,9 @@ interface LandmarkFabricSurface {
   routeKind: RegionalRouteKind;
   layout: RegionalLandmarkFabricLayout;
   compositionCost?: number;
+  terrainClipped?: boolean;
+  dryCellRate?: number;
+  clippedWaterCellCount?: number;
 }
 
 interface CachedEnvironmentProgram {
@@ -551,6 +554,12 @@ interface CachedBlock {
 interface AmbientPlaceProgram {
   root: Placement;
   placements: readonly Placement[];
+  compositionFallbackReason?:
+    | 'access-civic-intersection'
+    | 'shared-common-build-failed'
+    | 'exact-composition-reconcile-failed'
+    | 'fabric-civic-reservation-conflict';
+  compositionFallbackDiagnostics?: Readonly<AmbientSharedCommonDiagnostics>;
   fallbackPlacements?: readonly Placement[];
   streetPairKeys?: readonly [string, string];
   accessPath?: RegionalParcelPath;
@@ -558,6 +567,26 @@ interface AmbientPlaceProgram {
   accessTargetKey?: string;
   publicFocalKeys?: readonly string[];
   fabric?: LandmarkFabricSurface;
+}
+
+interface AmbientSharedCommonDiagnostics {
+  outcome: 'unresolved' | 'missing-target' | 'missing-entrance' |
+    'bounded-fit-exhausted' | 'accepted';
+  entranceCount: number;
+  candidateAssetCount: number;
+  attemptedAnchorCount: number;
+  terrainOrRouteRejectedCount: number;
+  accessCollisionRejectedCount: number;
+  parentCollisionRejectedCount: number;
+  fabricCreationRejectedCount: number;
+  fabricLayoutRejectedCount: number;
+  fabricWaterRejectedCount: number;
+  fabricSlopeRejectedCount: number;
+  maximumFabricDryCellRate: number;
+  maximumFabricCoreDryRate: number;
+  maximumFabricThresholdDryRate: number;
+  maximumPublicCoreEligibleDryCellRate: number;
+  establishedCollisionRejectedCount: number;
 }
 
 interface AmbientBlockComposition {
@@ -806,6 +835,10 @@ const AMBIENT_PLACE_ROUTE_REACH = 48;
 const AMBIENT_PLACE_TARGET_ACCESS_LENGTH = 20;
 const AMBIENT_SHARED_COMMON_HALF_DEPTH = 2.9;
 const AMBIENT_SHARED_COMMON_PARENT_LIMIT = 2;
+// A shoreline common may lose only its peripheral material mask to water. The
+// five-point public core and every authored threshold remain dry below, while
+// a two-thirds dry raster floor prevents a nominal plaza floating offshore.
+const AMBIENT_SHARED_COMMON_MINIMUM_DRY_CELL_RATE = 2 / 3;
 const AMBIENT_ISOLATED_PLACE_SOURCE_REACH = AMBIENT_PLACE_ROOT_MAX_OFFSET +
   AMBIENT_PLACE_PROGRAM_REACH;
 // A connected program can affect a block through either its authored masses
@@ -4159,6 +4192,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     entourage: readonly Placement[],
     connectionMode: RegionalLandmarkFabricConnectionMode = 'route-threshold',
     siteOverride?: { x: number; y: number },
+    diagnostics?: AmbientSharedCommonDiagnostics,
   ): LandmarkFabricSurface | null {
     const focals: RegionalLandmarkFocalFootprint[] = [];
     for (const placement of entourage) {
@@ -4179,7 +4213,10 @@ export class RegionalWorldTileProvider extends TileProvider {
         maxY: bounds.maxY + 1,
       });
     }
-    if (focals.length === 0) return null;
+    if (focals.length === 0) {
+      if (diagnostics) diagnostics.fabricLayoutRejectedCount++;
+      return null;
+    }
     const route = this.routes.sample(landmark.siteX, landmark.siteY);
     const layout = buildRegionalLandmarkFabricLayout({
       id: `${connectionMode === 'internal-spine' ? 'place-fabric' : 'landmark-fabric'}:` +
@@ -4194,13 +4231,94 @@ export class RegionalWorldTileProvider extends TileProvider {
       focals,
       connectionMode,
     });
-    if (!layout) return null;
-    if (connectionMode !== 'route-threshold' && rasterizeRegionalLandmarkFabricLayout(layout)
-      .some((cell) => {
+    if (!layout) {
+      if (diagnostics) diagnostics.fabricLayoutRejectedCount++;
+      return null;
+    }
+    let terrainClipped = false;
+    let dryCellRate = 1;
+    let clippedWaterCellCount = 0;
+    if (connectionMode !== 'route-threshold') {
+      let waterRejected = false;
+      let slopeRejected = false;
+      const cells = rasterizeRegionalLandmarkFabricLayout(layout);
+      let dryCellCount = 0;
+      for (const cell of cells) {
         const terrain = this.field.sample(cell.x, cell.y);
-        return terrain.isWater || terrain.slope > 0.78;
-      })) return null;
-    return { routeKind: route.routeKind ?? 'local-road', layout };
+        waterRejected ||= terrain.isWater;
+        slopeRejected ||= terrain.slope > 0.78;
+        if (!terrain.isWater && terrain.slope <= 0.78) dryCellCount++;
+      }
+      const common = layout.aprons.find((apron) => apron.role === 'common');
+      const publicCore = common ? [
+        [common.centreX, common.centreY],
+        [
+          common.centreX + (common.axis === 'north-south' ? 0 : common.halfAlong * 0.45),
+          common.centreY + (common.axis === 'north-south' ? common.halfAlong * 0.45 : 0),
+        ],
+        [
+          common.centreX - (common.axis === 'north-south' ? 0 : common.halfAlong * 0.45),
+          common.centreY - (common.axis === 'north-south' ? common.halfAlong * 0.45 : 0),
+        ],
+        [
+          common.centreX + (common.axis === 'north-south' ? common.halfAcross * 0.45 : 0),
+          common.centreY + (common.axis === 'north-south' ? 0 : common.halfAcross * 0.45),
+        ],
+        [
+          common.centreX - (common.axis === 'north-south' ? common.halfAcross * 0.45 : 0),
+          common.centreY - (common.axis === 'north-south' ? 0 : common.halfAcross * 0.45),
+        ],
+      ] : [];
+      const thresholds = layout.aprons.filter((apron) => apron.role === 'threshold')
+        .map((apron) => [apron.centreX, apron.centreY]);
+      const dryPointRate = (points: number[][]): number => points.length === 0
+        ? 0
+        : points.filter(([x, y]) => {
+          const terrain = this.field.sample(Math.floor(x!), Math.floor(y!));
+          return !terrain.isWater && terrain.slope <= 0.78;
+        }).length / points.length;
+      dryCellRate = dryCellCount / Math.max(1, cells.length);
+      const coreDryRate = dryPointRate(publicCore);
+      const thresholdDryRate = dryPointRate(thresholds);
+      if (diagnostics) {
+        diagnostics.maximumFabricDryCellRate = Math.max(
+          diagnostics.maximumFabricDryCellRate,
+          dryCellRate,
+        );
+        diagnostics.maximumFabricCoreDryRate = Math.max(
+          diagnostics.maximumFabricCoreDryRate,
+          coreDryRate,
+        );
+        diagnostics.maximumFabricThresholdDryRate = Math.max(
+          diagnostics.maximumFabricThresholdDryRate,
+          thresholdDryRate,
+        );
+        if (coreDryRate === 1 && thresholdDryRate === 1) {
+          diagnostics.maximumPublicCoreEligibleDryCellRate = Math.max(
+            diagnostics.maximumPublicCoreEligibleDryCellRate,
+            dryCellRate,
+          );
+        }
+      }
+      terrainClipped = connectionMode === 'shared-common' && waterRejected &&
+        !slopeRejected && dryCellRate >= AMBIENT_SHARED_COMMON_MINIMUM_DRY_CELL_RATE &&
+        coreDryRate === 1 && thresholdDryRate === 1;
+      clippedWaterCellCount = cells.length - dryCellCount;
+      if ((waterRejected || slopeRejected) && !terrainClipped) {
+        if (diagnostics) {
+          if (waterRejected) diagnostics.fabricWaterRejectedCount++;
+          if (slopeRejected) diagnostics.fabricSlopeRejectedCount++;
+        }
+        return null;
+      }
+    }
+    return {
+      routeKind: route.routeKind ?? 'local-road',
+      layout,
+      terrainClipped: terrainClipped || undefined,
+      dryCellRate: terrainClipped ? dryCellRate : undefined,
+      clippedWaterCellCount: terrainClipped ? clippedWaterCellCount : undefined,
+    };
   }
 
   /** Place fabrics are immutable products of the world seed, owner, manifests,
@@ -4830,9 +4948,38 @@ export class RegionalWorldTileProvider extends TileProvider {
       : [];
     const fallbackStable = Object.freeze([...basePlacements, ...fallbackFrontage]
       .map((placement) => Object.freeze({ ...placement })));
+    const exactComposition = usesExactCompositionFabric(this.ambientPlaceFabricProfile);
+    const accessIntersectsCivic = access
+      ? this.ambientPlaceAccessIntersectsCivic(access.path)
+      : false;
+    const sharedCommonDiagnostics: AmbientSharedCommonDiagnostics | undefined =
+      exactComposition ? {
+        outcome: 'unresolved',
+        entranceCount: 0,
+        candidateAssetCount: 0,
+        attemptedAnchorCount: 0,
+        terrainOrRouteRejectedCount: 0,
+        accessCollisionRejectedCount: 0,
+        parentCollisionRejectedCount: 0,
+        fabricCreationRejectedCount: 0,
+        fabricLayoutRejectedCount: 0,
+        fabricWaterRejectedCount: 0,
+        fabricSlopeRejectedCount: 0,
+        maximumFabricDryCellRate: 0,
+        maximumFabricCoreDryRate: 0,
+        maximumFabricThresholdDryRate: 0,
+        maximumPublicCoreEligibleDryCellRate: 0,
+        establishedCollisionRejectedCount: 0,
+      } : undefined;
     const sharedCommon = access && usesSharedCommonFabric(this.ambientPlaceFabricProfile) &&
-      !this.ambientPlaceAccessIntersectsCivic(access.path)
-      ? this.buildAmbientSharedCommon(root, basePlacements, access.path, access.targetKey)
+      !accessIntersectsCivic
+      ? this.buildAmbientSharedCommon(
+        root,
+        basePlacements,
+        access.path,
+        access.targetKey,
+        sharedCommonDiagnostics,
+      )
       : null;
     const sharedParentByIdentity = new Map((sharedCommon?.parents ?? []).map((placement) => (
       [placementIdentity(placement), placement]
@@ -4880,7 +5027,6 @@ export class RegionalWorldTileProvider extends TileProvider {
       : [];
     const stable = Object.freeze([...districtPlacements, ...frontage]
       .map((placement) => Object.freeze({ ...placement })));
-    const exactComposition = usesExactCompositionFabric(this.ambientPlaceFabricProfile);
     const fallbackRequired = new Set([
       placementIdentity(root),
       ...(access?.targetKey ? [access.targetKey] : []),
@@ -4902,6 +5048,7 @@ export class RegionalWorldTileProvider extends TileProvider {
           placementIdentity(placement) === placementIdentity(root)
         ))!,
         placements: selectedFallbackStable,
+        compositionFallbackReason: 'exact-composition-reconcile-failed',
         accessPath: access?.path,
         accessRouteKind: access?.routeKind,
         accessTargetKey: access?.targetKey,
@@ -4964,6 +5111,15 @@ export class RegionalWorldTileProvider extends TileProvider {
       accessTargetKey: access?.targetKey,
       publicFocalKeys: sharedCommon?.parents.map(placementIdentity),
       fabric: sharedCommon?.fabric,
+      compositionFallbackReason: exactComposition && !sharedCommon
+        ? accessIntersectsCivic
+          ? 'access-civic-intersection'
+          : 'shared-common-build-failed'
+        : undefined,
+      compositionFallbackDiagnostics: exactComposition && !sharedCommon &&
+        !accessIntersectsCivic && sharedCommonDiagnostics
+        ? Object.freeze({ ...sharedCommonDiagnostics })
+        : undefined,
     }) satisfies AmbientPlaceProgram;
     if (sharedProgram.fabric && sharedProgram.accessPath && setsIntersect(
       this.ambientPlaceProgramReservation(sharedProgram),
@@ -4977,6 +5133,7 @@ export class RegionalWorldTileProvider extends TileProvider {
           placementIdentity(placement) === placementIdentity(root)
         )) ?? fallbackStable[0]!,
         placements: selectedFallbackStable ?? fallbackStable,
+        compositionFallbackReason: 'fabric-civic-reservation-conflict',
         accessPath: access?.path,
         accessRouteKind: access?.routeKind,
         accessTargetKey: access?.targetKey,
@@ -6210,6 +6367,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     established: readonly Placement[],
     path: RegionalParcelPath,
     accessTargetKey: string,
+    diagnostics?: AmbientSharedCommonDiagnostics,
   ): { parents: Placement[]; fabric: LandmarkFabricSurface } | null {
     const target = established.find((placement): placement is Placement & {
       asset: RegionalParcelComponentAsset;
@@ -6220,9 +6378,16 @@ export class RegionalWorldTileProvider extends TileProvider {
       placement.asset.compositionSide !== undefined &&
       placement.asset.frontageStations !== undefined
     ));
-    if (!target) return null;
+    if (!target) {
+      if (diagnostics) diagnostics.outcome = 'missing-target';
+      return null;
+    }
     const entrances = ambientPlaceEntrances(target);
-    if (entrances.length === 0) return null;
+    if (diagnostics) diagnostics.entranceCount = entrances.length;
+    if (entrances.length === 0) {
+      if (diagnostics) diagnostics.outcome = 'missing-entrance';
+      return null;
+    }
     const otherOccupied = new Set<string>();
     const placementReserved = new Set<string>();
     for (const placement of established) {
@@ -6271,6 +6436,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       };
     }).filter(({ compatibility }) => compatibility >= 0.16)
       .sort((a, b) => b.score - a.score || a.asset.id.localeCompare(b.asset.id));
+    if (diagnostics) diagnostics.candidateAssetCount = candidates.length;
     const endStation = sampleRegionalParcelPath(path, path.arcLength);
     for (const entrance of entrances) {
       const northSouth = axis === 'north-south';
@@ -6288,6 +6454,7 @@ export class RegionalWorldTileProvider extends TileProvider {
           for (const { asset } of candidates) {
             const crossSpan = northSouth ? asset.sprite.width : asset.sprite.height;
             for (let separation = 0; separation <= 4; separation++) {
+              if (diagnostics) diagnostics.attemptedAnchorCount++;
               const crossOffset = AMBIENT_SHARED_COMMON_HALF_DEPTH +
                 crossSpan * 0.5 + 0.75 + separation;
               const centreX = commonSite.x + (northSouth ? oppositeSide * crossOffset : 0);
@@ -6306,7 +6473,16 @@ export class RegionalWorldTileProvider extends TileProvider {
                 anchor.anchorY,
                 placementReserved,
               );
-              if (!assetFits || collisionIntersectsAccess || visibleCollision) {
+              if (!assetFits) {
+                if (diagnostics) diagnostics.terrainOrRouteRejectedCount++;
+                continue;
+              }
+              if (collisionIntersectsAccess) {
+                if (diagnostics) diagnostics.accessCollisionRejectedCount++;
+                continue;
+              }
+              if (visibleCollision) {
+                if (diagnostics) diagnostics.parentCollisionRejectedCount++;
                 continue;
               }
               const parentMetadata = {
@@ -6333,14 +6509,22 @@ export class RegionalWorldTileProvider extends TileProvider {
                 parents,
                 'shared-common',
                 commonSite,
+                diagnostics,
               );
-              if (!fabric) continue;
+              if (!fabric) {
+                if (diagnostics) diagnostics.fabricCreationRejectedCount++;
+                continue;
+              }
               const fabricIntersectsEstablished = [...otherOccupied].some((key) => {
                 const [x, y] = key.split(',').map(Number) as [number, number];
                 return sampleRegionalLandmarkFabricLayout(x + 0.5, y + 0.5, fabric.layout)
                   .pavingWeight > 0.52;
               });
-              if (fabricIntersectsEstablished) continue;
+              if (fabricIntersectsEstablished) {
+                if (diagnostics) diagnostics.establishedCollisionRejectedCount++;
+                continue;
+              }
+              if (diagnostics) diagnostics.outcome = 'accepted';
               return {
                 parents,
                 fabric: {
@@ -6356,6 +6540,7 @@ export class RegionalWorldTileProvider extends TileProvider {
         }
       }
     }
+    if (diagnostics) diagnostics.outcome = 'bounded-fit-exhausted';
     return null;
   }
 
