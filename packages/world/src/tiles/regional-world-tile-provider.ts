@@ -247,6 +247,31 @@ export interface RegionalAssetPlacement {
   environmentProgramId?: string;
 }
 
+export type RegionalOverlaySuppressionReason =
+  | 'authored-overlay'
+  | 'protected-connector-collision'
+  | 'source-block-precedence'
+  | 'environment-surface';
+
+/** Placement-level provenance for one derived overlay cell. This diagnostic
+ * is computed from the same cached placements used by rendering; it does not
+ * maintain a second spatial index or infer ownership from painted pixels. */
+export interface RegionalOverlayContributor {
+  identity: string;
+  assetId: string;
+  kind: RegionalAssetPlacement['kind'];
+  source: 'block' | 'parcel';
+  siteX: number;
+  siteY: number;
+  anchorX: number;
+  anchorY: number;
+  collisionAtCell: boolean;
+  protectedConnectorParcelId?: string;
+  protectedConnectorPathId?: string;
+  materialized: boolean;
+  suppression: RegionalOverlaySuppressionReason | null;
+}
+
 export type RegionalLandmarkPlacement = RegionalAssetPlacement;
 
 export interface RegionalWorldBiomeSampler {
@@ -515,6 +540,7 @@ export interface RegionalParcelConnectorCell {
 
 interface CachedBlock {
   overlays: Map<string, BuildingTileData>;
+  connectorSafeOverlays: Map<string, BuildingTileData>;
   solid: Set<string>;
   landmarkFabricSurfaces: Map<string, LandmarkFabricSurface>;
   placeConnectors: Map<string, ParcelConnector>;
@@ -656,6 +682,7 @@ interface CachedParcelGroup {
   layout: RegionalParcelLayout;
   waterfrontLayout: RegionalWaterfrontLayout | null;
   overlays: Map<string, BuildingTileData>;
+  connectorSafeOverlays: Map<string, BuildingTileData>;
   solid: Set<string>;
 }
 
@@ -674,6 +701,7 @@ interface ImportedPreparedViewport {
 
 interface CollectedDerivedLayers {
   overlays: Map<string, BuildingTileData>;
+  connectorSafeOverlays: Map<string, BuildingTileData>;
   solid: Set<string>;
   connectors: Map<string, ParcelConnector>;
   surfaces: Map<string, ParcelSurface>;
@@ -682,6 +710,7 @@ interface CollectedDerivedLayers {
   environmentSurfaces: Map<string, EnvironmentProgramSurface>;
   environmentWalkable: Set<string>;
   environmentSolid: Set<string>;
+  parcelPlacements: Placement[];
   dynamicPlacements: RegionalPreparedDynamicPlacement[];
 }
 
@@ -702,6 +731,7 @@ export class RegionalWorldDerivedCache {
   readonly ambientPlaceProgramCache = new Map<string, AmbientPlaceProgram | null>();
   readonly ambientPlaceAccessCellCache = new Map<string, readonly RegionalParcelPathCell[]>();
   readonly ambientPlaceAccessCivicReservationCache = new Map<string, ReadonlySet<string>>();
+  readonly ambientRouteParcelCollisionCache = new Map<string, boolean>();
   readonly ambientPlaceFabricCache = new Map<string, LandmarkFabricSurface | null>();
   readonly ambientStreetPairCandidateCache = new Map<
     string,
@@ -740,6 +770,7 @@ export class RegionalWorldDerivedCache {
     this.ambientPlaceProgramCache.clear();
     this.ambientPlaceAccessCellCache.clear();
     this.ambientPlaceAccessCivicReservationCache.clear();
+    this.ambientRouteParcelCollisionCache.clear();
     this.ambientPlaceFabricCache.clear();
     this.ambientStreetPairCandidateCache.clear();
     this.ambientStreetPairProtectedReservationCache.clear();
@@ -855,6 +886,7 @@ export class RegionalWorldTileProvider extends TileProvider {
   private readonly ambientPlaceProgramCache: Map<string, AmbientPlaceProgram | null>;
   private readonly ambientPlaceAccessCellCache: Map<string, readonly RegionalParcelPathCell[]>;
   private readonly ambientPlaceAccessCivicReservationCache: Map<string, ReadonlySet<string>>;
+  private readonly ambientRouteParcelCollisionCache: Map<string, boolean>;
   private readonly ambientPlaceFabricCache: Map<string, LandmarkFabricSurface | null>;
   private readonly ambientStreetPairCandidateCache: Map<
     string,
@@ -956,6 +988,8 @@ export class RegionalWorldTileProvider extends TileProvider {
     this.ambientPlaceAccessCellCache = this.derivedCache.ambientPlaceAccessCellCache;
     this.ambientPlaceAccessCivicReservationCache =
       this.derivedCache.ambientPlaceAccessCivicReservationCache;
+    this.ambientRouteParcelCollisionCache =
+      this.derivedCache.ambientRouteParcelCollisionCache;
     this.ambientPlaceFabricCache = this.derivedCache.ambientPlaceFabricCache;
     this.ambientStreetPairCandidateCache = this.derivedCache.ambientStreetPairCandidateCache;
     this.ambientStreetPairProtectedReservationCache =
@@ -1366,7 +1400,9 @@ export class RegionalWorldTileProvider extends TileProvider {
         // A tall oblique facade may visually overhang a quay while its ground
         // collision remains behind the protected ribbon. Do not cut the sprite
         // into floating roof fragments at the walkable-cell boundary.
-        const overlay = authoredOverlay ?? (connector?.protected ? null : derived.overlays.get(key) ?? null);
+        const overlay = authoredOverlay ?? (connector?.protected
+          ? derived.connectorSafeOverlays.get(key) ?? null
+          : derived.overlays.get(key) ?? null);
         if (overlay) overlays.push({ x, y, tile: overlay });
         const opensAuthoredMass = connector?.protected || derived.environmentWalkable.has(key) || opensQuay;
         if (derived.environmentSolid.has(key) || (!opensAuthoredMass && (
@@ -1394,6 +1430,7 @@ export class RegionalWorldTileProvider extends TileProvider {
    * and collision. This removes three repeated source-block scans per tile. */
   private collectDerivedLayers(bounds: RegionalPreparedViewport['bounds']): CollectedDerivedLayers {
     const overlays = new Map<string, BuildingTileData>();
+    const connectorSafeOverlays = new Map<string, BuildingTileData>();
     const solid = new Set<string>();
     const connectors = new Map<string, ParcelConnector>();
     const surfaces = new Map<string, ParcelSurface>();
@@ -1436,6 +1473,11 @@ export class RegionalWorldTileProvider extends TileProvider {
         for (const [key, tile] of block.overlays) {
           if (inside(key) && !overlays.has(key)) overlays.set(key, tile);
         }
+        for (const [key, tile] of block.connectorSafeOverlays) {
+          if (inside(key) && !connectorSafeOverlays.has(key)) {
+            connectorSafeOverlays.set(key, tile);
+          }
+        }
         for (const key of block.solid) if (inside(key)) solid.add(key);
         for (const [key, surface] of block.landmarkFabricSurfaces) {
           if (inside(key) && !landmarkFabricSurfaces.has(key)) {
@@ -1449,6 +1491,11 @@ export class RegionalWorldTileProvider extends TileProvider {
       if (parcel.environmentSurfaces.has(key)) continue;
       const beneath = overlays.get(key);
       overlays.set(key, beneath ? compositeTiles(beneath, tile) : tile);
+    }
+    for (const [key, tile] of parcel.connectorSafeOverlays) {
+      if (parcel.environmentSurfaces.has(key)) continue;
+      const beneath = connectorSafeOverlays.get(key);
+      connectorSafeOverlays.set(key, beneath ? compositeTiles(beneath, tile) : tile);
     }
     for (const [key, connector] of parcel.connectors) {
       if (connector.protected) solid.delete(key);
@@ -1469,6 +1516,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     ));
     return {
       overlays,
+      connectorSafeOverlays,
       solid,
       connectors,
       surfaces,
@@ -1477,6 +1525,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       environmentSurfaces,
       environmentWalkable,
       environmentSolid,
+      parcelPlacements: parcel.parcelPlacements,
       dynamicPlacements,
     };
   }
@@ -1696,18 +1745,144 @@ export class RegionalWorldTileProvider extends TileProvider {
     if (authored) return authored;
     const key = positionKey(worldX, worldY);
     const parcel = this.getParcelLayerBlock(worldX, worldY);
-    if (parcel.connectors.get(key)?.protected) return null;
+    const connector = parcel.connectors.get(key);
+    const protectedConnector = connector?.protected ?? false;
     let derived: BuildingTileData | null = null;
     for (const block of this.blocksNear(worldX, worldY)) {
-      const tile = block.overlays.get(key);
+      const tile = protectedConnector
+        ? block.connectorSafeOverlays.get(key)
+        : block.overlays.get(key);
       if (tile) {
         derived = tile;
         break;
       }
     }
-    const component = parcel.overlays.get(key);
+    const component = protectedConnector
+      ? parcel.connectorSafeOverlays.get(key)
+      : parcel.overlays.get(key);
     if (parcel.environmentSurfaces.has(key)) return derived;
     return component ? (derived ? compositeTiles(derived, component) : component) : derived;
+  }
+
+  /** Explain which derived placements contribute at one cell after authored,
+   * connector, source-block, and environment precedence. Intended for exact
+   * research/audit gates; ordinary rendering stays on constant-time maps. */
+  getRegionalOverlayContributorsAt(
+    worldX: number,
+    worldY: number,
+  ): RegionalOverlayContributor[] {
+    return [...(this.getRegionalOverlayContributorsInBounds(
+      worldX,
+      worldY,
+      worldX,
+      worldY,
+    ).get(positionKey(worldX, worldY)) ?? [])];
+  }
+
+  /** Batch counterpart for bounded proof atlases. Each source block and
+   * parcel group is enumerated once, avoiding cache-order churn when an audit
+   * attributes hundreds of neighbouring cells. */
+  getRegionalOverlayContributorsInBounds(
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number,
+  ): ReadonlyMap<string, readonly RegionalOverlayContributor[]> {
+    const bounds = normalizedPreparedBounds(minX, minY, maxX, maxY);
+    const parcel = this.collectParcelLayers(bounds);
+    const firstBlockX = floorDiv(bounds.minX - this.placementMaxOffsetX, this.blockSize);
+    const lastBlockX = floorDiv(bounds.maxX - this.placementMinOffsetX, this.blockSize);
+    const firstBlockY = floorDiv(bounds.minY - this.placementMaxOffsetY, this.blockSize);
+    const lastBlockY = floorDiv(bounds.maxY - this.placementMinOffsetY, this.blockSize);
+    const blocks: CachedBlock[] = [];
+    for (let blockY = firstBlockY; blockY <= lastBlockY; blockY++) {
+      for (let blockX = firstBlockX; blockX <= lastBlockX; blockX++) {
+        blocks.push(this.getBlock(blockX, blockY));
+      }
+    }
+    const raw = new Map<string, Array<{
+      placement: Placement;
+      source: RegionalOverlayContributor['source'];
+      blockIndex: number;
+    }>>();
+    const collect = (
+      placement: Placement,
+      source: RegionalOverlayContributor['source'],
+      blockIndex: number,
+    ): void => {
+      if (isAnimatedQuayDetailPlacement(placement)) return;
+      const [offsetX, offsetY] = getSpriteAnchor(placement.asset);
+      for (let tileY = 0; tileY < placement.asset.sprite.height; tileY++) {
+        for (let tileX = 0; tileX < placement.asset.sprite.width; tileX++) {
+          const tile = placement.asset.sprite.tiles[tileY]?.[tileX];
+          if (!tile || !hasVisiblePixels(tile)) continue;
+          const x = placement.anchorX + tileX - offsetX;
+          const y = placement.anchorY + tileY - offsetY;
+          if (x < bounds.minX || x > bounds.maxX || y < bounds.minY || y > bounds.maxY) continue;
+          const key = positionKey(x, y);
+          const cell = raw.get(key) ?? [];
+          cell.push({ placement, source, blockIndex });
+          raw.set(key, cell);
+        }
+      }
+    };
+    for (let blockIndex = 0; blockIndex < blocks.length; blockIndex++) {
+      for (const placement of blocks[blockIndex]!.placements) {
+        collect(placement, 'block', blockIndex);
+      }
+    }
+    for (const placement of parcel.parcelPlacements) collect(placement, 'parcel', -1);
+    const result = new Map<string, readonly RegionalOverlayContributor[]>();
+    for (const [key, cell] of raw) {
+      const separator = key.indexOf(',');
+      const worldX = Number(key.slice(0, separator));
+      const worldY = Number(key.slice(separator + 1));
+      const connector = parcel.connectors.get(key);
+      const protectedConnector = connector?.protected ?? false;
+      const authored = super.getBuildingTileAt(worldX, worldY) !== null;
+      const selectedBlockIndex = blocks.findIndex((block) => (
+        protectedConnector
+          ? block.connectorSafeOverlays.has(key)
+          : block.overlays.has(key)
+      ));
+      const environmentSuppressed = parcel.environmentSurfaces.has(key);
+      const contributors = cell.map(({ placement, source, blockIndex }) => {
+        const collisionAtCell = placement.asset.collision.some(([offsetX, offsetY]) => (
+          placement.anchorX + offsetX === worldX && placement.anchorY + offsetY === worldY
+        ));
+        const suppression: RegionalOverlaySuppressionReason | null = authored
+          ? 'authored-overlay'
+          : source === 'parcel' && environmentSuppressed
+            ? 'environment-surface'
+            : protectedConnector && collisionAtCell
+              ? 'protected-connector-collision'
+              : source === 'block' && blockIndex !== selectedBlockIndex
+                ? 'source-block-precedence'
+                : null;
+        return {
+          identity: `${placement.asset.id}@${placement.anchorX},${placement.anchorY}`,
+          assetId: placement.asset.id,
+          kind: placement.kind,
+          source,
+          siteX: placement.siteX,
+          siteY: placement.siteY,
+          anchorX: placement.anchorX,
+          anchorY: placement.anchorY,
+          collisionAtCell,
+          ...(protectedConnector && connector ? {
+            protectedConnectorParcelId: connector.parcelId,
+            protectedConnectorPathId: connector.path.id,
+          } : {}),
+          materialized: suppression === null,
+          suppression,
+        } satisfies RegionalOverlayContributor;
+      }).sort((left, right) => (
+        Number(right.materialized) - Number(left.materialized) ||
+        left.source.localeCompare(right.source) || left.identity.localeCompare(right.identity)
+      ));
+      result.set(key, Object.freeze(contributors));
+    }
+    return result;
   }
 
   /** Resolve sparse persistent-time activity outside the immutable static
@@ -2693,9 +2868,10 @@ export class RegionalWorldTileProvider extends TileProvider {
     placements.push(...this.buildEnvironmentContactPlacements(originX, originY));
     placements.push(...this.buildRouteContactPlacements(originX, originY));
 
-    const { overlays, solid } = this.rasterizePlacements(placements);
+    const { overlays, connectorSafeOverlays, solid } = this.rasterizePlacements(placements);
     return {
       overlays,
+      connectorSafeOverlays,
       solid,
       landmarkFabricSurfaces,
       placeConnectors: ambientComposition.connectors,
@@ -2706,11 +2882,16 @@ export class RegionalWorldTileProvider extends TileProvider {
 
   private rasterizePlacements(placements: readonly Placement[]): {
     overlays: Map<string, BuildingTileData>;
+    connectorSafeOverlays: Map<string, BuildingTileData>;
     solid: Set<string>;
   } {
     const overlays = new Map<string, BuildingTileData>();
+    const connectorSafeOverlays = new Map<string, BuildingTileData>();
     const solid = new Set<string>();
     for (const placement of placements) {
+      const placementSolid = new Set(placement.asset.collision.map(([offsetX, offsetY]) => (
+        positionKey(placement.anchorX + offsetX, placement.anchorY + offsetY)
+      )));
       if (!isAnimatedQuayDetailPlacement(placement)) {
         const [offsetX, offsetY] = getSpriteAnchor(placement.asset);
         for (let tileY = 0; tileY < placement.asset.sprite.height; tileY++) {
@@ -2722,14 +2903,19 @@ export class RegionalWorldTileProvider extends TileProvider {
             const key = positionKey(x, y);
             const beneath = overlays.get(key);
             overlays.set(key, beneath ? compositeTiles(beneath, tile) : tile);
+            if (!placementSolid.has(key)) {
+              const safeBeneath = connectorSafeOverlays.get(key);
+              connectorSafeOverlays.set(
+                key,
+                safeBeneath ? compositeTiles(safeBeneath, tile) : tile,
+              );
+            }
           }
         }
       }
-      for (const [offsetX, offsetY] of placement.asset.collision) {
-        solid.add(positionKey(placement.anchorX + offsetX, placement.anchorY + offsetY));
-      }
+      for (const key of placementSolid) solid.add(key);
     }
-    return { overlays, solid };
+    return { overlays, connectorSafeOverlays, solid };
   }
 
   private getParcelGroup(
@@ -2760,6 +2946,7 @@ export class RegionalWorldTileProvider extends TileProvider {
           layout: parcel.layout,
           waterfrontLayout: parcel.waterfrontLayout,
           overlays: rasterized.overlays,
+          connectorSafeOverlays: rasterized.connectorSafeOverlays,
           solid: rasterized.solid,
         };
       }
@@ -2919,6 +3106,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     bounds: RegionalPreparedViewport['bounds'],
   ): CollectedDerivedLayers {
     const overlays = new Map<string, BuildingTileData>();
+    const connectorSafeOverlays = new Map<string, BuildingTileData>();
     const solid = new Set<string>();
     const connectors = new Map<string, ParcelConnector>();
     const surfaces = new Map<string, ParcelSurface>();
@@ -2927,6 +3115,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     const environmentSurfaces = new Map<string, EnvironmentProgramSurface>();
     const environmentWalkable = new Set<string>();
     const environmentSolid = new Set<string>();
+    const parcelPlacements = new Map<string, Placement>();
     const inside = (key: string): boolean => {
       const separator = key.indexOf(',');
       const x = Number(key.slice(0, separator));
@@ -2934,10 +3123,18 @@ export class RegionalWorldTileProvider extends TileProvider {
       return x >= bounds.minX && x <= bounds.maxX && y >= bounds.minY && y <= bounds.maxY;
     };
     for (const group of this.getParcelGroupsInBounds(bounds)) {
+      for (const placement of group.components) {
+        parcelPlacements.set(placementIdentity(placement), placement);
+      }
       for (const [key, tile] of group.overlays) {
         if (!inside(key)) continue;
         const beneath = overlays.get(key);
         overlays.set(key, beneath ? compositeTiles(beneath, tile) : tile);
+      }
+      for (const [key, tile] of group.connectorSafeOverlays) {
+        if (!inside(key)) continue;
+        const beneath = connectorSafeOverlays.get(key);
+        connectorSafeOverlays.set(key, beneath ? compositeTiles(beneath, tile) : tile);
       }
       for (const key of group.solid) if (inside(key)) solid.add(key);
       for (const [key, connector] of group.connectors) {
@@ -2971,6 +3168,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     }
     return {
       overlays,
+      connectorSafeOverlays,
       solid,
       connectors,
       surfaces,
@@ -2979,6 +3177,10 @@ export class RegionalWorldTileProvider extends TileProvider {
       environmentSurfaces,
       environmentWalkable,
       environmentSolid,
+      parcelPlacements: [...parcelPlacements.values()].sort((left, right) => (
+        left.anchorY - right.anchorY || left.anchorX - right.anchorX ||
+        left.asset.id.localeCompare(right.asset.id)
+      )),
       dynamicPlacements: [],
     };
   }
@@ -4086,6 +4288,47 @@ export class RegionalWorldTileProvider extends TileProvider {
     return selected;
   }
 
+  /** Cross-layer collision admission must depend on the placement itself,
+   * never on whichever runtime block happens to request it. Query the exact
+   * declared collision bounds against deterministic route-parcel connectors
+   * and cache that coordinate-stable answer across neighbouring blocks. */
+  private ambientPlacementIntersectsRouteParcelConnector(placement: Placement): boolean {
+    const cacheKey = placementIdentity(placement);
+    const cached = this.ambientRouteParcelCollisionCache.get(cacheKey);
+    if (cached !== undefined) {
+      this.ambientRouteParcelCollisionCache.delete(cacheKey);
+      this.ambientRouteParcelCollisionCache.set(cacheKey, cached);
+      return cached;
+    }
+    const collisionCells = placement.asset.collision.map(([offsetX, offsetY]) => ({
+      x: placement.anchorX + offsetX,
+      y: placement.anchorY + offsetY,
+    }));
+    let intersects = false;
+    if (collisionCells.length > 0) {
+      const bounds = {
+        minX: Math.min(...collisionCells.map((cell) => cell.x)),
+        minY: Math.min(...collisionCells.map((cell) => cell.y)),
+        maxX: Math.max(...collisionCells.map((cell) => cell.x)),
+        maxY: Math.max(...collisionCells.map((cell) => cell.y)),
+      };
+      const collisionKeys = new Set(collisionCells.map((cell) => positionKey(cell.x, cell.y)));
+      intersects = this.getParcelGroupsInBounds(bounds).some((group) => (
+        [...group.connectors].some(([key, connector]) => (
+          connector.protected && collisionKeys.has(key)
+        ))
+      ));
+    }
+    this.ambientRouteParcelCollisionCache.set(cacheKey, intersects);
+    while (this.ambientRouteParcelCollisionCache.size > this.maxCachedBlocks * 256) {
+      const oldest = this.ambientRouteParcelCollisionCache.keys().next().value as
+        string | undefined;
+      if (oldest === undefined) break;
+      this.ambientRouteParcelCollisionCache.delete(oldest);
+    }
+    return intersects;
+  }
+
   private buildAmbientPlacements(
     originX: number,
     originY: number,
@@ -4096,6 +4339,13 @@ export class RegionalWorldTileProvider extends TileProvider {
     }
     const placements: Placement[] = [];
     const placePrograms: AmbientPlaceProgram[] = [];
+    const enforceExactRouteParcelAdmission = usesExactCompositionFabric(
+      this.ambientPlaceFabricProfile,
+    );
+    const collisionIntersectsRouteParcel = (placement: Placement): boolean => (
+      enforceExactRouteParcelAdmission &&
+      this.ambientPlacementIntersectsRouteParcelConnector(placement)
+    );
     const compositionReach = this.ambientCompositionProfile === 'bounded-ensemble'
       ? Math.ceil(AMBIENT_ENSEMBLE_REACH / this.ambientCellSize) + 1
       : 1;
@@ -4176,6 +4426,7 @@ export class RegionalWorldTileProvider extends TileProvider {
       const acceptAgainstEstablished = (candidates: readonly Placement[]): Placement[] => {
         const result: Placement[] = [];
         for (const placement of candidates) {
+          if (collisionIntersectsRouteParcel(placement)) continue;
           if (visibleFootprintIntersects(
             placement.asset,
             placement.anchorX,
@@ -4307,7 +4558,7 @@ export class RegionalWorldTileProvider extends TileProvider {
         a.root.asset.id.localeCompare(b.root.asset.id)
       ))) {
         const street = this.buildAmbientSharedStreetOverlay(program, detailReserved);
-        if (street.length !== 2) continue;
+        if (street.length !== 2 || street.some(collisionIntersectsRouteParcel)) continue;
         for (const placement of street) {
           if (placement.anchorX >= originX && placement.anchorX < originX + this.blockSize &&
               placement.anchorY >= originY && placement.anchorY < originY + this.blockSize) {
@@ -4324,7 +4575,15 @@ export class RegionalWorldTileProvider extends TileProvider {
     const unique = new Map<string, Placement>();
     for (const placement of placements) {
       const siteKey = positionKey(placement.siteX, placement.siteY);
-      const belongsToPlace = uniquePrograms.has(siteKey);
+      const admittedProgram = uniquePrograms.get(siteKey);
+      const belongsToPlace = admittedProgram !== undefined;
+      const admittedProgramMember = admittedProgram?.placements.some((candidate) => (
+        placementIdentity(candidate) === placementIdentity(placement)
+      )) ?? false;
+      const admittedLegacyStreetOverlay =
+        this.ambientPlaceFabricProfile === 'shared-common-street-overlay' &&
+        placement.parcelPathId?.endsWith(':street-overlay');
+      if (belongsToPlace && !admittedProgramMember && !admittedLegacyStreetOverlay) continue;
       if (sourcePlaceSites.has(siteKey) && !belongsToPlace && !(
         usesSharedCommonFabric(this.ambientPlaceFabricProfile) &&
         placement.parcelPathId === undefined
@@ -4344,7 +4603,7 @@ export class RegionalWorldTileProvider extends TileProvider {
         placement.anchorX,
         placement.anchorY,
         establishedReserved,
-      )) continue;
+      ) || collisionIntersectsRouteParcel(placement)) continue;
       const key = positionKey(placement.anchorX, placement.anchorY);
       const existing = unique.get(key);
       if (!existing || placement.siteY < existing.siteY ||
@@ -4601,6 +4860,7 @@ export class RegionalWorldTileProvider extends TileProvider {
         sharedCommon.parents,
         sharedCommon.fabric,
         sharedCorePlacements,
+        access!.path,
       )
       : [];
     const districtPlacements = [...sharedCorePlacements, ...commonFrontage];
@@ -6055,6 +6315,7 @@ export class RegionalWorldTileProvider extends TileProvider {
     parents: readonly Placement[],
     fabric: LandmarkFabricSurface,
     established: readonly Placement[],
+    accessPath: RegionalParcelPath,
   ): Placement[] {
     const common = fabric.layout.aprons.find((apron) => apron.role === 'common');
     if (!common || parents.length !== AMBIENT_SHARED_COMMON_PARENT_LIMIT) return [];
@@ -6072,6 +6333,9 @@ export class RegionalWorldTileProvider extends TileProvider {
         cell.y + 0.5,
         fabric.layout,
       ).pavingWeight > 0.32) reserved.add(positionKey(cell.x, cell.y));
+    }
+    for (const cell of this.getAmbientPlaceAccessCells(accessPath)) {
+      if (cell.protected) reserved.add(positionKey(cell.x, cell.y));
     }
     const frontage: Placement[] = [];
     for (const parent of [...parents].sort((a, b) => (

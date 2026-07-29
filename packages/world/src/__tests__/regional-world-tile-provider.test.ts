@@ -574,6 +574,7 @@ describe('RegionalWorldTileProvider', () => {
         .map((component) => component.assetId);
       expect(new Set(ids).size).toBe(ids.length);
     }
+    let visibleWalkableOverhangs = 0;
     for (const contact of horizontalContacts) {
       const members = horizontalComponents.filter((component) => component.parcelId === contact.parcelId);
       if (members.length === 0) continue;
@@ -587,11 +588,18 @@ describe('RegionalWorldTileProvider', () => {
       for (const cell of core) {
         expect(horizontal.isBuildingAt(cell.x, cell.y),
           `connector collision at ${cell.x},${cell.y}`).toBe(false);
-        expect(horizontal.getBuildingTileAt(cell.x, cell.y),
-          `connector art at ${cell.x},${cell.y}`).toBeNull();
+        const contributors = horizontal.getRegionalOverlayContributorsAt(cell.x, cell.y);
+        expect(contributors.filter((contributor) => contributor.materialized).every((contributor) => (
+          !contributor.collisionAtCell && contributor.suppression === null
+        ))).toBe(true);
+        if (contributors.some((contributor) => contributor.materialized)) {
+          visibleWalkableOverhangs++;
+          expect(horizontal.getBuildingTileAt(cell.x, cell.y)).not.toBeNull();
+        }
         expect(horizontal.getTile(cell.x, cell.y).id).toContain('regional-path-access:');
       }
     }
+    expect(visibleWalkableOverhangs).toBeGreaterThan(0);
     expect(Math.max(...horizontalConnectors.map((cell) => Math.abs(cell.lateralOffset))))
       .toBeGreaterThan(0.5);
     expect(horizontal.getRegionalStats().cachedParcelSurfaceCells).toBeGreaterThan(0);
@@ -620,6 +628,38 @@ describe('RegionalWorldTileProvider', () => {
       expect(Math.abs(placement.anchorX - placement.siteX)).toBe(3);
       expect(vertical.isBuildingAt(placement.anchorX, placement.anchorY)).toBe(false);
     }
+  });
+
+  it('keeps non-colliding sprite overhangs available to protected connectors', () => {
+    const world = makeWorld();
+    const inspect = world as unknown as {
+      rasterizePlacements(placements: readonly unknown[]): {
+        overlays: Map<string, unknown>;
+        connectorSafeOverlays: Map<string, unknown>;
+        solid: Set<string>;
+      };
+    };
+    const asset: RegionalParcelComponentAsset = {
+      id: 'parcel:test:walkable-overhang',
+      families: ['canal-town'],
+      role: 'mass',
+      sprite: sprite(COLOURS['canal-town']),
+      collision: [[0, 0]],
+    };
+    const rasterized = inspect.rasterizePlacements([{
+      asset,
+      anchorX: 12,
+      anchorY: -4,
+      siteX: 12,
+      siteY: -4,
+      kind: 'parcel-component',
+    }]);
+
+    expect(rasterized.overlays.size).toBe(6);
+    expect(rasterized.connectorSafeOverlays.size).toBe(5);
+    expect(rasterized.solid).toEqual(new Set(['12,-4']));
+    expect(rasterized.connectorSafeOverlays.has('12,-4')).toBe(false);
+    expect(rasterized.connectorSafeOverlays.has('12,-5')).toBe(true);
   });
 
   it('places coordinate-stable ambient masses across all family regions', () => {
@@ -992,6 +1032,33 @@ describe('RegionalWorldTileProvider', () => {
         accessPath: program.accessPath?.id,
       })),
     })).toEqual([]);
+    const admittedLayoutIds = new Set(layouts.map((layout) => layout.id));
+    const collisionConflicts = publicPrograms.filter((program) => (
+      program.fabric && admittedLayoutIds.has(program.fabric.layout.id)
+    )).flatMap((program) => {
+      if (!program.accessPath) return [];
+      const protectedCells = rasterizeRegionalParcelPath(program.accessPath)
+        .filter((cell) => cell.protected);
+      const minX = Math.min(...protectedCells.map((cell) => cell.x));
+      const minY = Math.min(...protectedCells.map((cell) => cell.y));
+      const maxX = Math.max(...protectedCells.map((cell) => cell.x));
+      const maxY = Math.max(...protectedCells.map((cell) => cell.y));
+      const provenance = first.getRegionalOverlayContributorsInBounds(minX, minY, maxX, maxY);
+      const firstCell = protectedCells[0]!;
+      expect(provenance.get(`${firstCell.x},${firstCell.y}`) ?? []).toEqual(
+        first.getRegionalOverlayContributorsAt(firstCell.x, firstCell.y),
+      );
+      return protectedCells.flatMap((cell) => (
+        [...(provenance.get(`${cell.x},${cell.y}`) ?? [])]
+          .filter((contributor) => contributor.collisionAtCell)
+          .map((contributor) => ({
+            pathId: program.accessPath!.id,
+            cell: [cell.x, cell.y],
+            contributor,
+          }))
+      ));
+    });
+    expect(collisionConflicts).toEqual([]);
     expect(layouts.every((layout) => {
       const commons = layout.aprons.filter((apron) => apron.role === 'common');
       const common = commons[0];
@@ -1126,7 +1193,14 @@ describe('RegionalWorldTileProvider', () => {
       street.every((placement) => (
         placement.pathTangentX === 1 && placement.pathTangentY === 0
       ))
-    ))).toBe(true);
+    )), JSON.stringify([...streetBySite.entries()].map(([site, street]) => ({
+      site,
+      street: street.map((placement) => ({
+        assetId: placement.assetId,
+        anchor: [placement.anchorX, placement.anchorY],
+        tangent: [placement.pathTangentX, placement.pathTangentY],
+      })),
+    })))).toBe(true);
 
     type InspectedStreetPairCandidate = {
       id: string;

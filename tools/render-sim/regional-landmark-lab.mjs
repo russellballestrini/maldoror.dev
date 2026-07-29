@@ -3103,9 +3103,14 @@ function auditLandmarkCompositions(placements, targetWorld, connectorCells, visi
   const focalSites = new Set(placements
     .filter((placement) => focalIds.has(placement.assetId))
     .map((placement) => `${placement.siteX},${placement.siteY}`));
-  const protectedConnectorCells = new Set(
-    (connectorCells ?? []).filter((cell) => cell.protected).map((cell) => `${cell.x},${cell.y}`),
+  const protectedConnectorByCell = new Map(
+    (connectorCells ?? []).filter((cell) => cell.protected).map((cell) => (
+      [`${cell.x},${cell.y}`, cell]
+    )),
   );
+  const protectedConnectorCells = new Set(protectedConnectorByCell.keys());
+  const contributorAtlas = targetWorld.getRegionalOverlayContributorsInBounds(...visibleBounds);
+  const contributorsAt = (cell) => contributorAtlas.get(cell) ?? [];
   const cellIsVisible = (cell) => {
     const separator = cell.indexOf(',');
     const x = Number(cell.slice(0, separator));
@@ -3113,35 +3118,87 @@ function auditLandmarkCompositions(placements, targetWorld, connectorCells, visi
     return x >= visibleBounds[0] && x <= visibleBounds[2] &&
       y >= visibleBounds[1] && y <= visibleBounds[3];
   };
+  const auditPlacement = (placement) => {
+    const asset = assetById.get(placement.assetId);
+    if (!asset) throw new Error(`Unknown composed parcel asset: ${placement.assetId}`);
+    const visibleCells = visibleAssetCells(asset, placement.anchorX, placement.anchorY)
+      .filter(cellIsVisible);
+    const realizedCells = [];
+    const providerPresentCells = [];
+    const unattributedProviderOverlayCells = [];
+    const collisionCells = new Set(asset.collision.map(([offsetX, offsetY]) => (
+      `${placement.anchorX + offsetX},${placement.anchorY + offsetY}`
+    )));
+    const suppressionByCell = [];
+    const protectedConnectorOverlapCells = [];
+    const protectedConnectorOverlaps = [];
+    const protectedConnectorMaterializedCells = [];
+    const protectedConnectorClipCells = [];
+    const identity = `${placement.assetId}@${placement.anchorX},${placement.anchorY}`;
+    for (const cell of visibleCells) {
+      const separator = cell.indexOf(',');
+      const x = Number(cell.slice(0, separator));
+      const y = Number(cell.slice(separator + 1));
+      const providerPresent = targetWorld.getBuildingTileAt(x, y) !== null;
+      if (providerPresent) providerPresentCells.push(cell);
+      const contributor = contributorsAt(cell).find((candidate) => (
+        candidate.identity === identity
+      ));
+      if (contributor?.materialized) {
+        realizedCells.push(cell);
+      } else {
+        suppressionByCell.push({
+          cell,
+          reason: contributor?.suppression ?? 'no-contributor',
+          collisionAtCell: collisionCells.has(cell),
+        });
+        if (providerPresent) unattributedProviderOverlayCells.push(cell);
+      }
+      if (protectedConnectorCells.has(cell)) {
+        const connector = protectedConnectorByCell.get(cell);
+        protectedConnectorOverlapCells.push(cell);
+        protectedConnectorOverlaps.push({
+          cell,
+          parcelId: connector?.parcelId ?? null,
+          pathId: connector?.pathId ?? null,
+          core: connector?.core ?? null,
+          collisionAtCell: collisionCells.has(cell),
+          materialized: contributor?.materialized ?? false,
+        });
+        if (contributor?.materialized) protectedConnectorMaterializedCells.push(cell);
+        else protectedConnectorClipCells.push(cell);
+      }
+    }
+    return {
+      identity,
+      assetId: placement.assetId,
+      visualGroup: asset.visualGroup ?? `asset:${placement.assetId}`,
+      streetOverlay: placement.parcelPathId?.endsWith(':street-overlay') ?? false,
+      anchor: [placement.anchorX, placement.anchorY],
+      visibleCells,
+      realizedCells,
+      providerPresentCells,
+      unattributedProviderOverlayCells,
+      collisionCells,
+      suppressionByCell,
+      protectedConnectorOverlapCells,
+      protectedConnectorOverlaps,
+      protectedConnectorMaterializedCells,
+      protectedConnectorClipCells,
+    };
+  };
+  const ambientMemberByIdentity = new Map(placements.map((placement) => {
+    const audited = auditPlacement(placement);
+    return [audited.identity, audited];
+  }));
+  const ambientMembers = [...ambientMemberByIdentity.values()];
   const compositions = [...focalSites].sort().map((site) => {
     const members = placements.filter((placement) => (
       `${placement.siteX},${placement.siteY}` === site
     ));
-    const memberAudits = members.map((placement) => {
-      const asset = assetById.get(placement.assetId);
-      if (!asset) throw new Error(`Unknown composed parcel asset: ${placement.assetId}`);
-      const visibleCells = visibleAssetCells(asset, placement.anchorX, placement.anchorY)
-        .filter(cellIsVisible);
-      const realizedCells = [];
-      const protectedConnectorClipCells = [];
-      for (const cell of visibleCells) {
-        const separator = cell.indexOf(',');
-        const x = Number(cell.slice(0, separator));
-        const y = Number(cell.slice(separator + 1));
-        if (targetWorld.getBuildingTileAt(x, y)) realizedCells.push(cell);
-        if (protectedConnectorCells.has(cell)) protectedConnectorClipCells.push(cell);
-      }
-      return {
-        identity: `${placement.assetId}@${placement.anchorX},${placement.anchorY}`,
-        assetId: placement.assetId,
-        visualGroup: asset.visualGroup ?? `asset:${placement.assetId}`,
-        streetOverlay: placement.parcelPathId?.endsWith(':street-overlay') ?? false,
-        anchor: [placement.anchorX, placement.anchorY],
-        visibleCells,
-        realizedCells,
-        protectedConnectorClipCells,
-      };
-    });
+    const memberAudits = members.map((placement) => ambientMemberByIdentity.get(
+      `${placement.assetId}@${placement.anchorX},${placement.anchorY}`,
+    ));
     const identityCounts = countValues(memberAudits.map((member) => member.identity));
     const duplicateQueryIdentities = Object.entries(identityCounts)
       .filter(([, count]) => count > 1)
@@ -3192,6 +3249,10 @@ function auditLandmarkCompositions(placements, targetWorld, connectorCells, visi
         (total, member) => total + member.protectedConnectorClipCells.length,
         0,
       ),
+      streetOverlayProtectedConnectorOverlapCellCount: streetOverlayMembers.reduce(
+        (total, member) => total + member.protectedConnectorOverlapCells.length,
+        0,
+      ),
       assetIds: physicalMembers.map((member) => member.assetId).sort(),
       members: physicalMembers.map((member) => ({
         identity: member.identity,
@@ -3202,7 +3263,25 @@ function auditLandmarkCompositions(placements, targetWorld, connectorCells, visi
         visibleCellCount: member.visibleCells.length,
         providerOverlayCellCount: member.realizedCells.length,
         providerOverlayRate: member.realizedCells.length / Math.max(1, member.visibleCells.length),
+        providerPresentCellCount: member.providerPresentCells.length,
+        unattributedProviderOverlayCellCount: member.unattributedProviderOverlayCells.length,
+        unattributedProviderOverlayCells: member.unattributedProviderOverlayCells,
+        collisionCellCount: member.visibleCells.filter((cell) => (
+          member.collisionCells.has(cell)
+        )).length,
+        protectedConnectorOverlapCellCount: member.protectedConnectorOverlapCells.length,
+        protectedConnectorOverlaps: member.protectedConnectorOverlaps,
+        protectedConnectorMaterializedCellCount:
+          member.protectedConnectorMaterializedCells.length,
         protectedConnectorClipCellCount: member.protectedConnectorClipCells.length,
+        protectedConnectorClipCells: member.protectedConnectorClipCells,
+        missingCollisionCells: member.suppressionByCell.filter((entry) => (
+          entry.collisionAtCell
+        )).map((entry) => entry.cell),
+        missingNonCollisionCells: member.suppressionByCell.filter((entry) => (
+          !entry.collisionAtCell
+        )).map((entry) => entry.cell),
+        suppressionByCell: member.suppressionByCell,
         missingProviderOverlayCells: member.visibleCells.filter((cell) => (
           !member.realizedCells.includes(cell)
         )),
@@ -3228,6 +3307,54 @@ function auditLandmarkCompositions(placements, targetWorld, connectorCells, visi
     };
   });
   return {
+    ambientPlacementMaterializationAudit: {
+      placementCount: ambientMembers.length,
+      visibleCellCount: ambientMembers.reduce((total, member) => (
+        total + member.visibleCells.length
+      ), 0),
+      ownedProviderOverlayCellCount: ambientMembers.reduce((total, member) => (
+        total + member.realizedCells.length
+      ), 0),
+      providerPresentCellCount: ambientMembers.reduce((total, member) => (
+        total + member.providerPresentCells.length
+      ), 0),
+      missingProviderOverlayCellCount: ambientMembers.reduce((total, member) => (
+        total + member.suppressionByCell.length
+      ), 0),
+      missingCollisionCellCount: ambientMembers.reduce((total, member) => (
+        total + member.suppressionByCell.filter((entry) => entry.collisionAtCell).length
+      ), 0),
+      missingNonCollisionCellCount: ambientMembers.reduce((total, member) => (
+        total + member.suppressionByCell.filter((entry) => !entry.collisionAtCell).length
+      ), 0),
+      unattributedProviderOverlayCellCount: ambientMembers.reduce((total, member) => (
+        total + member.unattributedProviderOverlayCells.length
+      ), 0),
+      protectedConnectorOverlapCellCount: ambientMembers.reduce((total, member) => (
+        total + member.protectedConnectorOverlapCells.length
+      ), 0),
+      protectedConnectorMaterializedCellCount: ambientMembers.reduce((total, member) => (
+        total + member.protectedConnectorMaterializedCells.length
+      ), 0),
+      protectedConnectorClipCellCount: ambientMembers.reduce((total, member) => (
+        total + member.protectedConnectorClipCells.length
+      ), 0),
+      allCellsMaterialized: ambientMembers.every((member) => (
+        member.realizedCells.length === member.visibleCells.length
+      )),
+      failingPlacements: ambientMembers.filter((member) => (
+        member.suppressionByCell.length > 0
+      )).map((member) => ({
+        identity: member.identity,
+        assetId: member.assetId,
+        anchor: member.anchor,
+        visibleCellCount: member.visibleCells.length,
+        providerOverlayCellCount: member.realizedCells.length,
+        missingProviderOverlayCells: member.suppressionByCell.map((entry) => entry.cell),
+        suppressionByCell: member.suppressionByCell,
+        protectedConnectorOverlaps: member.protectedConnectorOverlaps,
+      })),
+    },
     compositionCount: compositions.length,
     allQueryIdentitiesUnique: compositions.every((composition) => (
       composition.queryIdentitiesUnique

@@ -2407,6 +2407,31 @@ Completed foundations:
   connector/overlay suppression by re-routing or refitting; only after full
   program materialization passes should a district repetition budget and new
   family/axis vocabularies be tested;
+- V190 selects an exact ambient-materialization foundation while keeping it
+  **experimental and non-active**. The provider now retains only non-colliding
+  placement contributions over protected connectors, exposes batched
+  placement-level raster provenance, reserves proved access paths before
+  shared-common frontage, and makes exact-profile route-parcel admission
+  coordinate-stable and fail-closed. The final Candidate K matches all 33
+  immutable V186 baseline hashes and materializes 5,149/5,149 visible cells
+  across every ambient placement in the fixed atlas: zero collision loss,
+  zero non-collision loss, zero false-owner coverage, and 60/60 safe connector
+  overlaps retained. Its nested exact compositions materialize 4,105/4,105
+  cells and pass identity, anchor, disjoint-footprint, visual-group, and
+  complete-pair gates in 33/33 frames. Forty-six provider/street-pair tests,
+  both TypeScript builds, and the 138-source runtime-pack plus six-viewport
+  origin-prewarm build pass. Candidate elapsed timings are inadmissible under
+  heavy host contention; active V170, production, and physical Ghostty remain
+  untouched. This is not a visual promotion: the same four forest, three
+  mountain, and one rural pair sites remain visibly stamped, with no coast,
+  canal-town, or ruins alternative in the fixed atlas. Metrics SHA
+  `86cb981f74f40c3bcecbc7eaad28b68ed4bfedadd160aa425a3370b636c59bea`;
+  evidence lives in
+  `track-4-world-composition/regional-composition-materialization-v190/FINDINGS.md`.
+  Next, use Candidate K as the corrected unbudgeted baseline for a
+  deterministic district repetition budget, but require genuinely new
+  family/axis vocabulary wherever a budget would otherwise create empty
+  frontage;
 - rejected wallpaper, dense-grid, over-sparse, solver-staircase, and regional
   root-ring experiments remain in the mounted research record; public gallery
   iterations 012–035 expose selected and rejected research candidates without
