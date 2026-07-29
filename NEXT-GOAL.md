@@ -2593,9 +2593,46 @@ Completed foundations:
   `589ab2f79ba76dd588c3bf446742638f2150b83bbfe0183dd59ec7ed3e806f80`;
   evidence lives in
   `track-7-performance/regional-prewarm-v194/FINDINGS.md`.
-  Next, finish or reject the packed-overlap candidate under an admissible host
-  window, then profile the selected prewarm and runtime render/input paths and
-  remove the largest architectural costs with exact frame/audit parity; in
+  V195 then profiles the actual production OCTANT packed
+  `PixelGameRenderer.renderToString` path at 160x46, storm intensity 0.9, five
+  baked viewports, and 20 colocated players. Sparse composition reaches
+  12.374-ms p95, but complete production render reaches 27.957-ms p95 and the
+  20-session batch reaches 32.017-ms per-session p95, both above the governing
+  16.7-ms runtime target before transport. The representative frame changes
+  2,841 cells and emits 101,946 bytes through 2,849 SGR and 656 cursor commands;
+  its exact final pixel hash matches across alternating lanes. The CPU profile
+  localizes the largest self costs to packed terminal emission, SGR generation,
+  GC, changed-run emission, and OCTANT scratch rendering. An indexed/truecolor
+  style-state candidate is rejected: it preserves exact pixels but changes
+  neither payload bytes nor command counts and worsens measured latency under a
+  more pressured host window. Its source changes were removed while its profile
+  remains as negative evidence. Baseline benchmark SHA
+  `f2d7fdbffd96a526d6a9832f980a8c1f6cc5a25ee5e9cf559f27a086a90e69a7`;
+  rejected-candidate benchmark SHA
+  `900c60b372c11783e6f519c78a8443aae302c6102cd0f66c27e957b104976d2e`;
+  evidence lives in
+  `track-7-performance/production-packed-profile-v195/FINDINGS.md`.
+  V196 selects the first semantic emission correction from that profile.
+  Truecolor OCTANT full blocks with identical foreground/background now emit
+  as background-painted spaces: exactly the same terminal pixels, without the
+  unused foreground or three-byte glyph. Indexed water and every non-flat cell
+  stay conservative. An independent fail-closed test terminal proves semantic
+  equality through keyframes, deltas, and exact camera-cell scrolling. On the
+  same representative storm frame, application output falls 101,946 to 90,187
+  bytes (-11.53%) and delayed-SSH deflate falls 27,866 to 26,187 bytes (-6.03%)
+  while changed cells, cursor commands, and final world-pixel hash remain
+  exact. Fifty-two test files / 308 tests, 18/18 typecheck tasks, 7/7 lint
+  tasks, and 12/12 build tasks pass. Candidate benchmark SHA
+  `a61c93bfefe495c6a36012b9f072e881da6d64f70ae8794566cea02c1b734a83`;
+  evidence lives in
+  `track-7-performance/flat-octant-terminal-v196/FINDINGS.md`. This is selected
+  source evidence, not deployed or sustained Gate D; pressured-host latency is
+  retained only as directional evidence.
+  Next, finish or reject the V194 packed-overlap candidate under an admissible
+  host window, repeat V196 under the same admission contract, then attack the
+  remaining packed string-allocation/SGR architecture or move emission off the
+  input-critical path with the semantic oracle, alternating same-workload
+  profiles, exact decoded-frame parity, and real SSH proof; in
   parallel test
   compact bank-aware geometry for the two unresolved origin north/south coast
   sites without relaxing dry-core, threshold, slope, collision, civic, or

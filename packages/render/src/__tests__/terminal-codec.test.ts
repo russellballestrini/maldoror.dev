@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TerminalCodec } from '../pixel/terminal-codec.js';
+import { TerminalEmulator } from './terminal-emulator.js';
 import {
   createPackedCellGrid,
   packedRgb,
@@ -11,6 +12,14 @@ import {
 const color = { r: 32, g: 96, b: 128 };
 const cell = (char: string): TerminalCell => ({ char, fgColor: color, bgColor: color });
 const grid = (...rows: string[]): CellGrid => rows.map((row) => [...row].map(cell));
+const coloredGrid = (
+  rows: string[],
+  colors: Array<Array<{ r: number; g: number; b: number }>>,
+): CellGrid => rows.map((row, y) => [...row].map((char, x) => ({
+  char,
+  fgColor: colors[y]![x]!,
+  bgColor: colors[y]![x]!,
+})));
 const packed = (source: CellGrid): PackedCellGrid => {
   const target = createPackedCellGrid(source[0]?.length ?? 0, source.length);
   target.foregroundIndex.fill(-1);
@@ -98,5 +107,57 @@ describe('TerminalCodec', () => {
       .toEqual(objectCodec.encode(first, camera(0, 0)));
     expect(packedCodec.encodePacked(packed(second), camera(2, 0)))
       .toEqual(objectCodec.encode(second, camera(2, 0)));
+  });
+
+  it('canonicalizes flat OCTANT blocks without changing terminal pixels', () => {
+    const objectCodec = new TerminalCodec({ headerRows: 2, terminalCols: 4, terminalRows: 5 });
+    const packedCodec = new TerminalCodec({ headerRows: 2, terminalCols: 4, terminalRows: 5 });
+    const objectTerminal = new TerminalEmulator(4, 5);
+    const packedTerminal = new TerminalEmulator(4, 5);
+    const first = coloredGrid(
+      ['████', '████', '████'],
+      Array.from({ length: 3 }, (_, y) => Array.from({ length: 4 }, (_, x) => ({
+        r: 30 + x * 20,
+        g: 50 + y * 30,
+        b: 90 + x * 10,
+      }))),
+    );
+    const second = coloredGrid(
+      ['████', '████', '████'],
+      Array.from({ length: 3 }, (_, y) => Array.from({ length: 4 }, (_, x) => ({
+        r: 35 + x * 20,
+        g: 55 + y * 30,
+        b: 95 + x * 10,
+      }))),
+    );
+
+    const objectKeyframe = objectCodec.encode(first, camera(0, 0));
+    const packedKeyframe = packedCodec.encodePacked(packed(first), camera(0, 0));
+    expect(packedKeyframe.output).not.toEqual(objectKeyframe.output);
+    expect(packedKeyframe.output).not.toContain('█');
+    objectTerminal.apply(objectKeyframe.output);
+    packedTerminal.apply(packedKeyframe.output);
+    expect(packedTerminal.visibleSnapshot()).toEqual(objectTerminal.visibleSnapshot());
+
+    const objectPatch = objectCodec.encode(second, camera(0, 0));
+    const packedPatch = packedCodec.encodePacked(packed(second), camera(0, 0));
+    objectTerminal.apply(objectPatch.output);
+    packedTerminal.apply(packedPatch.output);
+    expect(packedTerminal.visibleSnapshot()).toEqual(objectTerminal.visibleSnapshot());
+    expect(packedPatch.metrics.bytes).toBeLessThan(objectPatch.metrics.bytes);
+
+    const shifted = coloredGrid(
+      ['████', '████', '████'],
+      Array.from({ length: 3 }, (_, y) => Array.from({ length: 4 }, (_, x) => ({
+        r: 35 + ((x + 1) % 4) * 20,
+        g: 55 + y * 30,
+        b: 95 + ((x + 1) % 4) * 10,
+      }))),
+    );
+    const objectMotion = objectCodec.encode(shifted, camera(2, 0));
+    const packedMotion = packedCodec.encodePacked(packed(shifted), camera(2, 0));
+    objectTerminal.apply(objectMotion.output);
+    packedTerminal.apply(packedMotion.output);
+    expect(packedTerminal.visibleSnapshot()).toEqual(objectTerminal.visibleSnapshot());
   });
 });

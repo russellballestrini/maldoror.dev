@@ -1,4 +1,4 @@
-import { sgrCode, sgrCodePacked } from './ansi-cache.js';
+import { bgCodePacked, sgrCode, sgrCodePacked } from './ansi-cache.js';
 import {
   cellsEqual,
   type CellGrid,
@@ -13,6 +13,7 @@ const RESTORE_CURSOR = `${ESC}8`;
 const DEFAULT_COLOR = { r: 20, g: 20, b: 25 } as const;
 const DEFAULT_COLOR_PACKED = (20 << 16) | (20 << 8) | 25;
 const SPACE_CODEPOINT = 0x20;
+const FULL_BLOCK_CODEPOINT = 0x2588;
 
 export interface TerminalCodecCamera {
   /** Camera centre in the renderer's world-pixel coordinate system. */
@@ -404,7 +405,21 @@ export class TerminalCodec {
       const bg = frame.background[offset] ?? DEFAULT_COLOR_PACKED;
       const fgIndex = frame.foregroundIndex[offset] ?? -1;
       const bgIndex = frame.backgroundIndex[offset] ?? -1;
-      if (fgIndex >= 0 || bgIndex >= 0) {
+      // A truecolor full block whose two channels are identical paints exactly
+      // the same terminal pixels as a space with that background. Canonicalize
+      // that common OCTANT flat-cell case to avoid formatting an unused
+      // foreground and emitting a three-byte glyph. Indexed cells stay on the
+      // conservative path because their live OSC-4 values are terminal state.
+      const backgroundOnly = frame.codepoints[offset] === FULL_BLOCK_CODEPOINT
+        && fgIndex < 0
+        && bgIndex < 0
+        && fg === bg;
+      if (backgroundOnly) {
+        if (bg !== lastBg) {
+          chunks.push(bgCodePacked(bg));
+          lastBg = bg;
+        }
+      } else if (fgIndex >= 0 || bgIndex >= 0) {
         const parts: string[] = [];
         parts.push(fgIndex >= 0
           ? `38;5;${fgIndex}`
@@ -429,7 +444,9 @@ export class TerminalCodec {
       if (cellWidth === 1) {
         while (offset + count < end && this.packedCellsEqual(frame, frame, offset, offset + count)) count++;
       }
-      const char = String.fromCodePoint(frame.codepoints[offset] || SPACE_CODEPOINT);
+      const char = backgroundOnly
+        ? ' '
+        : String.fromCodePoint(frame.codepoints[offset] || SPACE_CODEPOINT);
       chunks.push(char);
       if (count >= 4) chunks.push(`${ESC}[${count - 1}b`);
       else for (let i = 1; i < count; i++) chunks.push(char);

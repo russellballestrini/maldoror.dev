@@ -49,6 +49,19 @@ export function bgCode(c: RGB): string {
   return s;
 }
 
+/** Packed-key background escape for the OCTANT path. Flat cells need only a
+ * background paint; using the single-channel cache avoids constructing a
+ * synthetic pair key for that common case. */
+export function bgCodePacked(background: number): string {
+  let value = BG_CACHE.get(background);
+  if (value === undefined) {
+    if (BG_CACHE.size >= CACHE_CAP) BG_CACHE.clear();
+    value = `${ESC}[48;2;${red(background)};${green(background)};${blue(background)}m`;
+    BG_CACHE.set(background, value);
+  }
+  return value;
+}
+
 /**
  * Combined-pair key for (fg, bg), where either may be null.
  * -1 (null) maps to 0; colors map to key+1. Multiplier keeps pairs unique.
