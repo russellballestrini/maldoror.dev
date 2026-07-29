@@ -2,6 +2,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import sharp from 'sharp';
 import {
   loadRegionalAmbientKit,
@@ -74,6 +75,10 @@ const PLACE_DETAIL_DESCRIPTOR = path.resolve(
   process.env.MALDOROR_AMBIENT_PLACE_DETAIL_DESCRIPTOR ??
     path.join(ROOT, 'tools/render-sim/fixtures/canal-town-meso-frontage-v1.json'),
 );
+const PLACE_DETAIL_VISUAL_DESCRIPTOR =
+  process.env.MALDOROR_AMBIENT_PLACE_DETAIL_VISUAL_DESCRIPTOR
+    ? path.resolve(process.env.MALDOROR_AMBIENT_PLACE_DETAIL_VISUAL_DESCRIPTOR)
+    : null;
 const RUN_AMBIENT_DISTRIBUTION_AUDIT =
   process.env.MALDOROR_AMBIENT_DISTRIBUTION_AUDIT !== 'disabled';
 const RUN_FOCAL_ELIGIBILITY_AUDIT =
@@ -431,6 +436,43 @@ if (placeDetailFixture && (
 )) {
   throw new Error(`Invalid research-only place-detail descriptor: ${PLACE_DETAIL_DESCRIPTOR}`);
 }
+const placeDetailVisualFixture = PLACE_DETAIL_VISUAL_DESCRIPTOR
+  ? JSON.parse(fs.readFileSync(PLACE_DETAIL_VISUAL_DESCRIPTOR, 'utf8'))
+  : null;
+const placeDetailVisualEntries = placeDetailVisualFixture
+  ? Array.isArray(placeDetailVisualFixture.assets)
+    ? placeDetailVisualFixture.assets
+    : [placeDetailVisualFixture.asset]
+  : [];
+if (placeDetailVisualFixture && (
+  placeDetailFixture === null ||
+  placeDetailVisualFixture.runtimeManifest !== false ||
+  !Number.isInteger(placeDetailVisualFixture.sourceTileSize) ||
+  placeDetailVisualEntries.length === 0 ||
+  placeDetailVisualEntries.some((asset) => typeof asset !== 'object' || asset === null) ||
+  new Set(placeDetailVisualEntries.map((asset) => asset.id)).size !==
+    placeDetailVisualEntries.length
+)) {
+  throw new Error(
+    `Invalid research-only place-detail visual descriptor: ${PLACE_DETAIL_VISUAL_DESCRIPTOR}`,
+  );
+}
+if (placeDetailVisualFixture) {
+  const sourceById = new Map(placeDetailEntries.map((asset) => [asset.id, asset]));
+  const descriptorSemantics = (asset) => Object.fromEntries(
+    Object.entries(asset).filter(([key]) => key !== 'file'),
+  );
+  if (sourceById.size !== placeDetailVisualEntries.length ||
+      placeDetailVisualEntries.some((visual) => {
+        const source = sourceById.get(visual.id);
+        return !source || !isDeepStrictEqual(
+          descriptorSemantics(visual),
+          descriptorSemantics(source),
+        );
+      })) {
+    throw new Error('Place-detail visual descriptor changes declared semantics');
+  }
+}
 const field = new BiomeWorldField(WORLD_SEED, {
   blockSize: 16,
   maxCachedBlocks: 32,
@@ -452,6 +494,7 @@ const [
   routeContactKit,
   parcelKit,
   placeDetailCandidates,
+  placeDetailVisualCandidates,
   environmentKit,
 ] = await Promise.all([
   loadRegionalBiomeMaterialKit(BIOME_MANIFEST),
@@ -469,8 +512,58 @@ const [
         asset,
       )))
     : Promise.resolve([]),
+  placeDetailVisualFixture
+    ? Promise.all(placeDetailVisualEntries.map((asset) => loadRegionalParcelComponentCandidate(
+        path.join(ROOT, 'assets/biomes'),
+        placeDetailVisualFixture.sourceTileSize,
+        asset,
+      )))
+    : Promise.resolve([]),
   loadRegionalEnvironmentContactKit(path.join(ROOT, 'assets/biomes/environment-contacts-manifest.json')),
 ]);
+if (placeDetailVisualCandidates.length > 0) {
+  const visualById = new Map(placeDetailVisualCandidates.map((asset) => [asset.id, asset]));
+  if (visualById.size !== placeDetailCandidates.length || placeDetailCandidates.some((asset) => {
+    const visual = visualById.get(asset.id);
+    return !visual || visual.sprite.width !== asset.sprite.width ||
+      visual.sprite.height !== asset.sprite.height ||
+      JSON.stringify({
+        families: visual.families,
+        role: visual.role,
+        visualGroup: visual.visualGroup,
+        compositionRole: visual.compositionRole,
+        streetPairRole: visual.streetPairRole,
+        placeDetailRole: visual.placeDetailRole,
+        frontageAxis: visual.frontageAxis,
+        compositionSide: visual.compositionSide,
+        frontageStations: visual.frontageStations,
+        circulationOffsets: visual.circulationOffsets,
+        collision: visual.collision,
+        emitsLight: visual.emitsLight,
+        spriteAnchor: visual.spriteAnchor,
+      }) !== JSON.stringify({
+        families: asset.families,
+        role: asset.role,
+        visualGroup: asset.visualGroup,
+        compositionRole: asset.compositionRole,
+        streetPairRole: asset.streetPairRole,
+        placeDetailRole: asset.placeDetailRole,
+        frontageAxis: asset.frontageAxis,
+        compositionSide: asset.compositionSide,
+        frontageStations: asset.frontageStations,
+        circulationOffsets: asset.circulationOffsets,
+        collision: asset.collision,
+        emitsLight: asset.emitsLight,
+        spriteAnchor: asset.spriteAnchor,
+      });
+  })) {
+    throw new Error('Place-detail visual descriptor changes geometry or semantics');
+  }
+}
+const renderPlaceDetailAssetById = new Map(placeDetailCandidates.map((asset) => [asset.id, asset]));
+const renderPlaceDetailVisualById = new Map(
+  placeDetailVisualCandidates.map((asset) => [asset.id, asset]),
+);
 if (new Set([
   landmarkKit.blockSize,
   ambientKit.blockSize,
@@ -1935,6 +2028,75 @@ function canonicalScratchWorld(candidate) {
   return scratch;
 }
 
+function placeDetailVisualWorld(frame, targetWorld) {
+  if (renderPlaceDetailVisualById.size === 0) return targetWorld;
+  const halfWidth = Math.ceil(WIDTH / frame.displayTileSize / 2);
+  const halfHeight = Math.ceil(HEIGHT / frame.displayTileSize / 2);
+  const visibleBounds = [
+    frame.centre[0] - halfWidth,
+    frame.centre[1] - halfHeight,
+    frame.centre[0] + halfWidth,
+    frame.centre[1] + halfHeight,
+  ];
+  const contributorAtlas = targetWorld.getRegionalOverlayContributorsInBounds(...visibleBounds);
+  const placements = targetWorld.getAmbientPlacementsInBounds(...visibleBounds).filter(
+    (placement) => renderPlaceDetailVisualById.has(placement.assetId),
+  );
+  const replacementByCell = new Map();
+  const emptyTile = Object.freeze({ pixels: Object.freeze([]), resolutions: Object.freeze({}) });
+  let materializedSourceCells = 0;
+  let replacementVisibleCells = 0;
+  for (const placement of placements) {
+    const sourceAsset = renderPlaceDetailAssetById.get(placement.assetId);
+    const visualAsset = renderPlaceDetailVisualById.get(placement.assetId);
+    if (!sourceAsset || !visualAsset) continue;
+    const [sourceAnchorX, sourceAnchorY] = sourceAsset.spriteAnchor ?? [
+      Math.floor(sourceAsset.sprite.width / 2),
+      sourceAsset.sprite.height - 1,
+    ];
+    const identity = `${placement.assetId}@${placement.anchorX},${placement.anchorY}`;
+    for (let tileY = 0; tileY < sourceAsset.sprite.height; tileY++) {
+      for (let tileX = 0; tileX < sourceAsset.sprite.width; tileX++) {
+        const sourceTile = sourceAsset.sprite.tiles[tileY]?.[tileX];
+        if (!sourceTile || !tileHasVisiblePixels(sourceTile)) continue;
+        const worldX = placement.anchorX + tileX - sourceAnchorX;
+        const worldY = placement.anchorY + tileY - sourceAnchorY;
+        const key = `${worldX},${worldY}`;
+        const contributor = contributorAtlas.get(key)?.find((candidate) => (
+          candidate.identity === identity
+        ));
+        if (!contributor?.materialized) continue;
+        const replacement = visualAsset.sprite.tiles[tileY]?.[tileX] ?? emptyTile;
+        replacementByCell.set(key, replacement);
+        materializedSourceCells++;
+        if (tileHasVisiblePixels(replacement)) replacementVisibleCells++;
+      }
+    }
+  }
+  placeDetailVisualSubstitutionAudits.push({
+    frame: frame.name,
+    centre: frame.centre,
+    displayTileSize: frame.displayTileSize,
+    placementCount: placements.length,
+    materializedSourceCells,
+    replacementVisibleCells,
+    replacementEmptyCells: materializedSourceCells - replacementVisibleCells,
+    assetIds: [...new Set(placements.map((placement) => placement.assetId))].sort(),
+  });
+  return new Proxy(targetWorld, {
+    get(target, property) {
+      if (property === 'getBuildingTileAt') {
+        return (worldX, worldY, direction = 'north') => {
+          const replacement = replacementByCell.get(`${worldX},${worldY}`);
+          return replacement ?? target.getBuildingTileAt(worldX, worldY, direction);
+        };
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}
+
 function renderFrame(frame, targetWorld = world) {
   const renderer = new ViewportRenderer({
     widthTiles: Math.ceil(WIDTH / frame.displayTileSize),
@@ -1944,7 +2106,7 @@ function renderFrame(frame, targetWorld = world) {
     tileRenderSize: frame.displayTileSize,
   });
   renderer.setCamera(frame.centre[0], frame.centre[1]);
-  return renderer.renderToBuffer(targetWorld, 0).buffer;
+  return renderer.renderToBuffer(placeDetailVisualWorld(frame, targetWorld), 0).buffer;
 }
 
 async function readCompositionExactBaseGrid(frame) {
@@ -3293,6 +3455,7 @@ function auditPlaceDetailCensus(radius, centre) {
 const placeDetailCensus = RUN_PLACE_DETAIL_CENSUS
   ? auditPlaceDetailCensus(PLACE_DETAIL_CENSUS_RADIUS, PLACE_DETAIL_CENSUS_CENTRE)
   : null;
+const placeDetailVisualSubstitutionAudits = [];
 
 const metrics = {
   worldSeed: String(WORLD_SEED),
@@ -3304,6 +3467,10 @@ const metrics = {
   placeDetailDescriptor: placeDetailCandidates.length > 0
     ? path.relative(ROOT, PLACE_DETAIL_DESCRIPTOR)
     : null,
+  placeDetailVisualDescriptor: PLACE_DETAIL_VISUAL_DESCRIPTOR
+    ? path.relative(ROOT, PLACE_DETAIL_VISUAL_DESCRIPTOR)
+    : null,
+  placeDetailVisualSubstitutionAudits,
   placeDetailAssetId: placeDetailCandidates.length === 1
     ? placeDetailCandidates[0].id
     : null,

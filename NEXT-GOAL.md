@@ -3181,6 +3181,34 @@ Completed foundations:
   byte-for-byte identical to V255 at SHA `a50b0d6e...76d`. This again selects
   exact redundant-work removal, not a host timing claim. Evidence lives in
   `track-7-performance/corridor-frontage-route-view-v256/FINDINGS.md`.
+  V257-V261 add the first separately authored semantic district/regional LOD
+  for that integrated modular frontage. Built-in Codex/ChatGPT subscription
+  image generation—not a metered API—redraws the exact shops, open arch, and
+  workshop identities as broad painterly silhouettes and value planes. A
+  hash-pinned derivation proves chroma removal, transparent gutters, zero
+  visible magenta leakage, and exact crops; a research descriptor preserves
+  every declared semantic field except the intentionally different file path,
+  and its loaded 6x7 geometry, collisions, circulation, lighting declaration,
+  and anchors equal the walking source. In faithful real-world V258/V260
+  frames at `(176,-183)`, the authored workshop remains a legible inhabited
+  facade at both 8px district and 4px regional tile sizes; V259/V261 normal
+  reductions merge more of the facade into a brown midtone mass. The selected
+  visual changes 2,061 district and 535 regional source pixels while retaining
+  the original provider as the physical oracle. All 139 composition cells
+  remain owned/materialized and every composition gate stays valid. After
+  deleting only visual-substitution metadata, render hashes, and inadmissible
+  instrumentation counters, each semantic/control pair has an exact normalized
+  metrics hash (`daf48841...416d` district; `4b2259f7...58b1` regional).
+  This is selected art direction and proof machinery, not yet a runtime LOD or
+  performance win: the 48px semantic prepared planes still occupy 1,013,760
+  bytes, only 36,864 bytes (3.51%) below walking, and dual residency would add
+  memory. Compact per-resolution packing and demand-driven ownership remain
+  coupled to the still-unselected V194/V210 work. The host sample (load1 17.50
+  on eight CPUs, CPU PSI 55.25%, memory-full PSI 59.10%, I/O-full PSI 12.89%,
+  disks 93%/97%) forbids every timing or memory claim. Exact prompt,
+  provenance, alpha proof, frames, comparisons, memory arithmetic, selection,
+  and open runtime gate live in
+  `track-2-alpha-scale-depth/canal-modular-semantic-lod-v257/FINDINGS.md`.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, admit or reject V210 and V212 under exact whole-process A/B/A,
   repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission

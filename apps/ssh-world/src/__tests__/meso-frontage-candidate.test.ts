@@ -16,6 +16,10 @@ const COMPACT_MODULAR_FIXTURE = path.join(
   ROOT,
   'tools/render-sim/fixtures/canal-town-modular-frontages-v2-compact.json',
 );
+const SEMANTIC_LOD_FIXTURE = path.join(
+  ROOT,
+  'tools/render-sim/fixtures/canal-town-modular-frontages-semantic-lod-v1.json',
+);
 
 interface CandidateFixture {
   runtimeManifest: boolean;
@@ -189,7 +193,11 @@ describe('research-only modular frontage candidates', () => {
   });
 
   it('keeps every modular experiment out of the production parcel manifest', () => {
-    const fixtures = [MODULAR_FIXTURE, COMPACT_MODULAR_FIXTURE].map((fixturePath) => (
+    const fixtures = [
+      MODULAR_FIXTURE,
+      COMPACT_MODULAR_FIXTURE,
+      SEMANTIC_LOD_FIXTURE,
+    ].map((fixturePath) => (
       JSON.parse(fs.readFileSync(fixturePath, 'utf8')) as ModularCandidateFixture
     ));
     const manifest = JSON.parse(fs.readFileSync(
@@ -200,6 +208,60 @@ describe('research-only modular frontage candidates', () => {
     expect(fixtures.flatMap(({ assets }) => assets).every(({ id }) => (
       !productionIds.has(id)
     ))).toBe(true);
+  });
+
+  it('loads a separately authored regional visual source without changing semantics', async () => {
+    const [walkingFixture, lodFixture] = [MODULAR_FIXTURE, SEMANTIC_LOD_FIXTURE].map(
+      (fixturePath) => JSON.parse(
+        fs.readFileSync(fixturePath, 'utf8'),
+      ) as ModularCandidateFixture,
+    );
+    if (!walkingFixture || !lodFixture) throw new Error('Missing modular visual fixture');
+    const descriptorSemantics = (entry: Record<string, unknown>) => Object.fromEntries(
+      Object.entries(entry).filter(([key]) => key !== 'file'),
+    );
+    expect(lodFixture.assets.map(descriptorSemantics)).toEqual(
+      walkingFixture.assets.map(descriptorSemantics),
+    );
+    const load = (fixture: ModularCandidateFixture) => Promise.all(fixture.assets.map((entry) => (
+      loadRegionalParcelComponentCandidate(
+        path.join(ROOT, 'assets/biomes'),
+        fixture.sourceTileSize,
+        entry,
+      )
+    )));
+    const [walking, lod] = await Promise.all([load(walkingFixture), load(lodFixture)]);
+    const semanticSignature = (asset: (typeof walking)[number]) => ({
+      id: asset.id,
+      families: asset.families,
+      role: asset.role,
+      visualGroup: asset.visualGroup,
+      compositionRole: asset.compositionRole,
+      streetPairRole: asset.streetPairRole,
+      placeDetailRole: asset.placeDetailRole,
+      frontageAxis: asset.frontageAxis,
+      compositionSide: asset.compositionSide,
+      frontageStations: asset.frontageStations,
+      circulationOffsets: asset.circulationOffsets,
+      collision: asset.collision,
+      emitsLight: asset.emitsLight,
+      spriteAnchor: asset.spriteAnchor,
+      spriteDimensions: [asset.sprite.width, asset.sprite.height],
+    });
+
+    expect(lod.map(semanticSignature)).toEqual(walking.map(semanticSignature));
+    expect(lod.map((asset) => asset.sprite.tiles.flat().reduce((total, tile) => (
+      total + (tile.packedPixels?.data.byteLength ?? 0)
+    ), 0))).toEqual([322_560, 331_776, 359_424]);
+    expect(lod.map((asset) => asset.sprite.tiles.flat().filter((tile) => (
+      tile.packedPixels === undefined
+    )).length)).toEqual([7, 6, 3]);
+    expect(lod.some((asset, index) => asset.sprite.tiles.flat().some((tile, tileIndex) => (
+      tile.packedPixels?.data.some((value, byteIndex) => (
+        byteIndex % 4 !== 3 && value !==
+          walking[index]!.sprite.tiles.flat()[tileIndex]?.packedPixels?.data[byteIndex]
+      )) ?? false
+    )))).toBe(true);
   });
 
   it('retains the rejected 5x6 reconstruction with exact bounded planes', async () => {
