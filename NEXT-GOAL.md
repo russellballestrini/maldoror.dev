@@ -2952,6 +2952,19 @@ Completed foundations:
   metadata, contact-shadow-only influence, designed semantic LODs, and a
   post-parent corridor role before one faithful experimental placement. No
   provider consumes it, no active pixel changes, and Gate A remains open.
+  V219 adds the tracked deterministic derivation seam while keeping that
+  boundary intact. A hash-pinned built-in-generation source and exact RGBA
+  output now reproduce through one fail-closed script that verifies the source,
+  installed chroma helper, derived bytes, 1402x1122 dimensions, visible and
+  strong-alpha coverage, transparent outer border, and zero surviving magenta-
+  like pixels. The fresh run reproduces output
+  `72382592...d3f3ccee` with 0.426580 visible coverage, 0.423797 strong-alpha
+  coverage, and zero border/key contamination. The script explicitly reports
+  `runtimeManifest: false`; the asset is not present in the parcel manifest,
+  runtime pack, placement policy, or active pixels. Exact code/source/output
+  hashes and the non-promotion gate live in
+  `track-4-world-composition/canal-meso-derivation-v219/FINDINGS.md`. A research-
+  only semantic manifest and one faithful corridor fixture remain required.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, admit or reject V210 and V212 under exact whole-process A/B/A,
   repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission
