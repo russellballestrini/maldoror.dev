@@ -2878,6 +2878,18 @@ Completed foundations:
   `track-7-performance/flat-packed-grid-layout-v213/FINDINGS.md`. At the census,
   CPU-some PSI was 15.80%/10s, memory-full PSI 1.21%/10s, I/O-full PSI
   19.55%/10s, and load-per-CPU 2.123, so no timing or Gate D claim is made.
+  V214 obtains the strongest no-restart attribution available from the current
+  live worker. Kernel rollup reports 1,268,832 KiB RSS, of which 1,249,524 KiB
+  (98.478%) is anonymous and 1,249,560 KiB is private dirty; proportional
+  file-backed memory is only 1,065 KiB, shared-memory PSS is zero, and another
+  237,784 KiB is swapped. The dominant class is therefore private application
+  allocation/V8 residency, not mapped runtime-pack files. It does not identify
+  the owning heap space: another `/runtime` request returned zero bytes before
+  ten seconds, so V211 deployment remains necessary. Evidence lives in
+  `track-7-performance/live-worker-anonymous-memory-v214/FINDINGS.md`. The same
+  sample had memory-full PSI 19.94%/10s, I/O-full PSI 51.11%/10s, and
+  load-per-CPU 3.094; this is negative runtime truth, not V212 selection or
+  Gate D.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, admit or reject V210 and V212 under exact whole-process A/B/A,
   repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission
