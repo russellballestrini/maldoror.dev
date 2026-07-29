@@ -2918,6 +2918,25 @@ Completed foundations:
   healthy detailed-sample parity remain open. At the evidence sample CPU-some
   PSI was 35.12%/10s, memory-full 5.58%/10s, I/O-full 10.52%/10s, and
   load-per-CPU 4.10, so no Gate-D claim is made.
+  V217 then uses the required built-in ChatGPT/Codex image-generation path to
+  select a materially stronger six-family meso-frontage vocabulary direction:
+  canal workshop row, forest timber/charcoal workstead, coast boatwright/
+  smokehouse, rural orchard hamlet, mountain assay/forge terrace, and occupied
+  ruins cloister market. All six clusters define passages, courts, street or
+  working edges, attached uses, and irregular vertical enclosure instead of
+  isolated endpoint props. Exact prompt, original source, clean-alpha board,
+  six projection-gap-owned crops, hashes, and direct rejection rationale live
+  in `track-4-world-composition/meso-frontage-v217/FINDINGS.md`. The visual
+  direction is selected but direct runtime use is rejected: the boards combine
+  structure, local surface, water, vegetation, shadow, and implied collision,
+  so pasting them would merely create larger terrain plates and physical
+  contradictions. The next bounded pass must semantically decompose one family
+  into structure/occlusion, continuous world-material masks, entrances,
+  circulation, protected negative space, collision, constraints, function,
+  visual group, and designed LOD; admit it only after the meso-parent set is
+  frozen; and prove faithful ANSI gain with exact parent/program/circulation/
+  collision parity before deriving the other five. This is source research,
+  not an in-world visual improvement or Gate A.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, admit or reject V210 and V212 under exact whole-process A/B/A,
   repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission
