@@ -35,6 +35,7 @@ import {
   type NPCLifeWorkplace,
 } from './npc-life-simulation.js';
 import { findBoundedNPCPath } from './npc-pathfinding.js';
+import { NPCSpatialIndex } from './npc-spatial-index.js';
 import {
   npcNavigationBoundsForHome,
   type NPCNavigationBounds,
@@ -99,6 +100,7 @@ export class NPCManager {
   /** Immutable projections are shared across sessions until a visible field
    * changes. The outer query arrays remain caller-owned. */
   private visualStates: Map<string, NPCVisualState> = new Map();
+  private npcVisibility: NPCSpatialIndex = new NPCSpatialIndex();
 
   constructor(options: { worldSeed?: string; tickRate?: number } = {}) {
     this.worldSeed = options.worldSeed ?? '0';
@@ -168,6 +170,7 @@ export class NPCManager {
       // Create NPC state from record
       const state = this.createStateFromRecord(record);
       this.npcs.set(record.id, state);
+      this.npcVisibility.upsert(record.id, state.x, state.y);
       loadedCount++;
 
       // Load sprite from disk
@@ -256,6 +259,7 @@ export class NPCManager {
       lifeState: null,
     });
     this.npcs.set(record.id, state);
+    this.npcVisibility.upsert(record.id, state.x, state.y);
     this.markDirty(state.npcId);
 
     // Cache sprite
@@ -305,18 +309,16 @@ export class NPCManager {
     const viewportX = centerX - Math.floor(width / 2);
     const viewportY = centerY - Math.floor(height / 2);
 
+    const visible = this.npcVisibility.query(
+      viewportX - 2,
+      viewportY - 2,
+      viewportX + width + 1,
+      viewportY + height + 1,
+    );
     const result: NPCVisualState[] = [];
-
-    for (const npc of this.npcs.values()) {
-      // Check if NPC is in viewport (with some padding for sprites)
-      if (
-        npc.x >= viewportX - 2 &&
-        npc.x < viewportX + width + 2 &&
-        npc.y >= viewportY - 2 &&
-        npc.y < viewportY + height + 2
-      ) {
-        result.push(this.toVisualState(npc));
-      }
+    for (const npcId of visible.ids) {
+      const npc = this.npcs.get(npcId);
+      if (npc) result.push(this.toVisualState(npc));
     }
 
     return result;
@@ -569,6 +571,7 @@ export class NPCManager {
     npc.x = newX;
     npc.y = newY;
     npc.isMoving = true;
+    this.npcVisibility.upsert(npc.npcId, npc.x, npc.y);
 
     return true;
   }
@@ -659,6 +662,7 @@ export class NPCManager {
     if (withinRoamRadius && !this.isBlocked(newX, newY)) {
       npc.x = newX;
       npc.y = newY;
+      this.npcVisibility.upsert(npc.npcId, npc.x, npc.y);
       npc.isMoving = true;
       npc.movementTicksRemaining = 3;
     } else {
@@ -904,6 +908,7 @@ export class NPCManager {
     this.lifeWorkplaceIds.delete(npcId);
     this.activityDisplayNames.delete(npcId);
     this.visualStates.delete(npcId);
+    this.npcVisibility.remove(npcId);
   }
 
   /**
@@ -916,5 +921,6 @@ export class NPCManager {
     this.lifeWorkplaceIds.clear();
     this.activityDisplayNames.clear();
     this.visualStates.clear();
+    this.npcVisibility.clear();
   }
 }

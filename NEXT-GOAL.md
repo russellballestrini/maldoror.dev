@@ -3353,6 +3353,23 @@ Completed foundations:
   and disks 93%/97% prohibit wall-clock, heap, RSS, or latency claims. The outer
   result array and full NPC-map scan remain; full evidence is in
   `track-7-performance/npc-visual-state-cache-v270/FINDINGS.md`.
+  V271 removes that full NPC-map visibility scan with an adaptive,
+  negative-coordinate-safe 16-cell spatial index. Ordinary viewports visit
+  only intersecting occupied buckets and sort bounded candidates by preserved
+  insertion ordinal; enormous sparse views scan the bounded live-entry set in
+  canonical order instead of traversing unbounded empty cells. Load, creation,
+  autonomous movement, cognitive movement, removal, and clear all maintain the
+  index. A 2,048-resident/256-viewport pure oracle is exact against brute force
+  with fewer than 16 candidates visited by any local query; a separate
+  512-resident/64-viewport manager oracle preserves the former padded
+  membership and order, and autonomous movement crosses indexed viewports
+  exactly. Two normal-worker full runs honestly preserve the same unchanged
+  asset-loader timeout at 112/113 under severe I/O contention; the failed test
+  passes alone and the complete suite passes 113/113 with `--maxWorkers=1`.
+  With load1 39.53, CPU PSI 76.31%, memory-full PSI 54.07%, I/O-full PSI 6.98%,
+  active swap, and both disks at 97%, this is structural work-bound evidence,
+  not a latency or deployed speedup claim. Full evidence lives in
+  `track-7-performance/npc-spatial-visibility-v271/FINDINGS.md`.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, admit or reject V210 and V212 under exact whole-process A/B/A,
   repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission
@@ -3387,9 +3404,11 @@ Still open and therefore goal-blocking:
   selects exact weather-cell OCTANT deltas, and leaves packed terminal emission
   as the dominant bounded local target; neither milestone has normal-host
   sustained/deployed SSH evidence. V270 bounds stable NPC visual projections
-  to one immutable object per resident and state, but leaves viewport result
-  arrays, full NPC-map visibility scans, whole-process allocation/RSS proof,
-  and admissible real-SSH A/B/A evidence open;
+  to one immutable object per resident and state. V271 replaces full NPC-map
+  visibility scans with an exact adaptive spatial index, but leaves ID/result
+  arrays, regional candidate sorting, whole-process index-maintenance versus
+  query benefit, allocation/RSS proof, and admissible real-SSH population A/B/A
+  evidence open;
 - the first six-family landmark silhouettes and shared-boundary parcel
   compounds now include a selected two-sided canal-town focal core, but remain
   sparse research prototypes rather than a complete world layer. The core now

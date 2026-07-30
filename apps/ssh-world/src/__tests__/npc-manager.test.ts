@@ -101,6 +101,58 @@ describe('NPCManager persistent body state', () => {
     expect(movedQueries).toEqual(new Set([moved]));
   });
 
+  it('preserves brute-force viewport membership and insertion order through the index', async () => {
+    const records = Array.from({ length: 512 }, (_, index): LoadedNPCRecord => ({
+      ...record,
+      id: `indexed-npc-${index}`,
+      name: `Indexed resident ${index}`,
+      persistedX: ((index * 73) % 1024) - 512,
+      persistedY: ((index * 151) % 1024) - 512,
+      motorState: {
+        ...record.motorState!,
+        targetX: null,
+        targetY: null,
+        isMoving: false,
+      },
+    }));
+    storage.loadAllNPCs.mockResolvedValueOnce(records);
+    const manager = new NPCManager();
+    await manager.loadFromDB();
+
+    for (let sample = 0; sample < 64; sample++) {
+      const centerX = ((sample * 97) % 1024) - 512;
+      const centerY = ((sample * 211) % 1024) - 512;
+      const width = 40 + (sample % 7);
+      const height = 24 + (sample % 5);
+      const viewportX = centerX - Math.floor(width / 2);
+      const viewportY = centerY - Math.floor(height / 2);
+      const expected = records.filter((candidate) => (
+        candidate.persistedX! >= viewportX - 2
+        && candidate.persistedX! < viewportX + width + 2
+        && candidate.persistedY! >= viewportY - 2
+        && candidate.persistedY! < viewportY + height + 2
+      )).map((candidate) => candidate.id);
+
+      expect(manager.getVisibleNPCs(centerX, centerY, width, height)
+        .map((candidate) => candidate.npcId)).toEqual(expected);
+    }
+  });
+
+  it('moves an autonomous body between indexed viewports', async () => {
+    const manager = new NPCManager({ worldSeed: '42', tickRate: 1000 });
+    await manager.loadFromDB();
+    manager.setLifeWorkplaces([{ id: 'distant-workplace', x: 12, y: -2 }]);
+
+    expect(manager.getVisibleNPCs(7, -2, 1, 1).map((candidate) => candidate.npcId))
+      .toContain(record.id);
+    for (let tick = 0; tick < 20; tick++) manager.tickAll([]);
+    expect(manager.getNPC(record.id)).toMatchObject({ x: 12, y: -2 });
+    expect(manager.getVisibleNPCs(7, -2, 1, 1).map((candidate) => candidate.npcId))
+      .not.toContain(record.id);
+    expect(manager.getVisibleNPCs(12, -2, 1, 1).map((candidate) => candidate.npcId))
+      .toContain(record.id);
+  });
+
   it('checkpoints a cognitive move and resumes the exact resulting state', async () => {
     const first = new NPCManager();
     await first.loadFromDB();
