@@ -29,6 +29,10 @@ export type NPCLifeActivity =
 
 export type NPCLifeRole = 'steward' | 'maker' | 'forager' | 'trader' | 'watcher' | 'scholar';
 
+/** Derived embodied progress toward the current life intent. It is recreated
+ * from persisted position/destination state and never needs a schema column. */
+export type NPCLifeActivityPhase = 'traveling' | 'engaged' | 'waiting';
+
 export interface NPCLifeNeeds {
   /** Pressure from 0 (satisfied) to 1 (urgent). */
   rest: number;
@@ -87,6 +91,7 @@ export interface WorldLifeState {
 
 export type NPCLifeEventType =
   | 'activity_changed'
+  | 'activity_arrived'
   | 'workplace_bound'
   | 'social_encounter'
   | 'need_became_urgent'
@@ -140,6 +145,8 @@ export interface NPCConfig {
 export interface NPCVisualState {
   npcId: string;
   name: string;
+  /** Cached presentation label; identity remains in `name`. */
+  displayName?: string;
   x: number;
   y: number;
   direction: 'up' | 'down' | 'left' | 'right';
@@ -147,6 +154,7 @@ export interface NPCVisualState {
   isMoving: boolean;
   role?: NPCLifeRole;
   activity?: NPCLifeActivity;
+  activityPhase?: NPCLifeActivityPhase;
   primaryNeed?: keyof NPCLifeNeeds;
 }
 

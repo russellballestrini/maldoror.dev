@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { WorldLifeState } from '@maldoror/protocol';
+import type { NPCVisualState, WorldLifeState } from '@maldoror/protocol';
 import { createPlaceholderSprite, TileProvider } from '../tiles/tile-provider.js';
 
 const LIFE: WorldLifeState = {
@@ -54,5 +54,32 @@ describe('TileProvider world-life revisions', () => {
 
     expect(second).toBe(first);
     expect(different).not.toBe(first);
+  });
+
+  it('dirties an NPC visual only when its derived activity phase changes', () => {
+    const world = new TileProvider({ worldSeed: 42n });
+    const npc: NPCVisualState = {
+      npcId: 'phase-visible-npc',
+      name: 'Keeper · traveling',
+      x: 1,
+      y: 2,
+      direction: 'right',
+      animationFrame: 0,
+      isMoving: true,
+      role: 'maker',
+      activity: 'work',
+      activityPhase: 'traveling',
+    };
+    world.updateNPC(npc);
+    const revision = world.getVisualRevision();
+    world.updateNPC({ ...npc });
+    expect(world.getVisualRevision()).toBe(revision);
+    world.updateNPC({
+      ...npc,
+      name: 'Keeper · engaged',
+      isMoving: false,
+      activityPhase: 'engaged',
+    });
+    expect(world.getVisualRevision()).toBe(revision + 1);
   });
 });

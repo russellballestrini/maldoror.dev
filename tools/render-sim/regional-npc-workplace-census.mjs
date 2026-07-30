@@ -14,6 +14,8 @@ import {
 } from '../../apps/ssh-world/dist/game/regional-world-provider.js';
 import {
   bindNPCLifeWorkplace,
+  createNPCLifeArrivalEvent,
+  projectNPCLifeActivityPhase,
   stableLifeHash,
 } from '../../apps/ssh-world/dist/game/npc-life-simulation.js';
 import { collectRegionalLifeWorkplaces } from '../../apps/ssh-world/dist/game/regional-life-places.js';
@@ -66,6 +68,14 @@ try {
     const workDestinations = binding.state.schedule
       .filter((entry) => entry.activity === 'work')
       .map((entry) => [entry.destinationX, entry.destinationY]);
+    const workEntry = binding.state.schedule.find((entry) => entry.activity === 'work') ?? null;
+    const scheduledWorkState = workEntry === null ? null : {
+      ...binding.state,
+      currentActivity: 'work',
+      activityStartedWorldMinute: snapshot.worldMinute,
+      destinationX: workEntry.destinationX,
+      destinationY: workEntry.destinationY,
+    };
     const selected = reachable.find((place) => workDestinations.some((destination) => (
       destination[0] === place.x && destination[1] === place.y
     ))) ?? null;
@@ -82,6 +92,7 @@ try {
         !world.getTileAtResolution(x, y, 1).walkable || world.isBuildingAt(x, y)
       ),
     }) : null;
+    const arrival = selectedPath?.at(-1) ?? null;
     residents.push({
       id: resident.id,
       name: resident.name,
@@ -101,9 +112,34 @@ try {
       })),
       selectedWorkplace: selected,
       selectedPathLength: selectedPath?.length ?? null,
+      selectedPath,
       selectedPathReachesWorkplace: selected === null ? null : (
         selectedPath?.at(-1)?.x === selected.x && selectedPath?.at(-1)?.y === selected.y
       ),
+      currentActivityAtSnapshot: binding.state.currentActivity,
+      currentDestinationAtSnapshot: [binding.state.destinationX, binding.state.destinationY],
+      scheduledWorkProjection: scheduledWorkState === null ? null : {
+        premise: 'scheduled work intent projection; not current-activity observation',
+        activityPhaseAtBody: projectNPCLifeActivityPhase(
+          scheduledWorkState,
+          resident.currentX,
+          resident.currentY,
+          selectedPath !== null && selectedPath.length > 0,
+        ),
+        activityPhaseAtArrival: arrival === null ? null : projectNPCLifeActivityPhase(
+          scheduledWorkState,
+          arrival.x,
+          arrival.y,
+          false,
+        ),
+        arrivalEvent: arrival === null ? null : createNPCLifeArrivalEvent({
+          life: scheduledWorkState,
+          x: arrival.x,
+          y: arrival.y,
+          worldMinute: snapshot.worldMinute,
+          workplaceId: selected?.id,
+        }),
+      },
       boundStateVersion: binding.state.stateVersion,
       boundWorkDestinations: workDestinations,
       bindingEvent: binding.event,
@@ -130,6 +166,18 @@ try {
       allBindingsOrderIndependent: residents.every((resident) => resident.inputOrderIndependent),
       allSelectedWorkplacesPathReachable: residents.every((resident) => (
         resident.selectedWorkplace === null || resident.selectedPathReachesWorkplace === true
+      )),
+      scheduledWorkProjectedResidents: residents.filter((resident) => (
+        resident.scheduledWorkProjection !== null
+      )).length,
+      allScheduledWorkBodiesTraveling: residents.every((resident) => (
+        resident.scheduledWorkProjection?.activityPhaseAtBody === 'traveling'
+      )),
+      allScheduledWorkArrivalsEngaged: residents.every((resident) => (
+        resident.scheduledWorkProjection?.activityPhaseAtArrival === 'engaged'
+      )),
+      allScheduledWorkArrivalsAudited: residents.every((resident) => (
+        resident.scheduledWorkProjection?.arrivalEvent?.eventType === 'activity_arrived'
       )),
     },
   }, null, 2));

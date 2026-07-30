@@ -801,7 +801,7 @@ export class WorkerSession {
     for (const npc of this.cachedVisibleNPCs) {
       this.tileProvider.updateNPC({
         npcId: npc.npcId,
-        name: npc.name,
+        name: npc.displayName ?? npc.name,
         x: npc.x,
         y: npc.y,
         direction: npc.direction as Direction,
@@ -809,6 +809,7 @@ export class WorkerSession {
         isMoving: npc.isMoving,
         role: npc.role,
         activity: npc.activity,
+        activityPhase: npc.activityPhase,
         primaryNeed: npc.primaryNeed,
       });
 
@@ -1429,7 +1430,10 @@ export class WorkerSession {
         if (createdNpc) {
           console.log(`[NPC] Created "${createdNpc.name}" at (${createdNpc.x}, ${createdNpc.y})`);
 
-          this.tileProvider?.updateNPC(createdNpc);
+          this.tileProvider?.updateNPC({
+            ...createdNpc,
+            name: createdNpc.displayName ?? createdNpc.name,
+          });
 
           const sprite = this.gameServer.getNPCSprite(createdNpc.npcId);
           if (sprite) {

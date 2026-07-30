@@ -202,6 +202,7 @@ describe('NPCManager persistent body state', () => {
     expect(manager.getAllNPCs()[0]).toEqual(expect.objectContaining({
       role: expect.any(String),
       activity: expect.any(String),
+      activityPhase: expect.any(String),
       primaryNeed: expect.any(String),
     }));
   });
@@ -244,5 +245,50 @@ describe('NPCManager persistent body state', () => {
     restarted.setLifeWorkplaces([...workplaces].reverse());
     await restarted.flushRuntimeState();
     expect(storage.persistNPCRuntimeStates).not.toHaveBeenCalled();
+  });
+
+  it('projects travel and engagement while appending one exact arrival fact', async () => {
+    const manager = new NPCManager({ worldSeed: '42', tickRate: 1000 });
+    await manager.loadFromDB();
+    manager.setLifeWorkplaces([{
+      id: 'quay:arrival-market:test',
+      x: 8,
+      y: -2,
+    }]);
+
+    expect(manager.getAllNPCs()[0]).toMatchObject({
+      activity: 'work',
+      activityPhase: 'traveling',
+      displayName: 'Canal Keeper · traveling',
+    });
+    for (let tick = 0; tick < 4; tick++) manager.tickAll([]);
+    expect(manager.getAllNPCs()[0]).toMatchObject({
+      x: 8,
+      y: -2,
+      activity: 'work',
+      activityPhase: 'engaged',
+      displayName: 'Canal Keeper · engaged',
+    });
+
+    await manager.flushRuntimeState();
+    const events = storage.persistNPCRuntimeStates.mock.calls.flatMap((call) => call[2]);
+    expect(events.filter((event) => event.eventType === 'activity_arrived')).toEqual([
+      expect.objectContaining({
+        dedupeKey: expect.stringContaining(`arrival:${record.id}:`),
+        x: 8,
+        y: -2,
+        cause: expect.objectContaining({ activity: 'work' }),
+        consequence: expect.objectContaining({
+          phase: 'engaged',
+          workplaceId: 'quay:arrival-market:test',
+        }),
+      }),
+    ]);
+
+    storage.persistNPCRuntimeStates.mockClear();
+    for (let tick = 0; tick < 8; tick++) manager.tickAll([]);
+    await manager.flushRuntimeState();
+    expect(storage.persistNPCRuntimeStates.mock.calls.flatMap((call) => call[2])
+      .filter((event) => event.eventType === 'activity_arrived')).toHaveLength(0);
   });
 });

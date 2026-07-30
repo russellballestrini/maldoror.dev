@@ -4,8 +4,10 @@ import {
   advanceNPCLifeMinute,
   advanceWorldLifeMinute,
   bindNPCLifeWorkplace,
+  createNPCLifeArrivalEvent,
   createInitialNPCLifeState,
   createInitialWorldLifeState,
+  projectNPCLifeActivityPhase,
   type LifePosition,
 } from '../game/npc-life-simulation.js';
 
@@ -93,6 +95,10 @@ describe('deterministic NPC life simulation', () => {
     );
 
     expect(reversed).toEqual(forward);
+    expect(forward.workplace).toEqual(expect.objectContaining({
+      x: expect.any(Number),
+      y: expect.any(Number),
+    }));
     expect(forward.state.stateVersion).toBe(3);
     const work = forward.state.schedule.filter((entry) => entry.activity === 'work');
     expect(work).toHaveLength(2);
@@ -100,6 +106,13 @@ describe('deterministic NPC life simulation', () => {
     expect(Math.hypot(work[0]!.destinationX, work[0]!.destinationY)).toBeLessThanOrEqual(15);
     expect([forward.state.destinationX, forward.state.destinationY])
       .toEqual([work[0]!.destinationX, work[0]!.destinationY]);
+    expect(projectNPCLifeActivityPhase(forward.state, 0, 0, true)).toBe('traveling');
+    expect(projectNPCLifeActivityPhase(
+      forward.state,
+      work[0]!.destinationX,
+      work[0]!.destinationY,
+      false,
+    )).toBe('engaged');
     expect(forward.event).toEqual(expect.objectContaining({
       eventType: 'workplace_bound',
       worldMinute: 480,
@@ -112,6 +125,34 @@ describe('deterministic NPC life simulation', () => {
     const replay = bindNPCLifeWorkplace(forward.state, workplaces, WORLD_SEED, 15, 480);
     expect(replay.state).toBe(forward.state);
     expect(replay.event).toBeNull();
+    expect(createNPCLifeArrivalEvent({
+      life: forward.state,
+      x: 0,
+      y: 0,
+      worldMinute: 480,
+      workplaceId: forward.workplace?.id,
+    })).toBeNull();
+    const arrival = createNPCLifeArrivalEvent({
+      life: forward.state,
+      x: work[0]!.destinationX,
+      y: work[0]!.destinationY,
+      worldMinute: 480,
+      workplaceId: forward.workplace?.id,
+    });
+    expect(arrival).toEqual(expect.objectContaining({
+      eventType: 'activity_arrived',
+      consequence: expect.objectContaining({
+        workplaceId: forward.workplace?.id,
+        phase: 'engaged',
+      }),
+    }));
+    expect(createNPCLifeArrivalEvent({
+      life: forward.state,
+      x: work[0]!.destinationX,
+      y: work[0]!.destinationY,
+      worldMinute: 480,
+      workplaceId: forward.workplace?.id,
+    })).toEqual(arrival);
   });
 
   it('preserves the deterministic personal schedule when no authored workplace is reachable', () => {
@@ -133,6 +174,7 @@ describe('deterministic NPC life simulation', () => {
 
     expect(result.state).toBe(initial);
     expect(result.event).toBeNull();
+    expect(result.workplace).toBeNull();
   });
 
   it('lets urgent embodied needs override a routine without keyword or name rules', () => {

@@ -477,7 +477,7 @@ export class GameSession {
     for (const npc of this.cachedVisibleNPCs) {
       this.tileProvider.updateNPC({
         npcId: npc.npcId,
-        name: npc.name,
+        name: npc.displayName ?? npc.name,
         x: npc.x,
         y: npc.y,
         direction: npc.direction as Direction,
@@ -485,6 +485,7 @@ export class GameSession {
         isMoving: npc.isMoving,
         role: npc.role,
         activity: npc.activity,
+        activityPhase: npc.activityPhase,
         primaryNeed: npc.primaryNeed,
       });
 
@@ -1194,7 +1195,7 @@ export class GameSession {
     // Add NPC to tile provider
     this.tileProvider.updateNPC({
       npcId: npc.npcId,
-      name: npc.name,
+      name: npc.displayName ?? npc.name,
       x: npc.x,
       y: npc.y,
       direction: npc.direction as Direction,
@@ -1202,6 +1203,7 @@ export class GameSession {
       isMoving: npc.isMoving,
       role: npc.role,
       activity: npc.activity,
+      activityPhase: npc.activityPhase,
       primaryNeed: npc.primaryNeed,
     });
 

@@ -3319,6 +3319,27 @@ Completed foundations:
   not visible task execution, and not Gate C; exact provider/resident censuses,
   direct-review frames, hashes, and limits live in
   `living-world-research/market-pavilion-access-v268/FINDINGS.md`.
+  V269 makes arrival visible and auditable at the existing presentation and
+  append-only event boundaries. A pure reconstruction now derives
+  `traveling`, `engaged`, or `waiting` from persisted position, destination,
+  and live motor intent; only exact motor arrival emits a replay-stable
+  `activity_arrived` fact carrying role and authored workplace identity.
+  Identity stays unchanged while a cached display label exposes the phase
+  through the existing near-scale terminal overlay path; unchanged phase
+  causes no visual revision and a phase transition dirties it once. No schema,
+  model/render scan, geometry, raster, or physical cell changes. The read-only
+  real-resident census states the crucial limit: Dog is currently exploring
+  and Unicorn socializing, so their 24- and 12-cell market routes prove only an
+  explicitly labelled scheduled-work projection. Both projected bodies are
+  traveling before the route, engaged at `(-8,-11)`, and produce exact arrival
+  facts. A rejected current-intent census and failed RGB-buffer assertion are
+  preserved; they respectively enforced honest projection language and proved
+  that labels belong to terminal overlays. Focused tests pass 27/27 and the
+  full SSH-world suite 108/108. With load1 27.29, CPU PSI 78.39%, memory-full
+  PSI 53.51%, I/O-full PSI 4.44%, active swap output, and disks 93%/97%, no
+  performance claim follows. This remains source evidence—not deployment,
+  witnessed work, a task/conversation system, or Gate C. Full evidence lives
+  in `living-world-research/activity-arrival-v269/FINDINGS.md`.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, admit or reject V210 and V212 under exact whole-process A/B/A,
   repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission
@@ -3394,8 +3415,11 @@ Still open and therefore goal-blocking:
   no qualifying place exists in that baseline. V268 then adds a physically
   proved approach to the already-authored arrival market without changing
   visual or collision geometry, so both residents now bind to its door through
-  complete bounded paths. This is not deployed or physically observed, and
-  arrival does not yet produce visible work or social activity.
+  complete bounded paths. V269 adds source-level traveling/engaged/waiting
+  labels and one exact append-only arrival fact, but the real-resident evidence
+  is an explicitly labelled scheduled-work projection—not deployed or
+  physically observed activity. Arrival still does not operate a stall,
+  animate a task, exchange an object, converse, or produce social activity.
   Gate C has not passed: uninterrupted physical 60-minute
   observation with two real human clients, reconnect and newcomer
   checks, natural conversations and plans, richer event coordination,

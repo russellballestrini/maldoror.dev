@@ -5,6 +5,7 @@ import type {
   NPCConfig,
   Direction,
   NPCBehaviorState,
+  NPCLifeActivityPhase,
   NPCLifeEvent,
   WorldLifeState,
 } from '@maldoror/protocol';
@@ -24,9 +25,11 @@ import {
   advanceNPCLifeMinute,
   advanceWorldLifeMinute,
   bindNPCLifeWorkplace,
+  createNPCLifeArrivalEvent,
   createInitialNPCLifeState,
   createInitialWorldLifeState,
   primaryNPCNeed,
+  projectNPCLifeActivityPhase,
   stableLifeHash,
   type LifePosition,
   type NPCLifeWorkplace,
@@ -87,6 +90,12 @@ export class NPCManager {
     steps: Array<{ x: number; y: number }>;
   }> = new Map();
   private lifeWorkplaces: readonly NPCLifeWorkplace[] = [];
+  private lifeWorkplaceIds: Map<string, string> = new Map();
+  private activityDisplayNames: Map<string, {
+    sourceName: string;
+    phase: NPCLifeActivityPhase;
+    displayName: string;
+  }> = new Map();
 
   constructor(options: { worldSeed?: string; tickRate?: number } = {}) {
     this.worldSeed = options.worldSeed ?? '0';
@@ -364,13 +373,15 @@ export class NPCManager {
       this.markDirty(npc.npcId);
 
       // Check if we reached the target
-      if (!moved || (npc.x === npc.targetX && npc.y === npc.targetY)) {
+      const arrived = npc.x === npc.targetX && npc.y === npc.targetY;
+      if (!moved || arrived) {
         npc.targetX = null;
         npc.targetY = null;
         npc.isMoving = false;
         npc.animationFrame = 0;
         npc.movementTicksRemaining = 0;
         npc.behaviorState = 'idle';
+        if (arrived) this.recordActivityArrival(npc);
       }
     }
 
@@ -728,11 +739,44 @@ export class NPCManager {
       npc.config.roamRadius,
       this.worldLifeState.worldMinute,
     );
+    if (binding.workplace) {
+      this.lifeWorkplaceIds.set(npc.npcId, binding.workplace.id);
+    } else {
+      this.lifeWorkplaceIds.delete(npc.npcId);
+    }
     if (binding.state === npc.lifeState) return;
     npc.lifeState = binding.state;
     if (binding.event) this.pendingLifeEvents.push(binding.event);
     if (npc.lifeState.currentActivity === 'work') this.applyLifeIntent(npc);
     this.markDirty(npc.npcId);
+  }
+
+  private recordActivityArrival(npc: NPCState): void {
+    const event = createNPCLifeArrivalEvent({
+      life: npc.lifeState,
+      x: npc.x,
+      y: npc.y,
+      worldMinute: this.worldLifeState.worldMinute,
+      workplaceId: this.lifeWorkplaceIds.get(npc.npcId),
+    });
+    if (event) this.pendingLifeEvents.push(event);
+  }
+
+  private activityPhase(npc: NPCState): NPCLifeActivityPhase {
+    return projectNPCLifeActivityPhase(
+      npc.lifeState,
+      npc.x,
+      npc.y,
+      npc.targetX !== null && npc.targetY !== null,
+    );
+  }
+
+  private activityDisplayName(npc: NPCState, phase: NPCLifeActivityPhase): string {
+    const cached = this.activityDisplayNames.get(npc.npcId);
+    if (cached?.sourceName === npc.name && cached.phase === phase) return cached.displayName;
+    const displayName = `${npc.name} · ${phase}`;
+    this.activityDisplayNames.set(npc.npcId, { sourceName: npc.name, phase, displayName });
+    return displayName;
   }
 
   private relationshipKey(npcId: string, targetId: string): string {
@@ -792,9 +836,11 @@ export class NPCManager {
    * Convert full state to visual state for broadcasting
    */
   private toVisualState(npc: NPCState): NPCVisualState {
+    const activityPhase = this.activityPhase(npc);
     return {
       npcId: npc.npcId,
       name: npc.name,
+      displayName: this.activityDisplayName(npc, activityPhase),
       x: npc.x,
       y: npc.y,
       direction: npc.direction,
@@ -802,6 +848,7 @@ export class NPCManager {
       isMoving: npc.isMoving,
       role: npc.lifeState.role,
       activity: npc.lifeState.currentActivity,
+      activityPhase,
       primaryNeed: primaryNPCNeed(npc.lifeState.needs),
     };
   }
@@ -833,6 +880,8 @@ export class NPCManager {
     this.npcs.delete(npcId);
     this.sprites.delete(npcId);
     this.npcPaths.delete(npcId);
+    this.lifeWorkplaceIds.delete(npcId);
+    this.activityDisplayNames.delete(npcId);
   }
 
   /**
@@ -842,5 +891,7 @@ export class NPCManager {
     this.npcs.clear();
     this.sprites.clear();
     this.npcPaths.clear();
+    this.lifeWorkplaceIds.clear();
+    this.activityDisplayNames.clear();
   }
 }

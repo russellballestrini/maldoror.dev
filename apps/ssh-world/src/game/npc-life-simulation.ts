@@ -1,5 +1,6 @@
 import type {
   NPCLifeActivity,
+  NPCLifeActivityPhase,
   NPCLifeEvent,
   NPCLifeNeeds,
   NPCLifeRole,
@@ -37,6 +38,15 @@ export interface NPCLifeWorkplace {
 export interface NPCLifeWorkplaceBindingResult {
   state: NPCLifeState;
   event: NPCLifeEvent | null;
+  workplace: NPCLifeWorkplace | null;
+}
+
+export interface NPCLifeArrivalInput {
+  life: NPCLifeState;
+  x: number;
+  y: number;
+  worldMinute: number;
+  workplaceId?: string | null;
 }
 
 export interface WorldLifeMinuteResult {
@@ -187,7 +197,7 @@ export function bindNPCLifeWorkplace(
   worldMinute: number,
 ): NPCLifeWorkplaceBindingResult {
   const workEntries = previous.schedule.filter((candidate) => candidate.activity === 'work');
-  if (workEntries.length === 0) return { state: previous, event: null };
+  if (workEntries.length === 0) return { state: previous, event: null, workplace: null };
   const radius = Math.max(0, roamRadius);
   let selected: { workplace: NPCLifeWorkplace; score: number } | null = null;
   for (const workplace of workplaces) {
@@ -206,13 +216,13 @@ export function bindNPCLifeWorkplace(
       selected = { workplace, score };
     }
   }
-  if (!selected) return { state: previous, event: null };
+  if (!selected) return { state: previous, event: null, workplace: null };
 
   const workplace = selected.workplace;
   const alreadyBound = previous.stateVersion >= LIFE_STATE_VERSION && workEntries.every((candidate) => (
     candidate.destinationX === workplace.x && candidate.destinationY === workplace.y
   ));
-  if (alreadyBound) return { state: previous, event: null };
+  if (alreadyBound) return { state: previous, event: null, workplace };
   const previousDestinations = [...new Set(workEntries.map((candidate) => (
     `${candidate.destinationX},${candidate.destinationY}`
   )))];
@@ -230,6 +240,7 @@ export function bindNPCLifeWorkplace(
   };
   return {
     state,
+    workplace,
     event: {
       dedupeKey: `workplace:${previous.npcId}:` +
         stableLifeHash(workplace.id, workplace.x, workplace.y).toString(16),
@@ -248,6 +259,41 @@ export function bindNPCLifeWorkplace(
         destination: { x: workplace.x, y: workplace.y },
         workPeriods: workEntries.length,
       },
+    },
+  };
+}
+
+/** Derive visible embodied progress from persisted position and life intent. */
+export function projectNPCLifeActivityPhase(
+  life: NPCLifeState,
+  x: number,
+  y: number,
+  hasTravelIntent: boolean,
+): NPCLifeActivityPhase {
+  if (x === life.destinationX && y === life.destinationY) return 'engaged';
+  return hasTravelIntent ? 'traveling' : 'waiting';
+}
+
+/** Produce one replay-stable fact only at the exact intended destination. */
+export function createNPCLifeArrivalEvent(input: NPCLifeArrivalInput): NPCLifeEvent | null {
+  if (input.x !== input.life.destinationX || input.y !== input.life.destinationY) return null;
+  return {
+    dedupeKey: `arrival:${input.life.npcId}:${input.life.activityStartedWorldMinute}:` +
+      `${input.life.currentActivity}:${input.x},${input.y}`,
+    eventType: 'activity_arrived',
+    worldMinute: Math.max(0, Math.floor(input.worldMinute)),
+    npcId: input.life.npcId,
+    targetId: null,
+    x: input.x,
+    y: input.y,
+    cause: {
+      activity: input.life.currentActivity,
+      destination: { x: input.x, y: input.y },
+    },
+    consequence: {
+      phase: 'engaged',
+      role: input.life.role,
+      workplaceId: input.workplaceId ?? null,
     },
   };
 }

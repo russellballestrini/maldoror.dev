@@ -1064,6 +1064,7 @@ function sameNPCState(a: NPCVisualState, b: NPCVisualState): boolean {
     a.isMoving === b.isMoving &&
     a.role === b.role &&
     a.activity === b.activity &&
+    a.activityPhase === b.activityPhase &&
     a.primaryNeed === b.primaryNeed;
 }
 

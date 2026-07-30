@@ -89,4 +89,60 @@ describe('entity semantic LOD', () => {
     expect(rendered.some((pixel) => pixel?.r === 188 && pixel.g === 188 && pixel.b === 188)).toBe(true);
     expect(rendered.some((pixel) => pixel?.r === 255 && pixel.g === 255 && pixel.b === 255)).toBe(false);
   });
+
+  it('makes a cached NPC activity phase visible through its presentation name', () => {
+    const terrain: Tile = {
+      id: 'ground',
+      name: 'ground',
+      walkable: true,
+      pixels: solid(16, ground),
+    };
+    const frame = solid(4, actor);
+    const frames = [frame, frame, frame, frame] as DirectionFrames;
+    const sprite: Sprite = {
+      width: 4,
+      height: 4,
+      frames: { up: frames, down: frames, left: frames, right: frames },
+    };
+    const render = (name: string) => {
+      const world: WorldDataProvider = {
+        getTile: () => terrain,
+        getPlayers: () => [],
+        getPlayerSprite: () => null,
+        getLocalPlayerId: () => '',
+        getNPCs: () => [{
+          npcId: 'visible-worker',
+          name,
+          x: 0,
+          y: 0,
+          direction: 'down',
+          animationFrame: 0,
+          isMoving: false,
+          role: 'maker',
+          activity: 'work',
+        }],
+        getNPCSprite: () => sprite,
+      };
+      const renderer = new ViewportRenderer({
+        widthTiles: 10,
+        heightTiles: 5,
+        pixelWidth: 160,
+        pixelHeight: 80,
+        tileRenderSize: 16,
+        dataResolution: 4,
+      });
+      renderer.setCamera(0, 0);
+      return renderer.renderToBuffer(world, 0).overlays;
+    };
+
+    const traveling = render('Keeper · traveling');
+    const engaged = render('Keeper · engaged');
+    expect(traveling).toContainEqual(expect.objectContaining({
+      text: 'Keeper · traveling | maker work',
+    }));
+    expect(engaged).toContainEqual(expect.objectContaining({
+      text: 'Keeper · engaged | maker work',
+    }));
+    expect(traveling).not.toEqual(engaged);
+  });
 });
