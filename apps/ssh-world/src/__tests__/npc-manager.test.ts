@@ -69,6 +69,38 @@ describe('NPCManager persistent body state', () => {
     });
   });
 
+  it('shares one immutable visual projection until a visible field changes', async () => {
+    const manager = new NPCManager();
+    await manager.loadFromDB();
+
+    const firstCollection = manager.getAllNPCs();
+    const first = firstCollection[0]!;
+    const secondCollection = manager.getAllNPCs();
+    const visible = manager.getVisibleNPCs(first.x, first.y, 60, 40)[0]!;
+
+    expect(secondCollection).not.toBe(firstCollection);
+    expect(secondCollection[0]).toBe(first);
+    expect(visible).toBe(first);
+    expect(Object.isFrozen(first)).toBe(true);
+    const stableQueries = new Set(
+      Array.from({ length: 1024 }, () => (
+        manager.getVisibleNPCs(first.x, first.y, 60, 40)[0]
+      )),
+    );
+    expect(stableQueries).toEqual(new Set([first]));
+
+    const moved = manager.moveNPC(record.id, 'down')!;
+    expect(moved).not.toBe(first);
+    expect(manager.getAllNPCs()[0]).toBe(moved);
+    expect(manager.getVisibleNPCs(moved.x, moved.y, 60, 40)[0]).toBe(moved);
+    const movedQueries = new Set(
+      Array.from({ length: 1024 }, () => (
+        manager.getVisibleNPCs(moved.x, moved.y, 60, 40)[0]
+      )),
+    );
+    expect(movedQueries).toEqual(new Set([moved]));
+  });
+
   it('checkpoints a cognitive move and resumes the exact resulting state', async () => {
     const first = new NPCManager();
     await first.loadFromDB();

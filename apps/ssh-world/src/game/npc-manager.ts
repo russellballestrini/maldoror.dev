@@ -96,6 +96,9 @@ export class NPCManager {
     phase: NPCLifeActivityPhase;
     displayName: string;
   }> = new Map();
+  /** Immutable projections are shared across sessions until a visible field
+   * changes. The outer query arrays remain caller-owned. */
+  private visualStates: Map<string, NPCVisualState> = new Map();
 
   constructor(options: { worldSeed?: string; tickRate?: number } = {}) {
     this.worldSeed = options.worldSeed ?? '0';
@@ -837,7 +840,23 @@ export class NPCManager {
    */
   private toVisualState(npc: NPCState): NPCVisualState {
     const activityPhase = this.activityPhase(npc);
-    return {
+    const primaryNeed = primaryNPCNeed(npc.lifeState.needs);
+    const cached = this.visualStates.get(npc.npcId);
+    if (
+      cached?.name === npc.name
+      && cached.x === npc.x
+      && cached.y === npc.y
+      && cached.direction === npc.direction
+      && cached.animationFrame === npc.animationFrame
+      && cached.isMoving === npc.isMoving
+      && cached.role === npc.lifeState.role
+      && cached.activity === npc.lifeState.currentActivity
+      && cached.activityPhase === activityPhase
+      && cached.primaryNeed === primaryNeed
+    ) {
+      return cached;
+    }
+    const visualState = Object.freeze({
       npcId: npc.npcId,
       name: npc.name,
       displayName: this.activityDisplayName(npc, activityPhase),
@@ -849,8 +868,10 @@ export class NPCManager {
       role: npc.lifeState.role,
       activity: npc.lifeState.currentActivity,
       activityPhase,
-      primaryNeed: primaryNPCNeed(npc.lifeState.needs),
-    };
+      primaryNeed,
+    });
+    this.visualStates.set(npc.npcId, visualState);
+    return visualState;
   }
 
   getWorldLifeState(): WorldLifeState {
@@ -882,6 +903,7 @@ export class NPCManager {
     this.npcPaths.delete(npcId);
     this.lifeWorkplaceIds.delete(npcId);
     this.activityDisplayNames.delete(npcId);
+    this.visualStates.delete(npcId);
   }
 
   /**
@@ -893,5 +915,6 @@ export class NPCManager {
     this.npcPaths.clear();
     this.lifeWorkplaceIds.clear();
     this.activityDisplayNames.clear();
+    this.visualStates.clear();
   }
 }

@@ -3340,6 +3340,19 @@ Completed foundations:
   performance claim follows. This remains source evidence—not deployment,
   witnessed work, a task/conversation system, or Gate C. Full evidence lives
   in `living-world-research/activity-arrival-v269/FINDINGS.md`.
+  V270 then removes a session-multiplied allocation boundary exposed by that
+  phase presentation. Stable all-NPC and viewport queries now share one frozen
+  visual projection per resident; the boundary compares every public scalar
+  visual field and replaces the object only on a real visible change. Query
+  arrays remain caller-owned, remove/clear bound retention to the live NPC
+  count, and no consumer mutates the shared value. An exact reference oracle
+  proves 1,024 stable viewport queries collapse to one object, a cognitive move
+  creates a different object, and the next 1,024 queries again collapse to
+  one. Full SSH-world tests pass 109/109. This is structural allocation evidence
+  only: load1 27.03, CPU PSI 71.03%, memory-full PSI 53.47%, I/O-full PSI 5.18%,
+  and disks 93%/97% prohibit wall-clock, heap, RSS, or latency claims. The outer
+  result array and full NPC-map scan remain; full evidence is in
+  `track-7-performance/npc-visual-state-cache-v270/FINDINGS.md`.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, admit or reject V210 and V212 under exact whole-process A/B/A,
   repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission
@@ -3373,7 +3386,10 @@ Still open and therefore goal-blocking:
   post-warmup profile supersedes the earlier regional-sampling inference,
   selects exact weather-cell OCTANT deltas, and leaves packed terminal emission
   as the dominant bounded local target; neither milestone has normal-host
-  sustained/deployed SSH evidence;
+  sustained/deployed SSH evidence. V270 bounds stable NPC visual projections
+  to one immutable object per resident and state, but leaves viewport result
+  arrays, full NPC-map visibility scans, whole-process allocation/RSS proof,
+  and admissible real-SSH A/B/A evidence open;
 - the first six-family landmark silhouettes and shared-boundary parcel
   compounds now include a selected two-sided canal-town focal core, but remain
   sparse research prototypes rather than a complete world layer. The core now
