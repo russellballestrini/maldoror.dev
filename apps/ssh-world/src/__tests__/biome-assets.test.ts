@@ -384,6 +384,11 @@ describe('regional biome material manifest', () => {
         ([x, y]) => x === asset.quayAccessOffset?.[0] && y === asset.quayAccessOffset?.[1],
       )
     ))).toBe(true);
+    const arrivalMarket = quayFrontage.find((asset) => (
+      asset.id === 'canal-town-market-pavilion-parcel-component-v1'
+    ));
+    expect(arrivalMarket?.quayAccessOffset).toEqual([0, 1]);
+    expect(arrivalMarket?.collision).not.toContainEqual([0, 1]);
     expect(kit.assets.find((asset) => asset.id === 'canal-town-facade-parcel-mass-v1')?.sprite)
       .toBe(ambient.assets.find((asset) => asset.id === 'canal-town-facade-planter-v2')?.sprite);
   });

@@ -3301,6 +3301,24 @@ Completed foundations:
   Gate C. Exact snapshots, census, hashes, failure preservation, and open
   boundary live in
   `living-world-research/regional-workplace-binding-v267/FINDINGS.md`.
+  V268 closes the concrete access omission exposed by that census without
+  changing a pixel or physical cell. The existing arrival-canal market
+  pavilion now declares front-centre `[0,1]` as its approach; the provider must
+  still prove a dry, walkable, collision-free path to the same quay or reject
+  the placement. All three production-seed pavilions remain at their prior
+  anchors and gain two- or three-cell proven paths. An exact provider
+  baseline/candidate oracle preserves all 21 visual placements, all 4,225
+  material/walkability/building cells, and every pixel of a 320x176 walking
+  frame at hash `b3138550...b07a9` with zero differences. The source pack grows
+  only 14 bytes and the six-view prewarm three bytes from semantic metadata.
+  The real Dog and Unicorn now both select market door `(-8,-11)` and reach it
+  through complete bounded routes of 24 and 12 steps respectively; both remain
+  input-order exact and emit one restart-stable event. Full SSH-world tests pass
+  107/107. With load1 24.58, CPU PSI 76.91%, memory-full PSI 54.14%, I/O-full
+  PSI 4.09%, and disks 93%/97%, no timing claim follows. This is not deployed,
+  not visible task execution, and not Gate C; exact provider/resident censuses,
+  direct-review frames, hashes, and limits live in
+  `living-world-research/market-pavilion-access-v268/FINDINGS.md`.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, admit or reject V210 and V212 under exact whole-process A/B/A,
   repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission
@@ -3373,7 +3391,11 @@ Still open and therefore goal-blocking:
   state schema is live. V267 additionally binds one of the two real residents'
   work schedule to an access-proven authored inn door with restart-exact source
   evidence; the other resident correctly retains its abstract fallback because
-  no qualifying place exists. This is not deployed or physically observed.
+  no qualifying place exists in that baseline. V268 then adds a physically
+  proved approach to the already-authored arrival market without changing
+  visual or collision geometry, so both residents now bind to its door through
+  complete bounded paths. This is not deployed or physically observed, and
+  arrival does not yet produce visible work or social activity.
   Gate C has not passed: uninterrupted physical 60-minute
   observation with two real human clients, reconnect and newcomer
   checks, natural conversations and plans, richer event coordination,
