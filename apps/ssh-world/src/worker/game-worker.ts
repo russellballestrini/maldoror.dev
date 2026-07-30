@@ -34,6 +34,7 @@ import {
 import { RegionalPrewarmService } from '../game/regional-prewarm-service.js';
 import { REGIONAL_ORIGIN_PREWARM } from '../game/regional-runtime-config.js';
 import { coalesceNPCNavigationBounds } from '../game/npc-navigation-bounds.js';
+import { collectRegionalLifeWorkplaces } from '../game/regional-life-places.js';
 import { monitorEventLoopDelay, performance } from 'node:perf_hooks';
 import {
   sampleWorkerRuntimeResources,
@@ -464,16 +465,19 @@ async function installRegionalNPCCollisionWorld(
         throw new Error('Imported NPC navigation package did not cover its requested bounds');
       }
     }
+    const lifeWorkplaces = collectRegionalLifeWorkplaces(nextWorld, navigationBounds);
     server.setNPCWorldCollisionChecker((x, y) => (
       !nextWorld.getTileAtResolution(x, y, 1).walkable ||
       nextWorld.isBuildingAt(x, y)
     ));
+    server.setNPCLifeWorkplaces(lifeWorkplaces);
     const previousWorld = regionalNPCCollisionWorld;
     regionalNPCCollisionWorld = nextWorld;
     previousWorld?.destroy();
     console.log(
       `[Worker] NPC collision authority regional; ${navigationBounds.length} navigation ` +
-      `regions prepared in ${Math.round(performance.now() - navigationStartedAt)}ms`,
+      `regions and ${lifeWorkplaces.length} authored workplaces prepared in ` +
+      `${Math.round(performance.now() - navigationStartedAt)}ms`,
     );
   } catch (error) {
     nextWorld.destroy();

@@ -16,6 +16,7 @@ import {
   npcNavigationBoundsForHome,
   type NPCNavigationBounds,
 } from './npc-navigation-bounds.js';
+import type { NPCLifeWorkplace } from './npc-life-simulation.js';
 
 interface GameServerConfig {
   worldSeed: bigint;
@@ -635,6 +636,11 @@ export class GameServer {
    * buildings remain an additional collision layer inside isPositionBlocked. */
   setNPCWorldCollisionChecker(checker: NPCWorldCollisionChecker | null): void {
     this.npcWorldCollisionChecker = checker;
+  }
+
+  /** Install the access-proven regional places used by persisted schedules. */
+  setNPCLifeWorkplaces(workplaces: readonly NPCLifeWorkplace[]): void {
+    this.npcManager.setLifeWorkplaces(workplaces);
   }
 
   /** Prepare a new inhabitant's complete roam envelope before its persisted

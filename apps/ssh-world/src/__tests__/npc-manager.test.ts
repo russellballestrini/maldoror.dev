@@ -193,7 +193,7 @@ describe('NPCManager persistent body state', () => {
     expect(snapshots[0]!.lifeState).toMatchObject({
       npcId: record.id,
       lastWorldMinute: 720,
-      stateVersion: 2,
+      stateVersion: 3,
     });
     expect(finalCall[2]).toContainEqual(expect.objectContaining({
       eventType: 'weather_changed',
@@ -204,5 +204,45 @@ describe('NPCManager persistent body state', () => {
       activity: expect.any(String),
       primaryNeed: expect.any(String),
     }));
+  });
+
+  it('persists an authored workplace once and keeps rebinding restart-idempotent', async () => {
+    const manager = new NPCManager({ worldSeed: '42' });
+    await manager.loadFromDB();
+    const workplaces = [
+      { id: 'quay:market:one', x: 8, y: -3 },
+      { id: 'quay:warehouse:two', x: 4, y: 7 },
+    ];
+
+    manager.setLifeWorkplaces(workplaces);
+    await manager.flushRuntimeState();
+
+    const firstCall = storage.persistNPCRuntimeStates.mock.calls.at(-1)!;
+    const snapshots = firstCall[0] as NPCRuntimeSnapshot[];
+    const work = snapshots[0]!.lifeState!.schedule.filter((entry) => entry.activity === 'work');
+    expect(work).toHaveLength(2);
+    expect(new Set(work.map((entry) => `${entry.destinationX},${entry.destinationY}`)).size).toBe(1);
+    expect(firstCall[2]).toContainEqual(expect.objectContaining({
+      eventType: 'workplace_bound',
+      consequence: expect.objectContaining({ workPeriods: 2 }),
+    }));
+
+    storage.loadAllNPCs.mockResolvedValueOnce([{
+      ...record,
+      persistedX: snapshots[0]!.x,
+      persistedY: snapshots[0]!.y,
+      persistedDirection: snapshots[0]!.direction,
+      persistedAnimationFrame: snapshots[0]!.animationFrame,
+      motorState: snapshots[0]!.motorState,
+      lifeState: snapshots[0]!.lifeState ?? null,
+    }]);
+    storage.persistNPCRuntimeStates.mockClear();
+    const restarted = new NPCManager({ worldSeed: '42' });
+    await restarted.loadFromDB();
+    await restarted.flushRuntimeState();
+    storage.persistNPCRuntimeStates.mockClear();
+    restarted.setLifeWorkplaces([...workplaces].reverse());
+    await restarted.flushRuntimeState();
+    expect(storage.persistNPCRuntimeStates).not.toHaveBeenCalled();
   });
 });

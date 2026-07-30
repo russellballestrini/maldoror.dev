@@ -23,11 +23,13 @@ import {
 import {
   advanceNPCLifeMinute,
   advanceWorldLifeMinute,
+  bindNPCLifeWorkplace,
   createInitialNPCLifeState,
   createInitialWorldLifeState,
   primaryNPCNeed,
   stableLifeHash,
   type LifePosition,
+  type NPCLifeWorkplace,
 } from './npc-life-simulation.js';
 import { findBoundedNPCPath } from './npc-pathfinding.js';
 import {
@@ -84,6 +86,7 @@ export class NPCManager {
     targetY: number;
     steps: Array<{ x: number; y: number }>;
   }> = new Map();
+  private lifeWorkplaces: readonly NPCLifeWorkplace[] = [];
 
   constructor(options: { worldSeed?: string; tickRate?: number } = {}) {
     this.worldSeed = options.worldSeed ?? '0';
@@ -97,6 +100,15 @@ export class NPCManager {
    */
   setCollisionChecker(checker: CollisionChecker): void {
     this.collisionChecker = checker;
+  }
+
+  /** Replace the complete authored workplace view, then rebind every loaded
+   * inhabitant through the deterministic schedule contract. */
+  setLifeWorkplaces(workplaces: readonly NPCLifeWorkplace[]): void {
+    this.lifeWorkplaces = Object.freeze([...workplaces].sort((left, right) => (
+      left.id.localeCompare(right.id) || left.y - right.y || left.x - right.x
+    )));
+    for (const npc of this.npcs.values()) this.bindWorkplace(npc);
   }
 
   /**
@@ -208,6 +220,8 @@ export class NPCManager {
     if (state.ticksUntilNextDecision <= 0) {
       state.ticksUntilNextDecision = this.tickRate;
     }
+
+    this.bindWorkplace(state);
 
     return state;
   }
@@ -704,6 +718,21 @@ export class NPCManager {
 
   private markDirty(npcId: string): void {
     this.dirtyNPCIds.add(npcId);
+  }
+
+  private bindWorkplace(npc: NPCState): void {
+    const binding = bindNPCLifeWorkplace(
+      npc.lifeState,
+      this.lifeWorkplaces,
+      this.worldSeed,
+      npc.config.roamRadius,
+      this.worldLifeState.worldMinute,
+    );
+    if (binding.state === npc.lifeState) return;
+    npc.lifeState = binding.state;
+    if (binding.event) this.pendingLifeEvents.push(binding.event);
+    if (npc.lifeState.currentActivity === 'work') this.applyLifeIntent(npc);
+    this.markDirty(npc.npcId);
   }
 
   private relationshipKey(npcId: string, targetId: string): string {

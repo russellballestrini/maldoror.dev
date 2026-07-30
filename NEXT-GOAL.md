@@ -3280,6 +3280,27 @@ Completed foundations:
   68.61%, memory-full PSI 56.50%, I/O-full PSI 3.34%, and disks 93%/97%, this
   is allocation-count evidence only. Full proof lives in
   `track-7-performance/lazy-shared-phase-counter-v266/FINDINGS.md`.
+  V267 returns to the goal's living-world bar and selects the first
+  manifest-semantic workplace binding. Every authored waterfront placement
+  with a provider-proven quay access path becomes a stable workplace door;
+  there is no asset-name, filename, prompt, color, or pixel classification.
+  Deterministic radius-bounded selection rewrites both work periods, updates a
+  currently working resident immediately, advances the bound state to v3, and
+  emits one append-only `workplace_bound` event with a restart-stable dedupe
+  key. Absence remains an exact fallback rather than a fabricated place. A
+  read-only production-seed census proves that the real Dog binds from abstract
+  `(-18,7)` work to the authored inn door `(-1,12)` and reaches it through a
+  walkable, collision-free 24-step bounded route; the real Unicorn has no
+  qualifying place and honestly retains `(-20,-14)`. Reversed input is exact
+  for both and a reconstructed manager emits no duplicate workplace write.
+  Direct protocol/world checks and build pass; 19/19 focused and 107/107 full
+  SSH-world tests pass, including exact returning-login `(0,0)`. The host sample
+  (load1 27.59 on eight CPUs, CPU PSI 62.04%, memory-full PSI 56.61%, I/O-full
+  PSI 7.39%, disks 93%/97%) forbids timing claims. This is source and
+  deterministic real-world evidence—not deployment, observed activity, or
+  Gate C. Exact snapshots, census, hashes, failure preservation, and open
+  boundary live in
+  `living-world-research/regional-workplace-binding-v267/FINDINGS.md`.
   Next, finish or reject the V194 packed-overlap candidate under an admissible
   host window, admit or reject V210 and V212 under exact whole-process A/B/A,
   repeat the V196/V197/V199/V201/V202/V205/V206 stack under the same admission
@@ -3323,8 +3344,8 @@ Still open and therefore goal-blocking:
   water/quay activity vocabulary, two persistent-time moving boats, and three
   access-proven secondary frontages distributed across both civic side canals,
   but
-  still lacks bank-aware crossing silhouettes, moving inhabitants, temporal
-  work/market states, larger squares/commons, dense
+  still lacks bank-aware crossing silhouettes, production-visible moving
+  inhabitants, temporal work/market states, larger squares/commons, dense
   route-connected frontage beyond this bounded origin tranche, and
   complete forest, coast, rural, mountain, and ruins vocabularies. V158's
   route-frontage meso place field supplies the first non-origin multi-mass
@@ -3349,7 +3370,11 @@ Still open and therefore goal-blocking:
 - the deterministic schedule/need/role/relationship/memory core plus the first
   persistent wetness, water-state, phenology/decay, and authored-light
   consequences now have restart-exact accelerated evidence and their additive
-  state schema is live. Gate C has not passed: uninterrupted physical 60-minute
+  state schema is live. V267 additionally binds one of the two real residents'
+  work schedule to an access-proven authored inn door with restart-exact source
+  evidence; the other resident correctly retains its abstract fallback because
+  no qualifying place exists. This is not deployed or physically observed.
+  Gate C has not passed: uninterrupted physical 60-minute
   observation with two real human clients, reconnect and newcomer
   checks, natural conversations and plans, richer event coordination,
   player-caused persisted world change, coherent fronts, long-horizon geometric

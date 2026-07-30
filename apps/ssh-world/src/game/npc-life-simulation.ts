@@ -27,6 +27,18 @@ export interface NPCLifeMinuteResult {
   events: NPCLifeEvent[];
 }
 
+/** Manifest-semantic, collision-proven place where embodied work may occur. */
+export interface NPCLifeWorkplace {
+  id: string;
+  x: number;
+  y: number;
+}
+
+export interface NPCLifeWorkplaceBindingResult {
+  state: NPCLifeState;
+  event: NPCLifeEvent | null;
+}
+
 export interface WorldLifeMinuteResult {
   state: WorldLifeState;
   events: NPCLifeEvent[];
@@ -35,7 +47,7 @@ export interface WorldLifeMinuteResult {
 const DAY_MINUTES = 24 * 60;
 const ENCOUNTER_RADIUS = 3;
 const ENCOUNTER_COOLDOWN_MINUTES = 30;
-const LIFE_STATE_VERSION = 2;
+const LIFE_STATE_VERSION = 3;
 
 const ROLES: readonly NPCLifeRole[] = [
   'steward',
@@ -160,6 +172,84 @@ export function createDailySchedule(input: {
     entry(exploreEnd, sleepStart, 'rest', input.homeX, input.homeY),
     entry(sleepStart, DAY_MINUTES, 'sleep', input.homeX, input.homeY),
   ];
+}
+
+/**
+ * Bind every work period to one authored place inside the inhabitant's
+ * persisted roam disc. Selection is stable across input order and restart;
+ * absence of a suitable place deliberately preserves the personal fallback.
+ */
+export function bindNPCLifeWorkplace(
+  previous: NPCLifeState,
+  workplaces: readonly NPCLifeWorkplace[],
+  worldSeed: string,
+  roamRadius: number,
+  worldMinute: number,
+): NPCLifeWorkplaceBindingResult {
+  const workEntries = previous.schedule.filter((candidate) => candidate.activity === 'work');
+  if (workEntries.length === 0) return { state: previous, event: null };
+  const radius = Math.max(0, roamRadius);
+  let selected: { workplace: NPCLifeWorkplace; score: number } | null = null;
+  for (const workplace of workplaces) {
+    if (workplace.id.length === 0 || !Number.isInteger(workplace.x) ||
+        !Number.isInteger(workplace.y)) continue;
+    const distance = Math.hypot(workplace.x - previous.homeX, workplace.y - previous.homeY);
+    if (distance > radius) continue;
+    const score = distance + hashUnit(
+      worldSeed,
+      previous.npcId,
+      workplace.id,
+      'workplace-affinity',
+    ) * Math.max(1, radius * 0.35);
+    if (!selected || score < selected.score ||
+        (score === selected.score && workplace.id.localeCompare(selected.workplace.id) < 0)) {
+      selected = { workplace, score };
+    }
+  }
+  if (!selected) return { state: previous, event: null };
+
+  const workplace = selected.workplace;
+  const alreadyBound = previous.stateVersion >= LIFE_STATE_VERSION && workEntries.every((candidate) => (
+    candidate.destinationX === workplace.x && candidate.destinationY === workplace.y
+  ));
+  if (alreadyBound) return { state: previous, event: null };
+  const previousDestinations = [...new Set(workEntries.map((candidate) => (
+    `${candidate.destinationX},${candidate.destinationY}`
+  )))];
+  const schedule = previous.schedule.map((candidate): NPCLifeScheduleEntry => (
+    candidate.activity === 'work'
+      ? { ...candidate, destinationX: workplace.x, destinationY: workplace.y }
+      : candidate
+  ));
+  const state: NPCLifeState = {
+    ...previous,
+    schedule,
+    destinationX: previous.currentActivity === 'work' ? workplace.x : previous.destinationX,
+    destinationY: previous.currentActivity === 'work' ? workplace.y : previous.destinationY,
+    stateVersion: LIFE_STATE_VERSION,
+  };
+  return {
+    state,
+    event: {
+      dedupeKey: `workplace:${previous.npcId}:` +
+        stableLifeHash(workplace.id, workplace.x, workplace.y).toString(16),
+      eventType: 'workplace_bound',
+      worldMinute: Math.max(0, Math.floor(worldMinute)),
+      npcId: previous.npcId,
+      targetId: null,
+      x: previous.homeX,
+      y: previous.homeY,
+      cause: {
+        previousDestinations,
+        stateVersion: previous.stateVersion,
+      },
+      consequence: {
+        workplaceId: workplace.id,
+        destination: { x: workplace.x, y: workplace.y },
+        workPeriods: workEntries.length,
+      },
+    },
+  };
 }
 
 /** Advance exactly one canonical minute. Replaying from a checkpoint is exact. */

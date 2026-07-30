@@ -3,6 +3,7 @@ import type { NPCLifeState, WorldLifeState } from '@maldoror/protocol';
 import {
   advanceNPCLifeMinute,
   advanceWorldLifeMinute,
+  bindNPCLifeWorkplace,
   createInitialNPCLifeState,
   createInitialWorldLifeState,
   type LifePosition,
@@ -58,6 +59,80 @@ describe('deterministic NPC life simulation', () => {
           .toBeLessThanOrEqual(18.5);
       }
     }
+  });
+
+  it('binds work to one reachable authored place independent of input order', () => {
+    const initial = createInitialNPCLifeState({
+      npcId: 'place-bound-resident',
+      homeX: 0,
+      homeY: 0,
+      roamRadius: 15,
+      worldMinute: 480,
+      worldSeed: WORLD_SEED,
+    });
+    initial.currentActivity = 'work';
+    const workplaces = [
+      { id: 'quay:market@8,0', x: 8, y: 0 },
+      { id: 'quay:workshop@0,9', x: 0, y: 9 },
+      { id: 'quay:outside@20,0', x: 20, y: 0 },
+    ];
+
+    const forward = bindNPCLifeWorkplace(
+      initial,
+      workplaces,
+      WORLD_SEED,
+      15,
+      480,
+    );
+    const reversed = bindNPCLifeWorkplace(
+      initial,
+      [...workplaces].reverse(),
+      WORLD_SEED,
+      15,
+      480,
+    );
+
+    expect(reversed).toEqual(forward);
+    expect(forward.state.stateVersion).toBe(3);
+    const work = forward.state.schedule.filter((entry) => entry.activity === 'work');
+    expect(work).toHaveLength(2);
+    expect(new Set(work.map((entry) => `${entry.destinationX},${entry.destinationY}`)).size).toBe(1);
+    expect(Math.hypot(work[0]!.destinationX, work[0]!.destinationY)).toBeLessThanOrEqual(15);
+    expect([forward.state.destinationX, forward.state.destinationY])
+      .toEqual([work[0]!.destinationX, work[0]!.destinationY]);
+    expect(forward.event).toEqual(expect.objectContaining({
+      eventType: 'workplace_bound',
+      worldMinute: 480,
+      consequence: expect.objectContaining({
+        destination: { x: work[0]!.destinationX, y: work[0]!.destinationY },
+        workPeriods: 2,
+      }),
+    }));
+
+    const replay = bindNPCLifeWorkplace(forward.state, workplaces, WORLD_SEED, 15, 480);
+    expect(replay.state).toBe(forward.state);
+    expect(replay.event).toBeNull();
+  });
+
+  it('preserves the deterministic personal schedule when no authored workplace is reachable', () => {
+    const initial = createInitialNPCLifeState({
+      npcId: 'remote-resident',
+      homeX: -12,
+      homeY: -16,
+      roamRadius: 15,
+      worldMinute: 480,
+      worldSeed: WORLD_SEED,
+    });
+    const result = bindNPCLifeWorkplace(
+      initial,
+      [{ id: 'distant-quay', x: 8, y: 8 }],
+      WORLD_SEED,
+      15,
+      480,
+    );
+
+    expect(result.state).toBe(initial);
+    expect(result.event).toBeNull();
   });
 
   it('lets urgent embodied needs override a routine without keyword or name rules', () => {

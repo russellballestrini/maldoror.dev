@@ -87,6 +87,7 @@ export interface WorldLifeState {
 
 export type NPCLifeEventType =
   | 'activity_changed'
+  | 'workplace_bound'
   | 'social_encounter'
   | 'need_became_urgent'
   | 'weather_changed'
