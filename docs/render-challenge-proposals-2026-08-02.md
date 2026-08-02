@@ -61,7 +61,7 @@
 | P7 | Kernel/socket program: TCP_INFO, TCP_NOTSENT_LOWAT, per-route initcwnd, BBR (Tracks I/J) | post-idle bursts, byte-age bound, cold keyframe RTTs | low-med | low |
 | P8 | IPC + process isolation: advanced serialization, buffer frames, generation I/O separation (Track M) | p99 tails at 20 presences | low | low |
 | P9 | Measurement honesty upgrades (§11.3/§11.5 gaps) | evidence stops being disqualified/blind | low | low |
-| P10 | Kitty-graphics niche probe (Track G) | narrow (modal portraits) | high | high — likely reject |
+| P10 | Track G closure: kitty graphics is operator-vetoed — record it | closes a track | — | none |
 
 Immediately-actionable defects found during audit are folded into their parent proposals and marked **[defect]**.
 
@@ -203,9 +203,9 @@ Immediately-actionable defects found during audit are folded into their parent p
 
 ---
 
-### P10 — Kitty graphics niche probe (expected reject, run to close Track G honestly)
+### P10 — Track G (Kitty graphics): CLOSED by standing operator veto
 
-Ghostty implements transmit/placement/delete + Unicode placeholders (no animation actions), 320 MB budget, `CSI 16 t` gives exact cell-pixel geometry. A full-world bitmap path would (a) re-render the intended *cell art* as pixels — changing the art, (b) break copy/paste/accessibility semantics, (c) cost multi-second cold uploads at 64 kbit/s — i.e., fail challenge §9.G's own rejection clause. The one defensible niche: lossless PNG portraits in modals (avatar/building close-ups) where a PNG beats octant cells in bytes *and* fidelity is literally the source asset. Proposal: one-day probe measuring modal-portrait bytes vs octant rendering at 64 kbit/s, behind XTVERSION gating with exact cell fallback; reject with numbers if it doesn't dominate. **Rank last; do not let it displace P1–P9.**
+The operator has already vetoed image protocols outright (2026-07-23: maldoror is a *terminal* game; fidelity comes from pure Unicode cell rendering only). Track G should be recorded in the challenge doc as **closed by product decision**, not left open as a research track. For completeness of evidence: Ghostty at `46edeee407` implements transmit/placement/delete + Unicode placeholders (animation actions unimplemented), 320 MB budget, and `CSI 16 t` cell-pixel geometry — so the path was technically available, and the technical case against it (re-renders the intended cell art as pixels; breaks copy/paste/terminal semantics; multi-second cold uploads at 64 kbit/s) independently supports the veto. No probe should be run.
 
 ---
 
@@ -217,7 +217,7 @@ Ghostty implements transmit/placement/delete + Unicode placeholders (no animatio
 4. **P3** (parallel with P1): entrance overlap + pre-encoded origin first (pure win), then progressive exact paint on the P1 machinery.
 5. **P7 telemetry → P7 socket options** (measure first), **P8** one-liners early (advanced serialization is nearly free).
 6. **P4/P5 codec economics** once P6 can price them in wire bytes.
-7. **P10** last, expecting a documented rejection.
+7. **P10**: no work — record the standing veto in the challenge doc and close Track G.
 
 ## 4. Standing corrections to the challenge doc
 
